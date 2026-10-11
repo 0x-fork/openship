@@ -397,7 +397,8 @@
     "trustRequired": "続行するにはランナーへのアクセスを確認してください。",
     "reusable": "再利用可能なワークフロー",
     "openGitHub": "GitHubで開く",
-    "liveLogs": "ライブログはGitHubで確認できます。完了後のログはここに表示されます。"
+    "liveLogs": "ジョブとステップの状態はここで更新されます。このジョブが完了するまでは、GitHub でライブ出力を確認できます。",
+    "watchLiveLogs": "ライブログを見る"
   },
   "completion": {
     "checksStep": "チェック",
@@ -526,6 +527,9 @@
     "allLogs": "ジョブの全ログ",
     "loadingLogs": "ログを読み込み中…",
     "noStepLogs": "このステップの出力は記録されていません。",
-    "fullJobLog": "ジョブのログ全体を表示しています。"
+    "fullJobLog": "ジョブのログ全体を表示しています。",
+    "approvals": "承認",
+    "noApprovals": "Openship に承認待ちの項目はありません。",
+    "approvalClosed": "この実行は承認待ちではなくなりました。"
   }
 }

@@ -178,8 +178,9 @@ account ID; the original requester and anyone retrying a run must both be eligib
 With **Approve each run**, an Actions administrator with access to its destinations
 reviews the commit, attempt and runners before any runner is allocated. Changing
 the policy, destinations or execution settings requires a new review. A retry does
-not inherit the previous attempt's approval. Run details explains blocked access
-and links back to workflow settings.
+not inherit the previous attempt's approval. Open the run's **Approvals** tab to
+review it; a yellow icon marks pending or blocked access. The tab explains blocked
+access and links back to workflow settings without covering the job list or logs.
 
 **Automatically allow eligible users** skips Openship's review for trusted runs.
 GitHub's fork and protected-environment approvals still apply; the editor links
@@ -257,6 +258,8 @@ use **Expand all**, **Collapse all**, zoom, fit or **Arrange workflow** to inspe
 the connected steps. Independent jobs wrap across the graph rather than forming
 one long column. A single job shows its step nodes immediately. The selected job,
 step and view are preserved in the URL when you refresh or share the page.
+Queued and waiting jobs keep their own status labels and use a yellow loading
+indicator. Opening **Approvals** preserves the current job, step and log cursor.
 
 Independent logs resume from their persisted cursor. For GitHub workflows, step
 state is synchronized from GitHub, live logs open in GitHub, and completed logs and

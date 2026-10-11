@@ -29,7 +29,7 @@ function JobNode({ data }: TopologyNodeProps) {
   const details = useContext(WorkflowNodeDetails);
   const steps = details?.steps.get(resource.id) ?? [];
   const expanded = !!steps.length && !!details?.expandedJobs.includes(resource.id);
-  const active = ["running", "starting", "restarting"].includes(resource.state);
+  const active = ["pending", "running", "starting", "restarting"].includes(resource.state);
   const success = resource.state === "succeeded";
   const failed = resource.state === "failed";
   const tone = success
@@ -37,7 +37,7 @@ function JobNode({ data }: TopologyNodeProps) {
     : failed
       ? "text-danger"
       : active
-        ? "text-info"
+        ? "text-warning"
         : resource.state === "configured"
           ? "text-info/80"
           : "text-muted-foreground";
@@ -136,7 +136,7 @@ function WorkflowStepNode({ data }: TopologyNodeProps) {
   const step = resource.workflowStep!;
   const { t } = useI18n();
   const type = step.kind === "action" ? t.actions.editor.action : t.actions.editor.command;
-  const active = ["running", "starting", "restarting"].includes(resource.state);
+  const active = ["pending", "running", "starting", "restarting"].includes(resource.state);
   const success = resource.state === "succeeded";
   const failed = resource.state === "failed";
   const configured = resource.state === "configured";
@@ -154,7 +154,7 @@ function WorkflowStepNode({ data }: TopologyNodeProps) {
       data-workflow-state={resource.state}
     >
       <span
-        className={`flex size-6 shrink-0 items-center justify-center rounded-md ${configured ? "bg-info/10 text-info/80" : success ? "text-success" : failed ? "text-danger" : active ? "text-info" : "text-muted-foreground"}`}
+        className={`flex size-6 shrink-0 items-center justify-center rounded-md ${configured ? "bg-info/10 text-info/80" : success ? "text-success" : failed ? "text-danger" : active ? "text-warning" : "text-muted-foreground"}`}
       >
         <Icon
           name={

@@ -397,7 +397,8 @@
     "trustRequired": "Confirme o acesso aos executores para continuar.",
     "reusable": "Fluxo reutilizável",
     "openGitHub": "Abrir no GitHub",
-    "liveLogs": "Veja os registos em direto no GitHub. Os registos concluídos aparecem aqui."
+    "liveLogs": "O estado dos trabalhos e etapas é atualizado aqui. A saída em tempo real está disponível no GitHub até este trabalho terminar.",
+    "watchLiveLogs": "Ver logs em tempo real"
   },
   "completion": {
     "checksStep": "Verificações",
@@ -526,6 +527,9 @@
     "allLogs": "Todos os logs do job",
     "loadingLogs": "Carregando logs…",
     "noStepLogs": "Nenhuma saída registrada para esta etapa.",
-    "fullJobLog": "Exibindo o log completo do job."
+    "fullJobLog": "Exibindo o log completo do job.",
+    "approvals": "Aprovações",
+    "noApprovals": "Não há aprovações pendentes no Openship.",
+    "approvalClosed": "Esta execução já não aguarda aprovação."
   }
 }

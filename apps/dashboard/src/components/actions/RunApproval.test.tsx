@@ -116,4 +116,48 @@ describe("run approval review", () => {
     expect(button("Approve this attempt")).toBeUndefined();
     expect(host.querySelector("a")?.getAttribute("href")).toBe("/actions/workflows/ci");
   });
+
+  it("keeps a newly blocked admission closed even when the attempt has an older approval", async () => {
+    await render({
+      ...run,
+      approvedAt: "2026-10-11T12:00:00Z",
+      admission: { ...run.admission!, state: "blocked", reason: "actor_not_allowed" },
+    });
+    expect(host.textContent).toContain("Runner access blocked");
+    expect(button("Approve this attempt")).toBeUndefined();
+  });
+
+  it.each([
+    { cancelRequestedAt: "2026-10-11T12:00:00Z" },
+    { finishedAt: "2026-10-11T12:00:00Z" },
+    { status: "cancelled" as const },
+  ])("removes approval after the run closes: %j", async (closed) => {
+    await render({ ...run, ...closed });
+    expect(host.textContent).toContain("no longer waiting for approval");
+    expect(button("Approve this attempt")).toBeUndefined();
+    expect(h.runners).not.toHaveBeenCalled();
+  });
+
+  it("shows confirmation after approval without retaining an actionable review", async () => {
+    await render();
+    await render({ ...run, admission: { ...run.admission!, state: "allowed", reason: "allowed" } });
+    expect(host.textContent).toContain("Runner access approved");
+    expect(button("Approve this attempt")).toBeUndefined();
+  });
+
+  it("keeps legacy fork approval behind the same administrator check", async () => {
+    await render({
+      ...run,
+      admission: undefined,
+      controller: "openship",
+      untrusted: true,
+      canApprove: false,
+    });
+    expect(host.textContent).toContain("disposable Cloud VM");
+    expect(host.textContent).toContain("administrator");
+    expect(button("Approve isolated run")).toBeUndefined();
+    await render({ ...run, admission: undefined, controller: "openship", untrusted: true });
+    await act(async () => button("Approve isolated run")!.click());
+    expect(h.approve).toHaveBeenCalledOnce();
+  });
 });

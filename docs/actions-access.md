@@ -31,6 +31,11 @@ configuration. A changed review cannot reuse an earlier approval. Renaming a run
 or updating its health probe does not change execution permission. A GitHub Checks
 re-run uses the signed webhook sender, not the workflow owner's delegated identity.
 
+Open the run's **Approvals** tab to review its commit, attempt, requester and
+destinations. A yellow icon marks a pending or blocked review. Switching tabs preserves
+the selected job, step and log cursor. The review refreshes after submission; cancelled
+or finished attempts cannot still be approved.
+
 ## GitHub controls
 
 Repository files in `.github/workflows` still use GitHub's controller and the official

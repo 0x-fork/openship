@@ -10,13 +10,14 @@ import { useI18n } from "@/components/i18n-provider";
 import { ActionError, ActionStatus } from "./ActionStatus";
 import { ActionLogs } from "./ActionLogs";
 import { RunJobList } from "./RunJobList";
+import { RunApproval, runApprovalState } from "./RunApproval";
 import { WorkflowGraph } from "./WorkflowGraph";
 import { WorkflowExpandButton } from "./WorkflowExpandButton";
 import { workflowStepNodeId, workflowVisibleJob } from "./workflow-graph";
 import { jobProgress } from "./job-progress";
 import { useActionLogEvents } from "./useActionLogEvents";
 
-export type RunWorkspaceView = "list" | "graph";
+export type RunWorkspaceView = "list" | "graph" | "approvals";
 
 export function RunWorkspace({
   run,
@@ -25,6 +26,8 @@ export function RunWorkspace({
   view,
   onSelect,
   onViewChange,
+  approving,
+  onApprove,
 }: {
   run: ActionRunView;
   job: ActionJobView | undefined;
@@ -32,12 +35,22 @@ export function RunWorkspace({
   view: RunWorkspaceView;
   onSelect: (job: string, step?: string | null) => void;
   onViewChange: (view: RunWorkspaceView) => void;
+  approving: boolean;
+  onApprove: () => void;
 }) {
   const { t } = useI18n();
   const a = t.actions;
   const logs = useActionLogEvents(job);
+  const approval = runApprovalState(run);
+  const approvalNotice =
+    approval === "required" ? a.access.waiting : approval === "blocked" ? a.access.blocked : null;
+  const [lastLogView, setLastLogView] = useState<"list" | "graph">(
+    view === "graph" ? "graph" : "list",
+  );
+  const logView = view === "approvals" ? lastLogView : view;
   const [graphVisited, setGraphVisited] = useState(view === "graph");
   useEffect(() => {
+    if (view !== "approvals") setLastLogView(view);
     if (view === "graph") setGraphVisited(true);
   }, [view]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -76,7 +89,7 @@ export function RunWorkspace({
   const single = run.plan.jobs.length === 1 ? expandable[0] : undefined;
   const expandedTopology = expandable.filter((id) => topologyExpanded[id] ?? id === single);
   const allExpanded =
-    view === "list"
+    logView === "list"
       ? run.jobs.every((row) => expandedJobs.includes(row.id))
       : expandable.every((id) => expandedTopology.includes(id));
   const stepStatuses: Record<string, Status> = {};
@@ -96,6 +109,19 @@ export function RunWorkspace({
           tabs={[
             { key: "list", label: a.list, icon: "list" },
             { key: "graph", label: a.editor.topology, icon: "topology" },
+            {
+              key: "approvals",
+              label: a.runView.approvals,
+              leading: (
+                <span
+                  className={approvalNotice ? "inline-flex text-warning" : "inline-flex"}
+                  title={approvalNotice ?? undefined}
+                >
+                  <Icon name="shield" className="size-4" />
+                  {approvalNotice && <span className="sr-only">{approvalNotice}</span>}
+                </span>
+              ),
+            },
           ]}
           value={view}
           onChange={onViewChange}
@@ -103,36 +129,49 @@ export function RunWorkspace({
           ariaLabel={a.editor.view}
           className="border-0"
         />
-        {(view === "list" ? run.jobs.length > 0 : expandable.length > 0) && (
-          <WorkflowExpandButton
-            expanded={allExpanded}
-            onClick={() => {
-              if (view === "list")
-                setExpanded(Object.fromEntries(run.jobs.map((row) => [row.id, !allExpanded])));
-              else
-                setTopologyExpanded(Object.fromEntries(expandable.map((id) => [id, !allExpanded])));
-            }}
-          />
-        )}
+        {view !== "approvals" &&
+          (view === "list" ? run.jobs.length > 0 : expandable.length > 0) && (
+            <WorkflowExpandButton
+              expanded={allExpanded}
+              onClick={() => {
+                if (view === "list")
+                  setExpanded(Object.fromEntries(run.jobs.map((row) => [row.id, !allExpanded])));
+                else
+                  setTopologyExpanded(
+                    Object.fromEntries(expandable.map((id) => [id, !allExpanded])),
+                  );
+              }}
+            />
+          )}
       </div>
+      {view === "approvals" && (
+        <div
+          role="tabpanel"
+          id="workflow-view-panel-approvals"
+          aria-labelledby="workflow-view-tab-approvals"
+        >
+          <RunApproval run={run} busy={approving} onApprove={onApprove} />
+        </div>
+      )}
       <div
-        className={`grid min-w-0 items-stretch gap-4 @min-[960px]/run:h-[calc(100dvh-265px)] @min-[960px]/run:min-h-[520px] @min-[960px]/run:max-h-[900px] ${view === "list" ? "@min-[960px]/run:grid-cols-[300px_minmax(0,1fr)]" : "@min-[960px]/run:grid-cols-[minmax(0,1fr)_minmax(380px,0.85fr)]"}`}
+        hidden={view === "approvals"}
+        className={`${view === "approvals" ? "hidden" : "grid"} min-w-0 items-stretch gap-4 @min-[960px]/run:h-[calc(100dvh-265px)] @min-[960px]/run:min-h-[520px] @min-[960px]/run:max-h-[900px] ${logView === "list" ? "@min-[960px]/run:grid-cols-[300px_minmax(0,1fr)]" : "@min-[960px]/run:grid-cols-[minmax(0,1fr)_minmax(380px,0.85fr)]"}`}
       >
         <div
           className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl bg-card"
           role="tabpanel"
-          id={`workflow-view-panel-${view}`}
-          aria-labelledby={`workflow-view-tab-${view}`}
+          id={`workflow-view-panel-${logView}`}
+          aria-labelledby={`workflow-view-tab-${logView}`}
         >
           <div className="flex items-center justify-between gap-3 px-4 py-3 text-xs text-muted-foreground">
-            <span>{view === "list" ? a.runView.jobs : a.graph}</span>
+            <span>{logView === "list" ? a.runView.jobs : a.graph}</span>
             <span className="tabular-nums">
               {run.jobs.filter((job) => actionFinished(job.status)).length} / {run.jobs.length}
             </span>
           </div>
           <div
             className={
-              view === "list"
+              logView === "list"
                 ? "min-h-0 max-h-[320px] flex-1 overflow-y-auto @min-[960px]/run:max-h-none"
                 : "hidden"
             }
@@ -151,12 +190,12 @@ export function RunWorkspace({
           </div>
           <div
             className={
-              view === "graph"
+              logView === "graph"
                 ? "relative h-[420px] min-h-0 flex-none @min-[960px]/run:h-auto @min-[960px]/run:flex-1"
                 : "hidden"
             }
           >
-            {(graphVisited || view === "graph") && (
+            {(graphVisited || logView === "graph") && (
               <WorkflowGraph
                 plan={run.plan}
                 run={run}
@@ -219,7 +258,7 @@ export function RunWorkspace({
                 )}
               </div>
             </header>
-            {view === "graph" && matrixJobs.length > 1 && (
+            {logView === "graph" && matrixJobs.length > 1 && (
               <div className="flex flex-wrap gap-1.5" role="group" aria-label={a.matrix}>
                 {matrixJobs.map((row) => (
                   <Button

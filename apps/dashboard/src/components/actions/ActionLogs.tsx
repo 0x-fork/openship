@@ -96,7 +96,7 @@ export function ActionLogs({
           </p>
           <Button asChild variant="secondary" size="sm">
             <a href={job.externalUrl!} target="_blank" rel="noopener noreferrer">
-              {a.controller.openGitHub}
+              {a.controller.watchLiveLogs}
               <Icon name="arrow-up-right" />
             </a>
           </Button>

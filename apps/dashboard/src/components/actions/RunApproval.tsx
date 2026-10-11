@@ -1,5 +1,6 @@
 "use client";
 import { Icon } from "@repo/ui/icons";
+import { actionFinished } from "@repo/core";
 import type { ActionRunView } from "@repo/contracts";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -8,15 +9,64 @@ import { useActionResource } from "./useActions";
 import { ActionError } from "./ActionStatus";
 import Link from "next/link";
 
-export function RunApproval({
-  run,
-  busy,
-  onApprove,
-}: {
+/** The current admission wins over an older approval timestamp after policy changes. */
+export function runApprovalState(run: ActionRunView) {
+  const pending = run.admission
+    ? run.admission.state !== "allowed"
+    : run.controller !== "github" && run.untrusted && !run.approvedAt;
+  if (pending) {
+    if (run.finishedAt || actionFinished(run.status) || run.cancelRequestedAt) return "closed";
+    return run.admission?.state === "blocked" ? "blocked" : "required";
+  }
+  return run.admission?.state === "allowed" || run.approvedAt ? "allowed" : "none";
+}
+
+type RunApprovalProps = {
   run: ActionRunView;
   busy: boolean;
   onApprove: () => void;
-}) {
+};
+
+export function RunApproval({ run, busy, onApprove }: RunApprovalProps) {
+  const { t } = useI18n();
+  const state = runApprovalState(run);
+  if (state === "required" || state === "blocked") {
+    if (run.admission) return <ApprovalReview run={run} busy={busy} onApprove={onApprove} />;
+    return (
+      <section className="space-y-4 rounded-2xl bg-card p-5" aria-label={t.actions.access.waiting}>
+        <h2 className="flex items-center gap-2 text-sm font-medium">
+          <Icon name="shield" className="size-4 text-warning" />
+          {t.actions.access.waiting}
+        </h2>
+        <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
+          {t.actions.approvalHint}
+        </p>
+        {run.canApprove === true ? (
+          <Button size="sm" disabled={busy} onClick={onApprove}>
+            {t.actions.approve}
+          </Button>
+        ) : (
+          <p className="text-xs text-muted-foreground">{t.actions.access.reviewerRequired}</p>
+        )}
+      </section>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3 rounded-2xl bg-card p-5 text-sm" role="status">
+      <Icon
+        name={state === "allowed" ? "check-circle" : "shield"}
+        className={`size-5 shrink-0 ${state === "allowed" ? "text-success" : "text-muted-foreground"}`}
+      />
+      {state === "allowed"
+        ? t.actions.access.reasons.allowed
+        : state === "closed"
+          ? t.actions.runView.approvalClosed
+          : t.actions.runView.noApprovals}
+    </div>
+  );
+}
+
+function ApprovalReview({ run, busy, onApprove }: RunApprovalProps) {
   const { t } = useI18n();
   const c = t.actions.access;
   const runners = useActionResource(actionsApi.runners);
@@ -28,11 +78,11 @@ export function RunApproval({
     runners.error ?? (runners.data && !loaded ? c.destinationsUnavailable : null);
   return (
     <section
-      className="space-y-3 rounded-xl bg-card p-4"
+      className="space-y-4 rounded-2xl bg-card p-5"
       aria-label={blocked ? c.blocked : c.waiting}
     >
       <h2 className="flex items-center gap-2 text-sm font-medium">
-        <Icon name="shield" className="size-4 text-muted-foreground" />
+        <Icon name="shield" className="size-4 text-warning" />
         {blocked ? c.blocked : c.waiting}
       </h2>
       <p className="text-sm leading-relaxed text-muted-foreground">

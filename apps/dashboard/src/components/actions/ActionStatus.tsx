@@ -4,12 +4,14 @@ import { Icon } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
 import type { ActionStatus as Status } from "@repo/core";
 
+const pending = new Set(["queued", "waiting", "running", "cancelling", "provisioning"]);
+
 export function actionTone(status: string) {
   return status === "success"
     ? "text-success"
     : ["failure", "timed_out"].includes(status)
       ? "text-destructive"
-      : ["running", "cancelling", "provisioning"].includes(status)
+      : pending.has(status)
         ? "text-warning"
         : "text-muted-foreground";
 }
@@ -21,7 +23,7 @@ export function ActionStatus({
   iconOnly?: boolean;
 }) {
   const { t } = useI18n();
-  const active = ["running", "cancelling", "provisioning"].includes(status);
+  const active = pending.has(status);
   return (
     <span
       className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium ${actionTone(status)}`}

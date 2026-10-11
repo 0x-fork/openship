@@ -55,6 +55,12 @@ step cards immediately. Keep the log beside the graph on wide screens and stack
 the navigation above it on narrow screens. GitHub's completed log is supplied for
 the whole job; label that scope when a step is selected instead of inventing step
 boundaries. Independent step logs use their recorded step IDs.
+Queued and waiting states use the same yellow, motion-safe loading indicator as
+active jobs, while keeping their distinct status labels. Run approval lives in the
+third **Approvals** tab with a yellow attention icon when review is needed; never
+place an approval card above the run workspace. Keep the current job, step and log
+cursor mounted while reviewing access. Refreshing restores the tab, and an approved,
+cancelled or finished attempt cannot retain an actionable approval card.
 
 Key remote data by instance, user and organization. Clear private results on a
 scope switch while loading the new scope; stale requests must not populate it.

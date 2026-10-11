@@ -397,7 +397,8 @@
     "trustRequired": "Confirm runner access to continue.",
     "reusable": "Reusable workflow",
     "openGitHub": "Open in GitHub",
-    "liveLogs": "Watch live logs in GitHub. Completed logs appear here."
+    "liveLogs": "Job and step status updates here. Live output is available in GitHub until this job finishes.",
+    "watchLiveLogs": "Watch live logs"
   },
   "completion": {
     "checksStep": "Checks",
@@ -526,6 +527,9 @@
     "allLogs": "All job logs",
     "loadingLogs": "Loading logs…",
     "noStepLogs": "No output recorded for this step.",
-    "fullJobLog": "Showing the complete job log."
+    "fullJobLog": "Showing the complete job log.",
+    "approvals": "Approvals",
+    "noApprovals": "No pending approvals in Openship.",
+    "approvalClosed": "This run is no longer waiting for approval."
   }
 }

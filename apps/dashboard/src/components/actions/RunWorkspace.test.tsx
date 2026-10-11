@@ -126,6 +126,8 @@ function Harness({
           setStep(step ?? null);
         }}
         onViewChange={setView}
+        approving={false}
+        onApprove={() => {}}
       />
     </I18nProvider>
   );
@@ -191,6 +193,45 @@ it("keeps independent job expansions and one selection/log stream across list an
   expect(button("Hide steps: Build").getAttribute("aria-expanded")).toBe("true");
   await click("Collapse all");
   expect(host.querySelectorAll('[aria-expanded="true"]')).toHaveLength(0);
+});
+
+it("keeps the selected step and live journal while visiting Approvals", async () => {
+  h.events
+    .mockResolvedValueOnce(page([event(1, "first line", "test")], false))
+    .mockResolvedValueOnce(page([event(2, "next line", "test")], false));
+  await render(run([job("build", "Build", { status: "running", finishedAt: null })]));
+  await click("View step logs: Test Build");
+  await click("Approvals");
+  expect(host.querySelector("#workflow-view-panel-approvals")?.textContent).toContain(
+    "No pending approvals",
+  );
+  expect(host.querySelector("#workflow-view-panel-list")?.closest("[hidden]")).not.toBeNull();
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+  });
+  await click("Job list");
+  expect(button("View step logs: Test Build").getAttribute("aria-current")).toBe("step");
+  expect(consoleText()).toBe("first line\nnext line");
+  expect(h.events.mock.calls).toEqual([
+    ["build", 0],
+    ["build", 1],
+  ]);
+});
+
+it("uses the yellow loading state for waiting and queued jobs without marking finished jobs as active", async () => {
+  await render(
+    run([
+      job("waiting", "Waiting build", { status: "waiting", finishedAt: null }),
+      job("queued", "Queued docs", { status: "queued", finishedAt: null }),
+      job("done", "Done"),
+    ]),
+  );
+  for (const label of ["Waiting build", "Queued docs"]) {
+    const status = button(label).querySelector("[aria-label]");
+    expect(status?.classList.contains("text-warning")).toBe(true);
+    expect(status?.querySelector(".motion-safe\\:animate-spin")).not.toBeNull();
+  }
+  expect(button("Done").querySelector(".motion-safe\\:animate-spin")).toBeNull();
 });
 
 it("ignores a slow response after switching jobs and reuses completed logs when returning", async () => {

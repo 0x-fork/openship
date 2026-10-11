@@ -397,7 +397,8 @@
     "trustRequired": "Devam etmek için çalıştırıcı erişimini onaylayın.",
     "reusable": "Yeniden kullanılabilir iş akışı",
     "openGitHub": "GitHub'da aç",
-    "liveLogs": "Canlı günlükleri GitHub üzerinden izleyin. Tamamlanan günlükler burada görünür."
+    "liveLogs": "İş ve adım durumları burada güncellenir. Bu iş tamamlanana kadar canlı çıktı GitHub’da görüntülenebilir.",
+    "watchLiveLogs": "Canlı günlükleri izle"
   },
   "completion": {
     "checksStep": "Kontroller",
@@ -526,6 +527,9 @@
     "allLogs": "Tüm iş günlükleri",
     "loadingLogs": "Günlükler yükleniyor…",
     "noStepLogs": "Bu adım için kayıtlı çıktı yok.",
-    "fullJobLog": "İş günlüğünün tamamı gösteriliyor."
+    "fullJobLog": "İş günlüğünün tamamı gösteriliyor.",
+    "approvals": "Onaylar",
+    "noApprovals": "Openship’te bekleyen onay yok.",
+    "approvalClosed": "Bu çalıştırma artık onay beklemiyor."
   }
 }

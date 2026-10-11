@@ -58,6 +58,11 @@ it("refreshes a rejected approval immediately so an outdated review cannot remai
         </I18nProvider>,
       ),
     );
+    const approvals = host.querySelector<HTMLButtonElement>("#workflow-view-tab-approvals")!;
+    expect(approvals.textContent).toContain("Approval required");
+    expect(host.textContent).not.toContain("Approve this attempt");
+    await act(async () => approvals.click());
+    expect(new URL(window.location.href).searchParams.get("view")).toBe("approvals");
     const approve = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
       (el) => el.textContent?.trim() === "Approve this attempt",
     )!;
@@ -68,6 +73,9 @@ it("refreshes a rejected approval immediately so an outdated review cannot remai
     expect(host.textContent).toContain("Run access changed");
     expect(host.textContent).toContain("Runner access blocked");
     expect(host.textContent).not.toContain("Approve this attempt");
+    expect(host.querySelector("#workflow-view-tab-approvals")?.textContent).toContain(
+      "Runner access blocked",
+    );
   } finally {
     await act(async () => root.unmount());
     host.remove();

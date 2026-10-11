@@ -397,7 +397,8 @@
     "trustRequired": "Confirmez l’accès aux exécuteurs pour continuer.",
     "reusable": "Workflow réutilisable",
     "openGitHub": "Ouvrir dans GitHub",
-    "liveLogs": "Consultez les journaux en direct dans GitHub. Les journaux terminés apparaîtront ici."
+    "liveLogs": "L’état des tâches et des étapes est mis à jour ici. La sortie en direct est disponible dans GitHub jusqu’à la fin de cette tâche.",
+    "watchLiveLogs": "Voir les journaux en direct"
   },
   "completion": {
     "checksStep": "Vérifications",
@@ -526,6 +527,9 @@
     "allLogs": "Tous les journaux du job",
     "loadingLogs": "Chargement des journaux…",
     "noStepLogs": "Aucune sortie enregistrée pour cette étape.",
-    "fullJobLog": "Le journal complet du job est affiché."
+    "fullJobLog": "Le journal complet du job est affiché.",
+    "approvals": "Approbations",
+    "noApprovals": "Aucune approbation en attente dans Openship.",
+    "approvalClosed": "Cette exécution n’attend plus d’approbation."
   }
 }

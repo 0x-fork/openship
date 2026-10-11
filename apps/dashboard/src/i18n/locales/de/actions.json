@@ -397,7 +397,8 @@
     "trustRequired": "Bestätige den Runner-Zugriff, um fortzufahren.",
     "reusable": "Wiederverwendbarer Workflow",
     "openGitHub": "In GitHub öffnen",
-    "liveLogs": "Live-Logs in GitHub ansehen. Abgeschlossene Logs erscheinen hier."
+    "liveLogs": "Der Status von Jobs und Schritten wird hier aktualisiert. Die Live-Ausgabe ist bis zum Abschluss dieses Jobs in GitHub verfügbar.",
+    "watchLiveLogs": "Live-Logs ansehen"
   },
   "completion": {
     "checksStep": "Checks",
@@ -526,6 +527,9 @@
     "allLogs": "Alle Job-Logs",
     "loadingLogs": "Logs werden geladen…",
     "noStepLogs": "Für diesen Schritt wurde keine Ausgabe aufgezeichnet.",
-    "fullJobLog": "Das vollständige Job-Log wird angezeigt."
+    "fullJobLog": "Das vollständige Job-Log wird angezeigt.",
+    "approvals": "Genehmigungen",
+    "noApprovals": "Keine ausstehenden Genehmigungen in Openship.",
+    "approvalClosed": "Dieser Lauf wartet nicht mehr auf eine Genehmigung."
   }
 }

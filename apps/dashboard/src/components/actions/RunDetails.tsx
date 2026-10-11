@@ -13,7 +13,6 @@ import { useI18n } from "@/components/i18n-provider";
 import { ActionError, ActionStatus } from "./ActionStatus";
 import { RunWorkspace, type RunWorkspaceView } from "./RunWorkspace";
 import { RunArtifacts } from "./RunArtifacts";
-import { RunApproval } from "./RunApproval";
 import { useActionMutation, useActionResource, useActionScope } from "./useActions";
 
 const pollingDelay = (run: ActionRunView) => (run.settledAt ? 0 : 2500);
@@ -28,7 +27,11 @@ function Detail({ id }: { id: string }) {
   const mutation = useActionMutation();
   const [selected, setSelected] = useState<string | null>(query.get("job"));
   const [view, setView] = useState<RunWorkspaceView>(
-    query.get("view") === "graph" ? "graph" : "list",
+    query.get("view") === "graph"
+      ? "graph"
+      : query.get("view") === "approvals"
+        ? "approvals"
+        : "list",
   );
   const [selectedStep, setSelectedStep] = useState<string | null>(query.get("step"));
   const [rerunKey] = useState(() => crypto.randomUUID());
@@ -53,7 +56,7 @@ function Detail({ id }: { id: string }) {
   const changeView = (view: RunWorkspaceView) => {
     setView(view);
     const url = new URL(window.location.href);
-    if (view === "graph") url.searchParams.set("view", view);
+    if (view !== "list") url.searchParams.set("view", view);
     else url.searchParams.delete("view");
     window.history.replaceState(null, "", url);
   };
@@ -122,39 +125,6 @@ function Detail({ id }: { id: string }) {
             </div>
           </header>
           <ActionError message={run.error} />
-          {run.admission &&
-            run.admission.state !== "allowed" &&
-            !run.finishedAt &&
-            !run.cancelRequestedAt && (
-              <RunApproval
-                run={run}
-                busy={mutation.busy}
-                onApprove={async () => {
-                  await mutation.execute(() => actionsApi.approve(id, run.admission!.key));
-                  resource.refresh();
-                }}
-              />
-            )}
-          {!run.admission &&
-            run.controller !== "github" &&
-            run.untrusted &&
-            !run.approvedAt &&
-            !actionFinished(run.status) && (
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-warning/5 p-4">
-                <p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
-                  {a.approvalHint}
-                </p>
-                <Button
-                  disabled={mutation.busy || run.canApprove !== true}
-                  onClick={async () => {
-                    await mutation.execute(() => actionsApi.approve(id));
-                    resource.refresh();
-                  }}
-                >
-                  {a.approve}
-                </Button>
-              </div>
-            )}
           {run.cancelRequestedAt && !actionFinished(run.status) && (
             <p className="text-sm text-muted-foreground" role="status">
               {a.cancellingHint}
@@ -173,6 +143,11 @@ function Detail({ id }: { id: string }) {
             view={view}
             onSelect={select}
             onViewChange={changeView}
+            approving={mutation.busy}
+            onApprove={async () => {
+              await mutation.execute(() => actionsApi.approve(id, run.admission?.key));
+              resource.refresh();
+            }}
           />
           <RunArtifacts runId={run.id} settled={!!run.settledAt} />
         </>

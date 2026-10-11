@@ -397,7 +397,8 @@
     "trustRequired": "请确认运行器访问权限后继续。",
     "reusable": "可复用工作流",
     "openGitHub": "在 GitHub 中打开",
-    "liveLogs": "在 GitHub 查看实时日志，完成后的日志将在此显示。"
+    "liveLogs": "作业和步骤状态会在此更新。在此作业完成之前，可在 GitHub 中查看实时输出。",
+    "watchLiveLogs": "查看实时日志"
   },
   "completion": {
     "checksStep": "检查",
@@ -526,6 +527,9 @@
     "allLogs": "全部作业日志",
     "loadingLogs": "正在加载日志…",
     "noStepLogs": "此步骤没有记录的输出。",
-    "fullJobLog": "正在显示完整的作业日志。"
+    "fullJobLog": "正在显示完整的作业日志。",
+    "approvals": "审批",
+    "noApprovals": "Openship 中没有待审批项。",
+    "approvalClosed": "此运行已不再等待审批。"
   }
 }
