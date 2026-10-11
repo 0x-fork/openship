@@ -65,6 +65,8 @@ const serviceSpec = z.object({
   name: z.string(),
   /** Prebuilt image to pull. Exactly one of `image`/`build` must be set per service. */
   image: z.string().optional(),
+  /** Exact retired defaults eligible for an explicit operator repair. Never auto-upgrade. */
+  replacesImages: z.array(z.string().min(1)).optional(),
   resources: z
     .object({
       cpuCores: z.number().min(MIN_CPU_CORES),

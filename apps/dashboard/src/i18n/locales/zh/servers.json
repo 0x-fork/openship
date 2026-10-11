@@ -1108,7 +1108,44 @@
       "rulesUnavailable": "出站规则不可用。请刷新后再编辑。",
       "invalidRules": "请输入 1–50 个目标。单独使用 *，或填写不含 URL、端口和路径的主机名/IP。",
       "confirm": "将这些出站规则应用于此服务器的所有项目？禁用互联网会清空出站允许列表。重新启用时将使用上方显示的目标。",
-      "routingHint": "公共域名、TLS 和私有网络使用 Openship 的项目与网络控制功能。此表单不会更改其路由、入站规则或代理凭据。"
+      "routingHint": "公共域名、TLS 和私有网络使用 Openship 的项目与网络控制功能。此表单不会更改其路由、入站规则或代理凭据。",
+      "policyTitle": "互联网访问",
+      "policyHint": "控制应用和构建可以访问的目标。",
+      "addresses": "私有地址与入站"
+    },
+    "outbound": {
+      "title": "出站连接",
+      "description": "选择此服务器连接互联网的方式。",
+      "currentIp": "当前出站 IP",
+      "managed": "由 Openship 管理",
+      "custom": "自定义代理",
+      "unavailable": "无法验证当前设置。请刷新后再进行更改。",
+      "connection": "连接类型",
+      "address": "托管 IP 地址",
+      "search": "搜索 IP 或国家",
+      "optionsFailed": "无法加载可用地址。",
+      "managedHint": "选择托管 IP。自动选项会保留当前托管地址，或在从自定义代理切换时分配一个地址。",
+      "host": "代理 IPv4 地址",
+      "port": "端口",
+      "protocol": "协议",
+      "proxyHint": "请使用公共 IPv4 HTTP/HTTPS 代理。提供商会在应用前进行检查。",
+      "authentication": "代理身份验证",
+      "username": "用户名",
+      "password": "密码",
+      "savedCredentials": "凭据已保存。替换此代理时请重新输入两个字段。",
+      "credentialsHint": "两个字段均需填写，每个最多 256 个可见字符，不含空格或 : @ / ?。",
+      "impact": "更改会影响此服务器上所有项目的出站连接。",
+      "applying": "正在应用…",
+      "apply": "应用连接",
+      "current": "当前",
+      "automatic": "自动",
+      "invalid": "请检查 IPv4 地址和端口（1–65535）。如果启用身份验证，请填写用户名和密码。"
+    },
+    "navigation": {
+      "connection": "出站与访问",
+      "listeners": "监听端口",
+      "general": "常规",
+      "ssh": "SSH"
     }
   }
 }

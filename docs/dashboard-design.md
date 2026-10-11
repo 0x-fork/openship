@@ -80,6 +80,10 @@ check retryable before starting the move.
 - Single-app deployment progress uses 32px phase markers with 18–20px glyphs. Keep the
   connectors centered and separated from each marker by the card-colored ring, with the
   current phase and step count underneath.
+- A host-port conflict uses the shared deployment decision dialog. When the API offers a
+  verified alternative, show its exact port as the primary action and explain that choosing
+  it keeps the existing service running. Keep stop actions explicitly destructive; a changed
+  suggestion requires a new choice. Reuse the same prompt after refresh.
 - Connected and managed destinations use the same searchable server rows; managed rows show
   project count and purchased capacity in place of an SSH address. Keep the add-server action
   inside the multi-server menu and beside the single-server summary.
@@ -298,6 +302,14 @@ check retryable before starting the move.
   the normal preference on leaving and keep its override separate. Mobile navigation opens fully.
 
 ## Typography and copy
+
+Managed server navigation leads with Overview, Terminal and SSH access. Group listener inspection
+under Networking, and component health and Runtime API under Settings; preserve existing tab links.
+The managed terminal uses the full content width. Other views keep the shared 340px plan sidebar.
+Network controls separate the outbound connection from internet policy, with one explicit save per
+operation. Show the current connection separately from the draft, use filled controls and responsive
+field pairs, and keep private address/ingress diagnostics in a disclosure. Failed reads retain a
+status retry; they must not appear as an empty pool or trigger a mutation.
 
 Account protection lives in **Settings → Security**, using the existing settings
 navigation and section cards. Keep authenticator setup, recovery codes, and

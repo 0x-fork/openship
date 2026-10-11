@@ -2,6 +2,7 @@
 
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
+import { getPortCheckIssue } from "@repo/core";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -56,6 +57,7 @@ interface DnsRecord {
 }
 
 type DomainTone = "success" | "warning" | "danger" | "neutral";
+type PortHint = Pick<PortCheckUI, "port" | "serviceName" | "loopbackOnly">;
 
 /**
  * Which static-404 a routed path is hitting. Three distinct diagnoses with three
@@ -1246,19 +1248,21 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
     };
   }, [id]);
 
-  // Match a live "not listening" check to a card — by service id (compose) or
+  // Match a live port issue to a card — by service id (compose) or
   // routed port (single-app). Only a definitive checked result yields a hint.
-  const portHintFor = (
-    mappedPort?: number,
-    serviceId?: string,
-  ): { port: number; serviceName?: string } | null => {
+  const portHintFor = (mappedPort?: number, serviceId?: string): PortHint | null => {
     const match = portChecks.find(
       (c) =>
-        c.checked &&
-        !c.listening &&
+        getPortCheckIssue(c) !== null &&
         (serviceId ? c.serviceId === serviceId && c.port === mappedPort : c.serviceId == null && c.port === mappedPort),
     );
-    return match ? { port: match.port, serviceName: match.serviceName } : null;
+    return match
+      ? {
+          port: match.port,
+          serviceName: match.serviceName,
+          loopbackOnly: getPortCheckIssue(match) === "loopback-only",
+        }
+      : null;
   };
 
   // Static-output reachability, fetched once per static project (server apps
@@ -1326,6 +1330,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
       if (result.success) {
         showToast(interpolate(t.projectSettings.domains.toast.sslRenewed, { hostname }), "success");
+      } else if (result.pending) {
+        showToast(result.message, "info");
       } else {
         showToast(
           result.message || result.error || interpolate(t.projectSettings.domains.toast.sslRenewFailed, { hostname }),
@@ -3113,8 +3119,8 @@ function DomainOverviewCard({
   onCopy?: (text: string) => void | Promise<void>;
   /** Open the records section immediately (used right after a failed verify). */
   autoOpenRecords?: boolean;
-  /** Live port-reachability advisory ("nothing responded on port X"). */
-  portHint?: { port: number; serviceName?: string } | null;
+  /** Live port-reachability advisory, including container-only listeners. */
+  portHint?: PortHint | null;
   /** Live static-output advisory — which of the three static-404 shapes this is. */
   outputHint?: OutputHint | null;
 }) {
@@ -3328,8 +3334,20 @@ function DomainOverviewCard({
             <UiIcon name="warning" className="mt-0.5 size-3.5 shrink-0" />
             <span>
               {portHint.serviceName
-                ? interpolate(d.portHint.bodyService, { service: portHint.serviceName, port: String(portHint.port) })
-                : interpolate(d.portHint.body, { port: String(portHint.port) })}
+                ? interpolate(
+                    portHint.loopbackOnly
+                      ? t.importProject.deploymentProcessing.portAdvisory.loopbackBodyService
+                      : d.portHint.bodyService,
+                    { service: portHint.serviceName, port: String(portHint.port) },
+                  )
+                : interpolate(
+                    portHint.loopbackOnly
+                      ? t.importProject.deploymentProcessing.portAdvisory.loopbackBody
+                      : d.portHint.body,
+                    { port: String(portHint.port) },
+                  )}
+              {portHint.loopbackOnly &&
+                ` ${t.importProject.deploymentProcessing.portAdvisory.loopbackHelp}`}
             </span>
           </div>
         ) : null}

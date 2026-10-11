@@ -329,7 +329,14 @@
       "changePort": "Change port",
       "skip": "Skip",
       "applied": "Routing updated to port {port}.",
-      "changeError": "Couldn't update the port. Please try again."
+      "changeError": "Couldn't update the port. Please try again.",
+      "loopbackTitle": "The app cannot receive routed traffic",
+      "loopbackNote": "The deployment is running, but a routed port needs attention.",
+      "loopbackBody": "Port {port} only listens inside the container.",
+      "loopbackBodyService": "Service \"{service}\" only listens inside the container on port {port}.",
+      "loopbackHelp": "For a routed app, listen on 0.0.0.0 and redeploy, or route to its intended proxy.",
+      "openSettings": "Open settings",
+      "skipError": "Couldn't dismiss this warning. Please try again."
     },
     "title": {
       "cancelled": "Deployment Cancelled",

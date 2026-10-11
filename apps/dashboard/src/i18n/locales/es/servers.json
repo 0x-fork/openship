@@ -1108,7 +1108,44 @@
       "rulesUnavailable": "Las reglas de salida no están disponibles. Actualiza antes de editarlas.",
       "invalidRules": "Introduce entre 1 y 50 destinos. Usa * solo, o nombres de host/IP sin URL, puerto ni ruta.",
       "confirm": "¿Aplicar estas reglas de salida a todos los proyectos del servidor? Desactivar internet borra la lista de destinos permitidos. Al reactivarlo se usan los destinos mostrados arriba.",
-      "routingHint": "Los dominios públicos, TLS y las redes privadas usan los controles de proyectos y redes de Openship. Este formulario no modifica sus rutas, reglas de entrada ni credenciales de proxy."
+      "routingHint": "Los dominios públicos, TLS y las redes privadas usan los controles de proyectos y redes de Openship. Este formulario no modifica sus rutas, reglas de entrada ni credenciales de proxy.",
+      "policyTitle": "Acceso a internet",
+      "policyHint": "Controla qué destinos pueden alcanzar las aplicaciones y compilaciones.",
+      "addresses": "Dirección privada y entrada"
+    },
+    "outbound": {
+      "title": "Conexión saliente",
+      "description": "Elige cómo se conecta este servidor a internet.",
+      "currentIp": "IP saliente actual",
+      "managed": "Gestionado por Openship",
+      "custom": "Proxy personalizado",
+      "unavailable": "No se pudieron verificar los ajustes actuales. Actualiza antes de cambiarlos.",
+      "connection": "Tipo de conexión",
+      "address": "Dirección IP gestionada",
+      "search": "Buscar IP o país",
+      "optionsFailed": "No se pudieron cargar las direcciones disponibles.",
+      "managedHint": "Elige una IP gestionada. Automático conserva la dirección gestionada actual o asigna una al cambiar desde un proxy personalizado.",
+      "host": "Dirección IPv4 del proxy",
+      "port": "Puerto",
+      "protocol": "Protocolo",
+      "proxyHint": "Usa un proxy HTTP/HTTPS con IPv4 pública. El proveedor lo comprueba antes de aplicarlo.",
+      "authentication": "Autenticación del proxy",
+      "username": "Usuario",
+      "password": "Contraseña",
+      "savedCredentials": "Las credenciales están guardadas. Introduce ambos campos de nuevo al sustituir este proxy.",
+      "credentialsHint": "Introduce ambos campos, hasta 256 caracteres visibles cada uno, sin espacios ni : @ / ?.",
+      "impact": "Los cambios afectan a las conexiones salientes de todos los proyectos de este servidor.",
+      "applying": "Aplicando…",
+      "apply": "Aplicar conexión",
+      "current": "Actual",
+      "automatic": "Automático",
+      "invalid": "Revisa la dirección IPv4 y el puerto (1–65535). Si la autenticación está activada, introduce ambas credenciales."
+    },
+    "navigation": {
+      "connection": "Salida y acceso",
+      "listeners": "Puertos de escucha",
+      "general": "General",
+      "ssh": "SSH"
     }
   }
 }

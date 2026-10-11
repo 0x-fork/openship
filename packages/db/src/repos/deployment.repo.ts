@@ -524,6 +524,20 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       return rows.length > 0;
     },
 
+    /** Append a dismissal without replacing concurrent metadata or deployment status. */
+    async skipPortCheck(id: string, target: number | string): Promise<void> {
+      const skipped = sql`case when jsonb_typeof(${deployment.meta}->'portCheckSkipped') = 'array'
+        then ${deployment.meta}->'portCheckSkipped' else '[]'::jsonb end`;
+      const addition = sql`${JSON.stringify([target])}::jsonb`;
+      await db
+        .update(deployment)
+        .set({
+          meta: sql`jsonb_set(coalesce(${deployment.meta}, '{}'::jsonb), '{portCheckSkipped}', ${skipped} || ${addition})`,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(deployment.id, id), sql`not (${skipped} @> ${addition})`));
+    },
+
     /**
      * Atomically make cancellation the terminal outcome only while the work is
      * actually in flight. A read followed by updateStatus is not sufficient:

@@ -155,7 +155,10 @@ export {
 export {
   type PortOccupant,
   type PortStopTarget,
+  type AlternativeHostPort,
+  type SuggestAlternativeHostPort,
   probeListeningPort,
+  isDockerHostPortAvailable,
   ensurePortAvailable,
 } from "./runtime/port-conflict";
 // Exported because apps/ consumes them, and only for that: the label keys and the

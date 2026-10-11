@@ -11,6 +11,7 @@ import DeploymentProcessing from "./DeploymentProcessing";
 const mocks = vi.hoisted(() => ({
   info: vi.fn(), push: vi.fn(), stop: vi.fn(), ready: vi.fn(), respond: vi.fn(),
   showModal: vi.fn(), hideModal: vi.fn(), showToast: vi.fn(), pricing: vi.fn(),
+  portReview: vi.fn((_props: unknown) => null),
 }));
 let deployment: Pick<DeploymentContextType, "config" | "state" | "deploymentStatus" | "stopDeployment" | "onTerminalReady" | "respondToPrompt" | "steps" | "terminalRef">;
 vi.mock("@/context/DeploymentContext", () => ({ useDeployment: () => deployment }));
@@ -22,7 +23,9 @@ vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => m
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/lib/api", () => ({ projectsApi: { getInfo: mocks.info }, deployApi: {} }));
-vi.mock("./PortAdvisoryModal", () => ({ PortAdvisoryModal: () => null }));
+vi.mock("./PortAdvisoryModal", () => ({
+  PortAdvisoryModal: (props: unknown) => mocks.portReview(props),
+}));
 vi.mock("@/components/i18n-provider", () => ({
   useI18n: () => ({ t: baseDictionary }),
   interpolate: (text: string, values: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? key),
@@ -110,6 +113,44 @@ function panel() { return host.querySelector<HTMLElement>('[role="tabpanel"][ari
 async function select(label: string) { await act(async () => tab(label).click()); }
 
 describe("build pages", () => {
+  it("defers port review until the partial deployment decision has been resolved", async () => {
+    deployment.state.decisionPending = true;
+    deployment.state.portCheck = [
+      { port: 4010, serviceId: "svc-api", checked: true, listening: true, loopbackOnly: true },
+    ];
+    await render();
+    expect(mocks.portReview).not.toHaveBeenCalled();
+
+    deployment.state.decisionPending = false;
+    await render();
+    expect(mocks.portReview).toHaveBeenCalledWith(
+      expect.objectContaining({ checks: deployment.state.portCheck }),
+    );
+  });
+
+  it.each([true, false])(
+    "shows Action required for a loopback bind without holding the live deployment (Compose: %s)",
+    async (compose) => {
+      deployment.state.portCheck = [
+        { port: 4010, serviceId: "svc-api", checked: true, listening: true, loopbackOnly: true },
+      ];
+      await render(compose);
+
+      expect(host.querySelector("header [role=status]")?.textContent).toBe(
+        composeCopy.title.actionRequired,
+      );
+      expect(mocks.showModal).not.toHaveBeenCalled();
+      expect(mocks.stop).not.toHaveBeenCalled();
+      expect(redeploy).not.toHaveBeenCalled();
+      expect(deployment.state.decisionPending).toBe(false);
+      expect(deployment.state.deploymentSuccess).toBe(true);
+
+      deployment.state.portCheckSkipped = [compose ? "svc-api" : 4010];
+      await render(compose);
+      expect(host.querySelector("header [role=status]")?.textContent).toBe(copy.status.ready);
+    },
+  );
+
   it.each([true, false])(
     "keeps a failed-backup decision usable through a network error and closes it on replacement or completion (Compose: %s)",
     async (compose) => {
@@ -204,6 +245,45 @@ describe("build pages", () => {
       }
     },
   );
+
+  it("offers the exact available host port without changing it on display or refresh", async () => {
+    deployment.deploymentStatus = "deploying";
+    deployment.state.pendingPrompt = {
+      promptId: "port_in_use:20001",
+      title: "Port In Use",
+      message:
+        "Port 20001 is occupied by openship-clincai-api. Port 20002 is available. Using it keeps the existing service running and saves the new host port for future deployments.",
+      actions: [
+        { id: "use_port:20002", label: "Use port 20002", variant: "primary" },
+        { id: "free_port", label: "Stop Openship Container & Continue", variant: "danger" },
+        { id: "abort", label: "Cancel Deploy", variant: "secondary" },
+      ],
+      details: { port: 20001, alternativePort: 20002, containerName: "openship-clincai-api" },
+    };
+    await render(false);
+    expect(mocks.respond).not.toHaveBeenCalled();
+    const dialog = document.createElement("div");
+    document.body.append(dialog);
+    const dialogRoot = createRoot(dialog);
+    try {
+      await act(async () => dialogRoot.render(mocks.showModal.mock.calls[0]![0].customContent));
+      const buttons = [...dialog.querySelectorAll<HTMLButtonElement>("button")];
+      expect(buttons.map((button) => button.textContent)).toEqual([
+        "Use port 20002",
+        "Stop Openship Container & Continue",
+        "Cancel Deploy",
+      ]);
+      expect(document.activeElement).toBe(buttons[0]);
+      expect(dialog.textContent).toContain("openship-clincai-api");
+      await render(false);
+      expect(mocks.respond).not.toHaveBeenCalled();
+      await act(async () => buttons[0]!.click());
+      expect(mocks.respond).toHaveBeenCalledExactlyOnceWith("use_port:20002");
+    } finally {
+      await act(async () => dialogRoot.unmount());
+      dialog.remove();
+    }
+  });
 
   it.each([true, false])("uses one shared header and action set (Compose: %s)", async compose => {
     if (!compose) {

@@ -14,6 +14,8 @@ export function ConnectionNotice({
   retrying = false,
   tone = "warning",
   actions,
+  role = "status",
+  retryLabel,
 }: {
   title: string;
   message: string;
@@ -22,10 +24,12 @@ export function ConnectionNotice({
   retrying?: boolean;
   tone?: "warning" | "neutral";
   actions?: ReactNode;
+  role?: "status" | "alert";
+  retryLabel?: string;
 }) {
   const { t } = useI18n();
   return (
-    <div role="status" className="flex items-start gap-3 rounded-2xl bg-card p-4">
+    <div role={role} className="flex items-start gap-3 rounded-2xl bg-card p-4">
       <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${retrying || tone === "neutral" ? "bg-muted text-muted-foreground" : "bg-warning-bg text-warning"}`}>
         <Icon name={retrying ? "spinner" : "plug"} className={`size-4 ${retrying ? "motion-safe:animate-spin" : ""}`} />
       </span>
@@ -49,7 +53,7 @@ export function ConnectionNotice({
                   name={retrying ? "spinner" : "refresh"}
                   className={retrying ? "motion-safe:animate-spin" : undefined}
                 />
-                {t.issues.connectivity.retryStatus}
+                {retryLabel ?? t.issues.connectivity.retryStatus}
               </Button>
             )}
           </div>

@@ -12,11 +12,12 @@
  */
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import type { AppTemplate } from "../src/app-templates";
 
 const catalogDir = fileURLToPath(new URL("../src/apps/catalog/", import.meta.url));
 const mergedPath = fileURLToPath(new URL("../src/apps/catalog.json", import.meta.url));
 
-export function buildCatalog(): { version: number; apps: Array<{ id: string }> } {
+export function buildCatalog(): { version: number; apps: AppTemplate[] } {
   const existing = JSON.parse(readFileSync(mergedPath, "utf8")) as {
     version?: number;
     apps: Array<{ id: string }>;
@@ -24,7 +25,7 @@ export function buildCatalog(): { version: number; apps: Array<{ id: string }> }
   const order = new Map(existing.apps.map((a, i) => [a.id, i] as const));
   const apps = readdirSync(catalogDir)
     .filter((f) => f.endsWith(".json"))
-    .map((f) => JSON.parse(readFileSync(catalogDir + f, "utf8")) as { id: string })
+    .map((f) => JSON.parse(readFileSync(catalogDir + f, "utf8")) as AppTemplate)
     .sort((a, b) => {
       const ai = order.get(a.id) ?? Number.MAX_SAFE_INTEGER;
       const bi = order.get(b.id) ?? Number.MAX_SAFE_INTEGER;

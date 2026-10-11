@@ -2814,6 +2814,24 @@
       "description": "Change outbound internet after confirming its effect on every project; preserve ingress and private connectivity.",
       "route": "PATCH /api/system/servers/:id/network-settings"
     },
+    "servers.managedOutbound": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Read the current outbound connection and revision without proxy credentials. Does not start the managed server.",
+      "route": "GET /api/system/servers/:id/managed/outbound"
+    },
+    "servers.managedOutboundOptions": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "List available managed outbound IPs and countries for this owned server, without credentials or internal pool identifiers.",
+      "route": "GET /api/system/servers/:id/managed/outbound/options"
+    },
+    "servers.setManagedOutbound": {
+      "page": "servers",
+      "section": "Managed server controls",
+      "description": "Apply a reviewed managed IP or custom public IPv4 HTTP/HTTPS proxy using expectedRevision and confirm:true. Changes outgoing connections for all projects; preserves internet policy, ingress and routes. Credentials are never returned or audited.",
+      "route": "PATCH /api/system/servers/:id/managed/outbound"
+    },
     "servers.managedInfo": {
       "page": "servers",
       "section": "Managed server controls",
