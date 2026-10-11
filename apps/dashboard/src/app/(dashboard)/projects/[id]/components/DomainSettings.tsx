@@ -1326,6 +1326,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
 
       if (result.success) {
         showToast(interpolate(t.projectSettings.domains.toast.sslRenewed, { hostname }), "success");
+      } else if (result.pending) {
+        showToast(result.message, "info");
       } else {
         showToast(
           result.message || result.error || interpolate(t.projectSettings.domains.toast.sslRenewFailed, { hostname }),
