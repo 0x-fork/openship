@@ -1142,7 +1142,44 @@
       "rulesUnavailable": "Outbound rules are unavailable. Refresh before editing them.",
       "invalidRules": "Enter 1–50 destinations. Use * alone, or specify hostnames/IPs without a URL, port or path.",
       "confirm": "Apply these outbound rules to every project on this server? Disabling internet clears the outbound allowlist. Re-enabling it uses the destinations shown above.",
-      "routingHint": "Public domains, TLS and private networking use Openship’s project and network controls. This form does not change their routes, ingress rules or proxy credentials."
+      "routingHint": "Public domains, TLS and private networking use Openship’s project and network controls. This form does not change their routes, ingress rules or proxy credentials.",
+      "policyTitle": "Internet access",
+      "policyHint": "Control which destinations apps and builds can reach.",
+      "addresses": "Private address & ingress"
+    },
+    "outbound": {
+      "title": "Outbound connection",
+      "description": "Choose how this server connects to the internet.",
+      "currentIp": "Current outbound IP",
+      "managed": "Managed by Openship",
+      "custom": "Custom proxy",
+      "unavailable": "Current settings could not be verified. Refresh before making changes.",
+      "connection": "Connection type",
+      "address": "Managed IP address",
+      "search": "Search IP or country",
+      "optionsFailed": "Available addresses could not be loaded.",
+      "managedHint": "Choose a managed IP. Automatic keeps the current managed address, or assigns one when switching from a custom proxy.",
+      "host": "Proxy IPv4 address",
+      "port": "Port",
+      "protocol": "Protocol",
+      "proxyHint": "Use a public IPv4 HTTP/HTTPS proxy. The provider checks it before applying.",
+      "authentication": "Proxy authentication",
+      "username": "Username",
+      "password": "Password",
+      "savedCredentials": "Credentials are saved. Re-enter both fields when replacing this proxy.",
+      "credentialsHint": "Enter both fields, up to 256 visible characters each, without spaces or : @ / ?.",
+      "impact": "Changes affect outgoing connections for every project on this server.",
+      "applying": "Applying…",
+      "apply": "Apply connection",
+      "current": "Current",
+      "automatic": "Automatic",
+      "invalid": "Check the IPv4 address and port (1–65535). If authentication is enabled, enter both credentials."
+    },
+    "navigation": {
+      "connection": "Outbound & access",
+      "listeners": "Listening ports",
+      "general": "General",
+      "ssh": "SSH"
     }
   }
 }

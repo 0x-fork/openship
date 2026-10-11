@@ -9,6 +9,7 @@ import { ManagedServerSsh } from "./ManagedServerSsh";
 import { ManagedServerRuntime } from "./ManagedServerRuntime";
 import { ManagedServerWorkloads } from "./ManagedServerWorkloads";
 import { ManagedServerNetwork } from "./ManagedServerNetwork";
+import { ManagedServerOutbound } from "./ManagedServerOutbound";
 import { ManagedServerSettings } from "./ManagedServerSettings";
 
 const api = vi.hoisted(() => ({
@@ -29,6 +30,9 @@ const api = vi.hoisted(() => ({
   managedBootLogs: vi.fn(),
   getServerNetworkSettings: vi.fn(),
   updateServerNetworkSettings: vi.fn(),
+  managedOutbound: vi.fn(),
+  managedOutboundOptions: vi.fn(),
+  setManagedOutbound: vi.fn(),
 }));
 vi.mock("@/lib/api/system", () => ({ systemApi: api }));
 const copy = baseDictionary.servers.managedControls;
@@ -63,6 +67,13 @@ const manual = {
   source: "manual",
   projectId: null,
   manageable: true,
+};
+const outbound = {
+  mode: "managed",
+  ip: "1.1.1.1",
+  countryCode: "AU",
+  proxy: null,
+  revision: "c".repeat(64),
 };
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -108,6 +119,13 @@ beforeEach(() => {
   api.managedRuntimeCredential.mockResolvedValue(credential);
   api.managedWorkloads.mockResolvedValue({ workloads: [], truncated: false });
   api.getServerNetworkSettings.mockResolvedValue(network);
+  api.managedOutbound.mockResolvedValue(outbound);
+  api.managedOutboundOptions.mockResolvedValue({
+    ips: [
+      { ip: "1.1.1.1", countryCode: "AU" },
+      { ip: "8.8.4.4", countryCode: "US" },
+    ],
+  });
   api.managedInfo.mockResolvedValue({
     workspaceId: "vm-a",
     image: "oblien/docker:29",
@@ -318,6 +336,88 @@ it("shows wildcard ingress accurately and keeps unavailable rules read-only", as
   expect(host.textContent).toContain(copy.network.allPorts);
   expect(host.querySelector("textarea")!.disabled).toBe(true);
   expect(host.textContent).toContain(copy.network.rulesUnavailable);
+});
+async function select(label: string, option: string) {
+  const node = [...host.querySelectorAll("label")].find((node) => node.textContent === label)!;
+  await act(async () => document.getElementById(node.htmlFor)!.click());
+  const choice = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((node) =>
+    node.textContent?.trim().startsWith(option),
+  )!;
+  expect(choice, option).toBeDefined();
+  await act(async () => choice.click());
+}
+const field = (label: string) => {
+  const node = [...host.querySelectorAll("label")].find((node) => node.textContent === label)!;
+  return document.getElementById(node.htmlFor) as HTMLInputElement;
+};
+it("applies a selected outbound IP once and keeps the current IP until provider confirmation", async () => {
+  const pending = deferred<typeof outbound>();
+  api.setManagedOutbound.mockReturnValue(pending.promise);
+  await render(<ManagedServerOutbound serverId="server-a" />);
+  expect(api.setManagedOutbound).not.toHaveBeenCalled();
+  await select(copy.outbound.address, "8.8.4.4 · US");
+  await act(async () => button(copy.outbound.apply).click());
+  await submit(host.querySelector("form")!);
+  expect(api.setManagedOutbound).toHaveBeenCalledExactlyOnceWith("server-a", {
+    mode: "managed",
+    ip: "8.8.4.4",
+    expectedRevision: outbound.revision,
+    confirm: true,
+  });
+  expect(host.textContent).toContain("1.1.1.1");
+  expect(button(copy.outbound.applying).disabled).toBe(true);
+  await act(async () => pending.resolve({ ...outbound, ip: "8.8.4.4", revision: "d".repeat(64) }));
+  expect(host.textContent).toContain(copy.saved);
+});
+it("requires both proxy credentials, clears them after a failure, and retains the non-secret draft", async () => {
+  api.setManagedOutbound.mockRejectedValue(new Error("Proxy preflight failed"));
+  await render(<ManagedServerOutbound serverId="server-a" />);
+  await select(copy.outbound.connection, copy.outbound.custom);
+  await fill(field(copy.outbound.host), "8.8.8.8");
+  await act(async () => host.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  await fill(field(copy.outbound.username), "proxy-user");
+  expect(button(copy.outbound.apply).disabled).toBe(true);
+  await fill(field(copy.outbound.password), "private-proxy-password");
+  await submit(host.querySelector("form")!);
+  expect(api.setManagedOutbound).toHaveBeenCalledExactlyOnceWith("server-a", {
+    mode: "custom",
+    proxy: {
+      host: "8.8.8.8",
+      port: 8080,
+      protocol: "http",
+      username: "proxy-user",
+      password: "private-proxy-password",
+    },
+    expectedRevision: outbound.revision,
+    confirm: true,
+  });
+  expect(field(copy.outbound.password).value).toBe("");
+  expect(field(copy.outbound.host).value).toBe("8.8.8.8");
+  expect(host.textContent).toContain("Proxy preflight failed");
+  expect(host.textContent).not.toContain(copy.saved);
+  expect(api.updateServerNetworkSettings).not.toHaveBeenCalled();
+});
+it("clears the outbound draft on an account switch and ignores the previous request", async () => {
+  const pending = deferred<typeof outbound>();
+  api.setManagedOutbound.mockReturnValue(pending.promise);
+  await render(<ManagedServerOutbound serverId="server-a" />);
+  await select(copy.outbound.address, "8.8.4.4 · US");
+  await submit(host.querySelector("form")!);
+  await render(<ManagedServerOutbound serverId="server-b" />, "account-b");
+  await act(async () => pending.resolve({ ...outbound, ip: "8.8.4.4" }));
+  expect(host.textContent).not.toContain(copy.saved);
+  expect(api.managedOutbound).toHaveBeenLastCalledWith("server-b");
+});
+it("offers a read-only retry after a failed pool read without hiding custom proxy controls", async () => {
+  api.managedOutboundOptions.mockRejectedValueOnce(new Error("Connection lost"));
+  await render(<ManagedServerOutbound serverId="server-a" />);
+  expect(host.textContent).toContain(copy.outbound.optionsFailed);
+  await act(async () => button(copy.retry).click());
+  expect(host.textContent).not.toContain(copy.outbound.optionsFailed);
+  expect(api.managedOutboundOptions).toHaveBeenCalledTimes(2);
+  expect(api.setManagedOutbound).not.toHaveBeenCalled();
+  await select(copy.outbound.connection, copy.outbound.custom);
+  expect(field(copy.outbound.host)).toBeDefined();
 });
 it("lists native workloads without offering direct controls for managed application/system processes", async () => {
   api.managedWorkloads.mockResolvedValue({
