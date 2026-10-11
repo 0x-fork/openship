@@ -11,6 +11,7 @@ import DeploymentProcessing from "./DeploymentProcessing";
 const mocks = vi.hoisted(() => ({
   info: vi.fn(), push: vi.fn(), stop: vi.fn(), ready: vi.fn(), respond: vi.fn(),
   showModal: vi.fn(), hideModal: vi.fn(), showToast: vi.fn(), pricing: vi.fn(),
+  portReview: vi.fn((_props: unknown) => null),
 }));
 let deployment: Pick<DeploymentContextType, "config" | "state" | "deploymentStatus" | "stopDeployment" | "onTerminalReady" | "respondToPrompt" | "steps" | "terminalRef">;
 vi.mock("@/context/DeploymentContext", () => ({ useDeployment: () => deployment }));
@@ -22,7 +23,9 @@ vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => m
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/lib/api", () => ({ projectsApi: { getInfo: mocks.info }, deployApi: {} }));
-vi.mock("./PortAdvisoryModal", () => ({ PortAdvisoryModal: () => null }));
+vi.mock("./PortAdvisoryModal", () => ({
+  PortAdvisoryModal: (props: unknown) => mocks.portReview(props),
+}));
 vi.mock("@/components/i18n-provider", () => ({
   useI18n: () => ({ t: baseDictionary }),
   interpolate: (text: string, values: Record<string, string>) => text.replace(/\{(\w+)\}/g, (_, key) => values[key] ?? key),
@@ -110,6 +113,21 @@ function panel() { return host.querySelector<HTMLElement>('[role="tabpanel"][ari
 async function select(label: string) { await act(async () => tab(label).click()); }
 
 describe("build pages", () => {
+  it("defers port review until the partial deployment decision has been resolved", async () => {
+    deployment.state.decisionPending = true;
+    deployment.state.portCheck = [
+      { port: 4010, serviceId: "svc-api", checked: true, listening: true, loopbackOnly: true },
+    ];
+    await render();
+    expect(mocks.portReview).not.toHaveBeenCalled();
+
+    deployment.state.decisionPending = false;
+    await render();
+    expect(mocks.portReview).toHaveBeenCalledWith(
+      expect.objectContaining({ checks: deployment.state.portCheck }),
+    );
+  });
+
   it.each([true, false])(
     "shows Action required for a loopback bind without holding the live deployment (Compose: %s)",
     async (compose) => {

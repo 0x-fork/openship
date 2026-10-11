@@ -312,7 +312,7 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
           </div>
         ) : null}
 
-        {deploymentStatus === "ready" && (
+        {deploymentStatus === "ready" && !showDecision && (
           <PortAdvisoryModal
             key={state.deploymentId}
             deploymentId={state.deploymentId}
