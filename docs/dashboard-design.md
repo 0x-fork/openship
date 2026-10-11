@@ -80,6 +80,10 @@ check retryable before starting the move.
 - Single-app deployment progress uses 32px phase markers with 18–20px glyphs. Keep the
   connectors centered and separated from each marker by the card-colored ring, with the
   current phase and step count underneath.
+- A host-port conflict uses the shared deployment decision dialog. When the API offers a
+  verified alternative, show its exact port as the primary action and explain that choosing
+  it keeps the existing service running. Keep stop actions explicitly destructive; a changed
+  suggestion requires a new choice. Reuse the same prompt after refresh.
 - Connected and managed destinations use the same searchable server rows; managed rows show
   project count and purchased capacity in place of an SSH address. Keep the add-server action
   inside the multi-server menu and beside the single-server summary.

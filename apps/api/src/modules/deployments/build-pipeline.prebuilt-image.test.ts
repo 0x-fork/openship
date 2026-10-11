@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   ensureRoutingReady: vi.fn(),
   prepareTargetPinnedHostPorts: vi.fn(),
   allocateAndReservePinnedHostPort: vi.fn(),
+  suggestAlternativePinnedHostPort: vi.fn(),
   reserveTargetPinnedHostPort: vi.fn(),
   reserveVerifiedTargetPinnedHostPort: vi.fn(),
   convergeTargetHostPortClaims: vi.fn(),
@@ -109,6 +110,7 @@ vi.mock("@repo/adapters", () => {
     sharedMountExecutor: vi.fn(async () => null),
     resolveStaticOutputPath: (id: string) => id,
     ensurePortAvailable: vi.fn(async () => undefined),
+    isDockerHostPortAvailable: vi.fn(async () => true),
     allocateHostPort: vi.fn(async () => ({ port: 30_000, scanned: true })),
     pickHostPort: vi.fn(() => 30_000),
     edgeProxyFor: vi.fn(() => ({ listLoopbackUpstreamPortsStrict: vi.fn() })),
@@ -260,6 +262,8 @@ vi.mock("@repo/platform/engine/modules/deployments/pinned-host-ports", () => ({
   prepareTargetPinnedHostPorts: (...args: unknown[]) => mocks.prepareTargetPinnedHostPorts(...args),
   allocateAndReservePinnedHostPort: (...args: unknown[]) =>
     mocks.allocateAndReservePinnedHostPort(...args),
+  suggestAlternativePinnedHostPort: (...args: unknown[]) =>
+    mocks.suggestAlternativePinnedHostPort(...args),
   releaseNewPinnedHostPortClaims: vi.fn(async () => 0),
   findOwnedPinnedHostPort: vi.fn(() => undefined),
   reserveTargetPinnedHostPort: (...args: unknown[]) => mocks.reserveTargetPinnedHostPort(...args),
@@ -413,6 +417,7 @@ describe("single-app prebuilt release-image pipeline", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(ensurePortAvailable).mockReset().mockResolvedValue(undefined);
+    mocks.suggestAlternativePinnedHostPort.mockReset().mockResolvedValue(null);
     vi.mocked(shouldUseProjectServicePipeline).mockResolvedValue(false);
     vi.mocked(resolveProjectServicePreflightServices).mockResolvedValue([]);
     vi.mocked(isMultiServiceRuntime).mockReturnValue(false);
@@ -1096,6 +1101,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     );
     expect(ensurePortAvailable).toHaveBeenCalledExactlyOnceWith(
       resolvedPlatform.platform.executor, 30_000, expect.anything(), expect.any(Function),
+      expect.objectContaining({ suggestAlternative: expect.any(Function) }),
     );
     expect(mocks.convergeTargetHostPortClaimsUnlocked).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1110,6 +1116,56 @@ describe("single-app prebuilt release-image pipeline", () => {
     expect(mocks.convergeTargetHostPortClaimsUnlocked.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.onSuccess.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it("saves the selected host port for activation, routing and future redeploys", async () => {
+    mocks.suggestAlternativePinnedHostPort.mockImplementation(async (input) => ({
+      port: 20002,
+      apply: async () => {
+        input.onSelected({
+          ...input.allocation,
+          port: 20002,
+          claimWasCreated: true,
+          claim: { ...input.allocation.claim, port: 20002 },
+        });
+        return true;
+      },
+    }));
+    vi.mocked(ensurePortAvailable).mockImplementationOnce(
+      async (_executor, _port, _logger, _prompt, options) => {
+        const alternative = await options!.suggestAlternative!(new Set([30000]));
+        expect(mocks.deploy).not.toHaveBeenCalled();
+        expect(repos.project.update).not.toHaveBeenCalled();
+        expect(await alternative!.apply()).toBe(true);
+      },
+    );
+    mocks.getContainerInfo.mockResolvedValue({ ipAddress: "172.18.0.2", hostPort: 20002 });
+    mocks.runDeployPipeline.mockImplementationOnce(async (environment, input) => {
+      await environment.preflight(input.config, async () => "use_port:20002");
+      const result = await environment.activate(input.config, () => undefined);
+      const url = await environment.resolveTargetUrl(result.containerId, input.config.port);
+      return { status: "success", containerId: result.containerId, url };
+    });
+
+    await run(deployment(), { routeStrategy: "loopback-port", hostPort: 30000 });
+    await drainDeploymentExecutions();
+
+    expect(mocks.deploy).toHaveBeenCalledWith(
+      expect.objectContaining({ port: 8080, hostPort: 20002 }),
+      expect.any(Function),
+    );
+    expect(repos.project.update).toHaveBeenCalledWith("project-1", { hostPort: 20002 });
+    expect(mocks.reserveVerifiedTargetPinnedHostPort).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ port: 20002, containerPort: 8080 }),
+      expect.any(Function),
+    );
+    expect(mocks.convergeTargetHostPortClaimsUnlocked).toHaveBeenCalledWith(
+      expect.objectContaining({
+        desiredPublishes: [{ serviceId: null, containerPort: 8080, hostPort: 20002 }],
+      }),
+    );
+    expect(mocks.onSuccess).toHaveBeenCalledOnce();
   });
 
   it.each([
