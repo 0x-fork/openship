@@ -274,9 +274,10 @@
     "selectAll": "Tümünü seç",
     "includeFile": "İş akışını dahil et",
     "selectedFiles": "{count} seçildi · Eklenmiş iş akışları ayarlarını korur.",
-    "sharedSettings": "Çalıştırıcı ve bildirim ayarları seçili tüm dosyalara uygulanır. Tetikleyiciler solda gösterilen dosyaya aittir.",
+    "sharedSettings": "Çalıştırıcı ve bildirim ayarları seçilen tüm dosyalara uygulanır.",
     "saveWorkflows": "{count} iş akışını kaydet",
-    "fileLimit": "Her içe aktarmada en fazla 50 dosya seçin."
+    "fileLimit": "Her içe aktarmada en fazla 50 dosya seçin.",
+    "triggerScope": "Her iş akışı kendi tetikleyicilerini korur. Değişiklikler yalnızca bu dosyaya uygulanır."
   },
   "editor": {
     "setupHint": "İş akışınızı oluşturun, ardından nasıl ve nerede çalışacağını seçin.",

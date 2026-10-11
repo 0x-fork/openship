@@ -274,9 +274,10 @@
     "selectAll": "Select all",
     "includeFile": "Include workflow",
     "selectedFiles": "{count} selected · Already added workflows keep their settings.",
-    "sharedSettings": "Runner and notification settings apply to all selected files. Triggers belong to the file shown on the left.",
+    "sharedSettings": "Runner and notification settings apply to all selected files.",
     "saveWorkflows": "Save {count} workflows",
-    "fileLimit": "Select up to 50 files per import."
+    "fileLimit": "Select up to 50 files per import.",
+    "triggerScope": "Each workflow keeps its own triggers. Edits apply only to this file."
   },
   "editor": {
     "setupHint": "Build your workflow, then choose how and where it runs.",

@@ -95,7 +95,7 @@ export async function completeActionRun(run: ActionRun, notify = true): Promise<
     deliveries.push(
       await notification.prepare({
         ...input,
-        eventType: `job_run.${state === "success" ? "succeeded" : "failed"}`,
+        eventType: state === "success" ? "job_run.succeeded" : "job_run.failed",
         payload: { ...input.payload, jobName: sourceJob.label, jobKey: sourceJob.key },
         ...(config?.channels.length && {
           destinations: { channelIds: config.states.includes(state) ? config.channels : [] },

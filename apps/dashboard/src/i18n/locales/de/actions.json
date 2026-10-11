@@ -274,9 +274,10 @@
     "selectAll": "Alle auswählen",
     "includeFile": "Workflow einschließen",
     "selectedFiles": "{count} ausgewählt · Vorhandene Workflows behalten ihre Einstellungen.",
-    "sharedSettings": "Runner- und Benachrichtigungseinstellungen gelten für alle ausgewählten Dateien. Auslöser gehören zur links angezeigten Datei.",
+    "sharedSettings": "Runner- und Benachrichtigungseinstellungen gelten für alle ausgewählten Dateien.",
     "saveWorkflows": "{count} Workflows speichern",
-    "fileLimit": "Bis zu 50 Dateien pro Import auswählen."
+    "fileLimit": "Bis zu 50 Dateien pro Import auswählen.",
+    "triggerScope": "Jeder Workflow behält seine eigenen Auslöser. Änderungen gelten nur für diese Datei."
   },
   "editor": {
     "setupHint": "Erstelle deinen Workflow und wähle, wie und wo er ausgeführt wird.",

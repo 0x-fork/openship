@@ -274,9 +274,10 @@
     "selectAll": "Tout sélectionner",
     "includeFile": "Inclure le workflow",
     "selectedFiles": "{count} sélectionnés · Les workflows déjà ajoutés conservent leurs réglages.",
-    "sharedSettings": "Les paramètres des runners et des notifications s’appliquent à tous les fichiers sélectionnés. Les déclencheurs concernent le fichier affiché à gauche.",
+    "sharedSettings": "Les paramètres des exécuteurs et des notifications s’appliquent à tous les fichiers sélectionnés.",
     "saveWorkflows": "Enregistrer {count} workflows",
-    "fileLimit": "Sélectionnez jusqu’à 50 fichiers par import."
+    "fileLimit": "Sélectionnez jusqu’à 50 fichiers par import.",
+    "triggerScope": "Chaque workflow conserve ses propres déclencheurs. Les modifications concernent uniquement ce fichier."
   },
   "editor": {
     "setupHint": "Créez votre workflow, puis choisissez comment et où il s’exécute.",

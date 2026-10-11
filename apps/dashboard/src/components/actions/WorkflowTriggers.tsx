@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Icon, type IconName } from "@repo/ui/icons";
 import { useI18n } from "@/components/i18n-provider";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -34,6 +34,7 @@ export function WorkflowTriggers({
   const { t } = useI18n();
   const a = t.actions,
     c = a.integration;
+  const prefix = useId();
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<WorkflowEvent | null>(null);
   let triggers: Record<string, unknown> = {};
@@ -111,6 +112,31 @@ export function WorkflowTriggers({
           const enabled = Object.hasOwn(triggers, event),
             config = object(triggers[event]),
             open = enabled && expanded === event;
+          const filters: Array<[string, string]> = [
+            ["branches", c.branches],
+            ["branches-ignore", `${c.branches} (${c.exclude})`],
+            ["paths", c.paths],
+            ["paths-ignore", `${c.paths} (${c.exclude})`],
+            ["tags", c.tags],
+            ["tags-ignore", `${c.tags} (${c.exclude})`],
+            ["types", c.eventTypes],
+          ];
+          const conditions = enabled
+            ? filters.flatMap(([key, label]) => {
+                const values = config[key];
+                return Array.isArray(values) && values.length
+                  ? [{ label, value: values.map(String).join(", ") }]
+                  : [];
+              })
+            : [];
+          if (enabled && event === "schedule" && Array.isArray(triggers[event])) {
+            const schedules = triggers[event]
+              .map((value) => object(value).cron)
+              .filter((cron): cron is string => typeof cron === "string");
+            if (schedules.length)
+              conditions.push({ label: `${c.cron} (UTC)`, value: schedules.join(", ") });
+          }
+          const summaryId = `${prefix}-${event}-conditions`;
           const toggle = (checked: boolean) => {
             change(
               event,
@@ -126,9 +152,29 @@ export function WorkflowTriggers({
                   className="flex min-w-0 flex-1 items-center gap-2.5 text-start focus-visible:outline-2 focus-visible:outline-ring"
                   onClick={() => (enabled ? setExpanded(open ? null : event) : toggle(true))}
                   aria-expanded={open}
+                  aria-label={label}
+                  aria-describedby={!open && conditions.length ? summaryId : undefined}
                 >
                   <Icon name={icon} className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="flex-1 text-sm font-medium">{label}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium">{label}</span>
+                    {!open && conditions.length > 0 && (
+                      <span
+                        id={summaryId}
+                        className="mt-0.5 block truncate text-xs text-muted-foreground"
+                        title={conditions
+                          .map(({ label, value }) => `${label}: ${value}`)
+                          .join(" · ")}
+                      >
+                        {conditions.map(({ label, value }, index) => (
+                          <span key={label}>
+                            {index > 0 && " · "}
+                            {label}: <bdi dir="ltr">{value}</bdi>
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </span>
                   {enabled && (
                     <Icon
                       name="chevron-down"

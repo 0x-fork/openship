@@ -108,6 +108,14 @@ async function selectRunner(name = "Linux runner") {
   await act(async () => checkbox(name).click());
   await click("Use selected runners");
 }
+async function chooseTriggerFile(name: string) {
+  await click("Workflow file");
+  const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (option) => option.textContent?.startsWith(name),
+  )!;
+  await act(async () => option.click());
+  await preview();
+}
 const checkbox = (name: string) =>
   document.querySelector<HTMLButtonElement>(`[role="switch"][aria-label="${name}"]`) ??
   [...document.querySelectorAll<HTMLLabelElement>("label")]
@@ -365,6 +373,142 @@ describe("shared workflow setup", () => {
       expect.objectContaining({ path: files[0]!.path, source }),
       expect.objectContaining({ path: files[1]!.path, source: null }),
     ]);
+    expect(h.write).not.toHaveBeenCalled();
+  });
+
+  it.each([".github/workflows", ".openship/workflows"])(
+    "keeps manual, main-only push and PR triggers separate while editing a batch from Run settings (%s)",
+    async (directory) => {
+      const files = ["manual", "push", "pr"].map((name) => ({
+        path: `${directory}/${name}.yml`,
+        name: `${name}.yml`,
+      }));
+      const sources = [
+        "on: workflow_dispatch",
+        "on:\n  push:\n    branches: [main]\n    paths: [src/**]",
+        "on: pull_request",
+      ].map((trigger) => source.replace("on: [push, workflow_dispatch]", trigger));
+      h.discover.mockResolvedValue(files);
+      h.source.mockImplementation(async ({ path }) => ({
+        source: sources[files.findIndex((file) => file.path === path)],
+        sha: `${path}-sha`,
+        plan,
+        error: null,
+      }));
+      await render();
+      await fill("Repository", "acme/app");
+      await preview();
+      await click("Select all");
+      await click("Continue");
+      await selectRunner();
+      if (directory === ".github/workflows")
+        await act(async () => checkbox("Allow workflows in this repository").click());
+      const expectEvents = (manual: boolean, push: boolean, pr: boolean) => {
+        for (const [label, checked] of [
+          ["Manual & Jobs", manual],
+          ["Git push", push],
+          ["Pull request", pr],
+        ] as const)
+          expect(checkbox(label).getAttribute("aria-checked")).toBe(String(checked));
+      };
+      expectEvents(true, false, false);
+      await chooseTriggerFile("push.yml");
+      expectEvents(false, true, false);
+      expect(button("Git push").textContent).toContain("Branches: main");
+      expect(button("Git push").textContent).toContain("Paths: src/**");
+      await click("Git push");
+      await fill("Branches", "release/**");
+      await act(async () =>
+        document
+          .querySelector<HTMLInputElement>('input[aria-label="Branches"]')!
+          .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+      );
+      await preview();
+      await chooseTriggerFile("pr.yml");
+      expectEvents(false, false, true);
+      await chooseTriggerFile("manual.yml");
+      expectEvents(true, false, false);
+      await chooseTriggerFile("push.yml");
+      expect(button("Git push").textContent).toContain("Branches: main, release/**");
+      await click("Continue");
+      await click("Save 3 workflows");
+      await click(directory === ".github/workflows" ? "Commit and save" : "Save Openship copy");
+      const inputs = h.importWorkflows.mock.calls[0]![0];
+      expect(inputs.map((input: { path: string }) => input.path)).toEqual(
+        files.map((file) => file.path),
+      );
+      let changed: string;
+      if (directory === ".github/workflows") {
+        expect(h.write).toHaveBeenCalledOnce();
+        expect(h.write.mock.calls[0]![0].path).toBe(files[1]!.path);
+        changed = h.write.mock.calls[0]![0].source;
+        expect(inputs.map((input: { source: string | null }) => input.source)).toEqual([
+          null,
+          null,
+          null,
+        ]);
+      } else {
+        expect(h.write).not.toHaveBeenCalled();
+        expect(inputs[0].source).toBeNull();
+        expect(inputs[2].source).toBeNull();
+        changed = inputs[1].source;
+      }
+      expect(parse(changed).on).toEqual({
+        push: { branches: ["main", "release/**"], paths: ["src/**"] },
+      });
+      expect(parse(changed).jobs).toEqual(parse(source).jobs);
+    },
+  );
+
+  it("keeps the file picker available without showing another file's triggers during loading", async () => {
+    await selectFiles();
+    await click("Run settings");
+    let resolveSource!: (value: unknown) => void;
+    h.source.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSource = resolve;
+        }),
+    );
+    await chooseTriggerFile("test.yml");
+    expect(button("Workflow file").textContent).toContain("test.yml");
+    expect(
+      document.querySelector('[role="status"][aria-label="Loading workflow…"]'),
+    ).not.toBeNull();
+    expect(document.querySelector('[role="switch"][aria-label="Git push"]')).toBeNull();
+    await act(async () =>
+      resolveSource({
+        source: source.replace("on: [push, workflow_dispatch]", "on: pull_request"),
+        sha: "test-sha",
+        plan,
+        error: null,
+      }),
+    );
+    await preview();
+    expect(checkbox("Git push").getAttribute("aria-checked")).toBe("false");
+    expect(checkbox("Pull request").getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("opens Run settings for an included file after previewing an excluded one", async () => {
+    const files = await selectFiles();
+    await act(async () =>
+      document
+        .querySelector<HTMLButtonElement>(
+          '[role="checkbox"][aria-label="Include workflow: build.yml"]',
+        )!
+        .click(),
+    );
+    await click("build.yml");
+    await preview();
+    await click("Run settings");
+    await preview();
+    expect(host.textContent).toContain(files[1]!.path);
+    expect(host.textContent).not.toContain(files[0]!.path);
+    await act(async () => checkbox("Allow workflows in this repository").click());
+    await click("Save workflow");
+    expect(
+      h.importWorkflows.mock.calls[0]![0].map((input: { path: string }) => input.path),
+    ).toEqual([files[1]!.path]);
     expect(h.write).not.toHaveBeenCalled();
   });
 

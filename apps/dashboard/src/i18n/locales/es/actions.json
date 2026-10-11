@@ -274,9 +274,10 @@
     "selectAll": "Seleccionar todos",
     "includeFile": "Incluir flujo",
     "selectedFiles": "{count} seleccionados · Los flujos ya añadidos conservan su configuración.",
-    "sharedSettings": "Los ajustes de ejecutores y notificaciones se aplican a todos los archivos seleccionados. Los activadores pertenecen al archivo de la izquierda.",
+    "sharedSettings": "La configuración de ejecutores y notificaciones se aplica a todos los archivos seleccionados.",
     "saveWorkflows": "Guardar {count} flujos",
-    "fileLimit": "Selecciona hasta 50 archivos por importación."
+    "fileLimit": "Selecciona hasta 50 archivos por importación.",
+    "triggerScope": "Cada flujo conserva sus propios activadores. Los cambios solo afectan a este archivo."
   },
   "editor": {
     "setupHint": "Crea tu workflow y elige cómo y dónde se ejecuta.",

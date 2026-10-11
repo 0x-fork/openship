@@ -274,9 +274,10 @@
     "selectAll": "全选",
     "includeFile": "包含工作流",
     "selectedFiles": "已选择 {count} 个 · 已添加的工作流保留原有设置。",
-    "sharedSettings": "运行器和通知设置适用于所有选定文件。触发器仅适用于左侧显示的文件。",
+    "sharedSettings": "运行器和通知设置应用于所有选中的文件。",
     "saveWorkflows": "保存 {count} 个工作流",
-    "fileLimit": "每次最多选择 50 个文件。"
+    "fileLimit": "每次最多选择 50 个文件。",
+    "triggerScope": "每个工作流保留各自的触发条件。修改仅应用于此文件。"
   },
   "editor": {
     "setupHint": "创建工作流，然后选择运行方式和运行位置。",

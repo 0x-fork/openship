@@ -274,9 +274,10 @@
     "selectAll": "Selecionar todos",
     "includeFile": "Incluir workflow",
     "selectedFiles": "{count} selecionados · Workflows já adicionados mantêm suas configurações.",
-    "sharedSettings": "As configurações de runners e notificações aplicam-se a todos os ficheiros selecionados. Os gatilhos pertencem ao ficheiro à esquerda.",
+    "sharedSettings": "As configurações de executores e notificações se aplicam a todos os arquivos selecionados.",
     "saveWorkflows": "Salvar {count} workflows",
-    "fileLimit": "Selecione até 50 arquivos por importação."
+    "fileLimit": "Selecione até 50 arquivos por importação.",
+    "triggerScope": "Cada fluxo mantém seus próprios gatilhos. As alterações se aplicam apenas a este arquivo."
   },
   "editor": {
     "setupHint": "Crie seu workflow e escolha como e onde ele será executado.",

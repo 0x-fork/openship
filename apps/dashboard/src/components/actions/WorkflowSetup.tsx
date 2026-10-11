@@ -483,6 +483,17 @@ function SetupForm({
     setSelection(selection);
     setStepToReveal(null);
   };
+  const previewFile = (nextPath: string) => {
+    setFileSelection({ scope: repositoryKey, paths: selectedPaths });
+    setPath(nextPath);
+    selectWorkflowItem(null);
+  };
+  const showSettings = (next: typeof step) => {
+    if (next === "rules" && selectedPaths.length && !selectedPaths.includes(path))
+      previewFile(selectedPaths[0]!);
+    setStep(next);
+    if (next === "checks") setReviewedCompletion(true);
+  };
   const changeExpandedSteps = (expanded: WorkflowExpandedSteps) => {
     setExpandedSteps(expanded);
     // An inline reorder/removal must not leave a different step highlighted on the canvas.
@@ -604,10 +615,7 @@ function SetupForm({
                         },
                       ]}
                       value={step}
-                      onChange={(next) => {
-                        setStep(next);
-                        if (next === "checks") setReviewedCompletion(true);
-                      }}
+                      onChange={showSettings}
                       idPrefix={`${prefix}-settings`}
                       fullWidth
                       size="sm"
@@ -715,14 +723,7 @@ function SetupForm({
                                             selectWorkflowItem(null);
                                           }
                                         }}
-                                        onPreview={(path) => {
-                                          setFileSelection({
-                                            scope: repositoryKey,
-                                            paths: selectedPaths,
-                                          });
-                                          setPath(path);
-                                          selectWorkflowItem(null);
-                                        }}
+                                        onPreview={previewFile}
                                       />
                                     ) : files.data?.length ? (
                                       <CustomSelect
@@ -855,14 +856,63 @@ function SetupForm({
                         <p className="text-xs leading-relaxed text-muted-foreground">
                           {hasNative ? a.controller.labelsHint : a.destinationsHint}
                         </p>
-                        <WorkflowTriggers
-                          key={identity}
-                          source={source}
-                          onChange={setSource}
-                          standalone={standalone}
-                          embedded
-                          onEditYaml={() => setView("yaml")}
-                        />
+                        <div className="space-y-3">
+                          {!standalone && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-3">
+                                <span className="shrink-0 text-xs font-medium text-muted-foreground">
+                                  {a.workflowFile}
+                                </span>
+                                {selectedPaths.length > 1 ? (
+                                  <CustomSelect
+                                    aria-label={a.workflowFile}
+                                    variant="filled"
+                                    className="min-w-0 flex-1"
+                                    triggerClassName="bg-muted/60 hover:bg-muted"
+                                    value={path}
+                                    onChange={previewFile}
+                                    options={selectedPaths.map((path) => ({
+                                      value: path,
+                                      label:
+                                        files.data?.find((file) => file.path === path)?.name ??
+                                        path.split("/").pop()!,
+                                      description: path,
+                                    }))}
+                                  />
+                                ) : (
+                                  <code className="min-w-0 flex-1 truncate text-xs" title={path}>
+                                    {path}
+                                  </code>
+                                )}
+                              </div>
+                              {selectedPaths.length > 1 && (
+                                <p className="text-xs leading-relaxed text-muted-foreground">
+                                  {c.triggerScope}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          <ActionError message={file.error} onRetry={file.refresh} />
+                          {!standalone && !draft.initialized && !source.trim() && file.loading ? (
+                            <div role="status" aria-label={c.loading} className="space-y-2">
+                              {[0, 1, 2].map((row) => (
+                                <div
+                                  key={row}
+                                  className="h-10 animate-pulse rounded-xl bg-muted/30"
+                                />
+                              ))}
+                            </div>
+                          ) : (
+                            <WorkflowTriggers
+                              key={identity}
+                              source={source}
+                              onChange={setSource}
+                              standalone={standalone}
+                              embedded
+                              onEditYaml={() => setView("yaml")}
+                            />
+                          )}
+                        </div>
                         {!projectScoped && (
                           <details className="group space-y-3">
                             <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium">
@@ -976,11 +1026,7 @@ function SetupForm({
                   }
                   onClick={() => {
                     setSelection(null);
-                    if (step === "workflow") setStep("rules");
-                    else {
-                      setStep("checks");
-                      setReviewedCompletion(true);
-                    }
+                    showSettings(step === "workflow" ? "rules" : "checks");
                   }}
                 >
                   {c.continue}

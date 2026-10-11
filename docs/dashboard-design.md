@@ -120,6 +120,10 @@ Runner destinations, enabled state and project links apply to the selected files
 trigger edits belong to the previewed file. Review every changed file before a
 repository commit. Import files and links in one transaction; a retry reuses saved
 workflows and preserves their configuration.
+Keep the active workflow file visible beside its trigger controls, with a compact
+file selector for a batch. Switching files updates the canvas and trigger editor together;
+never present an unloaded file as having another file's conditions. Show branch, path,
+tag and event-type filters in collapsed trigger rows so their scope is visible immediately.
 Run settings uses compact trigger rows with shared switches and expandable controls.
 Branches, paths, tags and event types use filled add/remove chips; keep commas inside
 glob patterns literal. Include/exclude choices replace the opposite YAML filter.
