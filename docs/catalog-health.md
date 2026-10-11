@@ -1,0 +1,49 @@
+# Catalog images and repair
+
+Edit `packages/core/src/apps/catalog/<app>.json`, then run
+`bun run --cwd packages/core scripts/gen-catalog.ts`. The generated catalog is
+the GitHub overlay consumed by deployed instances; development uses its bundled
+copy. Existing installed services retain their saved configuration.
+
+The Catalog health workflow checks the registry manifests for all offered app
+and companion-service images daily and on catalog changes. It does not pull
+layers for the inventory check. A failed check means the image could not be
+verified from that runner; inspect the registry/network response before changing
+a template. It never changes customer services or automatically swaps registries.
+
+MinIO additionally runs on native Linux AMD64 and ARM64 runners. The smoke test
+uses the template's image, argv, readiness probe and bucket command. It verifies
+console access, authenticated S3 and an object surviving container replacement.
+Containers have no external network, capped CPU/RAM and disposable named volumes.
+Run it locally with `bun scripts/smoke-catalog-minio.ts` against your test Docker
+daemon. `CATALOG_TEST_PLATFORM` can select either architecture.
+
+The pinned Chainguard MinIO **development** image includes `sh` and `mc`, required
+by the setup hook. The distroless image is not a drop-in substitute. It runs as
+UID 65532: a populated volume from an older root-running distribution may require
+a reviewed ownership migration. Test upgrades on a backup/clone first. Do not
+recursively change production volume ownership as a generic repair step.
+
+## Existing failed installs
+
+From a checkout containing the updated catalog, set `OPENSHIP_URL` to the intended
+instance and `OPENSHIP_TOKEN` to a token authorized for the project. Preview:
+
+```sh
+bun scripts/catalog-image-repair.ts --project PROJECT_ID --service SERVICE_ID
+```
+
+Add `--apply` to repair a **failed single-service install without an active
+deployment**. The tool only accepts exact retired images listed in the template's
+`replacesImages`, sends an image-only update through the SDK, starts the normal
+deployment and waits for its result. It preserves environment, credentials,
+commands, volumes and routing; no database access or infrastructure credentials
+are needed. It refuses custom images, active projects and multi-service installs.
+If deployment fails, the new image remains saved for inspection/retry; the tool
+does not delete the data volume or cancel a deployment on an observation timeout.
+
+Running installations need their normal reviewed image-update flow, including
+storage compatibility and backup checks. A pinned digest fixes reproducibility,
+not upstream availability: keep the scheduled check enabled and review replacement
+images when the registry stops serving a digest. An Openship-maintained mirror
+can be introduced separately after its publishing and maintenance are established.

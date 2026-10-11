@@ -72,6 +72,8 @@ export interface TemplateServiceSpec {
   name: string;
   /** Upstream image to pull. Exactly one of `image`/`build` per service. */
   image?: string;
+  /** Exact retired defaults eligible for an explicit image-only repair. */
+  replacesImages?: readonly string[];
   /** Initial Cloud container limits, summed into the project's VM allocation.
    * Self-hosted defaults stay uncapped; explicit Cloud overrides are retained. */
   resources?: Readonly<ResourceValues>;
