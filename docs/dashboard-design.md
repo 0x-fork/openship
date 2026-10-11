@@ -135,6 +135,9 @@ Run settings leads with the required runner destination. Selecting an empty runn
 opens the shared runner form in a modal; saving returns to the same workflow draft and selects
 the new runner. Existing runners use a compact picker. Cloud funding opens the shared budget
 in a dialog; only hosted payment opens separately so the draft survives.
+Repository runner access remains an explicit required checkbox. When it is the only
+missing prerequisite, Continue or Save reveals, highlights and focuses the confirmation;
+no workflow is saved or committed until it is checked.
 Checks describes the existing automatic GitHub integration and offers optional workflow
 notifications through verified account channels. Keep outcomes and channel logos compact.
 Account-wide subscriptions and workflow choices share one durable delivery identity per run

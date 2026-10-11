@@ -392,6 +392,8 @@
     "githubHint": "Openship proporciona los runners; GitHub coordina trabajos, comprobaciones, secretos y artefactos. Los cambios del flujo se guardan en el repositorio.",
     "labelsHint": "Dirige los trabajos a estos runners con runs-on: [self-hosted, openship, linux] (o macos). Los trabajos con otras etiquetas conservan su destino actual.",
     "trust": "Permitir que los flujos de este repositorio usen estos ejecutores. Quien pueda editar sus archivos podrá ejecutar código en estos destinos y consumir su presupuesto de Actions.",
+    "trustTitle": "Acceso a ejecutores",
+    "trustRequired": "Confirma el acceso a los ejecutores para continuar.",
     "reusable": "Flujo reutilizable",
     "openGitHub": "Abrir en GitHub",
     "liveLogs": "Consulta los registros en directo en GitHub. Los registros completados aparecerán aquí."

@@ -392,6 +392,8 @@
     "githubHint": "Openship fournit les runners ; GitHub coordonne les jobs, les vérifications, les secrets et les artefacts. Les modifications du workflow sont enregistrées dans le dépôt.",
     "labelsHint": "Dirigez les jobs vers ces runners avec runs-on: [self-hosted, openship, linux] (ou macos). Les jobs avec d’autres étiquettes conservent leur destination actuelle.",
     "trust": "Autoriser les workflows de ce dépôt à utiliser ces runners. Toute personne pouvant modifier leurs fichiers pourra exécuter du code sur ces destinations et consommer leur budget Actions.",
+    "trustTitle": "Accès aux exécuteurs",
+    "trustRequired": "Confirmez l’accès aux exécuteurs pour continuer.",
     "reusable": "Workflow réutilisable",
     "openGitHub": "Ouvrir dans GitHub",
     "liveLogs": "Consultez les journaux en direct dans GitHub. Les journaux terminés apparaîtront ici."

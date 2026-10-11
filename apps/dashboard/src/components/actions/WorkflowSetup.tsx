@@ -126,6 +126,9 @@ function SetupForm({
     onBusyChange?.(mutation.busy);
   }, [mutation.busy, onBusyChange]);
   const [trusted, setTrusted] = useState(workflow?.controller === "github");
+  const [trustRequest, setTrustRequest] = useState(0);
+  const trustPanel = useRef<HTMLDivElement>(null);
+  const trustCheckbox = useRef<HTMLButtonElement>(null);
   const [step, setStep] = useState<"workflow" | "rules" | "checks">("workflow");
   const [standalone, setStandalone] = useState(!!workflow && !workflow.owner);
   const [repository, setRepository] = useState(
@@ -299,13 +302,16 @@ function SetupForm({
     (r) => r.kind === "cloud" && r.enabled && runnerIds.includes(r.id),
   );
   const differsFromRepository = original?.identity === identity && original.source !== source;
-  const canSave =
-    readySource &&
-    !!selectedPaths.length &&
-    !!name.trim() &&
-    !!runnerIds.length &&
-    (!hasNative || trusted) &&
-    !mutation.busy;
+  const needsTrust = hasNative && !trusted;
+  const trustInvalid = needsTrust && trustRequest > 0;
+  const canRequestSave =
+    readySource && !!selectedPaths.length && !!name.trim() && !!runnerIds.length && !mutation.busy;
+  const canSave = canRequestSave && !needsTrust;
+  useEffect(() => {
+    if (!trustInvalid || step !== "rules" || (selection && view !== "list")) return;
+    trustPanel.current?.scrollIntoView?.({ block: "center" });
+    trustCheckbox.current?.focus({ preventScroll: true });
+  }, [trustInvalid, trustRequest, step, selection, view]);
   const savedId = useRef(workflow?.id);
   const chooseStandalone = (value: boolean) => {
     setStandalone(value);
@@ -427,6 +433,10 @@ function SetupForm({
     onSaved(saved[0]!, saved);
   };
   const requestSave = async () => {
+    if (needsTrust && canRequestSave) {
+      requestRunnerTrust();
+      return;
+    }
     if (!canSave) return;
     const saved = await mutation.execute(async () => {
       const entries = await collectSubmission();
@@ -493,6 +503,11 @@ function SetupForm({
       previewFile(selectedPaths[0]!);
     setStep(next);
     if (next === "checks") setReviewedCompletion(true);
+  };
+  const requestRunnerTrust = () => {
+    selectWorkflowItem(null);
+    showSettings("rules");
+    setTrustRequest((request) => request + 1);
   };
   const changeExpandedSteps = (expanded: WorkflowExpandedSteps) => {
     setExpandedSteps(expanded);
@@ -985,12 +1000,49 @@ function SetupForm({
                           </details>
                         )}
                         {hasNative && (
-                          <label className="flex items-start gap-2 text-sm">
-                            <Checkbox checked={trusted} onCheckedChange={setTrusted} />
-                            <span className="text-xs leading-relaxed text-muted-foreground">
-                              {a.controller.trust}
-                            </span>
-                          </label>
+                          <div
+                            ref={trustPanel}
+                            className={`scroll-mt-20 space-y-2.5 rounded-xl p-3 transition-colors ${trustInvalid ? "bg-warning-bg ring-1 ring-warning-border" : "bg-muted/30"}`}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm font-medium">{a.controller.trustTitle}</span>
+                              {!trusted && (
+                                <span
+                                  className={`text-xs ${trustInvalid ? "text-warning" : "text-muted-foreground"}`}
+                                >
+                                  {a.completion.required}
+                                </span>
+                              )}
+                            </div>
+                            <label className="flex cursor-pointer items-start gap-2 text-sm">
+                              <Checkbox
+                                ref={trustCheckbox}
+                                checked={trusted}
+                                className={trustInvalid ? "ring-1 ring-warning" : undefined}
+                                onCheckedChange={(checked) => {
+                                  setTrusted(checked);
+                                  if (checked) setTrustRequest(0);
+                                }}
+                                aria-required
+                                aria-invalid={trustInvalid || undefined}
+                                aria-describedby={
+                                  trustInvalid ? `${prefix}-trust-error` : undefined
+                                }
+                              />
+                              <span className="text-xs leading-relaxed text-muted-foreground">
+                                {a.controller.trust}
+                              </span>
+                            </label>
+                            {trustInvalid && (
+                              <p
+                                id={`${prefix}-trust-error`}
+                                role="alert"
+                                className="text-xs font-medium text-warning"
+                              >
+                                {a.controller.trustRequired}
+                              </p>
+                            )}
+                          </div>
                         )}
                         {!standalone && hasIndependent && (
                           <label className="flex items-start gap-2 text-sm">
@@ -1020,12 +1072,13 @@ function SetupForm({
               (step === "rules" && !reviewedCompletion) ? (
                 <Button
                   className="w-full"
-                  disabled={
-                    !readySource ||
-                    (step === "rules" && (!runnerIds.length || (hasNative && !trusted)))
-                  }
+                  disabled={!readySource || (step === "rules" && !runnerIds.length)}
                   onClick={() => {
-                    setSelection(null);
+                    if (step === "rules" && needsTrust) {
+                      requestRunnerTrust();
+                      return;
+                    }
+                    selectWorkflowItem(null);
                     showSettings(step === "workflow" ? "rules" : "checks");
                   }}
                 >
@@ -1033,7 +1086,11 @@ function SetupForm({
                   <Icon name="arrow-right" className="rtl:rotate-180" />
                 </Button>
               ) : (
-                <Button className="w-full" disabled={!canSave} onClick={() => void requestSave()}>
+                <Button
+                  className="w-full"
+                  disabled={!canRequestSave}
+                  onClick={() => void requestSave()}
+                >
                   {mutation.busy
                     ? a.saving
                     : selectedPaths.length > 1

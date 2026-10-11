@@ -392,6 +392,8 @@
     "githubHint": "Openship provides the runners; GitHub coordinates jobs, Checks, secrets and artifacts. Workflow edits are committed to the repository.",
     "labelsHint": "Route jobs to these runners with runs-on: [self-hosted, openship, linux] (or macos). Jobs with other labels keep their existing destination.",
     "trust": "Allow workflows in this repository to use these runners. Anyone who can change its workflow files can execute code on these destinations and use their Actions budget.",
+    "trustTitle": "Runner access",
+    "trustRequired": "Confirm runner access to continue.",
     "reusable": "Reusable workflow",
     "openGitHub": "Open in GitHub",
     "liveLogs": "Watch live logs in GitHub. Completed logs appear here."

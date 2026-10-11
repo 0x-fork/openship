@@ -392,6 +392,8 @@
     "githubHint": "O Openship fornece os runners; o GitHub coordena tarefas, verificações, segredos e artefatos. As alterações do workflow são salvas no repositório.",
     "labelsHint": "Direcione tarefas a estes runners com runs-on: [self-hosted, openship, linux] (ou macos). Tarefas com outros rótulos mantêm o destino atual.",
     "trust": "Permitir que os fluxos deste repositório usem estes runners. Quem puder editar os ficheiros poderá executar código nestes destinos e consumir o orçamento de Actions.",
+    "trustTitle": "Acesso aos executores",
+    "trustRequired": "Confirme o acesso aos executores para continuar.",
     "reusable": "Fluxo reutilizável",
     "openGitHub": "Abrir no GitHub",
     "liveLogs": "Veja os registos em direto no GitHub. Os registos concluídos aparecem aqui."

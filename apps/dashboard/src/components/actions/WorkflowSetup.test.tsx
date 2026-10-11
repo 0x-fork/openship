@@ -121,6 +121,18 @@ const checkbox = (name: string) =>
   [...document.querySelectorAll<HTMLLabelElement>("label")]
     .find((label) => label.textContent?.startsWith(name))!
     .querySelector<HTMLButtonElement>('[role="checkbox"]')!;
+function expectRunnerTrustPrompt() {
+  const consent = checkbox("Allow workflows in this repository");
+  expect(consent.getAttribute("aria-checked")).toBe("false");
+  expect(consent.getAttribute("aria-invalid")).toBe("true");
+  expect(document.activeElement).toBe(consent);
+  expect(document.getElementById(consent.getAttribute("aria-describedby")!)?.textContent).toBe(
+    "Confirm runner access to continue.",
+  );
+  expect(h.save).not.toHaveBeenCalled();
+  expect(h.importWorkflows).not.toHaveBeenCalled();
+  expect(h.write).not.toHaveBeenCalled();
+}
 async function fill(label: string, text: string) {
   const input =
     document.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`) ??
@@ -762,8 +774,13 @@ describe("shared workflow setup", () => {
     expect(button("Openship Actions")).toBeUndefined();
     await click("Continue");
     await selectRunner();
-    expect(button("Continue").disabled).toBe(true);
+    expect(button("Continue").disabled).toBe(false);
+    await click("Continue");
+    expect(button("Run settings").getAttribute("aria-selected")).toBe("true");
+    expectRunnerTrustPrompt();
     await act(async () => checkbox("Allow workflows in this repository").click());
+    expect(checkbox("Allow workflows in this repository").hasAttribute("aria-invalid")).toBe(false);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
     await click("Continue");
     await click("Save workflow");
     expect(h.importWorkflows).toHaveBeenCalledWith([
@@ -774,6 +791,23 @@ describe("shared workflow setup", () => {
       }),
     ]);
     expect(h.write).not.toHaveBeenCalled();
+  });
+  it("returns from Checks to the required runner confirmation before saving", async () => {
+    await repositoryWorkflow();
+    await render();
+    await fill("Repository", "acme/app");
+    await preview();
+    await click("Continue");
+    await selectRunner();
+    await click("Checks");
+    await click("Save workflow");
+    expect(button("Run settings").getAttribute("aria-selected")).toBe("true");
+    expectRunnerTrustPrompt();
+    await act(async () => checkbox("Allow workflows in this repository").click());
+    await click("Save workflow");
+    expect(h.importWorkflows).toHaveBeenCalledWith([
+      expect.objectContaining({ repositoryRunnerConsent: true, runnerIds: ["linux"] }),
+    ]);
   });
   it("discovers reusable repository workflows even when the saved controller was independent", async () => {
     await repositoryWorkflow("openship");
@@ -789,7 +823,8 @@ describe("shared workflow setup", () => {
     expect(host.textContent).toContain("gate");
     expect(button("GitHub Actions")).toBeUndefined();
     await click("Continue");
-    expect(button("Save workflow").disabled).toBe(true);
+    await click("Save workflow");
+    expectRunnerTrustPrompt();
     await act(async () => checkbox("Allow workflows in this repository").click());
     await click("Save workflow");
     expect(h.save).toHaveBeenCalledWith(
@@ -812,7 +847,8 @@ describe("shared workflow setup", () => {
     expect(h.preview).toHaveBeenLastCalledWith(source, ".github/workflows/ci.yml");
     await click("Continue");
     await selectRunner();
-    expect(button("Continue").disabled).toBe(true);
+    await click("Continue");
+    expectRunnerTrustPrompt();
   });
   it("requires renewed consent when the selected repository or runners change", async () => {
     await repositoryWorkflow();
@@ -821,14 +857,16 @@ describe("shared workflow setup", () => {
     await fill("Repository", "acme/other");
     await preview();
     await click("Continue");
-    expect(button("Save workflow").disabled).toBe(true);
+    await click("Save workflow");
+    expectRunnerTrustPrompt();
     await act(async () => checkbox("Allow workflows in this repository").click());
     expect(button("Save workflow").disabled).toBe(false);
     await click("Allowed runners");
     await act(async () => checkbox("Linux runner").click());
     await act(async () => checkbox("Linux runner").click());
     await click("Use selected runners");
-    expect(button("Save workflow").disabled).toBe(true);
+    await click("Save workflow");
+    expectRunnerTrustPrompt();
   });
   it("preserves edits after a concurrent GitHub change and never saves a false repository reference", async () => {
     h.write.mockRejectedValueOnce(
