@@ -20,10 +20,11 @@ type workerState struct {
 }
 
 type workerSnapshot struct {
-	State   string            `json:"state"`
-	Events  []json.RawMessage `json:"events"`
-	HasMore bool              `json:"hasMore"`
-	Result  *jobResult        `json:"result,omitempty"`
+	State           string                  `json:"state"`
+	Events          []json.RawMessage       `json:"events"`
+	HasMore         bool                    `json:"hasMore"`
+	Result          *jobResult              `json:"result,omitempty"`
+	GitHubAdmission *githubAdmissionRequest `json:"githubAdmission,omitempty"`
 }
 
 // Persist the accepted-attempt marker before any user command can execute.
@@ -94,6 +95,13 @@ func inspectWorker(directory string, after int) (workerSnapshot, error) {
 	}
 	if !available {
 		snapshot.State = "running"
+		if _, err := os.Stat(filepath.Join(directory, "github-admission-decision.json")); os.IsNotExist(err) {
+			request, err := readGitHubAdmission(directory)
+			if err != nil {
+				return snapshot, err
+			}
+			snapshot.GitHubAdmission = request
+		}
 	} else if _, err := os.Stat(filepath.Join(directory, "state.json")); err == nil {
 		snapshot.State = "interrupted"
 	}
@@ -167,6 +175,11 @@ func controlCommand(args []string) (bool, error) {
 		return false, nil
 	}
 	switch args[1] {
+	case "github-admit":
+		if len(args) != 5 || (args[4] != "allow" && args[4] != "deny") {
+			return true, errors.New("invalid GitHub admission decision")
+		}
+		return true, decideGitHubAdmission(args[2], args[3], args[4] == "allow")
 	case "clean":
 		return true, recoverWorker(args[2])
 	case "inspect":

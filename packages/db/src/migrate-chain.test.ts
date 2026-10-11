@@ -265,7 +265,7 @@ describe("migration chain applies to an existing, populated database", () => {
       await client.exec(
         "UPDATE project SET cloud_static_hosting = 'server', active_deployment_id = 'retained-release'",
       );
-      const projects = (await client.query("SELECT * FROM project")).rows;
+      const projects = (await client.query<Record<string, unknown>>("SELECT * FROM project")).rows;
       const applied = (
         await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")
       ).rows;

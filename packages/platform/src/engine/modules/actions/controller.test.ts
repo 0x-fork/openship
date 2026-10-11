@@ -7,7 +7,13 @@ import {
   type DatabaseConnection,
 } from "@repo/db/factory";
 import type { ActionRun, ActionRunner } from "@repo/db";
-import { AppError, generateId, type ActionJobResult, type ActionWorkerRequest } from "@repo/core";
+import {
+  AppError,
+  generateId,
+  actionRunnerAdmissionKey,
+  type ActionJobResult,
+  type ActionWorkerRequest,
+} from "@repo/core";
 import { ActionController, type ActionControllerPorts } from "./controller";
 import { parseActionWorkflow } from "./workflow";
 
@@ -175,6 +181,49 @@ const reconcile = (engine: { controller: ActionController }, run: ActionRun) =>
   engine.controller.reconcile(run.organizationId, run.id);
 
 describe("durable Actions controller", () => {
+  it("waits for approval, then drains existing workers when access is revoked", async () => {
+    const f = await fixture();
+    const policy = {
+      version: 1 as const,
+      audience: "owner" as const,
+      owner: { provider: "openship" as const, id: "actor", login: "actor" },
+      users: [],
+      approval: "required" as const,
+      forks: "deny" as const,
+    };
+    const workflow = await repo.saveWorkflow({ ...f.workflow, accessPolicy: policy });
+    const admission = {
+      state: "approval_required" as const,
+      reason: "approval_required" as const,
+      key: "a".repeat(64),
+      workflowVersion: workflow.updatedAt.toISOString(),
+      runnerIds: [f.runner.id],
+      runnerKeys: { [f.runner.id]: actionRunnerAdmissionKey(f.runner) },
+    };
+    await repo.setRunAdmission(f.org, f.run.id, admission);
+    const e = engine();
+    await reconcile(e, f.run);
+    expect(e.ports.open).not.toHaveBeenCalled();
+    expect(await repo.runnerBusy(f.org, f.runner.id)).toBe(false);
+    await repo.approve(f.org, f.run.id, "admin", admission.key);
+    await reconcile(e, f.run);
+    const [job] = await repo.jobs(f.org, f.run.id);
+    expect(e.executions.size).toBe(1);
+    await repo.saveWorkflow({
+      ...workflow,
+      accessPolicy: { ...policy, audience: "collaborators" },
+      updatedAt: new Date(workflow.updatedAt.getTime() + 1000),
+    });
+    await reconcile(e, f.run);
+    expect(e.executions.get(job!.id)?.cancelled).toBe(true);
+    expect(await repo.runnerBusy(f.org, f.runner.id)).toBe(true);
+    e.finish(job!.id, "cancelled");
+    await reconcile(e, f.run);
+    await reconcile(e, f.run);
+    expect(e.executions.size).toBe(1); // No later dependency was started.
+    expect(await repo.runnerBusy(f.org, f.runner.id)).toBe(false);
+    expect((await repo.run(f.org, f.run.id))?.settledAt).toBeTruthy();
+  });
   it("shares a Cloud namespace's concurrency across sizes and holds slots through cleanup", async () => {
     const f = await fixture(yaml, true);
     const small = await repo.saveRunner({
@@ -187,6 +236,8 @@ describe("durable Actions controller", () => {
       cloudProfileId: "large",
       config: { ...small.config, cpu: 8 },
     });
+    await connection.db.delete(schema.actionRun).where(eq(schema.actionRun.id, f.run.id));
+    await repo.saveWorkflow({ ...f.workflow, runnerIds: [small.id, large.id] });
     const newRun = async (runnerIds: string[]) => {
       const run = await repo.createRun({
         ...f.input,

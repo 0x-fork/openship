@@ -121,17 +121,18 @@ const checkbox = (name: string) =>
   [...document.querySelectorAll<HTMLLabelElement>("label")]
     .find((label) => label.textContent?.startsWith(name))!
     .querySelector<HTMLButtonElement>('[role="checkbox"]')!;
-function expectRunnerTrustPrompt() {
-  const consent = checkbox("Allow workflows in this repository");
-  expect(consent.getAttribute("aria-checked")).toBe("false");
-  expect(consent.getAttribute("aria-invalid")).toBe("true");
-  expect(document.activeElement).toBe(consent);
-  expect(document.getElementById(consent.getAttribute("aria-describedby")!)?.textContent).toBe(
-    "Confirm runner access to continue.",
-  );
-  expect(h.save).not.toHaveBeenCalled();
-  expect(h.importWorkflows).not.toHaveBeenCalled();
-  expect(h.write).not.toHaveBeenCalled();
+async function chooseAccess(label: string, option: string) {
+  await click(label);
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    (item) => item.textContent?.trim() === option,
+  )!;
+  await act(async () => item.click());
+}
+function expectSecureDefaults() {
+  expect(button("Who can run").textContent).toContain("Only my account");
+  expect(button("Run approval").textContent).toContain("Approve each run");
+  expect(button("Fork pull requests").textContent).toContain("Block fork runs");
+  expect(host.textContent).not.toContain("Allow workflows in this repository");
 }
 async function fill(label: string, text: string) {
   const input =
@@ -288,6 +289,8 @@ describe("shared workflow setup", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(host.textContent).toContain("Build server");
     await click("Continue");
+    expect(button("Access").getAttribute("aria-selected")).toBe("true");
+    await click("Continue");
     await act(async () => checkbox("Ops email").click());
     await click("Save workflow");
     expect(h.save).toHaveBeenCalledWith(
@@ -364,8 +367,6 @@ describe("shared workflow setup", () => {
     await click("Select all");
     await click("Continue");
     await selectRunner();
-    if (directory === ".github/workflows")
-      await act(async () => checkbox("Allow workflows in this repository").click());
     await click("Checks");
     await click("Workflow");
     return files;
@@ -413,8 +414,6 @@ describe("shared workflow setup", () => {
       await click("Select all");
       await click("Continue");
       await selectRunner();
-      if (directory === ".github/workflows")
-        await act(async () => checkbox("Allow workflows in this repository").click());
       const expectEvents = (manual: boolean, push: boolean, pr: boolean) => {
         for (const [label, checked] of [
           ["Manual & Jobs", manual],
@@ -443,6 +442,7 @@ describe("shared workflow setup", () => {
       await chooseTriggerFile("push.yml");
       expect(button("Git push").textContent).toContain("Branches: main, release/**");
       await click("Continue");
+      await click("Continue");
       await click("Save 3 workflows");
       await click(directory === ".github/workflows" ? "Commit and save" : "Save Openship copy");
       const inputs = h.importWorkflows.mock.calls[0]![0];
@@ -470,6 +470,9 @@ describe("shared workflow setup", () => {
       });
       expect(parse(changed).jobs).toEqual(parse(source).jobs);
     },
+    // This exercises several complete file drafts and both save/review flows.
+    // Loaded CI workers need more than the default 5s for the real React updates.
+    15_000,
   );
 
   it("keeps the file picker available without showing another file's triggers during loading", async () => {
@@ -516,7 +519,6 @@ describe("shared workflow setup", () => {
     await preview();
     expect(host.textContent).toContain(files[1]!.path);
     expect(host.textContent).not.toContain(files[0]!.path);
-    await act(async () => checkbox("Allow workflows in this repository").click());
     await click("Save workflow");
     expect(
       h.importWorkflows.mock.calls[0]![0].map((input: { path: string }) => input.path),
@@ -585,7 +587,6 @@ describe("shared workflow setup", () => {
     await click("Continue");
     await selectRunner();
     await act(async () => checkbox("Storefront").click());
-    await act(async () => checkbox("Allow workflows in this repository").click());
     await click("Git push");
     await fill("Branches", "release/**");
     const branch = document.querySelector<HTMLInputElement>('input[aria-label="Branches"]')!;
@@ -602,6 +603,7 @@ describe("shared workflow setup", () => {
     await click("Run settings");
     await click("Git push");
     expect(host.textContent).toContain("release/**");
+    await click("Continue");
     await click("Continue");
     await click("Save 2 workflows");
     expect(h.write).not.toHaveBeenCalled();
@@ -756,7 +758,7 @@ describe("shared workflow setup", () => {
       expect.objectContaining({
         path: ".github/workflows/ci.yml",
         source: null,
-        repositoryRunnerConsent: true,
+        accessPolicy: { audience: "owner", users: [], approval: "required", forks: "deny" },
         storageDestinationId: null,
         variables: {},
         secrets: {},
@@ -765,7 +767,7 @@ describe("shared workflow setup", () => {
     );
     expect(h.onSaved).toHaveBeenCalledOnce();
   });
-  it("requires explicit repository-wide runner trust before linking a new GitHub workflow", async () => {
+  it("replaces blanket runner consent with secure Access & approvals defaults", async () => {
     await repositoryWorkflow();
     await render();
     await fill("Repository", "acme/app");
@@ -774,39 +776,56 @@ describe("shared workflow setup", () => {
     expect(button("Openship Actions")).toBeUndefined();
     await click("Continue");
     await selectRunner();
-    expect(button("Continue").disabled).toBe(false);
     await click("Continue");
-    expect(button("Run settings").getAttribute("aria-selected")).toBe("true");
-    expectRunnerTrustPrompt();
-    await act(async () => checkbox("Allow workflows in this repository").click());
-    expect(checkbox("Allow workflows in this repository").hasAttribute("aria-invalid")).toBe(false);
-    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(button("Access").getAttribute("aria-selected")).toBe("true");
+    expectSecureDefaults();
+    expect(
+      host.querySelector('a[href="https://github.com/acme/app/settings/actions"]'),
+    ).not.toBeNull();
+    expect(h.importWorkflows).not.toHaveBeenCalled();
     await click("Continue");
     await click("Save workflow");
     expect(h.importWorkflows).toHaveBeenCalledWith([
       expect.objectContaining({
         path: ".github/workflows/ci.yml",
         source: null,
-        repositoryRunnerConsent: true,
+        accessPolicy: { audience: "owner", users: [], approval: "required", forks: "deny" },
       }),
     ]);
     expect(h.write).not.toHaveBeenCalled();
   });
-  it("returns from Checks to the required runner confirmation before saving", async () => {
+  it("returns to an incomplete selected-user policy before saving from Checks", async () => {
     await repositoryWorkflow();
     await render();
     await fill("Repository", "acme/app");
     await preview();
     await click("Continue");
     await selectRunner();
+    await click("Continue");
+    await chooseAccess("Who can run", "Selected GitHub users");
+    expect(button("Continue").disabled).toBe(true);
     await click("Checks");
     await click("Save workflow");
-    expect(button("Run settings").getAttribute("aria-selected")).toBe("true");
-    expectRunnerTrustPrompt();
-    await act(async () => checkbox("Allow workflows in this repository").click());
+    expect(button("Access").getAttribute("aria-selected")).toBe("true");
+    expect(h.importWorkflows).not.toHaveBeenCalled();
+    await fill("GitHub users", "@octocat");
+    await act(async () =>
+      document
+        .querySelector('input[aria-label="GitHub users"]')!
+        .dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    await chooseAccess("Run approval", "Automatically allow eligible users");
     await click("Save workflow");
     expect(h.importWorkflows).toHaveBeenCalledWith([
-      expect.objectContaining({ repositoryRunnerConsent: true, runnerIds: ["linux"] }),
+      expect.objectContaining({
+        accessPolicy: {
+          audience: "selected",
+          users: ["octocat"],
+          approval: "automatic",
+          forks: "deny",
+        },
+        runnerIds: ["linux"],
+      }),
     ]);
   });
   it("discovers reusable repository workflows even when the saved controller was independent", async () => {
@@ -822,13 +841,12 @@ describe("shared workflow setup", () => {
     expect(h.preview).toHaveBeenLastCalledWith(reusable, ".github/workflows/ci.yml");
     expect(host.textContent).toContain("gate");
     expect(button("GitHub Actions")).toBeUndefined();
-    await click("Continue");
-    await click("Save workflow");
-    expectRunnerTrustPrompt();
-    await act(async () => checkbox("Allow workflows in this repository").click());
     await click("Save workflow");
     expect(h.save).toHaveBeenCalledWith(
-      expect.objectContaining({ source: null, repositoryRunnerConsent: true }),
+      expect.objectContaining({
+        source: null,
+        accessPolicy: { audience: "owner", users: [], approval: "required", forks: "deny" },
+      }),
       "ci",
     );
     expect(h.save.mock.calls[0]![0]).not.toHaveProperty("controller");
@@ -848,25 +866,38 @@ describe("shared workflow setup", () => {
     await click("Continue");
     await selectRunner();
     await click("Continue");
-    expectRunnerTrustPrompt();
+    expectSecureDefaults();
   });
-  it("requires renewed consent when the selected repository or runners change", async () => {
+  it("resets access for a different repository and preserves it when changing runners", async () => {
     await repositoryWorkflow();
+    h.get.mockResolvedValue({
+      ...(await h.get()),
+      accessPolicy: {
+        version: 1,
+        audience: "owner",
+        owner: { provider: "github", id: "42", login: "saved-owner" },
+        users: [],
+        approval: "required",
+        forks: "deny",
+      },
+    });
     await render("ci");
-    expect(button("Save workflow").disabled).toBe(false);
+    await click("Access");
+    expect(button("Who can run").textContent).toContain("Only saved-owner");
+    await chooseAccess("Run approval", "Automatically allow eligible users");
+    await click("Workflow");
     await fill("Repository", "acme/other");
     await preview();
-    await click("Continue");
-    await click("Save workflow");
-    expectRunnerTrustPrompt();
-    await act(async () => checkbox("Allow workflows in this repository").click());
-    expect(button("Save workflow").disabled).toBe(false);
+    await click("Access");
+    expectSecureDefaults();
+    await chooseAccess("Run approval", "Automatically allow eligible users");
+    await click("Run settings");
     await click("Allowed runners");
     await act(async () => checkbox("Linux runner").click());
     await act(async () => checkbox("Linux runner").click());
     await click("Use selected runners");
-    await click("Save workflow");
-    expectRunnerTrustPrompt();
+    await click("Access");
+    expect(button("Run approval").textContent).toContain("Automatically allow eligible users");
   });
   it("preserves edits after a concurrent GitHub change and never saves a false repository reference", async () => {
     h.write.mockRejectedValueOnce(
@@ -1068,6 +1099,7 @@ describe("shared workflow setup", () => {
     await preview();
     await click("Continue");
     await selectRunner();
+    await click("Continue");
     await click("Continue");
     await click("Save workflow");
     expect(h.discover).not.toHaveBeenCalled();

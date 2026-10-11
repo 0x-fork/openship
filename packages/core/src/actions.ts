@@ -15,6 +15,74 @@ export interface ActionWorkflowNotifications {
   events: Array<"failure" | "success" | "cancelled">;
 }
 
+/** Account IDs, rather than mutable names, own execution permissions. */
+export interface ActionActorIdentity {
+  provider: "github" | "openship";
+  id: string;
+  login: string;
+}
+
+export interface ActionAccessPolicy {
+  version: 1;
+  audience: "owner" | "selected" | "collaborators";
+  owner: ActionActorIdentity;
+  users: ActionActorIdentity[];
+  approval: "required" | "automatic";
+  forks: "deny" | "review";
+}
+
+export interface ActionRunAdmission {
+  state: "blocked" | "approval_required" | "allowed";
+  reason:
+    | "policy_missing"
+    | "identity_unavailable"
+    | "actor_not_allowed"
+    | "fork_disabled"
+    | "destinations_changed"
+    | "approval_required"
+    | "allowed";
+  /** Binds approval to the policy, destinations, commit and exact attempt. */
+  key: string;
+  workflowVersion: string;
+  runnerIds: string[];
+  runnerKeys: Record<string, string>;
+}
+
+/** Stable execution identity. Health probes and display-name edits do not
+ * invalidate review; a different server, budget, image or resource policy does. */
+export function actionRunnerAdmissionKey(runner: {
+  serverId: string | null;
+  cloudPoolId: string | null;
+  cloudProfileId: string | null;
+  enabled: boolean;
+  config: ActionRunnerConfig;
+}) {
+  const c = runner.config;
+  return JSON.stringify([
+    runner.serverId,
+    runner.cloudPoolId,
+    runner.cloudProfileId,
+    runner.enabled,
+    c.mode,
+    c.image,
+    [...c.labels].sort(),
+    c.maxParallel,
+    c.cpu,
+    c.memoryMb,
+    c.allowDockerSocket,
+    c.cloudDiskGb ?? null,
+  ]);
+}
+
+/** Non-secret identity received from the official listener, before Worker starts. */
+export interface ActionGitHubAdmissionRequest {
+  id: string;
+  repository: string;
+  repositoryId: string;
+  runId: string;
+  attempt: number;
+}
+
 /** Repository location selects workflow semantics, never the execution destination. */
 export function inferActionWorkflowController(
   path = ".github/workflows/ci.yml",
@@ -30,6 +98,8 @@ export interface ActionGitHubRun {
   status: string;
   conclusion: string | null;
   updatedAt: string;
+  actor?: ActionActorIdentity | null;
+  triggeringActor?: ActionActorIdentity | null;
 }
 
 export interface ActionGitHubJob {
@@ -114,6 +184,8 @@ export interface ActionWorkerRequest {
     downloadUrl: string;
     sha256: string;
     image: string;
+    /** Older workers must reject this request instead of starting ungated. */
+    requireAdmission: true;
   };
   version: 1;
   id: string;

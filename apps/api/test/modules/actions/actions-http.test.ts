@@ -62,6 +62,7 @@ vi.mock("@repo/platform/engine/lib/server-execution", async (original) => ({
 }));
 vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => ({
   ...(await original<typeof import("@repo/platform/engine/modules/github/github.auth")>()),
+  getUserStatus: async () => ({ connected: true, id: 42, login: "owner" }),
   githubFetch: async (input: {
     url: string;
     method?: string;
@@ -69,6 +70,7 @@ vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => 
   }) => {
     const { url, method } = input;
     traffic.requests.push(input);
+    if (url === "https://api.github.com/users/contributor") return { id: 77, login: "contributor" };
     if (url.endsWith("/actions/runners/downloads")) return [];
     if (url.includes("/actions/workflows/"))
       return {
@@ -425,10 +427,7 @@ describe("Actions HTTP, native SDK and authorization", () => {
         });
         expect(read.error).toBeNull();
         expect(read.plan?.jobs[0]?.uses).toBe("./.github/workflows/shared.yml");
-        await expect(client.create(input)).rejects.toThrow(
-          "Confirm that workflows in this repository",
-        );
-        const approved = { ...input, repositoryRunnerConsent: true };
+        const approved = input; // Secure access defaults replace a blanket consent checkbox.
         const created = linked
           ? await client.update(linked, approved)
           : await client.create(approved);
@@ -437,6 +436,7 @@ describe("Actions HTTP, native SDK and authorization", () => {
           controller: "github",
           githubWorkflowId: "42",
           source: null,
+          accessPolicy: { audience: "owner", approval: "required", forks: "deny" },
         });
         expect(
           (await repos.actions.workflow(f.owner.orgId, created.id))?.definition.jobs[0]?.uses,
@@ -462,7 +462,7 @@ describe("Actions HTTP, native SDK and authorization", () => {
     }
   });
 
-  it("replaces stale saved controller metadata only after runner consent and preserves tenant authorization", async () => {
+  it("replaces stale controller metadata with secure access defaults and preserves tenant authorization", async () => {
     const f = await fixture();
     await db
       .update(schema.actionWorkflow)
@@ -471,12 +471,10 @@ describe("Actions HTTP, native SDK and authorization", () => {
     const input = { ...f.input, path: repositoryPath, source: null, secrets: {} };
     traffic.source = reusableSource;
     try {
-      await expect(f.remote.update(f.workflow.id, input)).rejects.toThrow(
-        "Confirm that workflows in this repository",
-      );
-      expect((await repos.actions.workflow(f.owner.orgId, f.workflow.id))?.controller).toBe(
-        "openship",
-      );
+      expect(await f.remote.update(f.workflow.id, input)).toMatchObject({
+        controller: "github",
+        accessPolicy: { audience: "owner", approval: "required", forks: "deny" },
+      });
       const other = await clients(await seedOwner());
       await expect(
         other.remote.create({ ...input, repositoryRunnerConsent: true }),
@@ -690,7 +688,77 @@ describe("Actions HTTP, native SDK and authorization", () => {
     });
     expect(
       (await f.remote.dispatch(f.workflow.id, { idempotencyKey: "restricted-dispatch" })).status,
-    ).toBe("queued");
+    ).toBe("waiting");
+  });
+
+  it("shows approval only to administrators of both Actions and its destinations", async () => {
+    const f = await fixture();
+    const run = await f.remote.dispatch(f.workflow.id, { idempotencyKey: "approval-permissions" });
+    expect(run.canApprove).toBe(true);
+    await db
+      .update(schema.member)
+      .set({ role: "restricted" })
+      .where(eq(schema.member.userId, f.owner.userId));
+    for (const [resourceType, resourceId] of [
+      ["job", "*"],
+      ["github_repository", "acme/app"],
+      ["server", f.serverId],
+    ] as const) {
+      await repos.resourceGrant.upsert({
+        organizationId: f.owner.orgId,
+        userId: f.owner.userId,
+        resourceType,
+        resourceId,
+        permissions: ["read"],
+        grantedByUserId: null,
+      });
+    }
+    for (const client of [f.native, f.remote]) {
+      expect((await client.getRun(run.id)).canApprove).toBe(false);
+      await expect(client.approve(run.id, { key: run.admission!.key })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    }
+    await repos.resourceGrant.upsert({
+      organizationId: f.owner.orgId,
+      userId: f.owner.userId,
+      resourceType: "job",
+      resourceId: "*",
+      permissions: ["admin"],
+      grantedByUserId: null,
+    });
+    expect((await f.remote.getRun(run.id)).canApprove).toBe(false);
+    await repos.resourceGrant.upsert({
+      organizationId: f.owner.orgId,
+      userId: f.owner.userId,
+      resourceType: "server",
+      resourceId: f.serverId,
+      permissions: ["admin"],
+      grantedByUserId: null,
+    });
+    expect((await f.native.getRun(run.id)).canApprove).toBe(true);
+    expect((await f.remote.approve(run.id, { key: run.admission!.key })).canApprove).toBe(false);
+  });
+
+  it("requires review keys for new policies while keeping legacy fork approval compatible", async () => {
+    const f = await fixture();
+    const run = await f.remote.dispatch(f.workflow.id, { idempotencyKey: "legacy-fork-approval" });
+    await expect(f.remote.approve(run.id)).rejects.toMatchObject({
+      code: "ACTIONS_ACCESS_CHANGED",
+    });
+    await db
+      .update(schema.actionWorkflow)
+      .set({ accessPolicy: null })
+      .where(eq(schema.actionWorkflow.id, f.workflow.id));
+    await db
+      .update(schema.actionRun)
+      .set({ admission: null, untrusted: true, status: "waiting" })
+      .where(eq(schema.actionRun.id, run.id));
+    const approved = await f.remote.approve(run.id);
+    expect(approved.approvedAt).toBeTruthy();
+    expect(approved.canApprove).toBe(false);
+    expect(approved.admission).toBeNull();
+    expect((await f.native.approve(run.id)).approvedAt).toEqual(approved.approvedAt);
   });
 
   it("rejects unsupported capabilities and malformed YAML before saving a destination or workflow", async () => {
@@ -798,6 +866,72 @@ describe("Actions HTTP, native SDK and authorization", () => {
     expect((await repos.actions.runs(f.owner.orgId)).length).toBe(1);
   });
 
+  it.each([{ id: 99, login: "outsider" }, null])(
+    "never borrows the workflow owner's identity for a signed check re-run (%j)",
+    async (sender) => {
+      const f = await fixture();
+      const installationId = 912347;
+      await db.insert(schema.gitInstallation).values({
+        id: generateId("git"),
+        userId: f.owner.userId,
+        organizationId: f.owner.orgId,
+        owner: "acme",
+        installationId,
+      });
+      const original = await f.remote.dispatch(f.workflow.id, {
+        idempotencyKey: "original-checked-run",
+      });
+      await db
+        .update(schema.actionRun)
+        .set({ status: "failure", finishedAt: new Date() })
+        .where(eq(schema.actionRun.id, original.id));
+      await db.insert(schema.actionJob).values({
+        id: generateId("job"),
+        organizationId: f.owner.orgId,
+        runId: original.id,
+        jobKey: "test",
+        matrixIndex: 0,
+        checkRunId: "456",
+        status: "failure",
+        finishedAt: new Date(),
+      });
+      const body = JSON.stringify({
+        installation: { id: installationId },
+        repository: { full_name: "acme/app" },
+        action: "rerequested",
+        sender,
+        check_run: { id: 456 },
+      });
+      const response = await app.request("/api/webhooks/github", {
+        method: "POST",
+        body,
+        headers: {
+          "content-type": "application/json",
+          "x-github-event": "check_run",
+          "x-github-delivery": generateId("github"),
+          "x-hub-signature-256": `sha256=${createHmac("sha256", "actions-app-webhook-test-secret").update(body).digest("hex")}`,
+        },
+      });
+      expect(response.status).toBe(200);
+      await actionWebhookInbox.tick(new Date(Date.now() + 1));
+      const runs = await repos.actions.runs(f.owner.orgId);
+      expect(runs).toHaveLength(2);
+      const rerun = runs.find((row) => row.id !== original.id)!;
+      expect(rerun).toMatchObject({
+        attempt: 2,
+        admission: {
+          state: "blocked",
+          reason: sender ? "actor_not_allowed" : "identity_unavailable",
+        },
+        approvedAt: null,
+      });
+      expect(rerun.configuration.triggeringActorIdentity).toEqual(
+        sender ? { provider: "github", id: "99", login: "outsider" } : null,
+      );
+      await expect(f.remote.approve(rerun.id, { key: rerun.admission!.key })).rejects.toThrow();
+    },
+  );
+
   it("keeps fork code awaiting approval with no saved secrets or variables", async () => {
     const f = await fixture();
     const installationId = 912346;
@@ -827,7 +961,12 @@ describe("Actions HTTP, native SDK and authorization", () => {
     await f.remote.update(f.workflow.id, {
       ...f.input,
       runnerIds: [cloud.id],
-      allowForks: true,
+      accessPolicy: {
+        audience: "selected",
+        users: ["contributor"],
+        approval: "automatic",
+        forks: "review",
+      },
       variables: { PRIVATE_VAR: "private" },
       source: source
         .replace("on: workflow_dispatch", "on: pull_request")
@@ -838,7 +977,7 @@ describe("Actions HTTP, native SDK and authorization", () => {
       action: "opened",
       number: 42,
       repository: { full_name: "acme/app" },
-      sender: { login: "contributor" },
+      sender: { id: 77, login: "contributor" },
       pull_request: {
         merge_commit_sha: "d".repeat(40),
         base: { sha: "e".repeat(40), ref: "main" },
@@ -858,7 +997,15 @@ describe("Actions HTTP, native SDK and authorization", () => {
       ref: "refs/pull/42/merge",
       configuration: { secrets: {}, variables: {} },
     });
-    await f.remote.approve(run!.id);
+    await expect(f.remote.approve(run!.id)).rejects.toMatchObject({
+      code: "ACTIONS_ACCESS_CHANGED",
+    });
+    expect((await f.remote.getRun(run!.id)).admission).toMatchObject({
+      state: "approval_required",
+      key: run!.admission!.key,
+    });
+    await f.native.approve(run!.id, { key: run!.admission!.key });
+    await f.remote.approve(run!.id, { key: run!.admission!.key });
     expect((await repos.actions.run(f.owner.orgId, run!.id))?.approvedBy).toBe(f.owner.userId);
   });
 
@@ -920,7 +1067,12 @@ describe("Actions project, repository and Jobs integration", () => {
       inputs: { version: "v1" },
       idempotencyKey: "standalone-once",
     });
-    expect(run).toMatchObject({ owner: null, repo: null, status: "queued" });
+    expect(run).toMatchObject({
+      owner: null,
+      repo: null,
+      status: "waiting",
+      admission: { state: "approval_required" },
+    });
     expect(run.revision).toMatch(/^[a-f0-9]{64}$/);
     const webhook = await f.remote.dispatch(workflow.id, {
       eventType: "release",

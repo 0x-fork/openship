@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { githubActionActor } from "./run-access";
 import cronParser from "cron-parser";
 import { repos } from "@repo/db";
 import { ValidationError, isFullCommitSha, safeErrorMessage } from "@repo/core";
@@ -102,7 +103,12 @@ export async function dispatchActionWebhook(
         if (!job) continue;
         const run = await repos.actions.run(workflow.organizationId, job.runId);
         if (run?.workflowId === workflow.id)
-          await rerunActionWorkflow(ctx, run.id, `github-${delivery}`);
+          await rerunActionWorkflow(
+            ctx,
+            run.id,
+            `github-${delivery}`,
+            githubActionActor(record(event.sender) as { id?: number; login: string }),
+          );
         continue;
       }
       let ref: string;

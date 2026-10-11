@@ -10,6 +10,7 @@ import {
   type ActionJobResult,
   type ActionWorkerEvent,
   type ActionWorkerRequest,
+  type ActionGitHubAdmissionRequest,
 } from "@repo/core";
 import type { CommandExecutor } from "../types";
 import { dockerArchitecture, probeDockerExecutionPlatforms } from "../runtime/docker-platforms";
@@ -19,6 +20,7 @@ export interface ActionWorkerSnapshot {
   events: ActionWorkerEvent[];
   hasMore: boolean;
   result?: ActionJobResult;
+  githubAdmission?: ActionGitHubAdmissionRequest;
 }
 
 /** Probe the selected endpoint; there is no controller-host execution fallback. */
@@ -213,6 +215,13 @@ export class ActionsWorker {
   async cancel(binary: string, directory: string): Promise<void> {
     if (await this.executor.exists(directory))
       await this.executor.exec(`${q(binary)} cancel ${q(directory)}`);
+  }
+
+  async admitGitHub(binary: string, directory: string, id: string, allow: boolean): Promise<void> {
+    if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Invalid GitHub admission identity");
+    await this.executor.exec(
+      `${q(binary)} github-admit ${q(directory)} ${q(id)} ${allow ? "allow" : "deny"}`,
+    );
   }
 
   async clean(binary: string, directory: string): Promise<void> {

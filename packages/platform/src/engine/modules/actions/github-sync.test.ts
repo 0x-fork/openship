@@ -20,6 +20,7 @@ vi.mock("@repo/db", async () => ({
   },
 }));
 vi.mock("../github/github.service", () => ({ getFileContent: h.source }));
+vi.mock("../github/github.auth", () => ({ getUserStatus: vi.fn() }));
 vi.mock("./github-api", () => ({ GitHubActionsApi: class {} }));
 vi.mock("./access", () => ({ authorizeActionWorkflow: async () => {} }));
 vi.mock("../../lib/execution-authority", () => ({ resolveExecutionAuthority: vi.fn() }));

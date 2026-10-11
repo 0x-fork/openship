@@ -1,5 +1,7 @@
 import { and, asc, eq, exists, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { actionRunnerAdmitted } from "./action-run-admission";
 import { AppError, actionRunnerMismatch } from "@repo/core";
 import type { Database } from "../client";
 import {
@@ -296,9 +298,19 @@ export function createActionGitHubRepo(db: Database) {
           createdAt: _createdAt,
           authority: _authority,
           configuration: _configuration,
+          admission: _admission,
+          approvedAt: _approvedAt,
+          approvedBy: _approvedBy,
+          approvalKey: _approvalKey,
           ...changes
         } = value;
         const linkedJob = prior && !prior.configuration.sourceJob && value.configuration.sourceJob;
+        const identityChanged =
+          prior &&
+          (!isDeepStrictEqual(prior.github?.actor, value.github.actor) ||
+            !isDeepStrictEqual(prior.github?.triggeringActor, value.github.triggeringActor) ||
+            prior.untrusted !== !!value.untrusted ||
+            prior.eventName !== value.eventName);
         const [saved] = await tx
           .insert(actionRun)
           .values(value)
@@ -306,6 +318,14 @@ export function createActionGitHubRepo(db: Database) {
             target: actionRun.id,
             set: {
               ...changes,
+              // REST mirroring never grants/replays local approval. A changed
+              // actor invalidates admission before another allocator can read it.
+              ...(identityChanged && {
+                admission: null,
+                approvalKey: null,
+                approvedAt: null,
+                approvedBy: null,
+              }),
               updatedAt: new Date(),
               ...(linkedJob && {
                 configuration: { ...prior!.configuration, sourceJob: linkedJob },
@@ -434,6 +454,8 @@ export function createActionGitHubRepo(db: Database) {
             eq(actionWorkflow.controller, "github"),
             eq(actionWorkflow.enabled, true),
             eq(actionJob.status, "queued"),
+            sql`${actionRun.admission} ->> 'state' = 'allowed'`,
+            isNull(actionRun.cancelRequestedAt),
             isNull(actionJob.finishedAt),
             isNull(actionRun.finishedAt),
           ),
@@ -503,6 +525,7 @@ export function createActionGitHubRepo(db: Database) {
           );
         if (!run || !runner || actionRunnerMismatch(runner.capabilities, runner.config, job.spec))
           return;
+        if (!actionRunnerAdmitted(workflow, run, runner)) return;
         if (
           !runner ||
           (await actionRunnerAllocationCount(tx, value.organizationId, runner)) >=
@@ -540,6 +563,88 @@ export function createActionGitHubRepo(db: Database) {
         )
         .orderBy(asc(actionRunnerSession.updatedAt))
         .limit(100);
+    },
+    async admitRunnerSession(
+      org: string,
+      id: string,
+      leaseOwner: string,
+      jobId: string,
+      admissionId: string,
+      key: string,
+    ) {
+      return db.transaction(async (tx) => {
+        await tx
+          .select({ id: organization.id })
+          .from(organization)
+          .where(eq(organization.id, org))
+          .for("update");
+        const jobWhere = and(eq(actionJob.organizationId, org), eq(actionJob.id, jobId));
+        const [jobIdentity] = await tx.select().from(actionJob).where(jobWhere);
+        if (!jobIdentity?.github) return false;
+        const runWhere = and(
+          eq(actionRun.organizationId, org),
+          eq(actionRun.id, jobIdentity.runId),
+        );
+        const [identity] = await tx.select().from(actionRun).where(runWhere);
+        if (!identity) return false;
+        const [workflow] = await tx
+          .select()
+          .from(actionWorkflow)
+          .where(workflowWhere(org, identity.workflowId))
+          .for("update");
+        const [run] = await tx.select().from(actionRun).where(runWhere).for("update");
+        const [job] = await tx.select().from(actionJob).where(jobWhere).for("update");
+        const [session] = await tx
+          .select()
+          .from(actionRunnerSession)
+          .where(
+            and(
+              sessionWhere(org, id),
+              eq(actionRunnerSession.leaseOwner, leaseOwner),
+              gt(actionRunnerSession.leaseUntil, new Date()),
+            ),
+          )
+          .for("update");
+        if (
+          !session ||
+          session.cancelRequestedAt ||
+          session.finishedAt ||
+          session.state === "stopping" ||
+          session.cleanedAt
+        )
+          return false;
+        const [runner] = await tx
+          .select()
+          .from(actionRunner)
+          .where(and(eq(actionRunner.organizationId, org), eq(actionRunner.id, session.runnerId)))
+          .for("update");
+        if (
+          !workflow ||
+          !runner?.enabled ||
+          !run ||
+          !job?.github ||
+          !actionRunnerAdmitted(workflow, run, runner) ||
+          run.admission?.key !== key ||
+          workflow.owner !== session.repoOwner ||
+          workflow.repo !== session.repoName ||
+          !workflow.runnerIds.includes(runner.id) ||
+          job.github.runnerName !== session.runnerName ||
+          job.github.runnerId !== session.githubRunnerId ||
+          job.finishedAt ||
+          (run.untrusted && !runner.cloudPoolId) ||
+          !job.spec ||
+          actionRunnerMismatch(runner.capabilities, runner.config, job.spec)
+        )
+          return false;
+        // Retry only the same durable decision while the attempt is still valid.
+        if (session.admissionId)
+          return session.admissionId === admissionId && session.admittedJobId === jobId;
+        await tx
+          .update(actionRunnerSession)
+          .set({ admissionId, admittedJobId: jobId, updatedAt: new Date() })
+          .where(sessionWhere(org, id));
+        return true;
+      });
     },
     async runnerSession(org: string, id: string) {
       return (await db.select().from(actionRunnerSession).where(sessionWhere(org, id)))[0];

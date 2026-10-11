@@ -15,6 +15,7 @@ import { authorizeActionWorkflow } from "./access";
 import { GitHubActionsApi, type GitHubWorkflowRun, type GitHubWorkflowJob } from "./github-api";
 import { parseActionWorkflow } from "./workflow";
 import { completeActionRun } from "./notifications";
+import { githubActionActor, refreshActionRunAdmission } from "./run-access";
 
 export function githubActionStatus(status: string, conclusion: string | null): ActionStatus {
   if (status !== "completed") {
@@ -159,6 +160,10 @@ export async function synchronizeGitHubRun(
         status: remote.status,
         conclusion: remote.conclusion,
         updatedAt: remote.updated_at,
+        actor: githubActionActor(remote.actor),
+        triggeringActor: githubActionActor(
+          remote.triggering_actor ?? (remote.run_attempt === 1 ? remote.actor : null),
+        ),
       },
       number: remote.run_number,
       attempt: remote.run_attempt,
@@ -187,7 +192,9 @@ export async function synchronizeGitHubRun(
       eventName: remote.event,
       event: {},
       actor: remote.actor?.login ?? "github",
-      untrusted: remote.head_repository?.id !== remote.repository.id,
+      untrusted:
+        remote.head_repository?.id !== remote.repository.id ||
+        remote.event === "pull_request_target",
       startedAt: remote.run_started_at ? new Date(remote.run_started_at) : null,
       finishedAt,
       settledAt,
@@ -196,6 +203,8 @@ export async function synchronizeGitHubRun(
     remoteJobs.map((job) => githubJobMirror(workflow, id, job)),
     previous?.updatedAt ?? null,
   );
+  if (!saved.finishedAt && !saved.cancelRequestedAt)
+    await refreshActionRunAdmission(ctx, workflow, saved);
   if (complete && saved.finishedAt && !saved.settledAt) {
     const lease = `github-completion-${randomUUID()}`;
     const claimed = await repos.actions.claimRun(workflow.organizationId, id, lease);

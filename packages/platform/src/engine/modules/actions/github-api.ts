@@ -41,7 +41,11 @@ export const githubRunSchema = z.object({
   created_at: z.string().datetime({ offset: true }),
   updated_at: z.string().datetime({ offset: true }),
   run_started_at: timestamp.optional(),
-  actor: z.object({ login: z.string() }).nullable(),
+  actor: z.object({ id: identifier.optional(), login: z.string() }).nullable(),
+  triggering_actor: z
+    .object({ id: identifier.optional(), login: z.string() })
+    .nullable()
+    .optional(),
   repository,
   head_repository: repository.nullable(),
   pull_requests: z.array(z.object({ number: identifier })).optional(),
@@ -175,6 +179,21 @@ export class GitHubActionsApi {
     return this.request(
       `/actions/workflows/${encodeURIComponent(path.split("/").at(-1)!)}`,
       githubWorkflowSchema,
+    );
+  }
+  async user(login: string) {
+    const value = await githubFetch<unknown>({
+      ctx: this.ctx,
+      owner: this.owner,
+      repo: this.repo,
+      url: `https://api.github.com/users/${encodeURIComponent(login)}`,
+    });
+    return z.object({ id: identifier, login: z.string() }).parse(value);
+  }
+  collaborator(login: string) {
+    return this.request(
+      `/collaborators/${encodeURIComponent(login)}/permission`,
+      z.object({ permission: z.string(), user: z.object({ id: identifier, login: z.string() }) }),
     );
   }
   run(id: string) {

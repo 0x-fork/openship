@@ -158,7 +158,10 @@ export async function cancel(c: Context) {
 }
 export async function approve(c: Context) {
   return c.json({
-    data: await operationData(c, actions().approve(operationContext(c), param(c, "id"))),
+    data: await operationData(
+      c,
+      actions().approve(operationContext(c), param(c, "id"), c.req.valid("json" as never)),
+    ),
   });
 }
 export async function rerun(c: Context) {

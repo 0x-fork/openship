@@ -4,6 +4,8 @@ Actions runs GitHub-compatible workflow files on authorized connected servers or
 disposable Cloud VMs. It has its own workflow/run/job records and topology view;
 Jobs remains the module for scheduled commands against existing applications.
 The original local-only proposal is superseded by this implementation.
+See [Actions access and approvals](actions-access.md) for execution policies,
+secure defaults and the official runner's assignment gate.
 
 ## Shared execution
 
@@ -66,5 +68,7 @@ native worker tests with the race detector on Linux and macOS. Module tests cove
 planning, permission boundaries, matrix admission, restart/cancellation races,
 GitHub events/Checks, artifact protocols and billing recovery. Live Cloud probes
 use separate test namespaces, temporary VMs and verified cleanup. Do not claim a
-complete GitHub-hosted runner image or unsupported workflow features: reusable
-workflows, Windows, OIDC and protected environments are not implemented.
+complete GitHub-hosted runner image or unsupported workflow features. Independent
+workflows reject reusable workflows, OIDC and protected environments; repository
+workflows use GitHub's controller and official runner for those features. Windows
+destinations are not implemented.

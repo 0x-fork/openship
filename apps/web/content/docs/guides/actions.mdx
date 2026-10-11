@@ -39,10 +39,10 @@ For a connected Mac, use `macos` and its actual CPU architecture. A plain
 `ubuntu-latest` job remains on GitHub-hosted runners. Add a Cloud size label such as
 `openship-linux-2` when selecting a specific allowed profile.
 
-A GitHub runner registration belongs to the repository. Any matching job in that
-repository can use it, including reusable-workflow jobs. Setup requires confirming
-that repository workflow authors may execute code on the selected destinations.
-Openship does not claim per-workflow isolation within GitHub's repository runner pool.
+A GitHub runner registration belongs to the repository and may receive any matching
+job, including reusable-workflow jobs. Openship checks the actual assigned workflow,
+requester and approval before starting workflow code. Configure that policy in the
+**Access** step; a matching label alone does not grant permission.
 
 ## Add a runner
 
@@ -122,12 +122,16 @@ the deployment wizard. These entry points share the same setup:
    storage here; GitHub workflows use their repository settings.
    Runner destinations, enabled state and project links apply to the selected
    files. Trigger edits apply to the file being previewed.
-4. In **Checks**, review the automatic GitHub Checks integration and optionally
+4. In **Access**, choose who can run and whether each run needs approval. Defaults
+   allow only your connected account, require approval for each run and block forks.
+   Choose specific GitHub users or repository collaborators with write access to
+   extend access. These settings apply to the selected files.
+5. In **Checks**, review the automatic GitHub Checks integration and optionally
    select verified notification channels for failures, successes or cancellations.
    GitHub-owned workflows retain their original Checks; independent repository
    workflows publish Checks through a connected GitHub App. Choose required workflows
    in the project's **Deployment automation** tab.
-5. Save the workflow. Canvas and trigger edits preserve unrelated YAML and
+6. Save the workflow. Canvas and trigger edits preserve unrelated YAML and
    expressions. Before writing back to GitHub, review the changes and choose
    **Commit and save**. `.openship/workflows` also offers **Save Openship copy**.
    `.github/workflows` always runs committed YAML. A changed file on GitHub rejects
@@ -139,6 +143,31 @@ their settings and adds any new project links; it does not duplicate workflows o
 start a run. Edit an already connected workflow from its Actions page to change
 its saved configuration. Reviewed repository commits can trigger the repository's
 normal automation, and are separate from the database transaction.
+
+## Access and approvals
+
+Access policies apply on both connected servers and Cloud destinations. **Only my
+account** uses your connected GitHub identity for repository workflows and your
+Openship identity for standalone workflows. Selected GitHub users are verified by
+account ID; the original requester and anyone retrying a run must both be eligible.
+
+With **Approve each run**, an Actions administrator with access to its destinations
+reviews the commit, attempt and runners before any runner is allocated. Changing
+the policy, destinations or execution settings requires a new review. A retry does
+not inherit the previous attempt's approval. Run details explains blocked access
+and links back to workflow settings.
+
+**Automatically allow eligible users** skips Openship's review for trusted runs.
+GitHub's fork and protected-environment approvals still apply; the editor links
+to repository settings. GitHub does not require approval for every collaborator
+push by default. Choose per-run approval when you need that control. Eligible
+fork runs always need Openship approval and a disposable Cloud runner.
+
+Existing independent workflows keep their previous behavior until their access
+settings are saved. Existing GitHub workflows without a policy require review
+before Openship starts new runners. The official runner adapter verifies the actual
+assignment through GitHub's local IPC protocol and fails closed if that protocol
+becomes incompatible; it does not fall back to unchecked execution.
 
 Workflow notifications use the existing notification queue, alongside account-wide
 Actions subscriptions. A channel selected by both rules gets one queued notification
@@ -298,9 +327,10 @@ commit. They receive no stored secrets, write credential or shared cache access.
 Authorization is rechecked during execution; revoking the originating user's
 access prevents further authorized work.
 
-Fork approvals and protected-environment approvals for `.github/workflows` follow GitHub
-repository policy. Review that policy before permitting untrusted pull requests
-on persistent self-hosted runners.
+Fork approvals and protected-environment approvals for `.github/workflows` still
+follow GitHub repository policy. Openship also requires its own approval and a
+disposable Cloud runner for eligible fork runs. Forks never run on connected
+persistent servers, including Macs. `pull_request_target` is also treated as untrusted.
 
 ## Artifacts and cache
 

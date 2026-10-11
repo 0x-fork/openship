@@ -25,6 +25,9 @@ import type {
   ActionWorkerEvent,
   ActionWorkflowPlan,
   ExecutionAuthority,
+  ActionAccessPolicy,
+  ActionActorIdentity,
+  ActionRunAdmission,
 } from "@repo/core";
 import { organization } from "./organization";
 import { servers } from "./servers";
@@ -83,6 +86,8 @@ export interface ActionRunConfiguration {
   /** Configuration approved when this immutable run was dispatched. */
   workflowVersion?: string;
   notifications?: ActionWorkflowNotifications | null;
+  actorIdentity?: ActionActorIdentity | null;
+  triggeringActorIdentity?: ActionActorIdentity | null;
   /** Jobs schedules dispatch into this queue; they do not copy the execution. */
   sourceJob?: {
     key: string;
@@ -115,6 +120,7 @@ export const actionWorkflow = pgTable(
     lastError: text("last_error"),
     runnerIds: jsonb("runner_ids").$type<string[]>().notNull(),
     notifications: jsonb("notifications").$type<ActionWorkflowNotifications>(),
+    accessPolicy: jsonb("access_policy").$type<ActionAccessPolicy>(),
     variables: jsonb("variables").$type<Record<string, string>>().notNull().default({}),
     secrets: jsonb("secrets").$type<Record<string, string>>().notNull().default({}),
     storageDestinationId: text("storage_destination_id").references(() => backupDestination.id, {
@@ -250,6 +256,8 @@ export const actionRun = pgTable(
     untrusted: boolean("untrusted").notNull().default(false),
     approvedAt: timestamp("approved_at"),
     approvedBy: text("approved_by"),
+    approvalKey: text("approval_key"),
+    admission: jsonb("admission").$type<ActionRunAdmission>(),
     concurrencyGroup: text("concurrency_group"),
     cancelInProgress: boolean("cancel_in_progress").notNull().default(false),
     expandedJobs: jsonb("expanded_jobs").$type<string[]>().notNull().default([]),
@@ -383,6 +391,9 @@ export const actionRunnerSession = pgTable(
     workflowId: text("workflow_id").notNull(),
     runnerId: text("runner_id").notNull(),
     demandJobId: text("demand_job_id").notNull(),
+    /** The actual GitHub assignment, durably authorized before Worker starts. */
+    admittedJobId: text("admitted_job_id"),
+    admissionId: text("admission_id"),
     repoOwner: text("repo_owner").notNull(),
     repoName: text("repo_name").notNull(),
     runnerName: text("runner_name").notNull(),

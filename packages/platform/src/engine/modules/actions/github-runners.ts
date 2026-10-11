@@ -7,6 +7,7 @@ import {
   generateId,
   safeErrorMessage,
   type ActionWorkerRequest,
+  type ActionGitHubAdmissionRequest,
 } from "@repo/core";
 import { repos, type ActionRunnerSession, type ActionRunner, type ActionWorkflow } from "@repo/db";
 import { diagnostics } from "@repo/core/diagnostics";
@@ -15,6 +16,8 @@ import { resolveExecutionAuthority } from "../../lib/execution-authority";
 import { authorizeActionWorkflow } from "./access";
 import { GitHubActionsApi } from "./github-api";
 import { openActionWorker, removeActionWorker } from "./worker-execution";
+import { refreshActionRunAdmission } from "./run-access";
+import { synchronizeGitHubRun } from "./github-sync";
 
 const owner = `github-runners-${randomUUID()}`;
 const idleMs = 10 * 60_000;
@@ -27,7 +30,7 @@ export function requestsOpenshipRunner(labels: string[]) {
 }
 
 async function reserveDemand(signal?: AbortSignal) {
-  for (const { job, workflow } of await repos.actions.queuedGitHubJobs()) {
+  for (const { job, run, workflow } of await repos.actions.queuedGitHubJobs()) {
     if (signal?.aborted) return;
     if (!job.spec || !requestsOpenshipRunner(job.spec.labels)) continue;
     try {
@@ -36,9 +39,20 @@ async function reserveDemand(signal?: AbortSignal) {
         `github-runner-demand:${job.id}`,
       );
       await authorizeActionWorkflow(ctx, workflow, true);
+      const admitted = await refreshActionRunAdmission(ctx, workflow, run);
+      if (
+        admitted?.admission?.state !== "allowed" ||
+        admitted.cancelRequestedAt ||
+        admitted.finishedAt
+      )
+        continue;
       for (const runnerId of workflow.runnerIds) {
         const runner = await repos.actions.runner(workflow.organizationId, runnerId);
-        if (!runner?.enabled || actionRunnerMismatch(runner.capabilities, runner.config, job.spec))
+        if (
+          !runner?.enabled ||
+          (run.untrusted && !runner.cloudPoolId) ||
+          actionRunnerMismatch(runner.capabilities, runner.config, job.spec)
+        )
           continue;
         const id = generateId("ags");
         if (
@@ -136,8 +150,87 @@ function requestFor(
       downloadUrl: artifact.download_url,
       sha256: artifact.sha256_checksum,
       image: runner.config.mode === "container" ? runner.config.image! : "",
+      requireAdmission: true,
     },
   };
+}
+
+/** The supervisor has received GitHub's job but has not started Runner.Worker.
+ * Verify the actual assignment, including jobs routed to this registration
+ * instead of its original demand. No workflow-supplied environment is trusted. */
+async function admitAssignment(
+  session: ActionRunnerSession,
+  request: ActionGitHubAdmissionRequest,
+) {
+  if (
+    !/^[a-f0-9]{64}$/.test(request.id) ||
+    request.repository.toLowerCase() !== `${session.repoOwner}/${session.repoName}`
+  )
+    return false;
+  if (session.admissionId) {
+    if (session.admissionId !== request.id || !session.admittedJobId) return false;
+    const job = await repos.actions.job(session.organizationId, session.admittedJobId);
+    const run = job && (await repos.actions.run(session.organizationId, job.runId));
+    if (!run?.admission) return false;
+    return repos.actions.admitRunnerSession(
+      session.organizationId,
+      session.id,
+      owner,
+      job!.id,
+      request.id,
+      run.admission.key,
+    );
+  }
+  const original = await repos.actions.workflow(session.organizationId, session.workflowId);
+  if (!original) return false;
+  const sourceContext = await resolveExecutionAuthority(
+    original.authority,
+    `github-admission:${session.id}`,
+  );
+  await authorizeActionWorkflow(sourceContext, original, true);
+  const api = new GitHubActionsApi(sourceContext, session.repoOwner, session.repoName);
+  const remote = await api.run(request.runId);
+  if (
+    String(remote.repository.id) !== request.repositoryId ||
+    remote.run_attempt !== request.attempt ||
+    remote.status === "completed"
+  )
+    return false;
+  const workflow = (await repos.actions.listWorkflows(session.organizationId)).find(
+    (row) =>
+      row.controller === "github" &&
+      row.owner === session.repoOwner &&
+      row.repo === session.repoName &&
+      row.githubWorkflowId === String(remote.workflow_id),
+  );
+  if (!workflow?.enabled || !workflow.runnerIds.includes(session.runnerId)) return false;
+  const ctx = await resolveExecutionAuthority(workflow.authority, `github-admission:${session.id}`);
+  await authorizeActionWorkflow(ctx, workflow, true);
+  const run = await synchronizeGitHubRun(
+    ctx,
+    workflow,
+    remote,
+    new GitHubActionsApi(ctx, session.repoOwner, session.repoName),
+  );
+  if (run.admission?.state !== "allowed" || run.cancelRequestedAt || run.finishedAt) return false;
+  const matches = (await repos.actions.jobs(session.organizationId, run.id)).filter(
+    (job) =>
+      job.github?.runnerName === session.runnerName &&
+      job.github.runnerId === session.githubRunnerId &&
+      !job.finishedAt,
+  );
+  // GitHub can publish the authenticated assignment before REST reports its
+  // runner ID. Keep the worker closed and retry; its bounded deadline owns exit.
+  if (!matches.length) return null;
+  if (matches.length !== 1) return false;
+  return repos.actions.admitRunnerSession(
+    session.organizationId,
+    session.id,
+    owner,
+    matches[0]!.id,
+    request.id,
+    run.admission.key,
+  );
 }
 
 type RunnerRegistrations = Map<string, Promise<Awaited<ReturnType<GitHubActionsApi["runners"]>>>>;
@@ -213,6 +306,21 @@ async function reconcileSession(
     }
     if (!runner.enabled || !workflow.enabled || session.cancelRequestedAt)
       await update({ state: "stopping" });
+    if (!session.workerStartedAt && session.state !== "stopping") {
+      const job = await repos.actions.job(org, session.demandJobId);
+      const run = job ? await repos.actions.run(org, job.runId) : undefined;
+      const admitted = run ? await refreshActionRunAdmission(ctx, workflow, run) : undefined;
+      if (
+        !admitted ||
+        admitted.finishedAt ||
+        admitted.cancelRequestedAt ||
+        admitted.admission?.state !== "allowed"
+      )
+        await update({
+          state: "stopping",
+          error: "Runner access changed before provisioning. Review this run before retrying.",
+        });
+    }
     // One authenticated read per repository/authority per sweep, even when
     // many jobs start together. No cross-user or persistent authorization cache.
     const key = createHash("sha256")
@@ -271,6 +379,23 @@ async function reconcileSession(
       if (session.directory !== directory || session.workerBinary !== binary)
         await update({ directory, workerBinary: binary });
       const snapshot = await worker.inspect(binary, directory, session.lastEventSequence);
+      if (
+        snapshot.githubAdmission &&
+        snapshot.state === "running" &&
+        session.state !== "stopping"
+      ) {
+        const allowed = await admitAssignment(session, snapshot.githubAdmission);
+        if (signal?.aborted || lost) return;
+        if (allowed === null) return;
+        await worker.admitGitHub(binary, directory, snapshot.githubAdmission.id, allowed);
+        if (!allowed)
+          await update({
+            state: "stopping",
+            error:
+              "GitHub assigned a run that is not approved for this destination. It was blocked before workflow code executed.",
+          });
+        return;
+      }
       if (snapshot.state === "idle" && session.state !== "stopping") {
         if (signal?.aborted || lost) return;
         // Re-probe immediately before registration. An ARM image never claims

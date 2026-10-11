@@ -130,16 +130,23 @@ Run settings uses compact trigger rows with shared switches and expandable contr
 Branches, paths, tags and event types use filled add/remove chips; keep commas inside
 glob patterns literal. Include/exclude choices replace the opposite YAML filter.
 Schedules have individual UTC inputs, and additional YAML-only events remain visible.
-Keep the Workflow / Run settings / Checks tabs and save action visible while the inspector scrolls.
+Keep the Workflow / Run settings / Access / Checks tabs and save action visible while the inspector scrolls.
 Project and deployment entry points keep their project association implicit; the generic
 editor puts additional project links in a closed disclosure and preserves links when untouched.
 Run settings leads with the required runner destination. Selecting an empty runner field
 opens the shared runner form in a modal; saving returns to the same workflow draft and selects
 the new runner. Existing runners use a compact picker. Cloud funding opens the shared budget
 in a dialog; only hosted payment opens separately so the draft survives.
-Repository runner access remains an explicit required checkbox. When it is the only
-missing prerequisite, Continue or Save reveals, highlights and focuses the confirmation;
-no workflow is saved or committed until it is checked.
+Access replaces the blanket runner-consent checkbox with a policy: who may run,
+whether each run needs approval, and whether fork pull requests may use disposable
+Cloud runners. Default to the connected account, approval for each run and forks blocked.
+Keep the policy when changing selected files or runners; reset it when changing repositories.
+Use verified GitHub account identities for selected users. Keep GitHub protection settings
+one link away and explain that those protections still apply alongside Openship approval.
+Run approval shows the commit, attempt, requester and destinations before execution.
+Missing destination details remain retryable; readers see who can approve instead of a
+button they cannot use. After a rejected approval, refresh the run so an old review cannot
+remain actionable. Blocked access links back to workflow settings.
 Checks describes the existing automatic GitHub integration and offers optional workflow
 notifications through verified account channels. Keep outcomes and channel logos compact.
 Account-wide subscriptions and workflow choices share one durable delivery identity per run

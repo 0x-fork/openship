@@ -3,9 +3,10 @@ import {
   createDatabase,
   createRepositories,
   schema,
+  eq,
   type DatabaseConnection,
 } from "@repo/db/factory";
-import { generateId } from "@repo/core";
+import { generateId, actionRunnerAdmissionKey } from "@repo/core";
 import { parseActionWorkflow } from "./workflow";
 let connection: DatabaseConnection;
 let repo: ReturnType<typeof createRepositories>["actions"];
@@ -66,6 +67,14 @@ async function fixture() {
     definition: plan,
     runnerIds: [runner.id],
     authority,
+    accessPolicy: {
+      version: 1,
+      audience: "owner",
+      owner: { provider: "github", id: "42", login: "operator" },
+      users: [],
+      approval: "automatic",
+      forks: "deny",
+    },
   });
   const run = {
     id: generateId("run"),
@@ -81,6 +90,14 @@ async function fixture() {
       status: "queued",
       conclusion: null,
       updatedAt: "2026-10-10T00:00:00Z",
+    },
+    admission: {
+      state: "allowed" as const,
+      reason: "allowed" as const,
+      key: "a".repeat(64),
+      workflowVersion: workflow.updatedAt.toISOString(),
+      runnerIds: [runner.id],
+      runnerKeys: { [runner.id]: actionRunnerAdmissionKey(runner) },
     },
     idempotencyKey: "native-run",
     source,
@@ -144,6 +161,165 @@ async function fixture() {
   return { org, runner, workflow, run, job, session };
 }
 describe("GitHub-owned workflows", () => {
+  it("allocates nothing before exact-attempt approval and preserves approval during synchronization", async () => {
+    const f = await fixture();
+    const admission = {
+      ...f.run.admission,
+      state: "approval_required" as const,
+      reason: "approval_required" as const,
+    };
+    await repo.upsertGitHubRun(f.workflow, { ...f.run, admission }, [f.job]);
+    expect(await repo.reserveRunnerSession(f.session)).toBeUndefined();
+    await expect(repo.approve("another-org", f.run.id, "admin", admission.key)).rejects.toThrow(
+      "not found",
+    );
+    await expect(repo.approve(f.org, f.run.id, "admin", "b".repeat(64))).rejects.toThrow("changed");
+    await repo.approve(f.org, f.run.id, "admin", admission.key);
+    await repo.upsertGitHubRun(f.workflow, { ...f.run, admission }, [f.job]);
+    await repo.setRunAdmission(f.org, f.run.id, admission); // A slow pre-approval read.
+    expect((await repo.run(f.org, f.run.id))?.admission?.state).toBe("allowed");
+    expect(await repo.reserveRunnerSession(f.session)).toBeTruthy();
+  });
+  it("rejects stale approvals and allocations after a policy or destination changes", async () => {
+    const f = await fixture();
+    await repo.upsertGitHubRun(f.workflow, f.run, [f.job]);
+    await repo.saveWorkflow({
+      ...f.workflow,
+      accessPolicy: { ...f.workflow.accessPolicy!, approval: "required" },
+      updatedAt: new Date(f.workflow.updatedAt.getTime() + 1000),
+    });
+    await expect(repo.approve(f.org, f.run.id, "admin", f.run.admission.key)).rejects.toThrow(
+      "changed",
+    );
+    expect(await repo.reserveRunnerSession(f.session)).toBeUndefined();
+    const second = await fixture();
+    await repo.upsertGitHubRun(second.workflow, second.run, [second.job]);
+    await repo.saveRunner({ ...second.runner, config: { ...second.runner.config, cpu: 4 } });
+    expect(await repo.reserveRunnerSession(second.session)).toBeUndefined();
+  });
+  it("cannot turn a blocked actor into an allowed run by replaying an older approval", async () => {
+    const f = await fixture();
+    const admission = {
+      ...f.run.admission,
+      state: "approval_required" as const,
+      reason: "approval_required" as const,
+    };
+    await repo.upsertGitHubRun(f.workflow, { ...f.run, admission }, [f.job]);
+    await repo.approve(f.org, f.run.id, "admin", admission.key);
+    await repo.setRunAdmission(f.org, f.run.id, {
+      ...admission,
+      state: "blocked",
+      reason: "actor_not_allowed",
+    });
+    await expect(repo.approve(f.org, f.run.id, "admin", admission.key)).rejects.toThrow("changed");
+    expect(await repo.reserveRunnerSession(f.session)).toBeUndefined();
+  });
+  it("checks the actual assigned workflow before starting the worker, not its original demand", async () => {
+    const f = await fixture();
+    await repo.upsertGitHubRun(f.workflow, f.run, [f.job]);
+    await repo.reserveRunnerSession(f.session);
+    await repo.claimRunnerSession(f.org, f.session.id, "admit");
+    await repo.updateRunnerSession(f.org, f.session.id, "admit", {
+      githubRunnerId: "123",
+      state: "running",
+    });
+    const actualWorkflow = await repo.saveWorkflow({
+      ...f.workflow,
+      id: generateId("wf"),
+      path: ".github/workflows/other.yml",
+      githubWorkflowId: "2",
+    });
+    const actualRun = {
+      ...f.run,
+      id: generateId("run"),
+      workflowId: actualWorkflow.id,
+      idempotencyKey: "actual-assignment",
+      github: { ...f.run.github, id: "43", workflowId: "2" },
+      admission: {
+        ...f.run.admission,
+        workflowVersion: actualWorkflow.updatedAt.toISOString(),
+        state: "approval_required" as const,
+        reason: "approval_required" as const,
+        key: "b".repeat(64),
+      },
+    };
+    const actualJob = {
+      ...f.job,
+      id: generateId("job"),
+      runId: actualRun.id,
+      github: { ...f.job.github, id: "51", runnerId: "123", runnerName: f.session.runnerName },
+    };
+    await repo.upsertGitHubRun(actualWorkflow, actualRun, [actualJob]);
+    const decide = (nonce = "c".repeat(64)) =>
+      repo.admitRunnerSession(
+        f.org,
+        f.session.id,
+        "admit",
+        actualJob.id,
+        nonce,
+        actualRun.admission.key,
+      );
+    expect(await decide()).toBe(false);
+    await repo.approve(f.org, actualRun.id, "admin", actualRun.admission.key);
+    expect(await decide()).toBe(true);
+    expect(await decide()).toBe(true); // Lost transport response may retry the same decision.
+    expect(await decide("d".repeat(64))).toBe(false);
+    expect((await repo.runnerSession(f.org, f.session.id))?.admittedJobId).toBe(actualJob.id);
+    await repo.requestGitHubCancel(f.org, actualRun.id);
+    expect(await decide()).toBe(false);
+  });
+  it("rejects fork execution on persistent servers even with approval", async () => {
+    const f = await fixture();
+    const serverId = generateId("server");
+    await connection.db
+      .insert(schema.servers)
+      .values({ id: serverId, organizationId: f.org, sshHost: "isolated.invalid" });
+    const runner = await repo.saveRunner({ ...f.runner, cloudPoolId: null, serverId });
+    await repo.upsertGitHubRun(
+      f.workflow,
+      {
+        ...f.run,
+        untrusted: true,
+        approvedAt: new Date(),
+        approvalKey: f.run.admission.key,
+        admission: {
+          ...f.run.admission,
+          runnerKeys: { [runner.id]: actionRunnerAdmissionKey(runner) },
+        },
+      },
+      [f.job],
+    );
+    expect(await repo.reserveRunnerSession(f.session)).toBeUndefined();
+  });
+  it("does not let blocked runs fill the runnable queue", async () => {
+    const f = await fixture();
+    for (let i = 0; i < 52; i++) {
+      const id = generateId("run");
+      await repo.upsertGitHubRun(
+        f.workflow,
+        {
+          ...f.run,
+          id,
+          number: i + 100,
+          github: { ...f.run.github, id: String(i + 100) },
+          idempotencyKey: `blocked-${i}`,
+          admission: { ...f.run.admission, state: "blocked", reason: "actor_not_allowed" },
+        },
+        [
+          {
+            ...f.job,
+            id: generateId("job"),
+            runId: id,
+            github: { ...f.job.github, id: String(i + 100) },
+          },
+        ],
+      );
+    }
+    await repo.upsertGitHubRun(f.workflow, f.run, [f.job]);
+    expect(await repo.queuedGitHubJobs()).toContainEqual(
+      expect.objectContaining({ job: expect.objectContaining({ id: f.job.id }) }),
+    );
+  });
   it("preserves reusable calls, protected environments and OIDC only for GitHub", async () => {
     const plan = await parseActionWorkflow(source, ".github/workflows/ci.yml", "github");
     expect(plan.jobs[0]?.uses).toBe("./.github/workflows/shared.yml");
@@ -220,7 +396,7 @@ describe("GitHub-owned workflows", () => {
     await repo.upsertGitHubRun(f.workflow, f.run, [f.job]);
     await repo.reserveRunnerSession(f.session);
     const finishedAt = new Date();
-    const job = { ...f.job, status: "success", finishedAt, cleanedAt: finishedAt };
+    const job = { ...f.job, status: "success" as const, finishedAt, cleanedAt: finishedAt };
     await repo.upsertGitHubRun(f.workflow, f.run, [job]);
     expect((await repo.job(f.org, job.id))?.cleanedAt).toBeNull();
     expect(await repo.gitHubRunHasAllocations(f.org, f.run.id)).toBe(true);
@@ -242,6 +418,7 @@ describe("GitHub-owned workflows", () => {
       id: generateId("wf"),
       controller: "openship",
       githubWorkflowId: null,
+      accessPolicy: null,
       path: ".openship/workflows/ci.yml",
       source,
     });

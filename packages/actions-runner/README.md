@@ -7,10 +7,18 @@ API process.
 
 The GitHub controller uses the same worker supervisor with the **official GitHub
 Actions runner**. It downloads an official release with a verified SHA-256 digest,
-registers it ephemerally for one repository job, and runs it unmodified. GitHub owns
+registers it ephemerally for one repository job, and gates the actual assignment
+before starting its original Worker binary. GitHub owns
 workflow scheduling, credentials and results; this adapter owns its destination
 process and cleanup. Both modes use `ActionsWorker` and the same provisioning and
 capacity accounting.
+
+The admission adapter uses GitHub's private local Listener/Worker IPC format and
+fails closed on unsupported framing, missing identity, cancellation or timeout.
+It does not modify the original upstream binaries or interpret workflow steps.
+See [Actions access and approvals](../../docs/actions-access.md) for this compatibility
+boundary and the policy checks. Retain the IPC tests and real runner verification
+when upgrading GitHub's runner.
 
 ## Build and test
 
@@ -48,8 +56,9 @@ only after cleanup is confirmed.
 
 Persistent Docker and native runners execute code trusted by their administrator.
 Native macOS jobs run as the connected server user. Untrusted fork jobs require
-approval and disposable Cloud workers in independent mode; they receive no stored secrets or write
-token. Containers alone are not advertised as an isolation boundary for hostile
+approval and disposable Cloud workers in both modes. Independent fork jobs receive
+no stored secrets or write token; GitHub supplies its own workflow credentials.
+Containers alone are not advertised as an isolation boundary for hostile
 code on a shared, persistent server.
 
 The official runner receives only a short-lived registration token, via private

@@ -3,10 +3,10 @@ import {
   createDatabase,
   createRepositories,
   schema,
+  eq,
   type DatabaseConnection,
 } from "@repo/db/factory";
-import { eq } from "drizzle-orm";
-import { generateId } from "@repo/core";
+import { generateId, actionRunnerAdmissionKey } from "@repo/core";
 
 const state = vi.hoisted(() => ({
   repo: null as any,
@@ -15,6 +15,8 @@ const state = vi.hoisted(() => ({
   remove: vi.fn(),
   registrations: vi.fn(),
   deregister: vi.fn(),
+  run: vi.fn(),
+  synchronize: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
   repos: {
@@ -31,6 +33,8 @@ vi.mock("../../lib/encryption", () => ({
   encrypt: (value: string) => value,
   decrypt: (value: string) => value,
 }));
+vi.mock("../github/github.auth", () => ({ getUserStatus: vi.fn() }));
+vi.mock("./github-sync", () => ({ synchronizeGitHubRun: state.synchronize }));
 vi.mock("./worker-execution", () => ({
   openActionWorker: state.open,
   removeActionWorker: state.remove,
@@ -39,6 +43,7 @@ vi.mock("./github-api", () => ({
   GitHubActionsApi: class {
     runners = state.registrations;
     removeRunner = state.deregister;
+    run = state.run;
   },
 }));
 import { reconcileGitHubRunners, requestsOpenshipRunner } from "./github-runners";
@@ -64,6 +69,8 @@ afterAll(async () => {
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  state.run.mockReset();
+  state.synchronize.mockReset();
   state.registrations.mockResolvedValue([]);
   state.remove.mockResolvedValue(true);
   state.deregister.mockResolvedValue({ success: true });
@@ -117,6 +124,14 @@ async function fixture(finished = true) {
     definition,
     runnerIds: [runner.id],
     authority,
+    accessPolicy: {
+      version: 1,
+      audience: "owner",
+      owner: { provider: "github", id: "42", login: "owner" },
+      users: [],
+      approval: "automatic",
+      forks: "deny",
+    },
   });
   const runId = generateId("run"),
     jobId = generateId("job");
@@ -145,6 +160,14 @@ async function fixture(finished = true) {
       number: 1,
       attempt: 1,
       idempotencyKey: runId,
+      admission: {
+        state: "allowed",
+        reason: "allowed",
+        key: "a".repeat(64),
+        workflowVersion: workflow.updatedAt.toISOString(),
+        runnerIds: [runner.id],
+        runnerKeys: { [runner.id]: actionRunnerAdmissionKey(runner) },
+      },
       source: "on: push",
       plan: definition,
       authority,
@@ -216,9 +239,179 @@ async function fixture(finished = true) {
     .update(schema.actionJob)
     .set({ status: "success", finishedAt: new Date() })
     .where(eq(schema.actionJob.id, jobId));
-  return { org, id, runner, workflow, runId, get: () => repo.runnerSession(org, id) };
+  return { org, id, runner, workflow, runId, jobId, get: () => repo.runnerSession(org, id) };
+}
+async function assignmentFixture() {
+  const f = await fixture(false);
+  const request = {
+    id: "c".repeat(64),
+    repository: "owner/test",
+    repositoryId: "10",
+    runId: "1",
+    attempt: 1,
+  };
+  const remote = {
+    id: 1,
+    repository: { id: 10 },
+    run_attempt: 1,
+    workflow_id: 1,
+    status: "in_progress",
+  };
+  await repo.claimRunnerSession(f.org, f.id, "fixture");
+  await repo.updateRunnerSession(f.org, f.id, "fixture", { githubRunnerId: "777" });
+  await repo.releaseRunnerSession(f.org, f.id, "fixture");
+  const job = (await repo.job(f.org, f.jobId))!;
+  await connection.db
+    .update(schema.actionJob)
+    .set({
+      status: "running",
+      finishedAt: null,
+      github: { ...job.github!, runnerId: "777", runnerName: `openship-${f.id}` },
+    })
+    .where(eq(schema.actionJob.id, f.jobId));
+  state.registrations.mockResolvedValue([{ id: 777, name: `openship-${f.id}`, busy: true }]);
+  state.run.mockResolvedValue(remote);
+  state.synchronize.mockImplementation(() => repo.run(f.org, f.runId));
+  const admit = vi.fn(),
+    release = vi.fn();
+  state.open.mockResolvedValue({
+    binary: "/worker",
+    directory: "/jobs/owned",
+    release,
+    worker: {
+      inspect: async () => ({
+        state: "running",
+        events: [],
+        hasMore: false,
+        githubAdmission: request,
+      }),
+      admitGitHub: admit,
+    },
+  });
+  return { ...f, request, remote, admit, release };
 }
 describe("official GitHub runner reconciliation", () => {
+  it("waits for GitHub's assigned runner metadata and durably admits only that assignment", async () => {
+    const f = await assignmentFixture();
+    const job = (await repo.job(f.org, f.jobId))!;
+    await connection.db
+      .update(schema.actionJob)
+      .set({ github: { ...job.github!, runnerId: null, runnerName: null } })
+      .where(eq(schema.actionJob.id, f.jobId));
+    await reconcileGitHubRunners();
+    expect(f.admit).not.toHaveBeenCalled();
+    expect((await f.get())?.admissionId).toBeNull();
+    expect(f.release).toHaveBeenCalledOnce();
+
+    await connection.db
+      .update(schema.actionJob)
+      .set({ github: job.github })
+      .where(eq(schema.actionJob.id, f.jobId));
+    await reconcileGitHubRunners();
+    expect(f.admit).toHaveBeenLastCalledWith("/worker", "/jobs/owned", f.request.id, true);
+    expect(await f.get()).toMatchObject({ admissionId: f.request.id, admittedJobId: f.jobId });
+    await reconcileGitHubRunners(); // A lost response retries the durable decision.
+    expect(f.admit).toHaveBeenLastCalledWith("/worker", "/jobs/owned", f.request.id, true);
+    expect(state.run).toHaveBeenCalledTimes(2);
+    await repo.requestGitHubCancel(f.org, f.runId);
+    await reconcileGitHubRunners();
+    expect(f.admit).toHaveBeenLastCalledWith("/worker", "/jobs/owned", f.request.id, false);
+    expect((await f.get())?.state).toBe("stopping");
+  });
+
+  it.each(["repository", "repositoryId", "attempt", "workflow", "completed", "nonce"])(
+    "denies a mismatched %s before starting workflow code",
+    async (mismatch) => {
+      const f = await assignmentFixture();
+      if (mismatch === "repository") f.request.repository = "other/repository";
+      if (mismatch === "repositoryId") f.remote.repository.id = 99;
+      if (mismatch === "attempt") f.remote.run_attempt = 2;
+      if (mismatch === "workflow") f.remote.workflow_id = 99;
+      if (mismatch === "completed") f.remote.status = "completed";
+      if (mismatch === "nonce") f.request.id = "invalid";
+      await reconcileGitHubRunners();
+      expect(f.admit).toHaveBeenCalledExactlyOnceWith(
+        "/worker",
+        "/jobs/owned",
+        f.request.id,
+        false,
+      );
+      expect(await f.get()).toMatchObject({ state: "stopping", admittedJobId: null });
+    },
+  );
+
+  it.each([true, false])(
+    "evaluates the actual workflow when GitHub assigns another matching job (approved: %s)",
+    async (approved) => {
+      const f = await assignmentFixture();
+      const workflow = await repo.saveWorkflow({
+        ...f.workflow,
+        id: generateId("wf"),
+        path: ".github/workflows/other.yml",
+        githubWorkflowId: "2",
+      });
+      const original = (await repo.run(f.org, f.runId))!;
+      const run = {
+        ...original,
+        id: generateId("run"),
+        workflowId: workflow.id,
+        idempotencyKey: "other-assignment",
+        number: 2,
+        github: { ...original.github!, id: "43", workflowId: "2" },
+        admission: {
+          ...original.admission!,
+          workflowVersion: workflow.updatedAt.toISOString(),
+          key: "b".repeat(64),
+          state: approved ? ("allowed" as const) : ("approval_required" as const),
+          reason: approved ? ("allowed" as const) : ("approval_required" as const),
+        },
+      };
+      const originalJob = (await repo.job(f.org, f.jobId))!;
+      const job = {
+        ...originalJob,
+        id: generateId("job"),
+        runId: run.id,
+        github: { ...originalJob.github!, id: "44" },
+      };
+      await repo.upsertGitHubRun(workflow, run, [job]);
+      await connection.db
+        .update(schema.actionJob)
+        .set({ status: "success", finishedAt: new Date() })
+        .where(eq(schema.actionJob.id, f.jobId));
+      f.request.runId = "43";
+      f.remote.id = 43;
+      f.remote.workflow_id = 2;
+      state.synchronize.mockImplementation(() => repo.run(f.org, run.id));
+      await reconcileGitHubRunners();
+      expect(state.synchronize).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ id: workflow.id }),
+        f.remote,
+        expect.anything(),
+      );
+      expect(f.admit).toHaveBeenCalledExactlyOnceWith(
+        "/worker",
+        "/jobs/owned",
+        f.request.id,
+        approved,
+      );
+      expect((await f.get())?.admittedJobId).toBe(approved ? job.id : null);
+    },
+  );
+
+  it("rejects revoked access even after the registration has accepted a job", async () => {
+    const f = await assignmentFixture();
+    const run = (await repo.run(f.org, f.runId))!;
+    await repo.setRunAdmission(f.org, run.id, {
+      ...run.admission!,
+      state: "blocked",
+      reason: "actor_not_allowed",
+    });
+    await reconcileGitHubRunners();
+    expect(f.admit).toHaveBeenCalledExactlyOnceWith("/worker", "/jobs/owned", f.request.id, false);
+    expect((await f.get())?.admittedJobId).toBeNull();
+  });
+
   it("allocates only explicitly opted-in labels", () => {
     expect(requestsOpenshipRunner(["ubuntu-latest"])).toBe(false);
     expect(requestsOpenshipRunner(["self-hosted", "linux"])).toBe(false);

@@ -43,6 +43,21 @@ provided encrypted entries; `removeSecrets` explicitly removes named entries.
 `storageDestinationId` selects an authorized backup destination for artifacts and
 cache. Reads return secret names, never their values.
 
+Optional `accessPolicy` configures `audience` (`owner`, `selected` or
+`collaborators`), `users` (1–30 GitHub usernames for selected-user access),
+`approval` (`required` or `automatic`) and `forks` (`deny` or `review`). New
+workflows default to the owner, required approval and denied forks. The server
+resolves GitHub identities and never accepts account IDs supplied by the caller.
+Fork review requires a disposable Cloud runner and always needs approval.
+
+Run details exposes `admission`, `runnerIds` and `canApprove`. When admission is
+`approval_required`, review the commit, attempt, requester and destinations, then
+send `{ key: run.admission.key }` to `approve`. A changed review returns a conflict;
+refresh the run before approving again. Approval requires `job:admin` and
+administration of the current destinations. `canApprove` is a presentation hint;
+the mutation checks permissions again. The legacy no-body approval remains only
+for independent fork runs without a saved access policy.
+
 `importWorkflows({ workflows })` accepts up to 50 complete configurations from one
 repository and branch. It validates all new files, then saves workflows and project
 links in one transaction. Repeating the import reuses each file's existing record,
@@ -66,9 +81,9 @@ caller's selected organization. See the [webhook example](/docs/guides/actions#t
 ## GitHub-controlled workflows
 
 Use `controller: "github"`, `source: null` and a committed `.github/workflows/*.yml`
-file. Set `repositoryRunnerConsent: true` when creating the connection or changing
-its repository or allowed runners. This confirms that matching repository jobs can
-execute on those destinations. GitHub manages secrets, variables, artifacts and
+file. Configure `accessPolicy` to control which matching jobs may execute on its
+destinations. The old `repositoryRunnerConsent` field is accepted for compatibility
+but grants no permission. GitHub manages secrets, variables, artifacts and
 Checks; omit Openship secrets, variables and storage settings in this mode.
 
 `preview`, `repositorySource` and `updateRepositorySource` infer the controller from
@@ -146,7 +161,7 @@ Preserve both paths when configuring an external reverse proxy.
 | List recent runs, optionally filtered by workflow or linked project. | `actions.listRuns(input?)` | `GET /api/actions/runs`<br />`job:read` |
 | Read durable run, job, matrix and step state. | `actions.getRun(id)` | `GET /api/actions/runs/:id`<br />`job:read` |
 | Request cancellation; runner capacity remains held until cleanup is confirmed. | `actions.cancel(id)` | `POST /api/actions/runs/:id/cancel`<br />`job:write` |
-| Approve an untrusted fork run on disposable runners without secrets or write tokens. | `actions.approve(id)` | `POST /api/actions/runs/:id/approve`<br />`job:admin` |
+| Approve the reviewed commit and attempt using its current admission key. Requires administration of the selected destinations. | `actions.approve(id, input?)` | `POST /api/actions/runs/:id/approve`<br />`job:admin` |
 | Create a new attempt of the saved workflow and commit using an idempotency key. | `actions.rerun(id, input)` | `POST /api/actions/runs/:id/rerun`<br />`job:write` |
 
 ### Output

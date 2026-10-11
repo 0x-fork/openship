@@ -103,10 +103,44 @@ export const ActionWorkflowNotificationsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+const ActionAccessAudience = Type.Union([
+  Type.Literal("owner"),
+  Type.Literal("selected"),
+  Type.Literal("collaborators"),
+]);
+const ActionAccessApproval = Type.Union([Type.Literal("required"), Type.Literal("automatic")]);
+const ActionAccessForks = Type.Union([Type.Literal("deny"), Type.Literal("review")]);
+const ActionActorIdentitySchema = Type.Object({
+  provider: Type.Union([Type.Literal("github"), Type.Literal("openship")]),
+  id: Type.String(),
+  login: Type.String(),
+});
+const ActionAccessPolicyInput = Type.Object(
+  {
+    audience: ActionAccessAudience,
+    users: Type.Array(
+      Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9_\\[\\]-]+$" }),
+      { maxItems: 30, uniqueItems: true },
+    ),
+    approval: ActionAccessApproval,
+    forks: ActionAccessForks,
+  },
+  { additionalProperties: false },
+);
+const ActionAccessPolicySchema = Type.Object({
+  version: Type.Literal(1),
+  audience: ActionAccessAudience,
+  owner: ActionActorIdentitySchema,
+  users: Type.Array(ActionActorIdentitySchema),
+  approval: ActionAccessApproval,
+  forks: ActionAccessForks,
+});
+
 export const ActionWorkflowInput = Type.Object(
   {
     controller: Type.Optional(ActionControllerSchema),
     repositoryRunnerConsent: Type.Optional(Type.Boolean()),
+    accessPolicy: Type.Optional(ActionAccessPolicyInput),
     name: Type.String({ minLength: 1, maxLength: 100 }),
     owner: nullable(owner),
     repo: nullable(repo),
@@ -171,6 +205,7 @@ export const ActionWorkflowSchema = Type.Object(
     source: nullable(Type.String()),
     runnerIds: Type.Array(Type.String()),
     notifications: Type.Optional(Type.Union([ActionWorkflowNotificationsSchema, Type.Null()])),
+    accessPolicy: Type.Optional(Type.Union([ActionAccessPolicySchema, Type.Null()])),
     storageDestinationId: nullable(id),
     variables: strings,
     plan: ActionPlanSchema,
@@ -239,6 +274,23 @@ export const ActionRunSchema = Type.Object(
     actor: Type.String(),
     untrusted: Type.Boolean(),
     approvedAt: date,
+    canApprove: Type.Optional(Type.Boolean()),
+    admission: Type.Optional(
+      Type.Union([
+        Type.Object({
+          state: Type.Union([
+            Type.Literal("blocked"),
+            Type.Literal("approval_required"),
+            Type.Literal("allowed"),
+          ]),
+          reason: Type.String(),
+          key: Type.String(),
+        }),
+        Type.Null(),
+      ]),
+    ),
+    runnerIds: Type.Optional(Type.Array(id)),
+    triggeringActor: Type.Optional(nullable(Type.String())),
     cancelRequestedAt: date,
     error: nullable(Type.String()),
     startedAt: date,
@@ -448,7 +500,15 @@ export const ActionResourceSchemas = {
     output: Type.Object({ url: Type.String() }),
   },
   cancel: { action: "write", output: ActionRunSchema },
-  approve: { action: "admin", output: ActionRunSchema },
+  approve: {
+    action: "admin",
+    input: Type.Object(
+      { key: Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })) },
+      { additionalProperties: false },
+    ),
+    optionalInput: true,
+    output: ActionRunSchema,
+  },
   rerun: {
     action: "write",
     input: Type.Object({

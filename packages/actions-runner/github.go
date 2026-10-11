@@ -24,13 +24,14 @@ import (
 )
 
 type githubRequest struct {
-	Repository  string   `json:"repository"`
-	Name        string   `json:"name"`
-	Token       string   `json:"token"`
-	Labels      []string `json:"labels"`
-	DownloadURL string   `json:"downloadUrl"`
-	SHA256      string   `json:"sha256"`
-	Image       string   `json:"image"`
+	Repository       string   `json:"repository"`
+	Name             string   `json:"name"`
+	Token            string   `json:"token"`
+	Labels           []string `json:"labels"`
+	DownloadURL      string   `json:"downloadUrl"`
+	SHA256           string   `json:"sha256"`
+	Image            string   `json:"image"`
+	RequireAdmission bool     `json:"requireAdmission"`
 }
 
 var githubOwner = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
@@ -39,7 +40,7 @@ var githubReleasePath = regexp.MustCompile(`^/actions/runner/releases/download/v
 
 func validateGitHubRequest(r jobRequest) error {
 	g := r.GitHub
-	if g == nil || !githubOwner.MatchString(g.Repository) || !githubRunnerName.MatchString(g.Name) || g.Token == "" || strings.ContainsAny(g.Token, "\r\n") || len(g.Token) > 4096 {
+	if g == nil || !g.RequireAdmission || !githubOwner.MatchString(g.Repository) || !githubRunnerName.MatchString(g.Name) || g.Token == "" || strings.ContainsAny(g.Token, "\r\n") || len(g.Token) > 4096 {
 		return errors.New("invalid GitHub runner registration")
 	}
 	u, err := url.Parse(g.DownloadURL)
@@ -212,6 +213,9 @@ func runGitHubRunner(parent context.Context, request jobRequest, events *eventWr
 	}
 	if err := prepareGitHubRunner(ctx, g, request.Directory); err != nil {
 		return result, err
+	}
+	if err := installGitHubGate(request.Directory); err != nil {
+		return result, fmt.Errorf("GitHub runner admission could not be installed: %w", err)
 	}
 	runnerRoot := filepath.Join(request.Directory, "runner")
 	environment := append(os.Environ(), "OPENSHIP_ACTION_WORKER_ID="+request.ID, "RUNNER_ALLOW_RUNASROOT=1")

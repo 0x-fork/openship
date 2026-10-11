@@ -219,9 +219,10 @@ r.post(
     authorizationHandledByOperation: true,
     tag: "job:admin",
     auditHandledByOperation: true,
+    body: R.approve.input,
     mcp: {
       description:
-        "Approve an untrusted fork run for disposable runners without secrets or write tokens.",
+        "Approve the reviewed commit and attempt for its allowed Actions destinations. The approval key must match the current run policy.",
     },
   },
   ctrl.approve,

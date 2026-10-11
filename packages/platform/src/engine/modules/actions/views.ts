@@ -74,6 +74,7 @@ export function actionWorkflowView(workflow: ActionWorkflow) {
     source,
     runnerIds,
     notifications: workflow.notifications ?? null,
+    accessPolicy: workflow.accessPolicy ?? null,
     storageDestinationId: workflow.storageDestinationId,
     variables,
     plan: actionPlanView(workflow.definition),
@@ -94,7 +95,13 @@ export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
     name: run.plan.name,
     number: run.number,
     attempt: run.attempt,
-    status: run.status,
+    status:
+      !run.finishedAt &&
+      !run.cancelRequestedAt &&
+      run.admission &&
+      run.admission.state !== "allowed"
+        ? ("waiting" as const)
+        : run.status,
     owner: run.configuration.owner,
     repo: run.configuration.repo,
     revision: run.revision,
@@ -103,6 +110,14 @@ export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
     actor: run.actor,
     untrusted: run.untrusted,
     approvedAt: run.approvedAt,
+    admission: run.admission
+      ? { state: run.admission.state, reason: run.admission.reason, key: run.admission.key }
+      : null,
+    runnerIds: run.admission?.runnerIds ?? run.configuration.runnerIds,
+    triggeringActor:
+      run.github?.triggeringActor?.login ??
+      run.configuration.triggeringActorIdentity?.login ??
+      null,
     cancelRequestedAt: run.cancelRequestedAt,
     error: run.error,
     startedAt: run.startedAt,

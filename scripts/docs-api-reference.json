@@ -3491,7 +3491,7 @@
     "actions.approve": {
       "page": "actions",
       "section": "Runs",
-      "description": "Approve an untrusted fork run on disposable runners without secrets or write tokens.",
+      "description": "Approve the reviewed commit and attempt using its current admission key. Requires administration of the selected destinations.",
       "route": "POST /api/actions/runs/:id/approve"
     },
     "actions.rerun": {

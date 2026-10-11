@@ -33,7 +33,8 @@ export const actionsApi = {
   dispatch: (id: string, input: Input<"dispatch">[1]) =>
     data<"dispatch">(api.post(`${p.workflow(id)}/dispatch`, input)),
   cancel: (id: string) => data<"cancel">(api.post(`${p.run(id)}/cancel`)),
-  approve: (id: string) => data<"approve">(api.post(`${p.run(id)}/approve`)),
+  approve: (id: string, key?: string) =>
+    data<"approve">(api.post(`${p.run(id)}/approve`, key ? { key } : {})),
   rerun: (id: string, key: string) =>
     data<"rerun">(api.post(`${p.run(id)}/rerun`, { idempotencyKey: key })),
   runners: () => data<"runners">(api.get(p.runners)),

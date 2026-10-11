@@ -8,6 +8,7 @@ import { ActionController, type ActionControllerPorts } from "./controller";
 import { syncActionCheck } from "./github-checks";
 import { actionRuntimeEnvironment, authorizeActionStorage } from "./storage";
 import { completeActionRun } from "./notifications";
+import { refreshActionRunAdmission } from "./run-access";
 
 export { actionWorkerAssets } from "./worker-execution";
 import { openActionWorker, removeActionWorker } from "./worker-execution";
@@ -17,6 +18,8 @@ export const actionControllerPorts: ActionControllerPorts = {
   async authorize(run) {
     const ctx = await resolveExecutionAuthority(run.authority, `actions:${run.id}`);
     await authorizeActionRun(ctx, run, true);
+    const workflow = await repos.actions.workflow(run.organizationId, run.workflowId);
+    if (workflow?.accessPolicy) await refreshActionRunAdmission(ctx, workflow, run);
     if (run.configuration.storageDestinationId)
       await authorizeActionStorage(ctx, run.configuration.storageDestinationId, true);
   },

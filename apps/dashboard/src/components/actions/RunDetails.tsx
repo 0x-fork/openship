@@ -15,6 +15,7 @@ import { ActionError, ActionStatus } from "./ActionStatus";
 import { WorkflowGraph } from "./WorkflowGraph";
 import { ActionLogs } from "./ActionLogs";
 import { RunArtifacts } from "./RunArtifacts";
+import { RunApproval } from "./RunApproval";
 import { useActionMutation, useActionResource, useActionScope } from "./useActions";
 
 const pollingDelay = (run: ActionRunView) => (run.settledAt ? 0 : 2500);
@@ -107,7 +108,21 @@ function Detail({ id }: { id: string }) {
             </div>
           </header>
           <ActionError message={run.error} />
-          {run.controller !== "github" &&
+          {run.admission &&
+            run.admission.state !== "allowed" &&
+            !run.finishedAt &&
+            !run.cancelRequestedAt && (
+              <RunApproval
+                run={run}
+                busy={mutation.busy}
+                onApprove={async () => {
+                  await mutation.execute(() => actionsApi.approve(id, run.admission!.key));
+                  resource.refresh();
+                }}
+              />
+            )}
+          {!run.admission &&
+            run.controller !== "github" &&
             run.untrusted &&
             !run.approvedAt &&
             !actionFinished(run.status) && (
@@ -116,9 +131,10 @@ function Detail({ id }: { id: string }) {
                   {a.approvalHint}
                 </p>
                 <Button
-                  disabled={mutation.busy}
+                  disabled={mutation.busy || run.canApprove !== true}
                   onClick={async () => {
-                    if (await mutation.execute(() => actionsApi.approve(id))) resource.refresh();
+                    await mutation.execute(() => actionsApi.approve(id));
+                    resource.refresh();
                   }}
                 >
                   {a.approve}

@@ -42,6 +42,12 @@ import { WorkflowTriggers } from "./WorkflowTriggers";
 import { WorkflowFiles } from "./WorkflowFiles";
 import { WorkflowRunnerSelect } from "./WorkflowRunnerSelect";
 import { WorkflowChecks } from "./WorkflowChecks";
+import {
+  WorkflowAccess,
+  defaultWorkflowAccess,
+  validWorkflowAccess,
+  type WorkflowAccessValue,
+} from "./WorkflowAccess";
 import { Switch } from "@/components/ui/Switch";
 import { useActionMutation, useActionResource, useActionScope } from "./useActions";
 
@@ -125,11 +131,17 @@ function SetupForm({
   useEffect(() => {
     onBusyChange?.(mutation.busy);
   }, [mutation.busy, onBusyChange]);
-  const [trusted, setTrusted] = useState(workflow?.controller === "github");
-  const [trustRequest, setTrustRequest] = useState(0);
-  const trustPanel = useRef<HTMLDivElement>(null);
-  const trustCheckbox = useRef<HTMLButtonElement>(null);
-  const [step, setStep] = useState<"workflow" | "rules" | "checks">("workflow");
+  const [accessPolicy, setAccessPolicy] = useState<WorkflowAccessValue>(
+    workflow?.accessPolicy
+      ? {
+          audience: workflow.accessPolicy.audience,
+          users: workflow.accessPolicy.users.map((user) => user.login),
+          approval: workflow.accessPolicy.approval,
+          forks: workflow.accessPolicy.forks,
+        }
+      : { ...defaultWorkflowAccess },
+  );
+  const [step, setStep] = useState<"workflow" | "rules" | "access" | "checks">("workflow");
   const [standalone, setStandalone] = useState(!!workflow && !workflow.owner);
   const [repository, setRepository] = useState(
     workflow?.owner
@@ -207,7 +219,6 @@ function SetupForm({
     workflow?.projectIds ?? (initial?.projectId ? [initial.projectId] : []),
   );
   const [enabled, setEnabled] = useState(workflow?.enabled ?? true);
-  const [allowForks, setAllowForks] = useState(workflow?.allowForks ?? false);
   const [storage, setStorage] = useState(workflow?.storageDestinationId ?? "");
   const [variables, setVariables] = useState<ActionValue[]>(
     Object.entries(workflow?.variables ?? {}).map(([name, value]) => ({ id: name, name, value })),
@@ -302,20 +313,15 @@ function SetupForm({
     (r) => r.kind === "cloud" && r.enabled && runnerIds.includes(r.id),
   );
   const differsFromRepository = original?.identity === identity && original.source !== source;
-  const needsTrust = hasNative && !trusted;
-  const trustInvalid = needsTrust && trustRequest > 0;
   const canRequestSave =
     readySource && !!selectedPaths.length && !!name.trim() && !!runnerIds.length && !mutation.busy;
-  const canSave = canRequestSave && !needsTrust;
-  useEffect(() => {
-    if (!trustInvalid || step !== "rules" || (selection && view !== "list")) return;
-    trustPanel.current?.scrollIntoView?.({ block: "center" });
-    trustCheckbox.current?.focus({ preventScroll: true });
-  }, [trustInvalid, trustRequest, step, selection, view]);
+  const accessValid =
+    validWorkflowAccess(accessPolicy) && (accessPolicy.forks !== "review" || hasIsolated);
+  const canSave = canRequestSave && accessValid;
   const savedId = useRef(workflow?.id);
   const chooseStandalone = (value: boolean) => {
     setStandalone(value);
-    setTrusted(false);
+    setAccessPolicy({ ...defaultWorkflowAccess });
     const targetKey = value ? "standalone" : `${repositoryKey}:.github/workflows/ci.yml`;
     if (draft.sourceFor(targetKey) === undefined && (value || !repositoryValid))
       draft.reset(value ? STANDALONE : STARTER, targetKey);
@@ -372,7 +378,7 @@ function SetupForm({
             ? name
             : (names[key] ?? remote?.plan?.name ?? selectedPath.split("/").pop()!)
           ).trim(),
-          ...(github && { repositoryRunnerConsent: trusted }),
+          accessPolicy,
           owner: standalone ? null : owner!,
           repo: standalone ? null : repo!,
           ref: standalone ? "main" : ref,
@@ -381,7 +387,7 @@ function SetupForm({
           notifications,
           ...(!workflow || projectsChanged ? { projectIds } : {}),
           enabled,
-          allowForks: !github && !standalone && hasIsolated && allowForks,
+
           storageDestinationId: github ? null : storage || null,
           variables: github ? {} : Object.fromEntries(variables.map((v) => [v.name, v.value])),
           secrets: github
@@ -433,8 +439,9 @@ function SetupForm({
     onSaved(saved[0]!, saved);
   };
   const requestSave = async () => {
-    if (needsTrust && canRequestSave) {
-      requestRunnerTrust();
+    if (!accessValid && canRequestSave) {
+      selectWorkflowItem(null);
+      showSettings("access");
       return;
     }
     if (!canSave) return;
@@ -503,11 +510,6 @@ function SetupForm({
       previewFile(selectedPaths[0]!);
     setStep(next);
     if (next === "checks") setReviewedCompletion(true);
-  };
-  const requestRunnerTrust = () => {
-    selectWorkflowItem(null);
-    showSettings("rules");
-    setTrustRequest((request) => request + 1);
   };
   const changeExpandedSteps = (expanded: WorkflowExpandedSteps) => {
     setExpandedSteps(expanded);
@@ -618,12 +620,15 @@ function SetupForm({
                         {
                           key: "workflow",
                           label: c.workflowStep,
-                          leading: <Icon name="play-circle" className="size-4" />,
+                          leading: (
+                            <Icon name="play-circle" className="hidden size-4 @min-[380px]:block" />
+                          ),
                         },
                         {
                           key: "rules",
                           label: c.rulesStep,
                         },
+                        { key: "access", label: a.access.step },
                         {
                           key: "checks",
                           label: a.completion.checksStep,
@@ -632,6 +637,7 @@ function SetupForm({
                       value={step}
                       onChange={showSettings}
                       idPrefix={`${prefix}-settings`}
+                      className="@max-[380px]:[&_[role=tab]]:px-2"
                       fullWidth
                       size="sm"
                     />
@@ -683,7 +689,7 @@ function SetupForm({
                                     value={repository}
                                     onChange={(event) => {
                                       setRepository(event.target.value);
-                                      setTrusted(false);
+                                      setAccessPolicy({ ...defaultWorkflowAccess });
                                       setOriginal(null);
                                     }}
                                     placeholder={a.repositoryHint}
@@ -735,7 +741,6 @@ function SetupForm({
                                         active={path}
                                         onSelect={(paths) => {
                                           setFileSelection({ scope: repositoryKey, paths });
-                                          setTrusted(false);
                                           if (!paths.includes(path) && paths.length) {
                                             setPath(paths[0]!);
                                             selectWorkflowItem(null);
@@ -835,6 +840,24 @@ function SetupForm({
                           )}
                         </div>
                       </>
+                    ) : step === "access" ? (
+                      <WorkflowAccess
+                        value={accessPolicy}
+                        onChange={setAccessPolicy}
+                        repository={!standalone && repositoryValid ? repository.trim() : null}
+                        github={hasNative}
+                        isolated={hasIsolated}
+                        owner={
+                          workflow?.accessPolicy &&
+                          (standalone
+                            ? !workflow.owner
+                            : repository.trim().toLowerCase() ===
+                              `${workflow.owner}/${workflow.repo}`) &&
+                          (!workflow.owner || workflow.accessPolicy.owner.provider === "github")
+                            ? workflow.accessPolicy.owner.login
+                            : undefined
+                        }
+                      />
                     ) : step === "checks" ? (
                       <WorkflowChecks
                         repository={!standalone}
@@ -863,7 +886,6 @@ function SetupForm({
                           runners={availableRunners}
                           value={runnerIds}
                           onChange={(ids) => {
-                            setTrusted(false);
                             setRunnerIds(ids);
                           }}
                           onCreated={(runner) =>
@@ -1002,66 +1024,6 @@ function SetupForm({
                             </div>
                           </details>
                         )}
-                        {hasNative && (
-                          <div
-                            ref={trustPanel}
-                            className={`scroll-mt-20 space-y-2.5 rounded-xl p-3 transition-colors ${trustInvalid ? "bg-warning-bg ring-1 ring-warning-border" : "bg-muted/30"}`}
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <span className="text-sm font-medium">{a.controller.trustTitle}</span>
-                              {!trusted && (
-                                <span
-                                  className={`text-xs ${trustInvalid ? "text-warning" : "text-muted-foreground"}`}
-                                >
-                                  {a.completion.required}
-                                </span>
-                              )}
-                            </div>
-                            <label className="flex cursor-pointer items-start gap-2 text-sm">
-                              <Checkbox
-                                ref={trustCheckbox}
-                                checked={trusted}
-                                className={trustInvalid ? "ring-1 ring-warning" : undefined}
-                                onCheckedChange={(checked) => {
-                                  setTrusted(checked);
-                                  if (checked) setTrustRequest(0);
-                                }}
-                                aria-required
-                                aria-invalid={trustInvalid || undefined}
-                                aria-describedby={
-                                  trustInvalid ? `${prefix}-trust-error` : undefined
-                                }
-                              />
-                              <span className="text-xs leading-relaxed text-muted-foreground">
-                                {a.controller.trust}
-                              </span>
-                            </label>
-                            {trustInvalid && (
-                              <p
-                                id={`${prefix}-trust-error`}
-                                role="alert"
-                                className="text-xs font-medium text-warning"
-                              >
-                                {a.controller.trustRequired}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        {!standalone && hasIndependent && (
-                          <label className="flex items-start gap-2 text-sm">
-                            <Checkbox
-                              checked={allowForks && hasIsolated}
-                              disabled={!hasIsolated}
-                              onCheckedChange={setAllowForks}
-                            />
-                            <span>
-                              {a.forks}
-                              <span className="mt-1 block text-xs text-muted-foreground">
-                                {a.forksHint}
-                              </span>
-                            </span>
-                          </label>
-                        )}
                       </>
                     )}
                   </div>
@@ -1070,19 +1032,19 @@ function SetupForm({
             </div>
             <div className="shrink-0 space-y-3 p-4 pt-3">
               <p className="text-xs leading-relaxed text-muted-foreground">{e.draftHint}</p>
-              {(step === "workflow" &&
-                (!reviewedCompletion || !runnerIds.length || (hasNative && !trusted))) ||
-              (step === "rules" && !reviewedCompletion) ? (
+              {step !== "checks" && (!reviewedCompletion || !runnerIds.length) ? (
                 <Button
                   className="w-full"
-                  disabled={!readySource || (step === "rules" && !runnerIds.length)}
+                  disabled={
+                    !readySource ||
+                    (step === "rules" && !runnerIds.length) ||
+                    (step === "access" && !accessValid)
+                  }
                   onClick={() => {
-                    if (step === "rules" && needsTrust) {
-                      requestRunnerTrust();
-                      return;
-                    }
                     selectWorkflowItem(null);
-                    showSettings(step === "workflow" ? "rules" : "checks");
+                    showSettings(
+                      step === "workflow" ? "rules" : step === "rules" ? "access" : "checks",
+                    );
                   }}
                 >
                   {c.continue}
@@ -1110,7 +1072,7 @@ function SetupForm({
           onClose={() => setPicker(false)}
           onSelect={(owner, repository) => {
             setRepository(`${owner}/${repository.name}`);
-            setTrusted(false);
+            setAccessPolicy({ ...defaultWorkflowAccess });
             setRef(repository.default_branch || "main");
             setOriginal(null);
             loaded.current = null;

@@ -152,7 +152,17 @@ export class ActionController {
           await repo.requestCancel(org, id);
           run = (await repo.run(org, id))!;
         }
-        if (!run.cancelRequestedAt && !(await repo.activateRun(org, id, this.owner))) return;
+        if (!run.cancelRequestedAt && !(await repo.activateRun(org, id, this.owner))) {
+          run = (await repo.run(org, id))!;
+          if (!run.startedAt) return;
+          // Access may be revoked while earlier jobs are still executing. Drain
+          // that attempt instead of abandoning its workers or starting more jobs.
+          await repo.updateRun(org, id, this.owner, {
+            error:
+              "Workflow access changed. This attempt is being stopped; review the settings before rerunning it.",
+          });
+          await repo.requestCancel(org, id);
+        }
         run = (await repo.run(org, id))!;
         await this.expand(run);
       }

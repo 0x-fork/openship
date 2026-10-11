@@ -8,6 +8,7 @@ import {
   generateId,
   type ActionJobSpec,
   type ActionWorkerEvent,
+  type ActionRunAdmission,
 } from "@repo/core";
 import { isDeepStrictEqual } from "node:util";
 import type { Database } from "../client";
@@ -26,6 +27,7 @@ import { createActionProjectRepo } from "./action-project.repo";
 import { withProjectWorkAdmission } from "./project-work-admission";
 import { createActionGitHubRepo } from "./action-github.repo";
 import { actionRunnerAllocationCount } from "./action-runner-allocation";
+import { actionRunAdmitted, actionRunnerAdmitted } from "./action-run-admission";
 
 export type ActionRunner = typeof actionRunner.$inferSelect;
 export type ActionWorkflow = typeof actionWorkflow.$inferSelect;
@@ -597,7 +599,12 @@ export function createActionsRepo(db: Database) {
         }
         const [inserted] = await tx
           .insert(actionRun)
-          .values({ ...value, number, attempt })
+          .values({
+            ...value,
+            number,
+            attempt,
+            ...((value.attempt ?? 1) !== attempt && { admission: null }),
+          })
           .onConflictDoNothing({ target: [actionRun.organizationId, actionRun.idempotencyKey] })
           .returning();
         if (inserted) return inserted;
@@ -611,24 +618,98 @@ export function createActionsRepo(db: Database) {
         .set({ cancelRequestedAt: new Date(), status: "cancelling", updatedAt: new Date() })
         .where(and(runWhere(org, id), isNull(actionRun.finishedAt)));
     },
-    async approve(org: string, id: string, userId: string) {
-      await db
-        .update(actionRun)
-        .set({
-          approvedAt: new Date(),
-          approvedBy: userId,
-          status: "queued",
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            runWhere(org, id),
-            eq(actionRun.untrusted, true),
-            isNull(actionRun.approvedAt),
-            isNull(actionRun.cancelRequestedAt),
-            isNull(actionRun.finishedAt),
-          ),
-        );
+    async setRunAdmission(
+      org: string,
+      id: string,
+      admission: ActionRunAdmission,
+      expectedUpdatedAt?: Date,
+    ) {
+      return db.transaction(async (tx) => {
+        const [identity] = await tx.select().from(actionRun).where(runWhere(org, id));
+        if (!identity) throw new AppError("Workflow run not found", 404, "ACTIONS_RUN_NOT_FOUND");
+        const [workflow] = await tx
+          .select()
+          .from(actionWorkflow)
+          .where(workflowWhere(org, identity.workflowId))
+          .for("update");
+        if (!workflow || workflow.updatedAt.toISOString() !== admission.workflowVersion)
+          throw new AppError(
+            "Workflow access changed. Refresh before approving or starting this run.",
+            409,
+            "ACTIONS_ACCESS_CHANGED",
+          );
+        const [current] = await tx.select().from(actionRun).where(runWhere(org, id)).for("update");
+        if (!current || current.finishedAt || current.cancelRequestedAt) return current;
+        if (
+          expectedUpdatedAt &&
+          current.updatedAt.getTime() !== expectedUpdatedAt.getTime() &&
+          admission.state === "allowed"
+        )
+          return current;
+        // A background read started before an approval must not undo it.
+        const value =
+          admission.state === "approval_required" &&
+          current.approvedAt &&
+          current.approvalKey === admission.key
+            ? { ...admission, state: "allowed" as const, reason: "allowed" as const }
+            : admission;
+        if (isDeepStrictEqual(value, current.admission)) return current;
+        return (
+          await tx
+            .update(actionRun)
+            .set({ admission: value, updatedAt: new Date() })
+            .where(runWhere(org, id))
+            .returning()
+        )[0];
+      });
+    },
+    async approve(org: string, id: string, userId: string, key?: string) {
+      return db.transaction(async (tx) => {
+        const [identity] = await tx.select().from(actionRun).where(runWhere(org, id));
+        if (!identity) throw new AppError("Workflow run not found", 404, "ACTIONS_RUN_NOT_FOUND");
+        const [workflow] = await tx
+          .select()
+          .from(actionWorkflow)
+          .where(workflowWhere(org, identity.workflowId))
+          .for("update");
+        const [run] = await tx.select().from(actionRun).where(runWhere(org, id)).for("update");
+        if (!run || !workflow || run.finishedAt || run.cancelRequestedAt)
+          throw new AppError("This run can no longer be approved", 409, "ACTIONS_RUN_CHANGED");
+        // Compatibility for an existing independent fork request. New policies
+        // always require the exact key shown in the review screen.
+        const legacy =
+          !workflow.accessPolicy && run.controller === "openship" && run.untrusted && !key;
+        if (
+          !legacy &&
+          (!key ||
+            key !== run.admission?.key ||
+            run.admission.workflowVersion !== workflow.updatedAt.toISOString() ||
+            run.admission.state === "blocked" ||
+            (run.admission.state !== "approval_required" && run.approvalKey !== key))
+        )
+          throw new AppError(
+            "Run access or approval details changed. Refresh and review this attempt again.",
+            409,
+            "ACTIONS_ACCESS_CHANGED",
+          );
+        if (run.approvedAt && (legacy || run.approvalKey === key)) return run;
+        return (
+          await tx
+            .update(actionRun)
+            .set({
+              approvedAt: new Date(),
+              approvedBy: userId,
+              approvalKey: key ?? null,
+              admission: run.admission
+                ? { ...run.admission, state: "allowed", reason: "allowed" }
+                : null,
+              status: run.controller === "github" ? run.status : "queued",
+              updatedAt: new Date(),
+            })
+            .where(runWhere(org, id))
+            .returning()
+        )[0];
+      });
     },
     async pendingRuns(limit = 50) {
       return db
@@ -698,6 +779,13 @@ export function createActionsRepo(db: Database) {
           .from(organization)
           .where(eq(organization.id, org))
           .for("update");
+        const [identity] = await tx.select().from(actionRun).where(runWhere(org, id));
+        if (!identity) return false;
+        const [workflow] = await tx
+          .select()
+          .from(actionWorkflow)
+          .where(workflowWhere(org, identity.workflowId))
+          .for("update");
         const [run] = await tx
           .select()
           .from(actionRun)
@@ -709,13 +797,7 @@ export function createActionsRepo(db: Database) {
             ),
           )
           .for("update");
-        if (
-          !run ||
-          run.controller !== "openship" ||
-          run.cancelRequestedAt ||
-          run.finishedAt ||
-          (run.untrusted && !run.approvedAt)
-        )
+        if (!run || run.controller !== "openship" || !actionRunAdmitted(workflow, run))
           return false;
         if (run.startedAt) return true;
         if (run.concurrencyGroup) {
@@ -866,25 +948,56 @@ export function createActionsRepo(db: Database) {
       )[0];
     },
     async startJob(org: string, id: string, owner: string) {
-      return (
-        await db
-          .update(actionJob)
-          .set({
-            workerStartedAt: sql`COALESCE(${actionJob.workerStartedAt}, now())`,
-            error: null,
-            updatedAt: new Date(),
-          })
+      return db.transaction(async (tx) => {
+        const [jobIdentity] = await tx.select().from(actionJob).where(jobWhere(org, id));
+        if (!jobIdentity) return;
+        const [identity] = await tx
+          .select()
+          .from(actionRun)
+          .where(runWhere(org, jobIdentity.runId));
+        if (!identity) return;
+        const [workflow] = await tx
+          .select()
+          .from(actionWorkflow)
+          .where(workflowWhere(org, identity.workflowId))
+          .for("update");
+        const [run] = await tx
+          .select()
+          .from(actionRun)
           .where(
             and(
-              jobWhere(org, id),
-              isNull(actionJob.cancelRequestedAt),
-              isNull(actionJob.finishedAt),
-              isNull(actionJob.cleanedAt),
-              sql`EXISTS (SELECT 1 FROM ${actionRun} WHERE ${actionRun.id} = ${actionJob.runId} AND ${actionRun.leaseOwner} = ${owner} AND ${actionRun.leaseUntil} > now() AND ${actionRun.cancelRequestedAt} IS NULL AND ${actionRun.finishedAt} IS NULL)`,
+              runWhere(org, identity.id),
+              eq(actionRun.leaseOwner, owner),
+              gt(actionRun.leaseUntil, new Date()),
             ),
           )
-          .returning()
-      )[0];
+          .for("update");
+        if (!run || run.controller !== "openship" || !jobIdentity.runnerId) return;
+        const [runner] = await tx
+          .select()
+          .from(actionRunner)
+          .where(runnerWhere(org, jobIdentity.runnerId))
+          .for("update");
+        if (!runner || !actionRunnerAdmitted(workflow, run, runner)) return;
+        return (
+          await tx
+            .update(actionJob)
+            .set({
+              workerStartedAt: sql`COALESCE(${actionJob.workerStartedAt}, now())`,
+              error: null,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                jobWhere(org, id),
+                isNull(actionJob.cancelRequestedAt),
+                isNull(actionJob.finishedAt),
+                isNull(actionJob.cleanedAt),
+              ),
+            )
+            .returning()
+        )[0];
+      });
     },
     async reserveRunner(
       org: string,
@@ -898,6 +1011,18 @@ export function createActionsRepo(db: Database) {
           .from(organization)
           .where(eq(organization.id, org))
           .for("update");
+        const [jobIdentity] = await tx.select().from(actionJob).where(jobWhere(org, jobId));
+        if (!jobIdentity) return false;
+        const [identity] = await tx
+          .select()
+          .from(actionRun)
+          .where(runWhere(org, jobIdentity.runId));
+        if (!identity) return false;
+        const [workflow] = await tx
+          .select()
+          .from(actionWorkflow)
+          .where(workflowWhere(org, identity.workflowId))
+          .for("update");
         const [job] = await tx.select().from(actionJob).where(jobWhere(org, jobId)).for("update");
         if (!job || actionFinished(job.status) || job.cancelRequestedAt || !job.spec) return false;
         const [run] = await tx
@@ -910,7 +1035,13 @@ export function createActionsRepo(db: Database) {
               gt(actionRun.leaseUntil, new Date()),
             ),
           );
-        if (!run || run.controller !== "openship" || run.cancelRequestedAt) return false;
+        if (
+          !run ||
+          run.controller !== "openship" ||
+          !actionRunAdmitted(workflow, run) ||
+          !workflow!.runnerIds.includes(runnerId)
+        )
+          return false;
         if (job.runnerId) return job.runnerId === runnerId;
         const [runner] = await tx
           .select()
@@ -919,7 +1050,7 @@ export function createActionsRepo(db: Database) {
           .for("update");
         if (
           !runner ||
-          !run.configuration.runnerIds.includes(runnerId) ||
+          !actionRunnerAdmitted(workflow, run, runner) ||
           actionRunnerMismatch(runner.capabilities, runner.config, job.spec)
         )
           return false;

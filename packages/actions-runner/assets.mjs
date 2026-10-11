@@ -17,7 +17,9 @@ const output = join(runnerDirectory, "dist");
 export function runnerFingerprint() {
   const hash = createHash("sha256");
   for (const name of readdirSync(runnerDirectory)
-    .filter((name) => /\.(?:go|mjs)$/.test(name) || ["go.mod", "go.sum", "NOTICE"].includes(name))
+    .filter(
+      (name) => /\.(?:go|mjs|cjs)$/.test(name) || ["go.mod", "go.sum", "NOTICE"].includes(name),
+    )
     .sort()) {
     hash.update(name);
     hash.update(readFileSync(join(runnerDirectory, name)));

@@ -4,7 +4,7 @@ import {
   NotFoundError,
   ValidationError,
 } from "@repo/core";
-import { repos } from "@repo/db";
+import { repos, type ActionRun } from "@repo/db";
 import type { ActionDependencies } from "../../../actions";
 import type { ExecutionContext } from "../../../context";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
@@ -33,6 +33,8 @@ import {
   visibleWorkflowProjectIds,
 } from "./project.service";
 import { readActionRepositorySource, updateActionRepositorySource } from "./repository-source";
+import { refreshActionRunAdmission } from "./run-access";
+import { authorization } from "../../lib/authorization";
 
 function record(ctx: ExecutionContext, id: string, operation: string) {
   audit.recordAsync(operationAuditContext(ctx), {
@@ -44,7 +46,33 @@ function record(ctx: ExecutionContext, id: string, operation: string) {
 }
 async function presentRun(ctx: ExecutionContext, id: string) {
   const run = await service.requireActionRun(ctx, id);
-  return actionRunView(run, await repos.actions.jobs(ctx.organizationId, id));
+  const awaitingApproval =
+    !run.finishedAt &&
+    !run.cancelRequestedAt &&
+    (run.admission?.state === "approval_required" ||
+      (!run.admission && run.untrusted && !run.approvedAt));
+  return {
+    ...actionRunView(run, await repos.actions.jobs(ctx.organizationId, id)),
+    canApprove:
+      !!awaitingApproval &&
+      (await visibleAction(async () => {
+        await requireApprovalAccess(ctx, run);
+      })),
+  };
+}
+// A presentation hint uses the same checks as the mutation; approval always
+// rechecks authority instead of trusting a previously rendered button.
+async function requireApprovalAccess(ctx: ExecutionContext, run: ActionRun) {
+  await authorization.authorize(
+    { ...ctx, scopeMode: "fixed" },
+    {
+      resourceType: "job",
+      resourceId: "*",
+      action: "admin",
+    },
+  );
+  await authorizeActionRun(ctx, run, true);
+  return service.requireActionWorkflow(ctx, run.workflowId, true);
 }
 async function presentWorkflow(
   ctx: ExecutionContext,
@@ -184,11 +212,28 @@ export const actionDependencies: ActionDependencies = {
       record(ctx, id, "cancel");
       return presentRun(ctx, id);
     },
-    async approve(ctx, id) {
-      const run = await service.requireActionRun(ctx, id, true);
-      if (run.controller === "github")
-        await (await import("./github-commands")).controlGitHubRun(ctx, run, "approve");
-      else await repos.actions.approve(ctx.organizationId, id, ctx.userId);
+    async approve(ctx, id, input) {
+      let run = await service.requireActionRun(ctx, id);
+      const workflow = await requireApprovalAccess(ctx, run);
+      if (run.controller === "github") {
+        const { GitHubActionsApi } = await import("./github-api");
+        const api = new GitHubActionsApi(ctx, workflow.owner!, workflow.repo!);
+        const remote = await api.run(run.github!.id);
+        if (
+          remote.run_attempt !== run.attempt ||
+          remote.head_sha !== run.revision ||
+          remote.status === "completed"
+        )
+          throw new ValidationError(
+            "This GitHub attempt changed or finished. Open the current run before approving it.",
+          );
+        run = await (
+          await import("./github-sync")
+        ).synchronizeGitHubRun(ctx, workflow, remote, api);
+      }
+      if (workflow.accessPolicy || run.controller === "github")
+        await refreshActionRunAdmission(ctx, workflow, run);
+      await repos.actions.approve(ctx.organizationId, id, ctx.userId, input?.key);
       record(ctx, id, "approve");
       return presentRun(ctx, id);
     },

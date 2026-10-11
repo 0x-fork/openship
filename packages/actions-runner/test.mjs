@@ -3,10 +3,14 @@ import { directory, prepareRunnerModule } from "./prepare.mjs";
 const command = process.argv.includes("--vet") ? "vet" : "test";
 const options = process.argv.filter((arg) => arg === "-race");
 if (command === "test") {
-  const prepared = spawnSync(process.execPath, ["--test", "prepare.test.mjs"], {
-    cwd: directory,
-    stdio: "inherit",
-  });
+  const prepared = spawnSync(
+    process.execPath,
+    ["--test", "prepare.test.mjs", "github-gate.test.cjs"],
+    {
+      cwd: directory,
+      stdio: "inherit",
+    },
+  );
   if (prepared.status !== 0) process.exit(prepared.status ?? 1);
 }
 const result = spawnSync(

@@ -21,7 +21,7 @@ func officialRequest(t *testing.T) jobRequest {
 	r := nativeRequest(t, "")
 	r.Environment = nil
 	r.Secrets = nil
-	r.GitHub = &githubRequest{Repository: "owner/repo", Name: "openship-session_12345", Token: "temporary-registration-token", Labels: []string{"self-hosted", "openship"}, DownloadURL: "https://github.com/actions/runner/releases/download/v2.338.0/actions-runner-linux-x64-2.338.0.tar.gz", SHA256: strings.Repeat("a", 64)}
+	r.GitHub = &githubRequest{RequireAdmission: true, Repository: "owner/repo", Name: "openship-session_12345", Token: "temporary-registration-token", Labels: []string{"self-hosted", "openship"}, DownloadURL: "https://github.com/actions/runner/releases/download/v2.338.0/actions-runner-linux-x64-2.338.0.tar.gz", SHA256: strings.Repeat("a", 64)}
 	return r
 }
 func TestOfficialRunnerRequestTrustBoundary(t *testing.T) {
@@ -30,6 +30,7 @@ func TestOfficialRunnerRequestTrustBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, mutate := range []func(*jobRequest){
+		func(r *jobRequest) { r.GitHub.RequireAdmission = false },
 		func(r *jobRequest) { r.GitHub.DownloadURL = "https://example.com/runner.tar.gz" },
 		func(r *jobRequest) {
 			r.GitHub.DownloadURL = "https://github.com.evil.example/actions/runner/releases/download/v2.338.0/actions-runner-linux-x64-2.338.0.tar.gz"

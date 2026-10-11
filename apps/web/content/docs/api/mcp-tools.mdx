@@ -34,7 +34,7 @@ The current API has **490 unique tools**. Permission tags below describe the rou
 | `post_actions_runners_by_id_probe`<br />`POST /api/actions/runners/:id/probe` | Recheck an authorized runner's capabilities. | `job:admin` |
 | `post_actions_runners_emulation`<br />`POST /api/actions/runners/emulation` | Enable and verify Docker CPU emulation on an authorized Actions server. Installs only missing binfmt emulators; does not restart Docker or applications. | `job:admin` |
 | `post_actions_runners_inspect`<br />`POST /api/actions/runners/inspect` | Check OS, architecture, Git and Docker on an authorized Actions destination without changing the server. | `job:admin` |
-| `post_actions_runs_by_id_approve`<br />`POST /api/actions/runs/:id/approve` | Approve an untrusted fork run for disposable runners without secrets or write tokens. | `job:admin` |
+| `post_actions_runs_by_id_approve`<br />`POST /api/actions/runs/:id/approve` | Approve the reviewed commit and attempt for its allowed Actions destinations. The approval key must match the current run policy. | `job:admin` |
 | `post_actions_runs_by_id_artifacts_download`<br />`POST /api/actions/runs/:id/artifacts/download` | Get a short-lived download link for one authorized artifact. | `job:read` |
 | `post_actions_runs_by_id_cancel`<br />`POST /api/actions/runs/:id/cancel` | Request cancellation. Runner capacity is released only after execution has stopped. | `job:write` |
 | `post_actions_runs_by_id_rerun`<br />`POST /api/actions/runs/:id/rerun` | Retry the same immutable workflow and commit as a new attempt. | `job:write` |

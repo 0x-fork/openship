@@ -8,6 +8,7 @@ import {
   generateId,
   isFullCommitSha,
   inferActionWorkflowController,
+  type ActionActorIdentity,
 } from "@repo/core";
 import { repos, type ActionRun, type ActionWorkflow } from "@repo/db";
 import type { ActionOperations, CreateActionWorkflow } from "@repo/contracts";
@@ -27,6 +28,12 @@ import {
 import { actionConcurrency, parseActionWorkflow, record } from "./workflow";
 import { actionRuntimeUrl, authorizeActionStorage } from "./storage";
 import { validateActionNotifications } from "./notifications";
+import {
+  actionCallerIdentity,
+  githubActionActor,
+  prepareActionAccessPolicy,
+  evaluateActionRunAdmission,
+} from "./run-access";
 
 export async function requireActionWorkflow(
   ctx: ExecutionContext,
@@ -97,14 +104,15 @@ async function prepareActionWorkflow(
     input.notifications,
     existing?.notifications,
   );
-  if (controller === "openship" && (input.allowForks ?? existing?.allowForks)) {
+  await authorizeActionRepository(ctx, input.owner, input.repo);
+  const accessPolicy = await prepareActionAccessPolicy(ctx, input, existing);
+  if (accessPolicy.forks === "review") {
     const runners = await Promise.all(
       input.runnerIds.map((runnerId) => repos.actions.runner(ctx.organizationId, runnerId)),
     );
-    if (!runners.some((runner) => runner?.cloudPoolId && runner.enabled))
+    if (!runners.some((runner) => runner?.enabled && runner.cloudPoolId))
       throw new ValidationError("Fork pull requests need an enabled disposable Cloud runner pool");
   }
-  await authorizeActionRepository(ctx, input.owner, input.repo);
   const source =
     input.source ??
     (await getFileContent(ctx, input.owner!, input.repo!, input.path, { branch: input.ref }))
@@ -112,17 +120,6 @@ async function prepareActionWorkflow(
   const definition = await parseActionWorkflow(source, input.path, controller);
   let githubWorkflowId: string | null = null;
   if (controller === "github") {
-    if (
-      input.repositoryRunnerConsent !== true &&
-      (!existing ||
-        existing.controller !== "github" ||
-        existing.owner !== input.owner ||
-        existing.repo !== input.repo ||
-        JSON.stringify(existing.runnerIds) !== JSON.stringify(input.runnerIds))
-    )
-      throw new ValidationError(
-        "Confirm that workflows in this repository may execute on the selected runners. Repository workflow access grants code execution on these destinations.",
-      );
     await assertGitHubRepoAccess(ctx, { owner: input.owner!, repo: input.repo! }, "write");
     const api = new GitHubActionsApi(ctx, input.owner!, input.repo!);
     const remote = await api.workflow(input.path);
@@ -184,12 +181,12 @@ async function prepareActionWorkflow(
       lastError: null,
       runnerIds: input.runnerIds,
       notifications,
+      accessPolicy,
       variables: controller === "github" ? {} : (input.variables ?? existing?.variables ?? {}),
       secrets,
       authority: await captureExecutionAuthority(ctx),
       enabled: input.enabled ?? existing?.enabled ?? true,
-      allowForks:
-        controller === "github" ? false : (input.allowForks ?? existing?.allowForks ?? false),
+      allowForks: accessPolicy.forks === "review",
       storageDestinationId,
     },
     projectIds: input.projectIds,
@@ -544,7 +541,12 @@ export async function triggerActionWorkflow(
         )
         .digest("hex")
     : null;
-  return repos.actions.createRun({
+  const actorIdentity = ["push", "pull_request"].includes(trigger.eventName)
+    ? githubActionActor(trigger.event?.sender as { id?: number; login: string } | undefined)
+    : trigger.eventName === "schedule" && workflow.accessPolicy?.audience === "owner"
+      ? workflow.accessPolicy.owner
+      : await actionCallerIdentity(ctx, !!workflow.owner);
+  const value: Parameters<typeof repos.actions.createRun>[0] = {
     id: generateId("arun"),
     organizationId: ctx.organizationId,
     workflowId: workflow.id,
@@ -569,19 +571,34 @@ export async function triggerActionWorkflow(
       defaultBranch,
       workflowVersion: workflow.updatedAt.toISOString(),
       notifications: workflow.notifications,
+      actorIdentity,
+      triggeringActorIdentity: actorIdentity,
       ...(trigger.sourceJob && { sourceJob: trigger.sourceJob }),
       runnerIds: workflow.runnerIds,
       variables: trigger.untrusted ? {} : workflow.variables,
       secrets: trigger.untrusted ? {} : workflow.secrets,
       storageDestinationId: workflow.storageDestinationId,
     },
-  });
+  };
+  if (workflow.accessPolicy)
+    value.admission = await evaluateActionRunAdmission(ctx, workflow, {
+      ...value,
+      controller: "openship",
+      attempt: 1,
+      untrusted: !!trigger.untrusted,
+      github: null,
+      approvedAt: null,
+      approvalKey: null,
+    });
+  return repos.actions.createRun(value);
 }
 
 export async function rerunActionWorkflow(
   ctx: ExecutionContext,
   id: string,
   key: string,
+  /** Identity from an authenticated webhook, never part of the public input. */
+  webhookActor?: ActionActorIdentity | null,
 ): Promise<ActionRun> {
   const run = await requireActionRun(ctx, id, true);
   if (!run.finishedAt)
@@ -589,7 +606,10 @@ export async function rerunActionWorkflow(
   if (run.controller === "github")
     return (await import("./github-commands")).rerunGitHubWorkflow(ctx, run, key);
   const { id: _id, createdAt, updatedAt, ...snapshot } = run;
-  return repos.actions.createRun({
+  const workflow = await requireActionWorkflow(ctx, run.workflowId, true);
+  const triggeringActorIdentity =
+    webhookActor === undefined ? await actionCallerIdentity(ctx, !!workflow.owner) : webhookActor;
+  const value: Parameters<typeof repos.actions.createRun>[0] = {
     ...snapshot,
     id: generateId("arun"),
     originalRunId: run.originalRunId ?? run.id,
@@ -607,5 +627,17 @@ export async function rerunActionWorkflow(
     settledAt: null,
     approvedAt: null,
     approvedBy: null,
-  });
+    approvalKey: null,
+    admission: null,
+    configuration: { ...run.configuration, triggeringActorIdentity },
+  };
+  if (workflow.accessPolicy)
+    value.admission = await evaluateActionRunAdmission(ctx, workflow, {
+      ...run,
+      ...value,
+      attempt: run.attempt + 1,
+      approvedAt: null,
+      approvalKey: null,
+    });
+  return repos.actions.createRun(value);
 }
