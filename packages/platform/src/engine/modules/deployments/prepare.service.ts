@@ -134,9 +134,9 @@ export interface ResolveOptions {
    * The project already deploys Compose services (a services project, or one
    * with imported Compose rows). The Compose file found at the root is parsed
    * even when stack detection picks another stack, so a root that also holds a
-   * Vite config and a Dockerfile cannot drop those services (#1020). Root
-   * selection is unchanged, and an app scan still leaves a local-dev Compose
-   * file alone (#959).
+   * Vite config and a Dockerfile cannot drop those services (#1020). Native
+   * openship.json services retain priority over inferred Compose. Root selection
+   * is unchanged, and an app scan still leaves local-dev Compose alone (#959).
    */
   expectCompose?: boolean;
 }
@@ -1016,10 +1016,17 @@ export async function resolveFromReader(
         }
       : await resolveDetectedRoot(reader, rootSnapshot);
 
+  // Native service definitions replace detection. Decide before parsing so an
+  // unused development Compose file cannot block them or add its required env
+  // into the native scan. An explicitly selected Compose path still validates.
+  const useNativeServices = !root.declaredComposePath && !!openship.config?.services?.length;
+
   // `.env` sits next to the compose file, which is what compose itself resolves
   // against — for a declared root that is the pinned directory, not the repo root.
   const [composeContent, composeEnvContent] = await Promise.all([
-    readComposeText(reader, root.selected.rootDirectory, root.composeFiles),
+    useNativeServices
+      ? undefined
+      : readComposeText(reader, root.selected.rootDirectory, root.composeFiles),
     readProjectText(reader, root.selected.rootDirectory, ".env"),
   ]);
   if (root.declaredComposePath && !composeContent) {
@@ -1038,7 +1045,8 @@ export async function resolveFromReader(
     routing,
     {
       declaredCompose:
-        !!root.declaredComposePath || (opts.expectCompose === true && root.composeFiles.length > 0),
+        !!root.declaredComposePath ||
+        (opts.expectCompose === true && !useNativeServices && root.composeFiles.length > 0),
       // `openship.json.env` is the repository's explicit shared environment
       // layer. Let it resolve Compose fields during the same source read; an
       // environment supplied by the deploy request remains the higher-priority

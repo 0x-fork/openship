@@ -874,7 +874,7 @@ async function reconcileComposeSource(
     ) {
       return; // this push didn't touch the compose file → no drift possible
     }
-    const composePath = project.composePath ?? undefined;
+    const composePath = project.composePath?.trim() || undefined;
     // `kind: compose` also represents independently added image services. An
     // app scan can legitimately have no Compose services (#959); only a project
     // that declares Compose or holds an imported baseline needs them back, and
