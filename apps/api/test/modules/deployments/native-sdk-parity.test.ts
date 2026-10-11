@@ -1138,10 +1138,11 @@ describe("deployment inspection HTTP/native parity", () => {
 
 describe("hostname SSL HTTP/native parity", () => {
   const remote = () => new OpenshipClient({ baseUrl: "http://openship.test", organizationId: "org-a", fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
+  const expiresAt = new Date(Date.now() + 90 * 86_400_000).toISOString();
   beforeEach(() => {
-    h.domains.set("domain-a", { ...domainFixture(), id: "domain-a", projectId: "project-a", hostname: "app.example.com", sslStatus: "active", sslIssuer: "Let's Encrypt", sslExpiresAt: "2026-12-01T00:00:00.000Z", verified: true });
+    h.domains.set("domain-a", { ...domainFixture(), id: "domain-a", projectId: "project-a", hostname: "app.example.com", sslStatus: "active", sslIssuer: "Let's Encrypt", sslExpiresAt: expiresAt, verified: true });
     h.domains.set("domain-www", { ...h.domains.get("domain-a")!, id: "domain-www", projectId: "project-a", hostname: "www.app.example.com" });
-    h.manageSsl.mockResolvedValue({ expiresAt: "2026-12-01T00:00:00.000Z", issuer: "Let's Encrypt" });
+    h.manageSsl.mockResolvedValue({ verified: true, expiresAt, issuer: "Let's Encrypt" });
     h.domainGet.mockImplementation(async (_ctx, id) => h.domains.get(id));
   });
 
@@ -1156,7 +1157,7 @@ describe("hostname SSL HTTP/native parity", () => {
   it("keeps primary and www renewal outcomes independent, with one audit per operation", async () => {
     h.manageSsl.mockImplementation(async hostname => {
       if (hostname.startsWith("www.")) throw new Error("www DNS is not pointed here");
-      return { expiresAt: "2026-12-01T00:00:00.000Z", issuer: "Let's Encrypt" };
+      return { verified: true, expiresAt, issuer: "Let's Encrypt" };
     });
     const input = { domain: "app.example.com", includeWww: true };
     const result = await (await native()).deployments.renewSsl(input);
@@ -1173,6 +1174,13 @@ describe("hostname SSL HTTP/native parity", () => {
     for (const deployments of [(await native()).deployments, remote().deployments]) {
       expect(await deployments.renewSsl({ domain: "app.example.com" })).toMatchObject({ success: false, status: "provisioning" });
     }
+  });
+
+  it("preserves pending certificate verification through both native and HTTP contracts", async () => {
+    h.manageSsl.mockResolvedValue({ verified: false, expiresAt, issuer: "provider", reason: "pending", detail: "Checking the edge certificate" });
+    const result = await (await native()).deployments.renewSsl({ domain: "app.example.com" });
+    expect(result).toMatchObject({ success: false, pending: true, status: "provisioning", message: "Checking the edge certificate" });
+    expect(await remote().deployments.renewSsl({ domain: "app.example.com" })).toEqual(result);
   });
 
   it("rejects read-only credentials before renewal and rechecks each hostname's organization", async () => {

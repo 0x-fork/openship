@@ -37,6 +37,7 @@ import {
   type ProxySettings,
 } from "@repo/core";
 import { getTemplateForOrg } from "../../apps/catalog-source";
+import { runAppPrepareCommand } from "./app-prepare";
 import { attachLinkedNetworks } from "../attach-linked-networks";
 import {
   auditStaticOutput,
@@ -3811,7 +3812,7 @@ async function deployComposeServicesUnlocked(
   // can surface it — the user never shells in. All execution is strictly
   // in-container. `phase`: "post-start" (default) runs once the container is up;
   // "post-ready" waits on a readiness probe first; "pre-deploy" is reserved (no
-  // init-container yet) and skipped with a notice. Advisory by default (failure
+  // init-container yet) and skipped only for optional steps. Advisory by default (failure
   // logged, deploy unaffected); a `mustSucceed` step fails the deploy.
   let prepareFailure: string | null = null;
   if (project.appTemplateId) {
@@ -3821,8 +3822,16 @@ async function deployComposeServicesUnlocked(
       sessionManager.broadcastInstallPhase(dep.id, { id: "app-setup", status: "active" });
     }
     for (const step of prepareSteps) {
+      const service = services.find((s) => s.name === step.service);
+      if (service?.enabled === false) continue;
+      if (service && opts?.strictScope && opts.targetServiceIds && !opts.targetServiceIds.has(service.id)) continue;
       const phase = step.phase ?? "post-start";
       if (phase === "pre-deploy") {
+        if (step.mustSucceed) {
+          prepareFailure = `Required app setup step "${step.capture}" uses unsupported phase "pre-deploy"`;
+          logger.log(`${prepareFailure}\n`, "error");
+          break;
+        }
         logger.log(
           `Skipping prepare step "${step.capture}": phase "pre-deploy" isn't supported yet ` +
             `(use files + dependsOn + healthcheck for pre-run init).\n`,
@@ -3831,13 +3840,15 @@ async function deployComposeServicesUnlocked(
         continue;
       }
       try {
-        const service = services.find((s) => s.name === step.service);
         const result = service ? results.find((r) => r.serviceId === service.id) : undefined;
-        if (!service || !result?.containerId) continue;
         // Don't exec into a container the stabilization watch just failed: a
         // `mustSucceed` step would report ITS timeout as the deploy's cause and
         // bury the crash loop that actually explains everything.
-        if (result.status === "failed") continue;
+        if (result?.status === "failed") continue;
+        if (!service || !result?.containerId) {
+          if (step.mustSucceed) throw new Error("The required setup service has no running container");
+          continue;
+        }
 
         // `once`: skip when the value was already captured on a prior deploy.
         if (step.once && step.persistAs) {
@@ -3849,44 +3860,8 @@ async function deployComposeServicesUnlocked(
 
         const containerId = await containerIdForService(dep, service);
         const exec = containerId ? await runtime.inContainerExecutor?.(containerId) : null;
-        if (!exec) continue;
-
-        // phase:"post-ready" — gate on the readiness probe passing (a real
-        // signal) before running the command, rather than the fixed retry below.
-        if (phase === "post-ready" && step.readiness) {
-          const { test, interval = 3_000, retries = 10 } = step.readiness;
-          let ready = false;
-          for (let i = 0; i < retries; i++) {
-            try {
-              await exec.exec(test, { timeout: 15_000 });
-              ready = true;
-              break;
-            } catch (diagnosticFailure) {
-              observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/compose/deploy.service");
-              await new Promise((r) => setTimeout(r, interval));
-            }
-          }
-          if (!ready) throw new Error("readiness probe never passed");
-        }
-
-        // The backend may still be finishing startup right after "running", so
-        // retry a few times until the in-container command succeeds.
-        let stdout = "";
-        for (let attempt = 1; attempt <= 5; attempt++) {
-          try {
-            stdout = await exec.exec(step.command, { timeout: 15_000 });
-            break;
-          } catch (e) {
-            if (attempt === 5) throw e;
-            await new Promise((r) => setTimeout(r, 3_000));
-          }
-        }
-
-        const value = step.capturePattern
-          ? (new RegExp(step.capturePattern).exec(stdout)?.[1] ?? "").trim()
-          : stdout.trim();
+        const value = await runAppPrepareCommand(step, exec);
         if (!value) {
-          if (step.mustSucceed) throw new Error("produced no output");
           logger.log(`Warning: prepare step "${step.capture}" produced no output\n`, "warn");
           continue;
         }

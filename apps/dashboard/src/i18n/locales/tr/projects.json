@@ -243,7 +243,10 @@
     "noTransfer": "Henüz veri transferi yok"
   },
   "analytics": {
-    "loadFailed": "Trafik analitiği yüklenemedi"
+    "loadFailed": "Trafik analitiği yüklenemedi",
+    "loadFailedDescription": "En güncel verileri yüklemek için tekrar deneyin.",
+    "sectionsUnavailable": "Kullanılamıyor: {sections}.",
+    "staleData": "Son kullanılabilir veriler gösteriliyor."
   },
   "monitoring": {
     "noDataTitle": "Henüz izleme verisi yok",
@@ -308,7 +311,11 @@
       "disable": "En çok kullanılan yolları kapat"
     },
     "liveFeed": "Son istekler",
-    "liveFeedHint": "Son istek listesini haritada göster (tüm ayrıntı Günlükler sekmesinde)"
+    "liveFeedHint": "Son istek listesini haritada göster (tüm ayrıntı Günlükler sekmesinde)",
+    "dataUnavailable": "Bazı izleme verileri kullanılamıyor",
+    "connecting": "Bağlanıyor…",
+    "liveUnavailable": "Canlı istekler kullanılamıyor",
+    "liveUnavailableDescription": "Geçmiş trafik gösterilmeye devam ediyor. Canlı istekler için yeniden bağlanın."
   },
   "services": {
     "failedLoad": "Servisler yüklenemedi",

@@ -205,6 +205,45 @@ describe("build pages", () => {
     },
   );
 
+  it("offers the exact available host port without changing it on display or refresh", async () => {
+    deployment.deploymentStatus = "deploying";
+    deployment.state.pendingPrompt = {
+      promptId: "port_in_use:20001",
+      title: "Port In Use",
+      message:
+        "Port 20001 is occupied by openship-clincai-api. Port 20002 is available. Using it keeps the existing service running and saves the new host port for future deployments.",
+      actions: [
+        { id: "use_port:20002", label: "Use port 20002", variant: "primary" },
+        { id: "free_port", label: "Stop Openship Container & Continue", variant: "danger" },
+        { id: "abort", label: "Cancel Deploy", variant: "secondary" },
+      ],
+      details: { port: 20001, alternativePort: 20002, containerName: "openship-clincai-api" },
+    };
+    await render(false);
+    expect(mocks.respond).not.toHaveBeenCalled();
+    const dialog = document.createElement("div");
+    document.body.append(dialog);
+    const dialogRoot = createRoot(dialog);
+    try {
+      await act(async () => dialogRoot.render(mocks.showModal.mock.calls[0]![0].customContent));
+      const buttons = [...dialog.querySelectorAll<HTMLButtonElement>("button")];
+      expect(buttons.map((button) => button.textContent)).toEqual([
+        "Use port 20002",
+        "Stop Openship Container & Continue",
+        "Cancel Deploy",
+      ]);
+      expect(document.activeElement).toBe(buttons[0]);
+      expect(dialog.textContent).toContain("openship-clincai-api");
+      await render(false);
+      expect(mocks.respond).not.toHaveBeenCalled();
+      await act(async () => buttons[0]!.click());
+      expect(mocks.respond).toHaveBeenCalledExactlyOnceWith("use_port:20002");
+    } finally {
+      await act(async () => dialogRoot.unmount());
+      dialog.remove();
+    }
+  });
+
   it.each([true, false])("uses one shared header and action set (Compose: %s)", async compose => {
     if (!compose) {
       deployment.config.projectType = "app";

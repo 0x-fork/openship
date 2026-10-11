@@ -11,6 +11,7 @@ import { sq } from "../runtime/git-clone";
 import { compileResolvedRoutingToOblien } from "../runtime/oblien-routing";
 import { probeStaticOutput, type StaticProbeOptions } from "../system/output-exists";
 import { CLOUD_DOCKER_BRIDGE_PORT } from "../runtime/cloud/docker-bridge-source";
+import { probePublicTlsCertificate } from "../system/tls-probe";
 
 /** Older Page GET responses use flat fields; connect/renew and newer GETs use
  * the SDK's nested shape. Both must retain an explicit hostname binding. */
@@ -602,11 +603,13 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       expiresAt: Number.isFinite(time) ? new Date(time).toISOString() : "",
       issuer: "oblien",
       verified,
-      reason: verified ? "issued" : expiry ? "invalid" : "missing",
+      reason: verified ? "issued"
+        : ["pending", "provisioning", "issuing", "queued"].includes(status ?? "") ? "pending"
+        : expiry ? "invalid" : "missing",
     };
   }
 
-  async verifyCert(domain: string): Promise<SslResult> {
+  private async certificateStatus(domain: string): Promise<SslResult> {
     const owner = await this.owner(domain);
     if (!owner) throw disconnected();
     if (!owner.is_custom)
@@ -623,9 +626,17 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     throw new Error("Certificate is not owned by this project's route");
   }
 
+  async verifyCert(domain: string): Promise<SslResult> {
+    const status = await this.certificateStatus(domain);
+    // Ownership and the explicit Page binding are checked before any outbound
+    // probe. Provider metadata is necessary, but not proof of working HTTPS.
+    return status.verified ? probePublicTlsCertificate(domain) : status;
+  }
+
   async provisionCert(domain: string, opts?: ProvisionCertOptions): Promise<SslResult> {
-    const current = await this.verifyCert(domain);
-    if ((current.verified && !opts?.force) || current.reason === "not_local") return current;
+    const current = await this.certificateStatus(domain);
+    if (current.reason === "not_local" || current.reason === "pending") return current;
+    if (current.verified && !opts?.force) return this.verifyCert(domain);
     return this.renewCert(domain);
   }
 
@@ -636,10 +647,14 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     if (owner.owner_type === "page") {
       const page = await this.certificatePage(domain);
       await this.pageDomain(page.slug, domain);
-      await this.pages.renewSSL(page.slug);
+      const accepted = await this.pages.renewSSL(page.slug);
+      if (accepted?.success === false) throw new Error("The provider did not accept certificate renewal");
     } else throw new Error("Certificate is not owned by this project's route");
     const result = await this.verifyCert(domain);
-    return result.verified ? { ...result, reason: "renewed" } : result;
+    return result.verified ? { ...result, reason: "renewed" } : {
+      ...result, reason: "pending",
+      detail: "Renewal was accepted. HTTPS is still pending verification; check the certificate status again shortly.",
+    };
   }
 
   async installCert(_domain: string, _cert: ManualCert): Promise<SslResult> {

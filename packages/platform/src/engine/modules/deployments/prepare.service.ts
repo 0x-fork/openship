@@ -707,9 +707,12 @@ async function readProjectSnapshot(
   const fileContents: Record<string, string> = {};
 
   await Promise.all(
-    PREPARE_FILE_CONTENTS.filter((name) =>
-      files.some((file) => file.name.toLowerCase() === name.toLowerCase()),
-    ).map(async (name) => {
+    files.filter((file) =>
+      file.type === "file" &&
+      PREPARE_FILE_CONTENTS.some((name) => file.name.toLowerCase() === name.toLowerCase()),
+    ).map(async ({ name }) => {
+      // Match known manifests case-insensitively, but read the actual path.
+      // Linux and GitHub distinguish Dockerfile from dockerfile.
       const content = await reader.readText(joinProjectPath(normalizedRootDirectory, name));
       if (content) {
         fileContents[name] = content;

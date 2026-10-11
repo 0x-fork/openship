@@ -270,6 +270,15 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     },
   },
   {
+    key: "domains:check-https",
+    label: "Cloud HTTPS health",
+    defaultCron: "2-59/5 * * * *",
+    run: async () => {
+      const { checkCloudDomainHttps } = await import("../domains/cloud-ssl-health");
+      return checkCloudDomainHttps();
+    },
+  },
+  {
     key: "edge:target-verify",
     label: "Free-domain target verification",
     // Openship Cloud proves target control ONCE and re-probes the SAME token before

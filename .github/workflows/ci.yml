@@ -113,6 +113,7 @@ jobs:
               test/e2e/migration-direct-transfer.e2e.test.ts
               test/e2e/migration-takeover.e2e.test.ts
               test/e2e/backup-volume-roundtrip.e2e.test.ts
+              test/e2e/docker-exec-watchdog.e2e.test.ts
           # Run the rule guard with real CJSON, shared dictionaries and HTTP on
           # every PR. A missing daemon must fail, not silently skip this gate.
           - suite: Edge routing

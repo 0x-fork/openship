@@ -68,6 +68,22 @@ If your project is a static site, its application start command is ignored. A fi
 is served by the edge; a managed Docker deployment serves the built files from its generated web container.
 </Callout>
 
+## A Dockerfile image reports `bun`, `npm`, or another command not found
+
+When the selected project root contains a `Dockerfile`, detection selects the Dockerfile build.
+Its build instructions and image `ENTRYPOINT`/`CMD` are the defaults, even if the repository also
+contains framework configuration, package scripts, or lockfiles. The default port comes from
+`EXPOSE`; a package script that the image does not run does not determine the port.
+
+Leave **Start command** empty to use the image's default command. An explicit start command in
+project settings or `openship.json` overrides `CMD` and must exist in the final runtime image.
+This also applies to Dockerfile apps inside monorepos. An empty override does not make an image
+static: the image still runs its own process.
+
+Existing saved commands and previous deployment snapshots are preserved. If an older import saved
+an inferred package-manager command, clear that override or set the intended command, then deploy
+again. Updating Openship does not recreate existing containers.
+
 ## The static build succeeds, but the output directory is missing
 
 **Output Directory** is relative to **Root Directory**, where the build command runs.
@@ -157,11 +173,20 @@ on. Correct it in the [deploy wizard](/docs/dashboard/deploy-wizard) if it doesn
 </Steps>
 
 <Callout type="warn" title="A different “port” problem: the port is already taken">
-On a Local or Server deploy, if another process already holds the port, the deploy pauses and asks what
-to do — a **Port In Use** prompt saying *"Port 3000 is occupied by … This may not be a previous
-deployment."* with **Free Port & Continue** or **Cancel Deploy**. Choose *Free Port* only if you
-recognize the occupant as a stale deployment; otherwise cancel and change the port. If it can't be freed
-you'll see *"Deploy aborted: port 3000 is in use by …"*.
+On a Local or Server deploy, if another workload already holds the port, the deploy pauses with a
+**Port In Use** dialog. For a single-app Docker deployment using a loopback host port, it also offers
+**Use port 20002** (the number varies) when another port can be verified as available. This leaves the
+existing workload running and continues with the built image. The app's internal port stays the same;
+the selected host port is saved after a successful deployment for future redeploys.
+
+Openship checks both live listeners and saved port reservations, then checks the exact suggestion again
+when you choose it. If it is no longer available, the dialog asks again. It never substitutes another
+port without your choice. If availability cannot be verified, the alternative is not offered.
+
+The existing **Stop … & Continue**, **I Freed It — Re-check**, and **Cancel Deploy** actions remain
+available where appropriate. Choose a stop action only if you recognize the occupant and intend to
+stop it. Direct (Bare) apps still use their configured application ports; change those in configuration
+if needed. Cancelling preserves the current port.
 </Callout>
 
 ## The app needs a bigger machine than this one
