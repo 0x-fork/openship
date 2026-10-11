@@ -57,8 +57,10 @@ function envRowsFromCatalog(entry: ImageCatalogEntry | null): EnvRow[] {
   // off per-value if it's sensitive (e.g. an admin password).
   return entry.defaultEnv.map((e) => ({
     key: e.key,
-    value: e.value ?? "",
-    visible: true,
+    value: e.generate === "secret"
+      ? Array.from(crypto.getRandomValues(new Uint8Array(24)), (byte) => byte.toString(16).padStart(2, "0")).join("")
+      : e.value ?? "",
+    visible: e.generate !== "secret",
   }));
 }
 
@@ -391,6 +393,11 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
       environment: envObjectFromRows(envRows),
       volumes: volumeList,
       command: "",
+      // A custom replacement image must not inherit another image's entrypoint
+      // arguments. Matching catalog images keep argv intact (never `sh -c`).
+      ...(trimmedImage === selected?.image && selected.commandArgv
+        ? { commandArgv: [...selected.commandArgv] }
+        : {}),
       restart: "unless-stopped",
       enabled: true,
       exposed,

@@ -25,6 +25,7 @@ export const DeploymentSslRenewInputSchema = Type.Object({
 }, { additionalProperties: false });
 export const SslRenewOutcomeSchema = Type.Object({
   success: Type.Boolean(), domain: Type.String(), status: Type.String(),
+  pending: Type.Optional(Type.Boolean()),
   expiresAt: Type.Optional(Type.String()), issuer: Type.Optional(Type.String()), message: Type.Optional(Type.String()),
 });
 export type SslRenewOutcome = Static<typeof SslRenewOutcomeSchema>;

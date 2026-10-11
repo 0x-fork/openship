@@ -708,7 +708,9 @@ export interface SslResult {
    * exists, so a retry won't help, and treating it as valid is what let "Recheck
    * SSL" report green on a cert browsers reject.
    */
-  reason?: "issued" | "renewed" | "missing" | "read_error" | "not_local" | "invalid";
+  reason?: "issued" | "renewed" | "missing" | "read_error" | "not_local" | "invalid" | "edge_invalid" | "pending";
+  /** Safe explanation from a live HTTPS check, independent of provider metadata. */
+  detail?: string;
 }
 
 // ─── Log streaming callback ──────────────────────────────────────────────────
