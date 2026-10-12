@@ -1146,6 +1146,29 @@
       "listeners": "Puertos de escucha",
       "general": "General",
       "ssh": "SSH"
+    },
+    "cloudConnection": {
+      "titles": {
+        "not_connected": "Inicia sesión en Openship Cloud",
+        "account_mismatch": "Conecta la cuenta Cloud del servidor",
+        "unavailable": "Estado de Cloud no disponible"
+      },
+      "descriptions": {
+        "not_connected": "Este es un enlace guardado a un servidor Cloud. Inicia sesión en la cuenta y organización propietarias para ver su estado actual y administrarlo.",
+        "account_mismatch": "Este servidor pertenece a otra cuenta u organización Cloud. Conecta la cuenta propietaria para continuar.",
+        "unavailable": "No se pudo verificar el servidor mediante Cloud. Actualiza su estado antes de usar sus controles."
+      },
+      "labels": {
+        "not_connected": "Inicia sesión en Cloud",
+        "account_mismatch": "Otra cuenta Cloud",
+        "unavailable": "Cloud no disponible"
+      },
+      "signIn": "Iniciar sesión en Cloud",
+      "connecting": "Conectando…"
+    },
+    "controlUnavailable": {
+      "title": "Control no disponible",
+      "description": "Este control aún no está disponible en la versión de la API de Cloud conectada. Openship Cloud necesita una actualización para usarlo."
     }
   }
 }

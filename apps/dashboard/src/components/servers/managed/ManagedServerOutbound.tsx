@@ -104,6 +104,10 @@ function OutboundEditor({ serverId }: { serverId: string }) {
       description={copy.description}
       icon="network"
       {...resource}
+      refresh={() => {
+        resource.refresh();
+        options.refresh();
+      }}
     >
       {!current && resource.busy && <div className="h-48 animate-pulse rounded-xl bg-muted/40" />}
       {current && (
@@ -177,7 +181,11 @@ function OutboundEditor({ serverId }: { serverId: string }) {
                       role="alert"
                       className="flex flex-wrap items-center gap-2 text-xs text-danger"
                     >
-                      <span>{copy.optionsFailed}</span>
+                      <span>
+                        {options.errorCode === "CLOUD_SERVER_CONTROL_UNAVAILABLE"
+                          ? common.controlUnavailable.description
+                          : copy.optionsFailed}
+                      </span>
                       <Button
                         variant="ghost"
                         size="sm"

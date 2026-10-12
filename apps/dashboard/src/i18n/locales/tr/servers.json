@@ -1127,6 +1127,29 @@
       "listeners": "Dinlenen portlar",
       "general": "Genel",
       "ssh": "SSH"
+    },
+    "cloudConnection": {
+      "titles": {
+        "not_connected": "Openship Cloud’da oturum açın",
+        "account_mismatch": "Sunucunun Cloud hesabını bağlayın",
+        "unavailable": "Cloud durumu kullanılamıyor"
+      },
+      "descriptions": {
+        "not_connected": "Bu, bir Cloud sunucusuna kaydedilmiş bağlantıdır. Güncel durumunu görmek ve yönetmek için sahibi olan hesap ve kuruluşla oturum açın.",
+        "account_mismatch": "Bu sunucu farklı bir Cloud hesabına veya kuruluşa aittir. Devam etmek için sahibi olan hesabı bağlayın.",
+        "unavailable": "Sunucu Cloud üzerinden doğrulanamadı. Sunucu kontrollerini kullanmadan önce durumunu yenileyin."
+      },
+      "labels": {
+        "not_connected": "Cloud oturumu gerekli",
+        "account_mismatch": "Farklı Cloud hesabı",
+        "unavailable": "Cloud kullanılamıyor"
+      },
+      "signIn": "Cloud’da oturum aç",
+      "connecting": "Bağlanıyor…"
+    },
+    "controlUnavailable": {
+      "title": "Kontrol kullanılamıyor",
+      "description": "Bu kontrol, bağlı Cloud API sürümünde henüz kullanılamıyor. Kullanılabilmesi için Openship Cloud güncellenmelidir."
     }
   }
 }

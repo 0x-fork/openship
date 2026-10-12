@@ -5,12 +5,17 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
 import { baseDictionary } from "@/i18n";
 import { CloudResourceContext } from "@/context/CloudResourceContext";
+import { ApiError } from "@/lib/api/client";
 import { ManagedServerSsh } from "./ManagedServerSsh";
 import { ManagedServerRuntime } from "./ManagedServerRuntime";
 import { ManagedServerWorkloads } from "./ManagedServerWorkloads";
 import { ManagedServerNetwork } from "./ManagedServerNetwork";
 import { ManagedServerOutbound } from "./ManagedServerOutbound";
 import { ManagedServerSettings } from "./ManagedServerSettings";
+import { ManagedServerConnectionNotice } from "./ManagedServerConnectionNotice";
+
+const cloud = vi.hoisted(() => ({ connecting: false, loading: false, startConnect: vi.fn() }));
+vi.mock("@/context/CloudContext", () => ({ useCloud: () => cloud }));
 
 const api = vi.hoisted(() => ({
   managedSshStatus: vi.fn(),
@@ -111,6 +116,55 @@ async function fill(node: HTMLInputElement | HTMLTextAreaElement, value: string)
 }
 const submit = async (form: HTMLFormElement) =>
   act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+it("starts the existing Cloud sign-in flow and labels an account mismatch separately", async () => {
+  const refresh = vi.fn();
+  await render(<ManagedServerConnectionNotice issue="not_connected" refresh={refresh} />);
+  expect(host.textContent).toContain(copy.cloudConnection.titles.not_connected);
+  await act(async () => button(copy.cloudConnection.signIn).click());
+  expect(cloud.startConnect).toHaveBeenCalledOnce();
+  await render(<ManagedServerConnectionNotice issue="account_mismatch" refresh={refresh} />);
+  expect(host.textContent).toContain(copy.cloudConnection.titles.account_mismatch);
+  await act(async () => button(copy.retry).click());
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(api.setManagedOutbound).not.toHaveBeenCalled();
+});
+
+it.each([null, "404 Not Found", "<html>404 Not Found</html>"])("explains a missing Cloud control route (%s) and retries it without replaying a mutation", async body => {
+  api.managedOutbound.mockRejectedValueOnce(new ApiError(404, "Not Found", body));
+  await render(<ManagedServerOutbound serverId="server-a" />);
+  expect(host.textContent).toContain(copy.controlUnavailable.title);
+  expect(host.textContent).toContain(copy.controlUnavailable.description);
+  expect(host.textContent).not.toContain("API 404");
+  expect(api.setManagedOutbound).not.toHaveBeenCalled();
+  await act(async () => button(copy.retry).click());
+  expect(host.textContent).not.toContain(copy.controlUnavailable.title);
+  expect(api.managedOutbound).toHaveBeenCalledTimes(2);
+  expect(api.setManagedOutbound).not.toHaveBeenCalled();
+});
+it("preserves a structured server-not-found response", async () => {
+  api.managedOutbound.mockRejectedValueOnce(new ApiError(404, "Not Found", { error: "Server not found", code: "SERVER_NOT_FOUND" }));
+  await render(<ManagedServerOutbound serverId="server-a" />);
+  expect(host.textContent).toContain("Server not found");
+  expect(host.textContent).not.toContain(copy.controlUnavailable.title);
+});
+it("explains unavailable outbound choices without showing a raw route 404", async () => {
+  api.managedOutboundOptions.mockRejectedValueOnce(new ApiError(404, "Not Found", null));
+  await render(<ManagedServerOutbound serverId="server-a" />);
+  expect(host.textContent).toContain(copy.controlUnavailable.description);
+  expect(host.textContent).not.toContain("API 404");
+  expect(api.setManagedOutbound).not.toHaveBeenCalled();
+});
+it("removes the edit form when the Cloud write route is unavailable and never replays it on refresh", async () => {
+  api.setManagedOutbound.mockRejectedValueOnce(new ApiError(404, "Not Found", null));
+  await render(<ManagedServerOutbound serverId="server-a" />);
+  await select(copy.outbound.address, "8.8.4.4 · US");
+  await act(async () => button(copy.outbound.apply).click());
+  expect(host.textContent).toContain(copy.controlUnavailable.description);
+  expect(host.querySelector("form")).toBeNull();
+  await act(async () => button(copy.retry).click());
+  expect(api.setManagedOutbound).toHaveBeenCalledOnce();
+});
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

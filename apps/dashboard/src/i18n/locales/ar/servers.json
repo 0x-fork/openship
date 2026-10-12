@@ -1146,6 +1146,29 @@
       "listeners": "منافذ الاستماع",
       "general": "عام",
       "ssh": "SSH"
+    },
+    "cloudConnection": {
+      "titles": {
+        "not_connected": "سجّل الدخول إلى Openship Cloud",
+        "account_mismatch": "اربط حساب Cloud المالك للخادم",
+        "unavailable": "حالة Cloud غير متاحة"
+      },
+      "descriptions": {
+        "not_connected": "هذا رابط محفوظ لخادم سحابي. سجّل الدخول إلى الحساب والمؤسسة المالكَين له لعرض حالته الفعلية وإدارته.",
+        "account_mismatch": "هذا الخادم تابع لحساب Cloud أو مؤسسة مختلفة. اربط الحساب المالك للمتابعة.",
+        "unavailable": "تعذّر التحقق من الخادم عبر Cloud. حدّث حالته قبل استخدام أدوات إدارته."
+      },
+      "labels": {
+        "not_connected": "يلزم تسجيل الدخول إلى Cloud",
+        "account_mismatch": "حساب Cloud مختلف",
+        "unavailable": "Cloud غير متاح"
+      },
+      "signIn": "تسجيل الدخول إلى Cloud",
+      "connecting": "جارٍ الاتصال…"
+    },
+    "controlUnavailable": {
+      "title": "أداة التحكم غير متاحة",
+      "description": "هذه الأداة غير متاحة في إصدار واجهة Cloud المتصل حاليًا. يلزم تحديث Openship Cloud قبل استخدامها."
     }
   }
 }

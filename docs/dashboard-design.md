@@ -536,6 +536,14 @@ check retryable before starting the move.
 
 ## Typography and copy
 
+Saved Cloud server links remain visible after sign-out so local project destinations do not
+disappear. Mark them **Cloud sign-in required**, with a direct action through the existing
+Cloud connection flow. Distinguish a different owning account from temporary Cloud failure.
+While Cloud authority is unverified, do not mount live SSH/networking/usage controls or offer
+plan changes, provisioning, edits or deletion. Reconnect refreshes the same link; it must not
+create another server. A missing control route on an older Cloud API shows **Control unavailable**
+with upgrade guidance; structured resource and permission 404s retain their original meaning.
+
 Managed server navigation leads with Overview, Terminal and SSH access. Group listener inspection
 under Networking, and component health and Runtime API under Settings; preserve existing tab links.
 The managed terminal uses the full content width. Other views keep the shared 340px plan sidebar.

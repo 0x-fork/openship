@@ -1146,6 +1146,29 @@
       "listeners": "监听端口",
       "general": "常规",
       "ssh": "SSH"
+    },
+    "cloudConnection": {
+      "titles": {
+        "not_connected": "登录 Openship Cloud",
+        "account_mismatch": "连接服务器所属的 Cloud 账号",
+        "unavailable": "无法获取 Cloud 状态"
+      },
+      "descriptions": {
+        "not_connected": "这是一个已保存的 Cloud 服务器链接。登录所属账号和组织后，即可查看实时状态并管理服务器。",
+        "account_mismatch": "此服务器属于其他 Cloud 账号或组织。请连接所属账号以继续。",
+        "unavailable": "无法通过 Cloud 验证服务器。使用服务器控制功能前，请刷新其状态。"
+      },
+      "labels": {
+        "not_connected": "需要登录 Cloud",
+        "account_mismatch": "其他 Cloud 账号",
+        "unavailable": "Cloud 不可用"
+      },
+      "signIn": "登录 Cloud",
+      "connecting": "正在连接…"
+    },
+    "controlUnavailable": {
+      "title": "此控制功能不可用",
+      "description": "当前连接的 Cloud API 版本尚不支持此控制功能。需要更新 Openship Cloud 后才能使用。"
     }
   }
 }

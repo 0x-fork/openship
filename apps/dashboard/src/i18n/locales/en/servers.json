@@ -1180,6 +1180,29 @@
       "listeners": "Listening ports",
       "general": "General",
       "ssh": "SSH"
+    },
+    "cloudConnection": {
+      "titles": {
+        "not_connected": "Sign in to Openship Cloud",
+        "account_mismatch": "Connect the server’s Cloud account",
+        "unavailable": "Cloud status unavailable"
+      },
+      "descriptions": {
+        "not_connected": "This is a saved link to a Cloud server. Sign in to the account and organization that own it to view its live state and manage it.",
+        "account_mismatch": "This server belongs to a different Cloud account or organization. Connect its owning account to continue.",
+        "unavailable": "The server could not be verified through Cloud. Refresh its status before using server controls."
+      },
+      "labels": {
+        "not_connected": "Cloud sign-in required",
+        "account_mismatch": "Different Cloud account",
+        "unavailable": "Cloud unavailable"
+      },
+      "signIn": "Sign in to Cloud",
+      "connecting": "Connecting…"
+    },
+    "controlUnavailable": {
+      "title": "Control unavailable",
+      "description": "This control is not available on the connected Cloud API version yet. Openship Cloud needs an update before it can be used."
     }
   }
 }

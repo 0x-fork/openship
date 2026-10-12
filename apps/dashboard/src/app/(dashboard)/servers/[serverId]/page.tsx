@@ -49,6 +49,7 @@ import { ManagedServerPlan } from "@/components/servers/managed/ManagedServerPla
 import { ManagedServerActivity } from "@/components/servers/managed/ManagedServerActivity";
 import { ManagedServerActionFeedback } from "@/components/servers/managed/ManagedServerActionFeedback";
 import { ManagedServerStatus } from "@/components/servers/managed/ManagedServerStatus";
+import { ManagedServerConnectionNotice } from "@/components/servers/managed/ManagedServerConnectionNotice";
 import { useManagedServerActions } from "@/components/servers/managed/useManagedServerActions";
 import { ServerUsage } from "@/components/servers/ServerUsage";
 import { ManagedServerNetwork } from "@/components/servers/managed/ManagedServerNetwork";
@@ -101,8 +102,9 @@ function ServerDetail({ serverId }: { serverId: string }) {
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const managed = server?.managed;
+  const connectionIssue = managed?.connectionIssue;
   const hostConfiguration = server?.capabilities?.hostConfiguration ?? !managed;
-  const ready = !managed || ["ready", "running", "active"].includes(managed.state);
+  const ready = !managed || (!connectionIssue && ["ready", "running", "active"].includes(managed.state));
   const canInspect = !!server && (server.capabilities?.exec ?? !managed) && ready;
   const canMonitor = (server?.capabilities?.monitor ?? !managed) && ready;
   const canTerminal = (server?.capabilities?.terminal ?? !managed) && ready;
@@ -272,10 +274,10 @@ function ServerDetail({ serverId }: { serverId: string }) {
 
   useEffect(() => { void fetchData(); }, [fetchData]);
   useEffect(() => {
-    if (!pending) return;
+    if (!pending || connectionIssue) return;
     const timer = setInterval(() => { if (document.visibilityState === "visible") void fetchData(); }, 3_000);
     return () => clearInterval(timer);
-  }, [pending, fetchData]);
+  }, [pending, connectionIssue, fetchData]);
 
   const runHealthCheck = useCallback(async () => {
     if (!serverId || !canInspect || healthCheckPending.current) return;
@@ -584,7 +586,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
 
   // Edit view shares the same route as the detail page (?edit=true) and reuses
   // the credentials form so add/edit stay in sync.
-  if (editing) {
+  if (editing && !connectionIssue) {
     return (
       <PageContainer>
           <div className="flex items-center gap-3 mb-6">
@@ -663,14 +665,15 @@ function ServerDetail({ serverId }: { serverId: string }) {
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => router.push(`/servers/${serverId}?edit=true`)}
+              disabled={!!connectionIssue}
               aria-label={t.servers.detail.edit}
-              className="inline-flex size-9 items-center justify-center gap-2 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors sm:w-auto sm:px-4"
+              className="inline-flex size-9 items-center justify-center gap-2 bg-muted/50 text-foreground text-sm font-medium rounded-xl hover:bg-muted transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-4"
             >
               <UiIcon name="sliders" className="size-4" />
               <span className="hidden sm:inline">{t.servers.detail.edit}</span>
             </button>
             <Button variant="ghost" size="icon" disabled={refreshing || checking} aria-label={t.servers.networks.refresh} onClick={() => { void fetchData(); void runHealthCheck(); monitor.reconnect(); }}><UiIcon name="refresh" className={`size-4 ${refreshing || checking ? "animate-spin" : ""}`} /></Button>
-            {!server.isLocal && <DropdownMenu triggerLabel={t.servers.detail.removeServer} actions={[{ id: "remove", label: t.servers.detail.removeServer, icon: <UiIcon name="trash" className="size-4" />, variant: "danger", onClick: handleDelete }]} />}
+            {!server.isLocal && !connectionIssue && <DropdownMenu triggerLabel={t.servers.detail.removeServer} actions={[{ id: "remove", label: t.servers.detail.removeServer, icon: <UiIcon name="trash" className="size-4" />, variant: "danger", onClick: handleDelete }]} />}
           </div>
           <div className="col-span-2 col-start-2 flex min-w-0 flex-wrap items-center gap-2 [.is-desktop_&]:col-start-1">
             {managed ? <><p className="text-sm text-muted-foreground">{t.billing.workspaces.managedBy}</p><ManagedServerStatus workspace={managed} /></> : <>
@@ -734,7 +737,9 @@ function ServerDetail({ serverId }: { serverId: string }) {
 
         {/* Main Grid — the Migrations tab spans full width (its flow renders its
             own right column: connection card → migrate config / live progress). */}
-        <div className={`grid grid-cols-1 gap-6 items-start ${fullWidth ? "" : "@min-[60rem]/server-detail:grid-cols-[minmax(0,1fr)_340px]"}`}>
+        {connectionIssue ? (
+          <ManagedServerConnectionNotice issue={connectionIssue} refresh={() => void fetchData()} busy={refreshing} />
+        ) : <div className={`grid grid-cols-1 gap-6 items-start ${fullWidth ? "" : "@min-[60rem]/server-detail:grid-cols-[minmax(0,1fr)_340px]"}`}>
           {/* Left column */}
           <div className="min-w-0 space-y-5">
             {loadError && <p role="alert" className="rounded-xl bg-danger/5 p-4 text-sm text-danger">{loadError}</p>}
@@ -839,7 +844,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
               {managed ? <ManagedServerPlan server={managed} actions={managedActions} /> : <><ServerConnectionCard server={{ ...server, sshHost: server.sshHost ?? "" }} /><ServerInfrastructure serverId={serverId} /></>}
             </div>
           )}
-        </div>
+        </div>}
 
         {!managed && <ServerDeletionModal
           isOpen={removeOpen}
