@@ -293,6 +293,11 @@ export const appTemplateSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
+  marketplace: z.object({
+    features: z.array(z.object({ title: z.string().min(1), description: z.string().optional() })).optional(),
+    article: z.string().max(200_000).optional(),
+    articleFile: z.string().regex(/^articles\/[a-z0-9][a-z0-9-]*\.md$/).optional(),
+  }).optional(),
   kind: z.enum(["template", "flow"]),
   logo: z.string(),
   category: z.enum(["backend", "database", "cms", "mail", "analytics", "automation", "other"]),
