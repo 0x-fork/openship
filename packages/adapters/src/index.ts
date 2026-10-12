@@ -45,6 +45,7 @@ export type {
 
 // The one clone-command assembler (token / relay / ssh / ambient) + its shell
 // quoting, shared with the API so a probe and the clone it predicts can't drift.
+export { projectBuildKitWorker, removeProjectBuildKitWorker } from "./runtime/docker-buildkit-worker";
 export {
   sq,
   assembleGitClone,

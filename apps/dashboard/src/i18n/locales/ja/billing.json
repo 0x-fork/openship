@@ -343,6 +343,7 @@
     }
   },
   "resourcesGuide": {
+    "concurrentBuilds": "同時ビルド数",
     "title": "Cloudの使用量について",
     "credits": "Cloudクレジット",
     "creditsHint": "ビルドと実行中のアプリは、CPU、メモリ、ディスクアクセス、データ転送にクレジットを使用します。大きな処理ほど消費が速くなります。",

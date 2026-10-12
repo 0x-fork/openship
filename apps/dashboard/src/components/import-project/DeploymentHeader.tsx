@@ -63,7 +63,7 @@ export function DeploymentHeader({
         className="flex min-w-0 items-center gap-3 text-sm text-muted-foreground"
       >
         <Link
-          href={projectId ? `/projects/${projectId}/deployments` : "/deployments"}
+          href={projectId ? `/projects/${projectId}/deployments` : "/monitoring?tab=deployments"}
           className="inline-flex shrink-0 items-center gap-1.5 transition-colors hover:text-foreground"
         >
           <UiIcon name="arrow-left" className="size-4 rtl:rotate-180" aria-hidden />

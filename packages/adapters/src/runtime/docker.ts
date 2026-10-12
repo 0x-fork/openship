@@ -32,7 +32,8 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import Dockerode from "dockerode";
 import * as tarFs from "tar-fs";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { projectBuildKitWorker } from "./docker-buildkit-worker";
 import { createGzip } from "node:zlib";
 import { StringDecoder } from "node:string_decoder";
 
@@ -1631,8 +1632,8 @@ export class DockerRuntime implements RuntimeAdapter {
     // BuildKit driver ignores --memory/--cpu-quota, so bound its worker instead.
     const cloudLimits = this.connectionOptions?.transport === "cloud" ? dockerBuildResourceLimits(config.resources) : undefined;
     const boundedBuildKit = buildKit && cloudLimits && Object.keys(cloudLimits).length > 0;
-    const builderName = boundedBuildKit
-      ? `openship-${createHash("sha256").update(config.projectId).digest("hex").slice(0, 24)}` : undefined;
+    const buildWorker = boundedBuildKit ? projectBuildKitWorker(config.projectId) : undefined;
+    const builderName = buildWorker?.builderName;
     const removeBuilder = builderName ? `docker buildx rm --force ${sq(builderName)}` : undefined;
     const builderEnv = buildKit ? "DOCKER_BUILDKIT=1 " : "";
     const ownershipHost = buildKit ? null : newBuildOwnershipHost();
@@ -1689,7 +1690,7 @@ export class DockerRuntime implements RuntimeAdapter {
         "set -e",
         `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
         `${removeBuilder} >/dev/null 2>&1 || true`,
-        `docker buildx create --name ${sq(builderName!)} --driver docker-container ${driverOptions} --bootstrap`,
+        `docker buildx create --name ${sq(builderName!)} --node ${sq(buildWorker!.nodeName)} --driver docker-container ${driverOptions} --bootstrap`,
         `cd ${sq(remoteBuildDir)}`,
         `docker buildx build --builder ${sq(builderName!)} --load --progress=plain -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
       ].join("\n");

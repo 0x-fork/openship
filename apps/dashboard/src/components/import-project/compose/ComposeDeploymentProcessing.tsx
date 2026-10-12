@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import DeploymentDetails from "../DeploymentDetails";
 import BuildTerminal from "../BuildTerminal";
 import { DeploymentHeader } from "../DeploymentHeader";
+import { CloudBuildQueueNotice } from "../CloudBuildQueueNotice";
 import { DeploymentLayout } from "../DeploymentLayout";
 import { DeploymentLogsPanel } from "../DeploymentLogsPanel";
 import { PageContainer } from "@/components/ui/PageContainer";
@@ -274,6 +275,7 @@ const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {
         isFinished={isFinished}
         terminalTheme={terminalTheme}
       >
+        {state.queue && state.isDeploying && <CloudBuildQueueNotice queue={state.queue} />}
         {/* Decision banner — persists while a partial deploy awaits keep/reject
             (survives refresh via the server flag). Re-opens the dialog. */}
         {showDecision ? (

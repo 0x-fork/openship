@@ -42,6 +42,8 @@ export const planLimitsSchema = z.object({
    * this app-level rule is independent of Oblien's workspace count.
    */
   runningServices: limitNumber,
+  /** Active deployment build slots. Absent on existing paid offers. */
+  concurrentBuilds: limitNumber.optional(),
   /** Projects (project groups). Oblien has no project concept — Openship gates it. */
   maxProjects: limitNumber,
   /** Preset ceiling for saved offers without explicit service resources. */

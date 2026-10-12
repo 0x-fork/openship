@@ -162,6 +162,7 @@ export interface PlanLimits {
   services: boolean;
   /** Concurrent services; several Compose services may share a workspace. */
   runningServices: number | null;
+  concurrentBuilds?: number | null;
   maxProjects: number | null;
   /** Preset ceiling for saved offers without explicit service resources. */
   maxResourceTier: FixedResourceTier | null;
@@ -294,6 +295,7 @@ function placeholders(plan: PricingCatalogRaw["plans"][number], locale: PricingL
     customDomains: n(limits.customDomains),
     seats: n(limits.seats),
     runningServices: n(limits.runningServices),
+    concurrentBuilds: n(limits.concurrentBuilds ?? null),
     maxProjects: n(limits.maxProjects),
     // Per-SERVICE machine size, not a pool — the copy must say so.
     powerCpu: svc ? formatDecimal(svc.cpuCores, locale) : unlimited,

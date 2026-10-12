@@ -202,6 +202,22 @@
     "pageOf": "Página {page} de {total}",
     "range": "Despliegues {from}–{to} de {total}"
   },
+  "cloudBuildQueue": {
+    "label": "Cola de compilación en la nube",
+    "title": "Compilación en cola",
+    "position": "Compilación en cola · Posición {position}",
+    "concurrency": "Esperando un espacio para una compilación simultánea.",
+    "resources": "Esperando CPU o memoria disponible en el servidor.",
+    "server": "Esperando a que el servidor acepte esta compilación.",
+    "automaticStart": "Se iniciará automáticamente.",
+    "allowance": "Compilaciones simultáneas permitidas por tu plan: {count}.",
+    "unlimited": "Tu plan no limita las compilaciones simultáneas.",
+    "active": "Compilaciones activas: {count}.",
+    "comparePlans": "Comparar planes",
+    "optionalUpgrade": "Cambiar a un plan superior es opcional. Puedes seguir esperando.",
+    "compareConcurrency": "Compara planes para ejecutar más compilaciones simultáneas. Tu compilación puede permanecer en la cola.",
+    "compareResources": "Compara planes para obtener más CPU o memoria. Puedes seguir esperando a que haya recursos disponibles en el servidor."
+  },
   "monitoring": {
     "title": "Resumen de despliegues",
     "scope": "Proyecto y búsqueda seleccionados · días UTC · historial conservado",

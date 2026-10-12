@@ -343,6 +343,7 @@
     }
   },
   "resourcesGuide": {
+    "concurrentBuilds": "Builds simultanés",
     "title": "Comprendre l’utilisation du Cloud",
     "credits": "Crédits Cloud",
     "creditsHint": "Les compilations et les applications actives consomment des crédits pour le CPU, la mémoire, les accès disque et les transferts de données. Les charges plus importantes les consomment plus vite.",

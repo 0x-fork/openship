@@ -343,6 +343,7 @@
     }
   },
   "resourcesGuide": {
+    "concurrentBuilds": "Concurrent builds",
     "title": "How Cloud usage works",
     "credits": "Cloud credits",
     "creditsHint": "Builds and running apps use credits for CPU, memory, disk activity and data transfer. Larger workloads use credits faster.",

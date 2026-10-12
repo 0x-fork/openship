@@ -633,18 +633,21 @@ describe("customer credit limits", () => {
       max_total_vcpus: 7, max_total_ram_mb: 10240, max_total_disk_gb: 192 } }} />);
     const valueFor = (label: string) => [...container.querySelectorAll("dt")].find(item => item.textContent === label)?.parentElement?.querySelector("dd")?.textContent;
     expect(valueFor(copy.header.vcpus)).toBe("7");
+    expect(valueFor(copy.resourcesGuide.projects)).toBe("10");
+    expect(valueFor(copy.capacity.runningServices)).toBe("15");
+    expect(visibleText()).not.toContain("No set limit");
     expect(valueFor(copy.header.ram)).toBe("10 GB");
     expect(valueFor(copy.resourcesGuide.storage)).toBe("192 GB");
-    expect(valueFor(copy.resourcesGuide.buildTime)).toBe(copy.resourcesGuide.buildIncluded);
+    expect(valueFor(copy.resourcesGuide.buildTime)).toBeUndefined();
     expect(container.textContent).not.toContain(copy.resourcesGuide.poolHint);
     expect(container.textContent).not.toContain("3,000 min");
     expect(visibleText()).not.toMatch(/credits/i);
-    expect(visibleText()).toContain("2 vCPU · 8 GB");
+    expect(visibleText()).not.toContain(copy.resourcesGuide.perService);
   });
-  it("shows saved preset ceilings and fixed build allowances without using new catalog limits", async () => {
+  it("keeps fixed build allowances but omits per-service ceilings from plan cards", async () => {
     await render(<PlanResources plan={{ ...hobby, limits: { ...hobby.limits,
       maxServiceResources: undefined, buildMinutesPerMonth: 3000 } }} />);
-    expect(visibleText()).toContain("1 vCPU · 1 GB");
+    expect(visibleText()).not.toContain("1 vCPU · 1 GB");
     expect(visibleText()).not.toContain("2 vCPU · 8 GB");
     expect(visibleText()).toContain("3,000 min / month");
     expect(visibleText()).not.toContain(copy.resourcesGuide.buildIncluded);

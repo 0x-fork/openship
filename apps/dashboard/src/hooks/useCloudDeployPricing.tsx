@@ -36,7 +36,7 @@ export function useCloudDeployPricing(selectedWorkspaceId?: string | null) {
     const id = showModal({
       customContent: capacity || workspaceCapacity
         ? <ServerCapacityRecovery workspaceId={workspaceId} message={typeof body?.error === "string" ? body.error : undefined} onClose={() => hideModal(id)} onRetry={retry} />
-        : <CloudDeployPlanModal workspaceId={workspaceId} restriction={restriction!} onClose={() => hideModal(id)} />,
+        : <CloudDeployPlanModal workspaceId={workspaceId} restriction={restriction!} onRetry={retry} onClose={() => hideModal(id)} />,
       width: "100%",
       maxWidth: capacity ? "880px" : "1440px",
       maxHeight: "calc(100dvh - 2rem)",

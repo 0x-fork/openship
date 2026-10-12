@@ -1458,6 +1458,7 @@ export async function assertProjectQuota(organizationId: string, workspaceId?: s
         : `Your plan includes ${cap} projects and you're using ${total}. Upgrade to add more.`,
       "project-limit",
       await currentPlanTier(organizationId, workspaceId),
+      workspaceId,
     );
   }
 }

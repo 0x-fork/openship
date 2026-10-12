@@ -688,7 +688,13 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
               projectId: service.projectId,
               name: service.name,
               reserved: sql<boolean>`(
-                (${service.enabled} = true AND ${project.activeDeploymentId} IS NOT NULL)
+                (${service.enabled} = true AND ${project.activeDeploymentId} IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM ${serviceDeployment}
+                    WHERE ${serviceDeployment.serviceId} = ${service.id}
+                      AND ${serviceDeployment.deploymentId} = ${project.activeDeploymentId}
+                      AND ${serviceDeployment.status} = 'stopped'
+                  ))
                 OR EXISTS (
                   SELECT 1 FROM ${serviceDeployment}
                   WHERE ${serviceDeployment.serviceId} = ${service.id}

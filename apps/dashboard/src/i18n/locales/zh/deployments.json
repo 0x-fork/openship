@@ -202,6 +202,22 @@
     "pageOf": "第 {page} 页，共 {total} 页",
     "range": "第 {from}–{to} 条部署，共 {total} 条"
   },
+  "cloudBuildQueue": {
+    "label": "云构建队列",
+    "title": "构建已排队",
+    "position": "构建已排队 · 队列位置 {position}",
+    "concurrency": "正在等待可用的并行构建名额。",
+    "resources": "正在等待服务器上可用的 CPU 或内存。",
+    "server": "正在等待服务器接受此构建。",
+    "automaticStart": "构建将自动开始。",
+    "allowance": "套餐允许的并行构建数：{count}。",
+    "unlimited": "您的套餐不限制并行构建数量。",
+    "active": "正在运行的构建数：{count}。",
+    "comparePlans": "比较套餐",
+    "optionalUpgrade": "升级是可选的，您可以继续等待。",
+    "compareConcurrency": "比较套餐以增加并行构建数量。您的构建可以继续在队列中等待。",
+    "compareResources": "比较套餐以获得更多 CPU 或内存。您也可以继续等待服务器资源可用。"
+  },
   "monitoring": {
     "title": "部署概览",
     "scope": "所选项目与搜索 · UTC 日历日 · 保留的部署历史",

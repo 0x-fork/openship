@@ -1,3 +1,4 @@
+import { assertNoCloudBuildActivities } from "./cloud-build-activity.repo";
 import { and, asc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { AppError, generateId } from "@repo/core";
 import type { Database, DatabaseTransaction } from "../client";
@@ -344,6 +345,7 @@ export function createCloudWorkspaceRepo(db: Database) {
           eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId),
         )).for("update");
         if (!row) throw new AppError("Managed server not found", 404, "CLOUD_WORKSPACE_NOT_FOUND");
+        await assertNoCloudBuildActivities(tx, id);
         if (row.activity) {
           if (row.activity.id !== activity.id || row.activity.controllerId !== activity.controllerId || row.activity.scope !== activity.scope)
             throw new AppError("This server has an operation in progress. Let it finish on the installation that started it before changing the server.", 409, "CLOUD_WORKSPACE_ACTIVITY_BUSY");
@@ -417,6 +419,7 @@ export function createCloudWorkspaceRepo(db: Database) {
           .where(and(eq(cloudWorkspace.id, id), eq(cloudWorkspace.organizationId, organizationId)))
           .for("update");
         if (!row?.deletionInProgress) throw new Error("Workspace deletion was not requested");
+        await assertNoCloudBuildActivities(tx, id);
         const [member] = await tx
           .select({ id: project.id })
           .from(project)
