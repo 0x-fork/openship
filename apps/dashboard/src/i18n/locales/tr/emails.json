@@ -1,4 +1,10 @@
 {
+  "cloudComingSoon": {
+    "title": "Yönetilen e-posta",
+    "badge": "Yakında",
+    "description": "Openship Cloud üzerinde yönetilen e-posta yakında kullanıma sunulacak. Cloud sunucu planları uygulama barındırmak içindir ve e-posta sunucusu oluşturmaz.",
+    "selfHosted": "Kendi sunucunuzda barındırdığınız Openship kurulumu ile e-posta hizmeti kullanabilirsiniz."
+  },
   "page": {
     "title": "E-posta Sunucusu",
     "subtitle": "Birkaç tıkla kendi sunucunuzda barındırılan bir e-posta sunucusu kurun",
