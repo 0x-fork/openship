@@ -538,6 +538,14 @@ and supporting metadata. Match nearby page headings instead of introducing a new
 Use **Domains & routing** for sections covering domains, published ports, and internal access. Use
 **Domains** when the section only manages hostnames. Put shared UI copy in the locale dictionaries.
 Keep hints concise and explain choices where they help the user decide.
+Routing rules have visible sections for rewrites, redirects, response headers, and
+URL behavior. Group proxy settings into uploads, timeouts, response buffering,
+compression, headers/protocol, and upstream TLS. Use human labels and shared filled
+controls; keep directive names in each group's Technical details disclosure.
+Trailing slashes have three choices: automatic, add, and remove. Live edge inspection
+is an explicit refresh, not an automatic SSH request when the page opens. Show
+proxy overrides only for targets that apply them, preserving stored values when
+editing other routing rules.
 
 Routing retries keep their logs inline and reconnect to the same server operation after a
 refresh. Refresh domain status and the routing warning from the canonical project response;

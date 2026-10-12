@@ -2707,6 +2707,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           domain/route cards so the primary domain list leads the page. */}
       {!serviceScope && <RoutingConfigCard
         id={id}
+        isCloudProject={isCloudProject}
         initial={projectData.routingConfig}
         onSaved={(cfg) => setProjectData((prev) => ({ ...prev, routingConfig: cfg }))}
       />}
