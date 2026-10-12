@@ -292,6 +292,51 @@ it("surfaces load failures and supports an explicit retry", async () => {
   expect(host.textContent).toContain("email destination");
 });
 
+it("does not present failed preference reads as editable empty defaults", async () => {
+  m.defaults.mockRejectedValueOnce(new Error("Preferences unavailable"));
+  await render();
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Preferences unavailable");
+  expect(host.querySelector('section[aria-label="Alert preferences"]')).toBeNull();
+  expect(m.setDefault).not.toHaveBeenCalled();
+  m.defaults.mockResolvedValue({
+    defaults: [
+      {
+        category: "deploy.failed",
+        defaultEnabled: false,
+        defaultChannelKinds: ["slack"],
+      },
+    ],
+  });
+  await click("Retry");
+  expect(button("Notify me: Deployment failed").getAttribute("aria-checked")).toBe("false");
+  expect(button("Notify me: Deployment failed").disabled).toBe(false);
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("keeps the last preferences read-only after refresh failure, until a successful retry", async () => {
+  m.defaults.mockResolvedValue({
+    defaults: [
+      {
+        category: "deploy.failed",
+        defaultEnabled: false,
+        defaultChannelKinds: ["slack"],
+      },
+    ],
+  });
+  await render();
+  m.defaults.mockRejectedValueOnce(new Error("Preferences unavailable"));
+  await click("Send test");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Preferences unavailable");
+  expect(button("Notify me: Deployment failed").getAttribute("aria-checked")).toBe("false");
+  expect(button("Notify me: Deployment failed").disabled).toBe(true);
+  expect(button("1 channels").disabled).toBe(true);
+  await click("Retry");
+  expect(button("Notify me: Deployment failed").disabled).toBe(false);
+  expect(button("1 channels").disabled).toBe(false);
+  expect(m.setDefault).not.toHaveBeenCalled();
+  expect(m.subscribe).not.toHaveBeenCalled();
+});
+
 it("does not refresh or toast into a new scope after a previous channel test finishes", async () => {
   const pending = deferred<{ ok: boolean; verified: boolean }>();
   m.test.mockReturnValueOnce(pending.promise);

@@ -242,7 +242,11 @@ export async function releaseCloudBuildSlot(): Promise<void> {
 export async function recoverCloudBuildActivity(
   input: CloudBuildActivityIdentity,
   cleanup: (state: { activated: boolean }) => Promise<void>,
-  options: CloudBuildActivityOptions = {},
+  options: CloudBuildActivityOptions & {
+    /** Settle durable deployment state after host work already finished. Runs
+     * under the same execution/project locks, without reopening the worker. */
+    onFinished?: () => Promise<void>;
+  } = {},
 ): Promise<boolean> {
   assertFreshContext();
   if (!(await localWorkspace(input))) return false;
@@ -261,7 +265,10 @@ export async function recoverCloudBuildActivity(
           tryWithProvisionLock(`cloud:build-project:${input.projectId}`, async () => {
             const previous = await repos.cloudBuildActivity.find(input);
             if (!previous) return false;
-            if (previous.finishedAt) return true;
+            if (previous.finishedAt) {
+              await options.onFinished?.();
+              return true;
+            }
             if (!previous.ownerToken) {
               if (previous.commands.length)
                 throw new AppError(

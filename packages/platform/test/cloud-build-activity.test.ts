@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   project: null as Project | null,
   sessionFinished: false,
   acknowledge: vi.fn(),
+  updateStatus: vi.fn(),
   collect: vi.fn(),
   cleanup: vi.fn(),
   removeWorker: vi.fn(),
@@ -77,9 +78,7 @@ vi.mock("@repo/db", () => {
     repos: {
       deployment: {
         findById: async () => h.deployment,
-        updateStatus: async (_id: string, status: string) => {
-          h.deployment!.status = status as Deployment["status"];
-        },
+        updateStatus: h.updateStatus,
         findBuildSessionByDeploymentId: async () => ({
           id: "session",
           finishedAt: h.sessionFinished ? new Date() : null,
@@ -213,6 +212,9 @@ beforeEach(() => {
   h.project = { id: "p-a", organizationId: "org", workspaceId: "w", serverId: "server" } as Project;
   h.sessionFinished = false;
   h.acknowledge.mockReset();
+  h.updateStatus.mockReset().mockImplementation(async (_id: string, status: string) => {
+    h.deployment!.status = status as Deployment["status"];
+  });
   h.collect.mockReset().mockResolvedValue({ resources: [] });
   h.cleanup.mockReset().mockResolvedValue({ failed: [] });
   h.removeWorker.mockReset().mockResolvedValue(undefined);
@@ -404,6 +406,69 @@ it("holds execution ownership before shared admission and through final acknowle
   acknowledged.resolve();
   await run;
   expect(await recoverCloudBuildActivity(identity(), cleanup)).toBe(true);
+});
+
+it.each(["queued", "building", "deploying"] as const)(
+  "settles a stranded %s deployment when its build activity finished before a crash",
+  async (status) => {
+    await withCloudBuildActivity(identity(), async () => {});
+    h.deployment!.status = status;
+    h.verifyWorker.mockClear();
+    h.finish.mockClear();
+    expect(
+      await recoverManagedDeploymentExecution(h.deployment!, h.project!, {
+        recoverInterrupted: true,
+      }),
+    ).toBe(true);
+    expect(h.deployment!.status).toBe("failed");
+    expect(h.updateStatus).toHaveBeenCalledWith(
+      "a",
+      "failed",
+      expect.objectContaining({
+        errorCode: "DEPLOYMENT_INTERRUPTED",
+      }),
+    );
+    expect(h.updateStatus.mock.invocationCallOrder[0]).toBeLessThan(
+      h.acknowledge.mock.invocationCallOrder[0]!,
+    );
+    expect(h.acknowledge).toHaveBeenCalledWith("session");
+    expect(h.cleanup).not.toHaveBeenCalled();
+    expect(h.verifyWorker).not.toHaveBeenCalled();
+    expect(h.finish).not.toHaveBeenCalled();
+  },
+);
+
+it("retries a failed deployment-state write before acknowledging an already-finished activity", async () => {
+  await withCloudBuildActivity(identity(), async () => {});
+  h.updateStatus.mockRejectedValueOnce(new Error("Database unavailable"));
+  await expect(
+    recoverManagedDeploymentExecution(h.deployment!, h.project!, {
+      recoverInterrupted: true,
+    }),
+  ).rejects.toThrow("Database unavailable");
+  expect(h.deployment!.status).toBe("building");
+  expect(h.acknowledge).not.toHaveBeenCalled();
+  expect(
+    await recoverManagedDeploymentExecution(h.deployment!, h.project!, {
+      recoverInterrupted: true,
+    }),
+  ).toBe(true);
+  expect(h.deployment!.status).toBe("failed");
+  expect(h.acknowledge).toHaveBeenCalledOnce();
+});
+
+it("preserves a successful deployment after its finished activity is recovered", async () => {
+  await withCloudBuildActivity(identity(), async () => {});
+  h.deployment!.status = "ready";
+  expect(
+    await recoverManagedDeploymentExecution(h.deployment!, h.project!, {
+      recoverInterrupted: true,
+    }),
+  ).toBe(true);
+  expect(h.deployment!.status).toBe("ready");
+  expect(h.updateStatus).not.toHaveBeenCalled();
+  expect(h.cleanup).not.toHaveBeenCalled();
+  expect(h.acknowledge).toHaveBeenCalledOnce();
 });
 
 it.each([false, true])(

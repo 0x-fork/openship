@@ -233,6 +233,10 @@ only after an explicit click. Keep recent delivery outcomes distinct from incide
 health; reading history never marks messages seen or retries an external send.
 Private drafts and delivery results reset on account, organization, and instance
 changes. Load errors must not look like an account with no channels.
+Read preferences and organization defaults together. A failed defaults read must
+show an error and Retry, never editable empty defaults. Preserve a previous
+successful snapshot on refresh failure, with preference controls disabled until
+a successful retry.
 
 Global deployment history lives in Monitoring’s final Deployments tab. Lead with server-side
 7/30/90-day outcome totals, a daily chart and a project breakdown, followed by the history.

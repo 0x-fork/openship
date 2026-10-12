@@ -144,6 +144,13 @@ jobs:
         if: steps.resume.outputs.reused != 'true'
         run: bun run test
 
+      - name: Verify Cloud build coordination on PostgreSQL
+        if: steps.resume.outputs.reused != 'true'
+        env:
+          OPENSHIP_TEST_CLOUD_POSTGRES: "1"
+        run: |
+          OPENSHIP_TEST_PG_BIN="$(pg_config --bindir)" bun run --cwd packages/db test src/repos/cloud-build-postgres.integration.test.ts
+
   sdk-package:
     name: Installed SDK (Node ${{ matrix.node }})
     runs-on: ubuntu-latest

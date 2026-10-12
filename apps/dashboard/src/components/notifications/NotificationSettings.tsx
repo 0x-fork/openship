@@ -260,13 +260,7 @@ function ScopedNotificationSettings({
           notificationsApi.listCategories(),
           notificationsApi.listChannels(),
           notificationsApi.listSubscriptions(),
-          notificationsApi.listDefaults().catch((diagnosticFailure) => {
-            observeCaughtError(
-              diagnosticFailure,
-              "dashboard/app/(dashboard)/settings/_components/NotificationsTab",
-            );
-            return { defaults: [] };
-          }),
+          notificationsApi.listDefaults(),
         ]);
         if (!active.current || request !== generation.current) return;
         setError(null);
@@ -374,6 +368,7 @@ function ScopedNotificationSettings({
           subscriptions={subscriptions}
           defaults={defaults}
           isAdmin={isAdmin}
+          disabled={error !== null}
           onChange={() => refresh({ silent: true })}
         />
       )}
@@ -614,6 +609,7 @@ function EventNotificationsCard({
   subscriptions,
   defaults,
   isAdmin,
+  disabled,
   onChange,
 }: {
   categories: NotificationCategory[];
@@ -622,6 +618,7 @@ function EventNotificationsCard({
   subscriptions: NotificationSubscription[];
   defaults: NotificationDefault[];
   isAdmin: boolean;
+  disabled: boolean;
   onChange: () => Promise<void>;
 }) {
   const { showToast } = useToast();
@@ -713,6 +710,7 @@ function EventNotificationsCard({
 
   // Admin: the org default (channel kinds + on/off) used until a member makes an explicit category choice.
   const setDefault = async (category: string, enabled: boolean, kinds: ChannelKind[]) => {
+    if (disabled) return;
     setBusyCat(category);
     try {
       await notificationsApi.upsertDefault({
@@ -732,6 +730,7 @@ function EventNotificationsCard({
   // Per-user: one checkbox toggles the subscription across ALL the caller's
   // channels (the backend model is per-channel, so we fan the write out).
   const setNotifyMe = async (category: string, enabled: boolean) => {
+    if (disabled) return;
     setBusyCat(category);
     try {
       await Promise.all(
@@ -783,7 +782,7 @@ function EventNotificationsCard({
                       </span>
                       <Switch
                         checked={notifyMe}
-                        disabled={isBusy || noChannels}
+                        disabled={disabled || isBusy || noChannels}
                         onChange={(value) => setNotifyMe(cat.id, value)}
                         ariaLabel={`${t.settings.notifications.subscriptions.notifyMe}: ${cat.label}`}
                       />
@@ -794,7 +793,7 @@ function EventNotificationsCard({
                       </span>
                       <Switch
                         checked={enabled}
-                        disabled={isBusy || !isAdmin}
+                        disabled={disabled || isBusy || !isAdmin}
                         onChange={(value) => setDefault(cat.id, value, kinds)}
                         ariaLabel={interpolate(t.settings.notifications.orgDefaults.notifyAria, {
                           category: cat.label,
@@ -803,7 +802,7 @@ function EventNotificationsCard({
                     </div>
                     <ChannelMultiSelect
                       value={kinds}
-                      disabled={isBusy || !isAdmin}
+                      disabled={disabled || isBusy || !isAdmin}
                       onChange={(next) => setDefault(cat.id, enabled, next)}
                     />
                   </div>

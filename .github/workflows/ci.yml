@@ -159,6 +159,13 @@ jobs:
       - name: Run tests
         run: ${{ matrix.command }}
 
+      - name: Verify Cloud build coordination on PostgreSQL
+        if: matrix.suite == 'Database'
+        env:
+          OPENSHIP_TEST_CLOUD_POSTGRES: "1"
+        run: |
+          OPENSHIP_TEST_PG_BIN="$(pg_config --bindir)" bun run --cwd packages/db test src/repos/cloud-build-postgres.integration.test.ts
+
   # Preserve the existing required "Test" check. A failed, skipped, or canceled
   # matrix must fail this check; no individual shard can make the PR green.
   test:

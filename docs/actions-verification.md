@@ -58,7 +58,8 @@ was made for these tests.
 The Go worker tests, race suite and vet pass. API/dashboard typechecks, database
 upgrade and full-instance dump/restore tests, SDK/CLI packaging, documentation
 coverage and structured-error boundary audit are required before publishing.
-Current commit CI is recorded in PR #1116.
+The combined release PR records CI for the integrated Actions, Cloud build and
+dashboard changes. PR #1116 retains the original execution evidence.
 
 ## Release boundaries
 
@@ -67,6 +68,7 @@ repository/ref and workflow subjects. Protected environments remain delegated to
 GitHub-coordinated workflows. Linux and native macOS are supported; Windows and
 GitHub Enterprise runner destinations are not available.
 
-Reconcile migrations `0182`/`0183` with this PR's `0184`–`0187` before release.
-The PR stays draft until that dependency is resolved. No production deployment
-was part of this verification.
+The combined branch includes Cloud migrations `0182`/`0183` before Actions
+migrations `0184`–`0187`, with their original increasing timestamps. Publish this
+complete journal together; do not deploy the later Actions migrations on their
+own. No production deployment was part of this verification.

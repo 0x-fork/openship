@@ -95,6 +95,10 @@ The recovery sweep must cover open activities after session acknowledgement and
 finished activities with unfinished execution leases. A short grace for fresh
 unactivated reservations is only a scheduling delay; exact lock acquisition is
 still required. Snapshot offset pages before mutating their rows.
+When an activity already finished, recheck and settle its interrupted deployment
+under the execution/project locks before acknowledging the build session. A failed
+state write remains retryable. This receipt does not reopen host work or delete a
+successfully recorded release.
 
 ## Activation contention
 
