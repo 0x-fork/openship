@@ -48,6 +48,7 @@ export function NetworkErrorHandler() {
     try {
       await api.get("/health", { timeout: 5_000, dedupe: false, cache: "no-store" });
     } catch {
+      // diagnostics-ignore: The API client observes failed liveness reads; retry never replays the original operation.
       // Reachability is updated by the client hooks. A failed probe keeps the
       // current notice; there is no second toast or retry of customer work.
     } finally {
