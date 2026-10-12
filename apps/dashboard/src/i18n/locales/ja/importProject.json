@@ -349,7 +349,16 @@
     "detailFramework": "フレームワーク",
     "detailBranch": "ブランチ",
     "detailDomains": "ドメイン",
-    "detailDomain": "ドメイン"
+    "detailDomain": "ドメイン",
+    "portAdvisory": {
+      "loopbackTitle": "アプリがルーティングされたトラフィックを受信できません",
+      "loopbackNote": "デプロイは稼働中ですが、ルーティング先のポートを確認する必要があります。",
+      "loopbackBody": "ポート {port} はコンテナ内部からの接続のみを受け付けています。",
+      "loopbackBodyService": "サービス「{service}」はポート {port} でコンテナ内部からの接続のみを受け付けています。",
+      "loopbackHelp": "ルーティング先のアプリは 0.0.0.0 で接続を受け付けるよう設定して再デプロイするか、想定されたプロキシへルーティングしてください。",
+      "openSettings": "設定を開く",
+      "skipError": "この警告を非表示にできませんでした。もう一度お試しください。"
+    }
   },
   "composeDeployment": {
     "title": {

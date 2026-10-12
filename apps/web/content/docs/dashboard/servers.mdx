@@ -287,6 +287,12 @@ Existing forwards are listed with a running/stopped dot, the remote `host:port`,
 per-forward controls: **Start** / **Stop**, **Remove**, and an **Open on startup** toggle. To add one, enter a
 **Remote port** (1–65535) and an optional **Local (auto)** port (`0` for auto, or 1–65535), then press **Add**.
 
+A service's **Open on localhost** action uses the same saved forwards. Private services use their live
+container IP and configured TCP port, so they do not need a public domain or a published host port.
+If no TCP port is configured, enter the port the service listens on when prompted.
+The action is enabled when the service is running and its address is known. For a database,
+connect your database client to the assigned localhost port using the database's normal credentials.
+
 <Callout title="Desktop only" type="info">
 This tab is hidden on hosted instances — port forwarding only makes sense when the Openship orchestrator is
 your own machine.

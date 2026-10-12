@@ -14,6 +14,7 @@ import {
   type StackId,
   type RoutingConfig,
   type OpenshipReadiness,
+  type PortCheckResult,
   type ResourceTier as CoreResourceTier,
 } from "@repo/core";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
@@ -761,15 +762,8 @@ export function getPublicEndpointHosts(
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
-/** One exposed port's advisory probe result (mirrors the API `PortCheckResult`). */
-export interface PortCheckUI {
-  port: number;
-  listening: boolean;
-  checked: boolean;
-  serviceId?: string;
-  serviceName?: string;
-  skippedReason?: string;
-}
+/** Use the engine's persisted/SSE shape for live checks and deployment review. */
+export type PortCheckUI = PortCheckResult;
 
 /** One routed path's advisory static-output result (mirrors `OutputCheckResult`). */
 export interface OutputCheckUI {
@@ -994,6 +988,8 @@ export interface DeploymentContextType {
   stopDeployment: () => Promise<void>;
   redeploy: (deploymentId: string) => Promise<string | null>;
   respondToPrompt: (action: string) => Promise<void>;
+  /** Reflect a successful port edit/dismissal only in the deployment it belongs to. */
+  resolvePortCheck: (deploymentId: string, target: number | string) => void;
   /** Open the shared clone-credential modal for a github-credential error code
    *  (single handler for the deploy wizard, redeploy, and the build page).
    *  Returns true when it opened; false when the code isn't credential-related. */
