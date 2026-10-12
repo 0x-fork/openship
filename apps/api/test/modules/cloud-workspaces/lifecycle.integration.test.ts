@@ -57,6 +57,7 @@ import { AppError } from "@repo/core";
 import { OperationError } from "@repo/contracts";
 import { serverResourceRoutes } from "../../../src/modules/system/server-resource.routes";
 import { billingSaasRoutes } from "../../../src/modules/billing/billing.routes";
+import { appRoutes } from "../../../src/modules/apps/app.routes";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { mcpRoutes } from "../../../src/modules/mcp/mcp.routes";
 import { resetMcpToolCache } from "../../../src/modules/mcp/mcp-tools";
@@ -108,6 +109,7 @@ const app = new Hono()
   .route("/api/health", healthRoutes)
   .route("/api/system", serverResourceRoutes)
   .route("/api/billing", billingSaasRoutes)
+  .route("/api/apps", appRoutes)
   .route("/api/mcp", mcpRoutes);
 const vms = new Map<string, any>();
 const subscriptions = new Map<string, OblienSubscription>();
@@ -326,6 +328,39 @@ afterEach(async () => {
 });
 
 describe("subscription-owned Cloud workspace lifecycle", () => {
+  it("keeps a first app's server identity through the plan refusal, payment and draft retry", async () => {
+    owner = await seedOwner();
+    const install = async () => {
+      const response = await app.request("/api/apps", {
+        method: "POST",
+        headers: { ...owner.auth, "content-type": "application/json" },
+        body: JSON.stringify({ templateId: "minio", name: "My storage", routes: [] }),
+      });
+      return { status: response.status, body: await response.json() as any };
+    };
+    const refused = await install();
+    expect(refused.status).toBe(402);
+    expect(refused.body).toMatchObject({ code: "PLAN_UPGRADE_REQUIRED", reason: "static-only", workspaceId: expect.any(String) });
+    const rows = await db.select().from(schema.cloudWorkspace).where(eq(schema.cloudWorkspace.organizationId, owner.orgId));
+    expect(rows).toHaveLength(1);
+    workspace = rows[0];
+    expect(refused.body.workspaceId).toBe(workspace.id);
+    expect(await db.select().from(schema.project).where(eq(schema.project.organizationId, owner.orgId))).toHaveLength(0);
+
+    // Simulate the provider's paid subscription; the real engine rechecks it.
+    await ensureNamespace(owner.orgId, workspace.id);
+    workspace = (await repos.cloudWorkspace.findById(workspace.id))!;
+    subscribe();
+    const installed = await install();
+    expect(installed.status, JSON.stringify(installed.body)).toBe(200);
+    const repeated = await install();
+    expect(repeated.body.data.projectId).toBe(installed.body.data.projectId);
+    const projects = await db.select().from(schema.project).where(eq(schema.project.organizationId, owner.orgId));
+    expect(projects).toHaveLength(1);
+    expect(projects[0].serverId).toBe((await repos.server.findByWorkspace(workspace.id, owner.orgId))!.id);
+    expect(await db.select().from(schema.cloudWorkspace).where(eq(schema.cloudWorkspace.organizationId, owner.orgId))).toHaveLength(1);
+  });
+
   it("reconciles each server once without an ambiguous organization billing pass", async () => {
     const sibling = await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Second server" });
     await ensureNamespace(owner.orgId, sibling.id);
