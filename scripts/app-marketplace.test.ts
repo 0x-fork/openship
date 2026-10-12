@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { readFileSync } from "node:fs";
-import { APP_TEMPLATES, getAppTemplate } from "@repo/core";
-import { APP_LOGO } from "@repo/ui/app-logo";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { APP_TEMPLATES, getAppTemplate } from "../packages/core/src/app-templates";
+import { APP_LOGO } from "../packages/ui/src/AppLogo";
 import { marketplaceEntries, filterMarketplaceApps } from "../apps/web/src/lib/app-marketplace";
 import { safeAppContentUrl } from "../apps/web/src/lib/app-content-url";
 import { renderAppArticle } from "../apps/web/src/lib/app-markdown";
@@ -83,6 +85,22 @@ describe("public app directory", () => {
       );
       const website = readFileSync(new URL(`../apps/web/public${config.src}`, import.meta.url));
       expect(website.equals(dashboard)).toBe(true);
+    }
+  });
+
+  it("compiles shared logo styling when each app builds from its own workspace", async () => {
+    for (const app of ["dashboard", "web"]) {
+      const requireApp = createRequire(new URL(`../apps/${app}/package.json`, import.meta.url));
+      const { default: postcss } = await import(requireApp.resolve("postcss"));
+      const { default: tailwind } = await import(requireApp.resolve("@tailwindcss/postcss"));
+      const base = fileURLToPath(new URL(`../apps/${app}/`, import.meta.url));
+      const file = fileURLToPath(new URL(`../apps/${app}/src/app/globals.css`, import.meta.url));
+      const output = await postcss([tailwind({ base, optimize: false })]).process(
+        readFileSync(file, "utf8"),
+        { from: file },
+      );
+      expect(output.css).toContain(".dark\\:invert");
+      if (app === "dashboard") expect(output.css).toContain(".dim\\:invert");
     }
   });
 });

@@ -110,6 +110,7 @@ export function AppLogo({
   icon: Icon = "window",
   className = "size-5",
   fallback,
+  invertOnDark = true,
 }: {
   appId?: string;
   slug?: string;
@@ -117,6 +118,8 @@ export function AppLogo({
   icon?: IconName;
   className?: string;
   fallback?: ReactNode;
+  /** Disable on fixed light surfaces, even when the operating system prefers dark. */
+  invertOnDark?: boolean;
 }) {
   const [failedSource, setFailedSource] = useState<string>();
   const imageRef = useRef<HTMLImageElement>(null);
@@ -163,7 +166,7 @@ export function AppLogo({
       alt=""
       loading="lazy"
       decoding="async"
-      className={cfg?.darkInvert ? `${base} dark:invert dim:invert` : base}
+      className={cfg?.darkInvert && invertOnDark ? `${base} dark:invert dim:invert` : base}
       onError={() => setFailedSource(url)}
     />
   );

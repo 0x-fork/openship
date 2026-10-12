@@ -19,6 +19,7 @@ export function MarketplaceLogo({
       aria-hidden="true"
     >
       <AppLogo
+        invertOnDark={false}
         appId={id}
         slug={logo}
         className={large ? "size-11" : "size-7"}
