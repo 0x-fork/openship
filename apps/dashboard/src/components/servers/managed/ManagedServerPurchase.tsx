@@ -11,6 +11,8 @@ import { systemApi } from "@/lib/api/system";
 import { getApiErrorMessage } from "@/lib/api/client";
 
 interface PurchaseProps {
+  /** Marketing can request an offer; the live catalog and explicit click decide checkout. */
+  requestedPlanId?: string;
   preserveProject?: boolean;
   billingEnabled?: boolean;
   onCheckoutStarted?: (server: CloudWorkspaceSummary, checkoutUrl: string) => void | Promise<void>;
@@ -35,6 +37,7 @@ function Purchase({
   onCheckoutStarted,
   onCancel,
   sessionPending,
+  requestedPlanId,
 }: PurchaseProps & { sessionPending?: boolean }) {
   const { t } = useI18n();
   const created = useRef<CloudWorkspaceSummary | null>(null);
@@ -51,6 +54,7 @@ function Purchase({
     <div className="space-y-4">
       <CloudPlanPicker
         currentPlan="free"
+        requestedPlanId={requestedPlanId}
         subscription={null}
         billingEnabled={billingEnabled}
         prepareWorkspace={prepareWorkspace}

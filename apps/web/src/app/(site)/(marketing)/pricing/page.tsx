@@ -10,6 +10,7 @@ import {
   type PricedPlan,
 } from "@/lib/pricing";
 import { CLOUD_CTA_HREF, SELF_HOST_CTA_HREF, faq } from "./_data";
+import { cloudPlanHref } from "@/lib/cloud-links";
 
 // Match the public catalog and JSON-LD cache window.
 export const revalidate = 60;
@@ -171,7 +172,7 @@ export default async function PricingPage() {
                         {supportLabels[plan.support] ?? "See support options"}
                       </p>
                       <a
-                        href={CLOUD_CTA_HREF}
+                        href={cloudPlanHref(plan.id)}
                         className={`pp-plan-cta ${plan.popular ? "pp-plan-cta--filled" : ""}`}
                       >
                         {chooseLabel(plan.name)}

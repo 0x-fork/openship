@@ -210,6 +210,7 @@ export async function assertPlanAllowsServices(organizationId: string, workspace
       "Your plan can deploy static sites only. Databases, one-click apps and multi-service stacks need a paid plan.",
       "static-only",
       tier,
+      workspaceId,
     );
   }
 }
