@@ -65,3 +65,21 @@ it.each(["namespace", "source_workspace_id", "exported_path"])("does not write w
   await expect(provider.registerRoute({ domain: hostname, targetUrl: "http://127.0.0.1:3000", tls: true })).rejects.toThrow("not owned");
   expect(writes).toEqual([]);
 });
+
+it("publishes path-only routes through the SDK without a static or SPA fallback", async () => {
+  await provider.registerRoute({
+    domain: hostname,
+    tls: true,
+    notFound: true,
+    proxyLocations: [{ pathPrefix: "/api/", targetUrl: "http://127.0.0.1:3000" }],
+  });
+  expect(writes).toContainEqual({
+    method: "PUT", path: `/domain/routes/${hostname}`, body: {
+      spa: false,
+      routes: [{
+        match: { path: "/api/", type: "prefix" },
+        action: { kind: "proxy", workspace: h.workspaceId, port: 3000 },
+      }],
+    },
+  });
+});
