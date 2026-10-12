@@ -4,7 +4,8 @@
   "tabs": {
     "open": "Visão geral",
     "health": "Saúde",
-    "resolved": "Histórico"
+    "resolved": "Histórico",
+    "notifications": "Notificações"
   },
   "monitoringHint": {
     "description": "Veja o estado dos serviços e gerencie o monitoramento em segundo plano.",

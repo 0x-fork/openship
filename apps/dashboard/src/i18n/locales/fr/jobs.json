@@ -130,7 +130,7 @@
     "dependenciesHint": "Cette tâche s'exécute après la réussite de la ou des tâches sélectionnées.",
     "triggers": "Déclencheurs d'événements",
     "notifications": "Notifications",
-    "noChannels": "Aucun canal de notification — ajoutez-en un dans Paramètres → Notifications.",
+    "noChannels": "Aucun canal de notification. Ajoutez-en un dans Surveillance → Notifications.",
     "notificationsHint": "Remplace les paramètres de notification globaux pour cette tâche.",
     "submit": "Créer la tâche",
     "creating": "Enregistrement…",

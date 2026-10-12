@@ -62,7 +62,6 @@ describe("getNavSections (the platform rail)", () => {
       "home",
       "projects",
       "apps",
-      "deployments",
       "actions",
       "issues",
     ]);

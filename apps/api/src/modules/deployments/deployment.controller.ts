@@ -23,6 +23,7 @@ export async function list(c: Context) {
     page: Number(c.req.query("page") ?? 1), perPage: Number(c.req.query("perPage") ?? 50),
     status: c.req.query("status") as import("@repo/core").DeploymentHistoryFilter | undefined,
     search: c.req.query("search"),
+    days: c.req.query("days") ? Number(c.req.query("days")) : undefined,
   });
   applyOperationContext(c, result.context);
   return c.json({ success: true, ...result.data });

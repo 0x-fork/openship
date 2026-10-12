@@ -100,7 +100,7 @@ export function AutomaticMonitoringCard({
             {watcher.available && (
               <Link
                 className="font-medium text-foreground underline underline-offset-4"
-                href="/settings?tab=notifications"
+                href="/monitoring?tab=notifications"
               >
                 Configure alerts
               </Link>

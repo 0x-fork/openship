@@ -217,5 +217,26 @@
     "optionalUpgrade": "Le changement d’offre est facultatif. Vous pouvez continuer à attendre.",
     "compareConcurrency": "Comparez les offres pour exécuter davantage de compilations simultanées. Votre compilation peut rester dans la file d’attente.",
     "compareResources": "Comparez les offres pour obtenir plus de processeur ou de mémoire. Vous pouvez continuer à attendre que des ressources soient disponibles sur le serveur."
+  },
+  "monitoring": {
+    "title": "Vue des déploiements",
+    "scope": "Projet et recherche sélectionnés · jours UTC · historique conservé",
+    "period": "Période",
+    "days": "{count} jours",
+    "refresh": "Actualiser",
+    "attempts": "Tentatives de déploiement",
+    "window": "Sur la période sélectionnée",
+    "successRate": "Taux de réussite",
+    "rateHint": "Réussis / (réussis + échoués) ; hors annulations",
+    "failedHint": "Inclut les versions partielles et bloquées",
+    "activeHint": "Tentatives en cours ou en attente sur cette période",
+    "unavailable": "Vue indisponible. Essayez d’actualiser.",
+    "trend": "Résultats quotidiens",
+    "avgBuild": "Build réussi moyen",
+    "empty": "Aucun déploiement sur cette période.",
+    "projects": "Détail par projet",
+    "projectHint": "Les 6 premiers par échecs, puis tentatives actives",
+    "failedShort": "échoués",
+    "history": "Historique des déploiements"
   }
 }

@@ -22,7 +22,7 @@
     "edit": "Düzenle",
     "emptyTitle": "Henüz bildirim kuralı yok",
     "emptyBody": "Bu sunucudaki bir posta kutusuna veya alan adına posta geldiğinde Slack, Telegram, Discord ya da bir webhook üzerinden bildirim almak için bir kural ekleyin.",
-    "noChannels": "Henüz doğrulanmış bildirim kanalınız yok. Ayarlar → Bildirimler kısmından bir kanal ekleyip doğrulayın, ardından kural oluşturmak için buraya dönün.",
+    "noChannels": "İzleme → Bildirimler bölümünde bir kanal ekleyip doğrulayın, ardından kural oluşturmak için geri dönün.",
     "addChannel": "Bildirim kanalı ekle",
     "manageChannels": "Kanalları yönet",
     "fieldName": "Ad",

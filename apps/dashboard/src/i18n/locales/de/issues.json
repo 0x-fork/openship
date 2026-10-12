@@ -4,7 +4,8 @@
   "tabs": {
     "open": "Übersicht",
     "health": "Gesundheit",
-    "resolved": "Verlauf"
+    "resolved": "Verlauf",
+    "notifications": "Benachrichtigungen"
   },
   "monitoringHint": {
     "description": "Dienststatus ansehen und Hintergrundüberwachung verwalten.",

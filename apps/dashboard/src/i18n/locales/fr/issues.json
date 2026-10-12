@@ -4,7 +4,8 @@
   "tabs": {
     "open": "Vue générale",
     "health": "Santé",
-    "resolved": "Historique"
+    "resolved": "Historique",
+    "notifications": "Notifications"
   },
   "monitoringHint": {
     "description": "Consultez les services et gérez la surveillance en arrière-plan.",

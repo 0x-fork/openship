@@ -388,7 +388,7 @@ function JobFormContent({
           {channels.length === 0 ? (
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground/60">{c.noChannels}</p>
-              <a href="/settings?tab=notifications" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+              <a href="/monitoring?tab=notifications" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
                 {c.setupChannel} <UiIcon name="arrow-right" className="size-3.5" />
               </a>
             </div>

@@ -225,6 +225,24 @@ Retain selections when reporting is disabled, a branch is rescanned, or the wiza
 reopened. Delivery failures belong beside these preferences, with the GitHub connection
 link, and must not replace deployment status or appear as a build failure.
 
+Monitoring includes a Notifications tab for account-owned channels, organization
+alert preferences, and personal delivery history. Settings keeps the same shared
+editor for existing links. Show enabled and verified states separately: a paused
+or unverified destination is not ready to deliver. Verification sends a real test
+only after an explicit click. Keep recent delivery outcomes distinct from incident
+health; reading history never marks messages seen or retries an external send.
+Private drafts and delivery results reset on account, organization, and instance
+changes. Load errors must not look like an account with no channels.
+
+Global deployment history lives in Monitoring’s final Deployments tab. Lead with server-side
+7/30/90-day outcome totals, a daily chart and a project breakdown, followed by the history.
+Project and search filters scope both; status filters drill into the history without changing
+the summary denominator. Use UTC calendar days and label the retained-history scope. Exclude
+cancellations and unfinished attempts from success rate; count queued attempts as in progress.
+Each project retains its own history.
+Old `/deployments` links redirect to Monitoring while preserving filters.
+
+
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress
