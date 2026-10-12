@@ -34,6 +34,7 @@
     "local": "Local"
   },
   "card": {
+    "more": "More",
     "liveVersion": "Live version v{version}",
     "appBadge": "App",
     "sourceLocal": "Local",

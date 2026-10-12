@@ -34,6 +34,7 @@
     "local": "Lokal"
   },
   "card": {
+    "more": "Mehr",
     "liveVersion": "Live-Version v{version}",
     "sourceLocal": "Lokal",
     "services": "Dienste",
