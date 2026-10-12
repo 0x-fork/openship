@@ -5,11 +5,33 @@ import { LOCAL_SERVICE_CATALOG } from "../apps/dashboard/src/app/(dashboard)/pro
 
 const run = promisify(execFile);
 
+/** Registry dependencies of an inline build, including external COPY stages.
+ * Stage names/numbers and scratch refer to the build itself, not a registry. */
+export function catalogBuildImages(dockerfile: string): string[] {
+  const stages = new Set<string>();
+  const images = new Set<string>();
+  for (const line of dockerfile.replace(/\\\r?\n/g, " ").split(/\r?\n/)) {
+    const from = /^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?/i.exec(line);
+    const copy = /^\s*COPY\s+--from=(\S+)/i.exec(line);
+    const source = from?.[1] ?? copy?.[1];
+    if (
+      source &&
+      source !== "scratch" &&
+      !/^\d+$/.test(source) &&
+      !stages.has(source.toLowerCase()) &&
+      !source.includes("$")
+    )
+      images.add(source);
+    if (from?.[2]) stages.add(from[2].toLowerCase());
+  }
+  return [...images];
+}
+
 export function catalogImages(
   apps: readonly {
     id: string;
     available?: boolean;
-    services?: readonly { name: string; image?: string }[];
+    services?: readonly { name: string; image?: string; build?: { dockerfile: string } }[];
   }[],
   library: Array<{ id?: string; image?: string }> = [],
 ): Map<string, string[]> {
@@ -20,7 +42,12 @@ export function catalogImages(
   };
   for (const app of apps) {
     if (!app.available) continue;
-    for (const service of app.services ?? []) add(service.image, app.id + "/" + service.name);
+    for (const service of app.services ?? []) {
+      const source = app.id + "/" + service.name;
+      add(service.image, source);
+      for (const image of service.build ? catalogBuildImages(service.build.dockerfile) : [])
+        add(image, source + "/build");
+    }
   }
   for (const entry of library) add(entry.image, "library/" + entry.id);
   return images;

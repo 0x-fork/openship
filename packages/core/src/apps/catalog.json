@@ -5123,6 +5123,1780 @@
         ],
         "article": "## A compact backend\n\nPocketBase puts a SQLite-backed database, authentication, realtime subscriptions, file storage, and an admin dashboard into one service. It is a useful starting point for small applications, internal tools, and prototypes.\n\nThe template provides service configuration and persistent storage. Create collections in the admin dashboard and connect your application to the deployed API.\n\n## Keep the data in mind\n\nThe database and uploaded files belong to the persistent data directory. Configure backups before relying on the instance for important records.\n\nRead the [PocketBase documentation](https://pocketbase.io/docs/) for collection rules, authentication, subscriptions, and the operating limitations of the installed release."
       }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.0",
+      "id": "authentik",
+      "name": "Authentik",
+      "description": "An identity provider for SSO, OAuth2, OpenID Connect, and SAML, with its server, worker, and PostgreSQL database.",
+      "kind": "template",
+      "logo": "authentik",
+      "category": "other",
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "authentik-db",
+          "restart": "unless-stopped",
+          "image": "postgres:17.11-alpine",
+          "environment": {
+            "POSTGRES_USER": "authentik",
+            "POSTGRES_DB": "authentik"
+          },
+          "volumes": [
+            "authentik_db_data:/var/lib/postgresql/data"
+          ],
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "20s"
+          },
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 512,
+            "diskMb": 8192
+          }
+        },
+        {
+          "name": "authentik-worker",
+          "restart": "unless-stopped",
+          "image": "ghcr.io/goauthentik/server:2026.8.3",
+          "environment": {
+            "AUTHENTIK_POSTGRESQL__HOST": "authentik-db",
+            "AUTHENTIK_POSTGRESQL__NAME": "authentik",
+            "AUTHENTIK_POSTGRESQL__USER": "authentik",
+            "AUTHENTIK_ERROR_REPORTING__ENABLED": "false"
+          },
+          "volumes": [
+            "authentik_data:/data",
+            "authentik_templates:/templates",
+            "authentik_certs:/certs"
+          ],
+          "dependsOn": [
+            "authentik-db"
+          ],
+          "commandArgv": [
+            "worker"
+          ],
+          "secretEnv": [
+            "AUTHENTIK_POSTGRESQL__PASSWORD",
+            "AUTHENTIK_SECRET_KEY",
+            "AUTHENTIK_BOOTSTRAP_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "ak",
+              "healthcheck"
+            ],
+            "interval": "15s",
+            "timeout": "10s",
+            "retries": 15,
+            "startPeriod": "120s"
+          },
+          "resources": {
+            "cpuCores": 0.75,
+            "memoryMb": 1024,
+            "diskMb": 4096
+          }
+        },
+        {
+          "name": "authentik",
+          "restart": "unless-stopped",
+          "image": "ghcr.io/goauthentik/server:2026.8.3",
+          "environment": {
+            "AUTHENTIK_POSTGRESQL__HOST": "authentik-db",
+            "AUTHENTIK_POSTGRESQL__NAME": "authentik",
+            "AUTHENTIK_POSTGRESQL__USER": "authentik",
+            "AUTHENTIK_ERROR_REPORTING__ENABLED": "false"
+          },
+          "volumes": [
+            "authentik_data:/data",
+            "authentik_templates:/templates"
+          ],
+          "exposedPort": 9000,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 9000
+            }
+          ],
+          "dependsOn": [
+            "authentik-db",
+            "authentik-worker"
+          ],
+          "commandArgv": [
+            "server"
+          ],
+          "secretEnv": [
+            "AUTHENTIK_POSTGRESQL__PASSWORD",
+            "AUTHENTIK_SECRET_KEY"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "ak",
+              "healthcheck"
+            ],
+            "interval": "15s",
+            "timeout": "10s",
+            "retries": 15,
+            "startPeriod": "120s"
+          },
+          "resources": {
+            "cpuCores": 0.75,
+            "memoryMb": 1024,
+            "diskMb": 4096
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "service": "authentik-db",
+          "key": "POSTGRES_PASSWORD",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "authentik-db"
+        },
+        {
+          "service": "authentik",
+          "key": "AUTHENTIK_POSTGRESQL__PASSWORD",
+          "label": "Authentik database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "authentik-db"
+        },
+        {
+          "service": "authentik",
+          "key": "AUTHENTIK_SECRET_KEY",
+          "label": "Authentik signing secret",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "authentik-key"
+        },
+        {
+          "service": "authentik-worker",
+          "key": "AUTHENTIK_POSTGRESQL__PASSWORD",
+          "label": "Authentik database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "authentik-db"
+        },
+        {
+          "service": "authentik-worker",
+          "key": "AUTHENTIK_SECRET_KEY",
+          "label": "Authentik signing secret",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "authentik-key"
+        },
+        {
+          "service": "authentik-worker",
+          "key": "AUTHENTIK_BOOTSTRAP_PASSWORD",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "AUTHENTIK_BOOTSTRAP_EMAIL",
+          "service": "authentik-worker",
+          "label": "Admin email",
+          "default": "admin@example.com",
+          "required": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to Authentik",
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "Authentik",
+            "source": "publicUrl:authentik",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "username",
+            "label": "Admin username",
+            "source": "template:akadmin",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Admin password",
+            "source": "env:authentik-worker:AUTHENTIK_BOOTSTRAP_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "guide": {
+          "defaultMode": "public"
+        },
+        "firstLogin": {
+          "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "authentik",
+          "port": 9000,
+          "label": "Authentik",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        },
+        {
+          "service": "authentik-db",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "marketplace": {
+        "features": [
+          {
+            "title": "Single sign-on",
+            "description": "Configure OAuth2, OpenID Connect, and SAML providers."
+          },
+          {
+            "title": "Complete stack",
+            "description": "Includes the server, background worker, and private PostgreSQL database."
+          },
+          {
+            "title": "Generated administrator",
+            "description": "Bootstrap the admin account without leaving a public first-user setup page."
+          }
+        ],
+        "article": "## Authentik identity provider\n\nThis stack follows Authentik's server, worker, and PostgreSQL composition. The server and worker share a generated signing key and database credentials. The worker initializes the `akadmin` account with a generated password and your chosen email. Open Authentik from the Connection card.\n\n## Set up your applications\n\nCreate providers and applications in Authentik, then configure each application's redirect URIs and credentials. Installing an identity provider does not automatically connect Openship's own login or your other applications to it. Configure SMTP in Authentik for invitations and password resets.\n\n## Outposts and storage\n\nThe stack does not mount the host Docker socket or grant the worker host administration access. Use the embedded proxy outpost or deploy additional outposts manually; automatic Docker outpost deployment is unavailable. The database, uploaded data, templates, and certificates persist in project-scoped volumes.\n\nBootstrap credentials only apply to an empty installation. Accounts changed in Authentik remain unchanged on redeployment. Back up the database and data together before upgrades, and follow Authentik's release-specific migration instructions.\n\n[Docker Compose installation](https://docs.goauthentik.io/install-config/install/docker-compose/) · [Automated installation](https://docs.goauthentik.io/install-config/automated-install)"
+      },
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "settings": [
+        {
+          "id": "general",
+          "label": "Setup",
+          "columns": 2,
+          "fields": [
+            {
+              "service": "authentik-worker",
+              "key": "AUTHENTIK_BOOTSTRAP_EMAIL",
+              "label": "Admin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "installStep": true,
+              "required": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+            }
+          ]
+        }
+      ],
+      "repository": "https://github.com/goauthentik/authentik",
+      "minResources": {
+        "cpuCores": 2,
+        "memoryMb": 2560
+      },
+      "files": [
+        {
+          "service": "authentik-db",
+          "path": "/docker-entrypoint-initdb.d/openship-role.sql",
+          "content": "ALTER ROLE authentik NOSUPERUSER NOCREATEDB NOCREATEROLE;\n"
+        }
+      ]
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": false,
+      "minEngine": "0.9.0",
+      "id": "mariadb",
+      "name": "MariaDB + Adminer",
+      "description": "A MySQL-compatible database with a lightweight Adminer control panel for queries, tables, and exports.",
+      "kind": "template",
+      "logo": "mariadb",
+      "category": "database",
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "mariadb",
+          "restart": "unless-stopped",
+          "image": "mariadb:11.4.13",
+          "environment": {
+            "MARIADB_USER": "openship",
+            "MARIADB_DATABASE": "app"
+          },
+          "volumes": [
+            "mariadb_data:/var/lib/mysql"
+          ],
+          "secretEnv": [
+            "MARIADB_ROOT_PASSWORD",
+            "MARIADB_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "healthcheck.sh",
+              "--connect",
+              "--innodb_initialized"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "30s"
+          },
+          "resources": {
+            "cpuCores": 0.75,
+            "memoryMb": 512,
+            "diskMb": 8192
+          }
+        },
+        {
+          "name": "adminer",
+          "restart": "unless-stopped",
+          "image": "adminer:6.1.1",
+          "environment": {
+            "ADMINER_DEFAULT_SERVER": "mariadb"
+          },
+          "exposedPort": 8080,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 8080
+            }
+          ],
+          "dependsOn": [
+            "mariadb"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "php -r \"exit(@file_get_contents('http://127.0.0.1:8080/') === false ? 1 : 0);\""
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 8,
+            "startPeriod": "20s"
+          },
+          "resources": {
+            "cpuCores": 0.25,
+            "memoryMb": 256,
+            "diskMb": 1024
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "service": "mariadb",
+          "key": "MARIADB_ROOT_PASSWORD",
+          "label": "Database root password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "service": "mariadb",
+          "key": "MARIADB_PASSWORD",
+          "label": "Application database password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to MariaDB + Adminer",
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "Adminer",
+            "source": "publicUrl:adminer",
+            "kind": "url"
+          },
+          {
+            "id": "username",
+            "label": "Database user",
+            "source": "env:mariadb:MARIADB_USER",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Database password",
+            "source": "env:mariadb:MARIADB_PASSWORD",
+            "secret": true,
+            "width": "half"
+          },
+          {
+            "id": "url",
+            "label": "Database URL",
+            "source": "template:mysql://openship:{{env:mariadb:MARIADB_PASSWORD}}@mariadb:3306/app",
+            "service": "mariadb",
+            "secret": true,
+            "envKey": "DATABASE_URL",
+            "recommended": true
+          },
+          {
+            "id": "rootPassword",
+            "label": "Database root password",
+            "source": "env:mariadb:MARIADB_ROOT_PASSWORD",
+            "secret": true
+          }
+        ],
+        "guide": {
+          "defaultMode": "public"
+        },
+        "firstLogin": {
+          "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "adminer",
+          "port": 8080,
+          "label": "Adminer",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        },
+        {
+          "service": "mariadb",
+          "port": 3306,
+          "label": "MariaDB",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "marketplace": {
+        "features": [
+          {
+            "title": "MySQL-compatible",
+            "description": "Connect your existing MySQL clients and frameworks."
+          },
+          {
+            "title": "Adminer",
+            "description": "Run queries and manage tables through the browser."
+          },
+          {
+            "title": "Separated credentials",
+            "description": "The application user and database root account have different generated passwords."
+          }
+        ],
+        "article": "## MariaDB with Adminer\n\nRun a private MariaDB database and the official Adminer container. The application database is `app`, with the user `openship` and a generated password. The root account has a different generated password.\n\n## Browser administration\n\nOpen Adminer from the Connection card. Choose **MySQL**, use the preselected **MariaDB** server, and sign in with the database username and password. Adminer uses database authentication rather than a separate dashboard account. Its official login-server plugin restricts the browser to this stack’s database. The application user can manage the `app` database; use the root account deliberately for instance-wide administration.\n\n## Application connections\n\nUse the private `DATABASE_URL` through **Use in a project**, or **Open in localhost** for your database client. Port 3306 is private by default. The database persists across container replacement; Adminer is stateless. Back up the database before changing its version.\n\n[MariaDB image](https://hub.docker.com/_/mariadb) · [Adminer image](https://hub.docker.com/_/adminer)"
+      },
+      "provides": [
+        {
+          "id": "mysql",
+          "category": "database",
+          "outputRefs": [
+            "url"
+          ]
+        }
+      ],
+      "repository": "https://github.com/MariaDB/server",
+      "minResources": {
+        "cpuCores": 1,
+        "memoryMb": 768
+      },
+      "files": [
+        {
+          "service": "adminer",
+          "path": "/var/www/html/plugins-enabled/openship-servers.php",
+          "content": "<?php\nrequire_once __DIR__ . '/../plugins/login-servers.php';\nreturn new AdminerLoginServers(['MariaDB' => ['server' => 'mariadb', 'driver' => 'server']]);\n"
+        }
+      ]
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.0",
+      "id": "nextcloud",
+      "name": "Nextcloud",
+      "description": "Private file sync and sharing with Nextcloud Admin, MariaDB, Redis file locking, and scheduled background jobs.",
+      "kind": "template",
+      "logo": "nextcloud",
+      "category": "other",
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "nextcloud-db",
+          "restart": "unless-stopped",
+          "image": "mariadb:11.4.13",
+          "environment": {
+            "MARIADB_USER": "nextcloud",
+            "MARIADB_DATABASE": "nextcloud"
+          },
+          "volumes": [
+            "nextcloud_db_data:/var/lib/mysql"
+          ],
+          "secretEnv": [
+            "MARIADB_ROOT_PASSWORD",
+            "MARIADB_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "healthcheck.sh",
+              "--connect",
+              "--innodb_initialized"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "30s"
+          },
+          "resources": {
+            "cpuCores": 0.25,
+            "memoryMb": 512,
+            "diskMb": 8192
+          }
+        },
+        {
+          "name": "nextcloud-redis",
+          "restart": "unless-stopped",
+          "image": "redis:7.4.6-alpine",
+          "volumes": [
+            "nextcloud_redis:/data"
+          ],
+          "commandArgv": [
+            "redis-server",
+            "--appendonly",
+            "yes"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "redis-cli",
+              "ping"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 6
+          },
+          "resources": {
+            "cpuCores": 0.25,
+            "memoryMb": 128,
+            "diskMb": 1024
+          }
+        },
+        {
+          "name": "nextcloud",
+          "restart": "unless-stopped",
+          "image": "nextcloud:35.0.1-apache",
+          "environment": {
+            "MYSQL_HOST": "nextcloud-db",
+            "MYSQL_DATABASE": "nextcloud",
+            "MYSQL_USER": "nextcloud",
+            "REDIS_HOST": "nextcloud-redis",
+            "NEXTCLOUD_ADMIN_USER": "admin",
+            "OPENSHIP_PUBLIC_URL": "{{publicUrl:nextcloud}}"
+          },
+          "volumes": [
+            "nextcloud_data:/var/www/html"
+          ],
+          "exposedPort": 80,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 80
+            }
+          ],
+          "dependsOn": [
+            "nextcloud-db",
+            "nextcloud-redis"
+          ],
+          "secretEnv": [
+            "MYSQL_PASSWORD",
+            "NEXTCLOUD_ADMIN_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "curl -fsS http://127.0.0.1/status.php | grep -q '\"installed\":true'"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 15,
+            "startPeriod": "180s"
+          },
+          "resources": {
+            "cpuCores": 0.75,
+            "memoryMb": 1024,
+            "diskMb": 16384
+          }
+        },
+        {
+          "name": "nextcloud-cron",
+          "restart": "unless-stopped",
+          "image": "nextcloud:35.0.1-apache",
+          "environment": {
+            "MYSQL_HOST": "nextcloud-db",
+            "MYSQL_DATABASE": "nextcloud",
+            "MYSQL_USER": "nextcloud",
+            "REDIS_HOST": "nextcloud-redis",
+            "NEXTCLOUD_ADMIN_USER": "admin",
+            "OPENSHIP_PUBLIC_URL": "{{publicUrl:nextcloud}}"
+          },
+          "volumes": [
+            "nextcloud_data:/var/www/html"
+          ],
+          "dependsOn": [
+            "nextcloud"
+          ],
+          "commandArgv": [
+            "/cron.sh"
+          ],
+          "secretEnv": [
+            "MYSQL_PASSWORD",
+            "NEXTCLOUD_ADMIN_PASSWORD"
+          ],
+          "resources": {
+            "cpuCores": 0.25,
+            "memoryMb": 256,
+            "diskMb": 1024
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "service": "nextcloud-db",
+          "key": "MARIADB_ROOT_PASSWORD",
+          "label": "Database root password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "service": "nextcloud-db",
+          "key": "MARIADB_PASSWORD",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "nextcloud-db"
+        },
+        {
+          "service": "nextcloud",
+          "key": "MYSQL_PASSWORD",
+          "label": "Nextcloud database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "nextcloud-db"
+        },
+        {
+          "service": "nextcloud-cron",
+          "key": "MYSQL_PASSWORD",
+          "label": "Background job database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "nextcloud-db"
+        },
+        {
+          "service": "nextcloud",
+          "key": "NEXTCLOUD_ADMIN_PASSWORD",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "nextcloud-admin"
+        },
+        {
+          "service": "nextcloud-cron",
+          "key": "NEXTCLOUD_ADMIN_PASSWORD",
+          "label": "Background job admin password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "nextcloud-admin"
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to Nextcloud",
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "Nextcloud",
+            "source": "publicUrl:nextcloud",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "username",
+            "label": "Admin username",
+            "source": "env:nextcloud:NEXTCLOUD_ADMIN_USER",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Admin password",
+            "source": "env:nextcloud:NEXTCLOUD_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "guide": {
+          "defaultMode": "public"
+        },
+        "firstLogin": {
+          "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "nextcloud",
+          "port": 80,
+          "label": "Nextcloud",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        },
+        {
+          "service": "nextcloud-db",
+          "port": 3306,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        },
+        {
+          "service": "nextcloud-redis",
+          "port": 6379,
+          "label": "File locking cache",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "marketplace": {
+        "features": [
+          {
+            "title": "File sync and sharing",
+            "description": "Access and share files through the web, mobile, and desktop clients."
+          },
+          {
+            "title": "Private storage",
+            "description": "Keep the files and database on your server."
+          },
+          {
+            "title": "Background jobs",
+            "description": "Includes Redis file locking and a dedicated cron service."
+          }
+        ],
+        "article": "## Nextcloud file sync and sharing\n\nRun the official Nextcloud Apache image with a dedicated MariaDB database, Redis file locking, and a background-job container. The initial `admin` account receives a generated password. Open Nextcloud from the Connection card to create users and configure sharing.\n\n## Routing\n\nOnly Nextcloud receives a domain by default. The selected URL drives trusted-domain, host, and protocol configuration; it works with Openship Cloud and self-hosted routing without assuming that every route uses HTTPS. Use the configured route for access. A local tunnel does not change Nextcloud's canonical URL or trusted domains.\n\n## Data and maintenance\n\nNextcloud files, application configuration, database, and Redis state use persistent volumes. The web and cron services share the same Nextcloud data volume. The required setup step enables cron mode after installation. Back up the database and files together. The generated admin password initializes an empty installation; it does not reset a password changed in Nextcloud.\n\nThis is the standard Nextcloud server stack. Nextcloud Talk's high-performance backend, office document servers, antivirus scanning, external storage, and SMTP are separate integrations. Upgrade one supported major version at a time following Nextcloud's upgrade guide.\n\n[Official Nextcloud image](https://hub.docker.com/_/nextcloud) · [Reverse proxy configuration](https://docs.nextcloud.com/server/stable/admin_manual/configuration_server/reverse_proxy_configuration.html)"
+      },
+      "files": [
+        {
+          "service": "nextcloud",
+          "path": "/var/www/html/config/openship.config.php",
+          "content": "<?php\n$url = parse_url(getenv('OPENSHIP_PUBLIC_URL'));\n$host = $url['host'] ?? 'localhost';\n$authority = $host . (isset($url['port']) ? ':' . $url['port'] : '');\n$CONFIG = [\n  'trusted_domains' => [$host],\n  'overwritehost' => $authority,\n  'overwriteprotocol' => $url['scheme'] ?? 'http',\n  'overwrite.cli.url' => getenv('OPENSHIP_PUBLIC_URL'),\n];\n"
+        },
+        {
+          "service": "nextcloud-cron",
+          "path": "/var/www/html/config/openship.config.php",
+          "content": "<?php\n$url = parse_url(getenv('OPENSHIP_PUBLIC_URL'));\n$host = $url['host'] ?? 'localhost';\n$authority = $host . (isset($url['port']) ? ':' . $url['port'] : '');\n$CONFIG = [\n  'trusted_domains' => [$host],\n  'overwritehost' => $authority,\n  'overwriteprotocol' => $url['scheme'] ?? 'http',\n  'overwrite.cli.url' => getenv('OPENSHIP_PUBLIC_URL'),\n];\n"
+        }
+      ],
+      "prepare": [
+        {
+          "service": "nextcloud",
+          "command": "su -s /bin/sh www-data -c 'php occ background:cron' && printf 'cron'",
+          "capture": "background-mode",
+          "phase": "post-ready",
+          "mustSucceed": true,
+          "readiness": {
+            "test": "su -s /bin/sh www-data -c 'php occ status --output=json' | grep -q '\"installed\":true'",
+            "interval": 2000,
+            "retries": 90
+          }
+        }
+      ],
+      "repository": "https://github.com/nextcloud/server",
+      "minResources": {
+        "cpuCores": 1.5,
+        "memoryMb": 1920
+      }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.0",
+      "id": "odoo",
+      "name": "Odoo Community",
+      "description": "Run CRM, sales, inventory, and other Community business apps with PostgreSQL and a ready-to-use administrator account.",
+      "kind": "template",
+      "logo": "odoo",
+      "category": "other",
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "odoo-db",
+          "restart": "unless-stopped",
+          "image": "postgres:17.11-alpine",
+          "environment": {
+            "POSTGRES_USER": "odoo",
+            "POSTGRES_DB": "postgres"
+          },
+          "volumes": [
+            "odoo_db_data:/var/lib/postgresql/data"
+          ],
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "20s"
+          },
+          "resources": {
+            "cpuCores": 0.25,
+            "memoryMb": 512,
+            "diskMb": 8192
+          }
+        },
+        {
+          "name": "odoo",
+          "restart": "unless-stopped",
+          "environment": {
+            "HOST": "odoo-db",
+            "USER": "odoo"
+          },
+          "volumes": [
+            "odoo_data:/var/lib/odoo",
+            "odoo_addons:/mnt/extra-addons"
+          ],
+          "exposedPort": 8069,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 8069
+            }
+          ],
+          "dependsOn": [
+            "odoo-db"
+          ],
+          "build": {
+            "dockerfile": "FROM odoo:19.0-20260926\nCOPY odoo/openship-start.py /usr/local/bin/openship-start.py\nCMD [\"python3\", \"/usr/local/bin/openship-start.py\"]\n",
+            "files": [
+              {
+                "path": "openship-start.py",
+                "content": "import configparser\nimport os\nimport subprocess\nimport time\nfrom pathlib import Path\nimport psycopg2\n\nenv = os.environ\ndeadline = time.monotonic() + 120\nwhile True:\n    try:\n        connection = psycopg2.connect(host=env['HOST'], user=env['USER'], password=env['PASSWORD'], dbname='postgres', connect_timeout=5)\n        break\n    except psycopg2.OperationalError:\n        if time.monotonic() >= deadline:\n            raise RuntimeError('PostgreSQL did not become ready') from None\n        time.sleep(2)\nwith connection, connection.cursor() as cursor:\n    cursor.execute('SELECT 1 FROM pg_database WHERE datname = %s', ('odoo',))\n    exists = cursor.fetchone() is not None\nconnection.close()\nconfig = configparser.ConfigParser(interpolation=None)\nconfig['options'] = {'admin_passwd': env['OPENSHIP_MASTER_PASSWORD'], 'data_dir': '/var/lib/odoo', 'addons_path': '/mnt/extra-addons', 'db_host': env['HOST'], 'db_user': env['USER'], 'db_password': env['PASSWORD'], 'db_port': '5432'}\npath = '/var/lib/odoo/openship.conf'\nwith open(path, 'w') as file:\n    os.chmod(path, 0o600)\n    config.write(file)\nif not exists:\n    result = subprocess.run(['odoo', 'db', '--config', path, 'init', 'odoo', '--username', env['OPENSHIP_ADMIN_EMAIL'], '--password', env['OPENSHIP_ADMIN_PASSWORD']])\n    if result.returncode:\n        raise RuntimeError('Odoo database initialization failed; existing data has been preserved')\n# Never delete, recreate, or reset credentials in an existing database.\nos.execvp('odoo', ['odoo', '--config', path, '--database=odoo', '--db-filter=^odoo$', '--no-database-list', '--proxy-mode'])\n"
+              }
+            ]
+          },
+          "secretEnv": [
+            "PASSWORD",
+            "OPENSHIP_ADMIN_PASSWORD",
+            "OPENSHIP_MASTER_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "curl -fsS http://127.0.0.1:8069/web/login >/dev/null"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "180s"
+          },
+          "resources": {
+            "cpuCores": 0.75,
+            "memoryMb": 1536,
+            "diskMb": 16384
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "service": "odoo-db",
+          "key": "POSTGRES_PASSWORD",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "odoo-db"
+        },
+        {
+          "service": "odoo",
+          "key": "PASSWORD",
+          "label": "Odoo database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "odoo-db"
+        },
+        {
+          "service": "odoo",
+          "key": "OPENSHIP_ADMIN_PASSWORD",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "service": "odoo",
+          "key": "OPENSHIP_MASTER_PASSWORD",
+          "label": "Database master password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "OPENSHIP_ADMIN_EMAIL",
+          "service": "odoo",
+          "label": "Admin email",
+          "default": "admin@example.com",
+          "required": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to Odoo Community",
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "Odoo",
+            "source": "template:{{publicUrl:odoo}}/web/login",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "email",
+            "label": "Admin email",
+            "source": "env:odoo:OPENSHIP_ADMIN_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Admin password",
+            "source": "env:odoo:OPENSHIP_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "guide": {
+          "defaultMode": "public"
+        },
+        "firstLogin": {
+          "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "odoo",
+          "port": 8069,
+          "label": "Odoo",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        },
+        {
+          "service": "odoo-db",
+          "port": 5432,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "marketplace": {
+        "features": [
+          {
+            "title": "Business applications",
+            "description": "Install Community CRM, sales, inventory, and other modules from Odoo."
+          },
+          {
+            "title": "Ready to sign in",
+            "description": "A generated administrator account is initialized before the application serves requests."
+          },
+          {
+            "title": "Persistent filestore",
+            "description": "Keep attachments, database records, and custom addons across deployments."
+          }
+        ],
+        "article": "## Odoo Community\n\nRun the official Odoo Community image with a dedicated PostgreSQL database. Openship initializes the `odoo` database and generated administrator account before starting the web server. Sign in from the Connection card and install the Community modules your business needs.\n\n## Access and data\n\nThe administrator email is chosen during installation. The password is generated separately from the PostgreSQL and database master passwords. The web database manager is disabled; PostgreSQL is private. The image uses Odoo's proxy mode behind Openship's routing.\n\nDatabase records, the filestore, and custom addons use persistent volumes. Back up the database and filestore together. Redeployment preserves existing accounts and data. If initial database creation fails, the deployment fails and retains the database for diagnosis; it never drops or recreates an existing database automatically.\n\n## Community and Enterprise\n\nThis is the open-source Community edition. Enterprise modules and features require an Odoo license and are not included. Outgoing email, external payment providers, and your business workflows still need configuration within Odoo. Major-version upgrades require an Odoo migration; replacing the image is not a database migration.\n\n[Official Odoo image](https://hub.docker.com/_/odoo) · [Odoo Community source](https://github.com/odoo/odoo)"
+      },
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "settings": [
+        {
+          "id": "general",
+          "label": "Setup",
+          "columns": 2,
+          "fields": [
+            {
+              "service": "odoo",
+              "key": "OPENSHIP_ADMIN_EMAIL",
+              "label": "Admin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "installStep": true,
+              "required": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+            }
+          ]
+        }
+      ],
+      "repository": "https://github.com/odoo/odoo",
+      "minResources": {
+        "cpuCores": 1,
+        "memoryMb": 2048
+      },
+      "files": [
+        {
+          "service": "odoo-db",
+          "path": "/docker-entrypoint-initdb.d/openship-role.sql",
+          "content": "ALTER ROLE odoo NOSUPERUSER CREATEDB NOCREATEROLE;\n"
+        }
+      ]
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": false,
+      "minEngine": "0.9.0",
+      "id": "postgresql",
+      "name": "PostgreSQL + pgAdmin",
+      "description": "A persistent PostgreSQL database with pgAdmin for browser-based administration and SQL queries.",
+      "kind": "template",
+      "logo": "postgresql",
+      "category": "database",
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "postgres",
+          "restart": "unless-stopped",
+          "image": "postgres:17.11-alpine",
+          "environment": {
+            "POSTGRES_USER": "openship",
+            "POSTGRES_DB": "app"
+          },
+          "volumes": [
+            "postgres_data:/var/lib/postgresql/data"
+          ],
+          "secretEnv": [
+            "POSTGRES_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "20s"
+          },
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 512,
+            "diskMb": 8192
+          }
+        },
+        {
+          "name": "pgadmin",
+          "restart": "unless-stopped",
+          "image": "dpage/pgadmin4:9.18",
+          "environment": {
+            "PGADMIN_DISABLE_POSTFIX": "1",
+            "PGADMIN_LISTEN_PORT": "5050"
+          },
+          "volumes": [
+            "pgadmin_data:/var/lib/pgadmin"
+          ],
+          "exposedPort": 5050,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 5050
+            }
+          ],
+          "dependsOn": [
+            "postgres"
+          ],
+          "secretEnv": [
+            "PGADMIN_DEFAULT_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "wget -q -O /dev/null http://127.0.0.1:5050/misc/ping"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "60s"
+          },
+          "resources": {
+            "cpuCores": 0.5,
+            "memoryMb": 512,
+            "diskMb": 4096
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "service": "postgres",
+          "key": "POSTGRES_PASSWORD",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "service": "pgadmin",
+          "key": "PGADMIN_DEFAULT_PASSWORD",
+          "label": "pgAdmin password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "PGADMIN_DEFAULT_EMAIL",
+          "service": "pgadmin",
+          "label": "pgAdmin email",
+          "default": "admin@example.com",
+          "required": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to PostgreSQL + pgAdmin",
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "pgAdmin",
+            "source": "publicUrl:pgadmin",
+            "kind": "url"
+          },
+          {
+            "id": "email",
+            "label": "pgAdmin email",
+            "source": "env:pgadmin:PGADMIN_DEFAULT_EMAIL",
+            "width": "half"
+          },
+          {
+            "id": "adminPassword",
+            "label": "pgAdmin password",
+            "source": "env:pgadmin:PGADMIN_DEFAULT_PASSWORD",
+            "secret": true,
+            "width": "half"
+          },
+          {
+            "id": "url",
+            "label": "Database URL",
+            "source": "template:postgresql://openship:{{env:postgres:POSTGRES_PASSWORD}}@postgres:5432/app",
+            "service": "postgres",
+            "secret": true,
+            "envKey": "DATABASE_URL",
+            "recommended": true
+          },
+          {
+            "id": "password",
+            "label": "Database password",
+            "source": "env:postgres:POSTGRES_PASSWORD",
+            "secret": true
+          }
+        ],
+        "guide": {
+          "defaultMode": "public"
+        },
+        "firstLogin": {
+          "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "pgadmin",
+          "port": 5050,
+          "label": "pgAdmin",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        },
+        {
+          "service": "postgres",
+          "port": 5432,
+          "label": "PostgreSQL",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "marketplace": {
+        "features": [
+          {
+            "title": "PostgreSQL",
+            "description": "A private relational database for your application."
+          },
+          {
+            "title": "pgAdmin",
+            "description": "Browse tables, run SQL, and administer the database in a browser."
+          },
+          {
+            "title": "Application connections",
+            "description": "Use the private database URL from another project or a local tunnel."
+          }
+        ],
+        "article": "## PostgreSQL with pgAdmin\n\nThis stack includes PostgreSQL and the pgAdmin project's own container. PostgreSQL stays on the private project network; pgAdmin has a separate generated login and can use an Openship domain.\n\n## Connect\n\nThe Connection card contains the private `DATABASE_URL`, database password, and pgAdmin credentials. pgAdmin is preloaded with the database server; enter the separate database password when connecting. Its login password does not grant database access by itself. Use **Use in a project** for application connections or **Open in localhost** for a local client.\n\nThe `openship` database role is the instance administrator. Create a restricted role in pgAdmin for applications that need fewer permissions. The stack does not expose PostgreSQL publicly or configure public PostgreSQL TLS.\n\n## Persistence and backups\n\nThe database and pgAdmin configuration have separate persistent volumes. Take a database backup before upgrades. Changing PostgreSQL major versions requires migration or dump/restore; changing the image tag alone is insufficient.\n\n[PostgreSQL image](https://hub.docker.com/_/postgres) · [pgAdmin container deployment](https://www.pgadmin.org/docs/pgadmin4/latest/container_deployment.html)"
+      },
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "settings": [
+        {
+          "id": "general",
+          "label": "Setup",
+          "columns": 2,
+          "fields": [
+            {
+              "service": "pgadmin",
+              "key": "PGADMIN_DEFAULT_EMAIL",
+              "label": "pgAdmin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "installStep": true,
+              "required": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+            }
+          ]
+        }
+      ],
+      "files": [
+        {
+          "service": "pgadmin",
+          "path": "/pgadmin4/servers.json",
+          "content": "{\"Servers\": {\"1\": {\"Name\": \"PostgreSQL\", \"Group\": \"Openship\", \"Host\": \"postgres\", \"Port\": 5432, \"MaintenanceDB\": \"app\", \"Username\": \"openship\", \"SSLMode\": \"prefer\"}}}"
+        }
+      ],
+      "provides": [
+        {
+          "id": "postgres",
+          "category": "database",
+          "outputRefs": [
+            "url"
+          ]
+        }
+      ],
+      "repository": "https://github.com/postgres/postgres",
+      "minResources": {
+        "cpuCores": 1,
+        "memoryMb": 1024
+      }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.0",
+      "id": "rabbitmq",
+      "name": "RabbitMQ",
+      "description": "A persistent message broker with the official management dashboard for queues, exchanges, and connections.",
+      "kind": "template",
+      "logo": "rabbitmq",
+      "category": "backend",
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "rabbitmq",
+          "restart": "unless-stopped",
+          "image": "rabbitmq:4.3.6-management-alpine",
+          "environment": {
+            "RABBITMQ_DEFAULT_USER": "openship",
+            "RABBITMQ_DEFAULT_VHOST": "openship",
+            "RABBITMQ_NODENAME": "rabbit@rabbitmq"
+          },
+          "volumes": [
+            "rabbitmq_data:/var/lib/rabbitmq"
+          ],
+          "exposedPort": 15672,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 15672
+            }
+          ],
+          "secretEnv": [
+            "RABBITMQ_DEFAULT_PASS"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "rabbitmq-diagnostics",
+              "-q",
+              "ping"
+            ],
+            "interval": "15s",
+            "timeout": "10s",
+            "retries": 12,
+            "startPeriod": "60s"
+          },
+          "resources": {
+            "cpuCores": 1,
+            "memoryMb": 768,
+            "diskMb": 8192
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "service": "rabbitmq",
+          "key": "RABBITMQ_DEFAULT_PASS",
+          "label": "Broker password",
+          "generate": "secret",
+          "secret": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to RabbitMQ",
+        "outputs": [
+          {
+            "id": "admin",
+            "label": "Management dashboard",
+            "source": "publicUrl:rabbitmq",
+            "kind": "url"
+          },
+          {
+            "id": "username",
+            "label": "Username",
+            "source": "env:rabbitmq:RABBITMQ_DEFAULT_USER",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "source": "env:rabbitmq:RABBITMQ_DEFAULT_PASS",
+            "secret": true,
+            "width": "half"
+          },
+          {
+            "id": "url",
+            "label": "AMQP URL",
+            "source": "template:amqp://openship:{{env:rabbitmq:RABBITMQ_DEFAULT_PASS}}@rabbitmq:5672/openship",
+            "service": "rabbitmq",
+            "secret": true,
+            "envKey": "AMQP_URL",
+            "recommended": true
+          }
+        ],
+        "guide": {
+          "defaultMode": "public"
+        },
+        "firstLogin": {
+          "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "rabbitmq",
+          "port": 15672,
+          "label": "Management dashboard",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        },
+        {
+          "service": "rabbitmq",
+          "port": 5672,
+          "label": "AMQP",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "marketplace": {
+        "features": [
+          {
+            "title": "Message queues",
+            "description": "Route work between applications and background workers."
+          },
+          {
+            "title": "Management dashboard",
+            "description": "Inspect queues, exchanges, consumers, and connections."
+          },
+          {
+            "title": "Persistent broker",
+            "description": "A stable node name and persistent storage keep broker state across deployments."
+          }
+        ],
+        "article": "## RabbitMQ with management\n\nThe official RabbitMQ management image includes the broker and its browser dashboard. A generated `openship` account administers the broker. The `openship` virtual host is created on the first boot.\n\n## Connect applications\n\nUse the private `AMQP_URL` through **Use in a project**. Port 5672 stays private; only the authenticated management dashboard gets a domain by default. Use a local tunnel for clients on your machine. Public AMQP TLS and clustering are not configured by this single-node stack.\n\n## Persistence\n\nThe persistent volume stores broker state. The node name is fixed as `rabbit@rabbitmq`, so replacing a container keeps the same node identity. Publishers must still declare durable queues and publish persistent messages when they require delivery after a restart. The generated password only initializes an empty broker; redeployment does not overwrite passwords changed in RabbitMQ.\n\n[Official RabbitMQ image](https://hub.docker.com/_/rabbitmq) · [Management plugin](https://www.rabbitmq.com/docs/management)"
+      },
+      "provides": [
+        {
+          "id": "amqp",
+          "category": "backend",
+          "outputRefs": [
+            "url"
+          ]
+        }
+      ],
+      "repository": "https://github.com/rabbitmq/rabbitmq-server",
+      "minResources": {
+        "cpuCores": 1,
+        "memoryMb": 768
+      }
+    },
+    {
+      "$schema": "https://openship.io/app.schema.json",
+      "available": false,
+      "verified": true,
+      "minEngine": "0.9.0",
+      "id": "wordpress",
+      "name": "WordPress",
+      "description": "Publish websites, blogs, and stores with WordPress Admin, a private MariaDB database, and persistent uploads.",
+      "kind": "template",
+      "logo": "wordpress",
+      "category": "cms",
+      "framework": "docker-compose",
+      "services": [
+        {
+          "name": "wordpress-db",
+          "restart": "unless-stopped",
+          "image": "mariadb:11.4.13",
+          "environment": {
+            "MARIADB_USER": "wordpress",
+            "MARIADB_DATABASE": "wordpress"
+          },
+          "volumes": [
+            "wordpress_db_data:/var/lib/mysql"
+          ],
+          "secretEnv": [
+            "MARIADB_ROOT_PASSWORD",
+            "MARIADB_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD",
+              "healthcheck.sh",
+              "--connect",
+              "--innodb_initialized"
+            ],
+            "interval": "10s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "30s"
+          },
+          "resources": {
+            "cpuCores": 0.25,
+            "memoryMb": 512,
+            "diskMb": 8192
+          }
+        },
+        {
+          "name": "wordpress",
+          "restart": "unless-stopped",
+          "environment": {
+            "WORDPRESS_DB_HOST": "wordpress-db",
+            "WORDPRESS_DB_USER": "wordpress",
+            "WORDPRESS_DB_NAME": "wordpress",
+            "OPENSHIP_PUBLIC_URL": "{{publicUrl:wordpress}}",
+            "WORDPRESS_CONFIG_EXTRA": "define('WP_HOME', getenv('OPENSHIP_PUBLIC_URL'));\ndefine('WP_SITEURL', getenv('OPENSHIP_PUBLIC_URL'));\ndefine('DISALLOW_FILE_EDIT', true);\nif (parse_url(getenv('OPENSHIP_PUBLIC_URL'), PHP_URL_SCHEME) === 'https') {\n    $_SERVER['HTTPS'] = 'on';\n    define('FORCE_SSL_ADMIN', true);\n}\n"
+          },
+          "volumes": [
+            "wordpress_data:/var/www/html"
+          ],
+          "exposedPort": 80,
+          "exposed": true,
+          "routes": [
+            {
+              "port": 80
+            }
+          ],
+          "dependsOn": [
+            "wordpress-db"
+          ],
+          "build": {
+            "dockerfile": "FROM wordpress:7.1.3-php8.3-apache\nCOPY --from=wordpress:cli-2.12.0-php8.3 /usr/local/bin/wp /usr/local/bin/wp\nCOPY wordpress/openship-entrypoint.sh /usr/local/bin/openship-entrypoint.sh\nRUN chmod 755 /usr/local/bin/openship-entrypoint.sh\nENTRYPOINT [\"openship-entrypoint.sh\"]\nCMD [\"apache2-foreground\"]\n",
+            "files": [
+              {
+                "path": "openship-entrypoint.sh",
+                "content": "#!/bin/sh\nset -eu\n# The official image's init-only entry point installs files and wp-config.php.\n# Apache starts only after the generated owner account exists.\ndocker-ensure-installed.sh\nattempt=0\nuntil php -r 'mysqli_report(MYSQLI_REPORT_OFF); $db = @new mysqli(getenv(\"WORDPRESS_DB_HOST\"), getenv(\"WORDPRESS_DB_USER\"), getenv(\"WORDPRESS_DB_PASSWORD\"), getenv(\"WORDPRESS_DB_NAME\")); exit($db->connect_errno ? 1 : 0);'; do\n  attempt=$((attempt + 1))\n  [ \"$attempt\" -lt 60 ] || exit 1\n  sleep 2\ndone\nsu -s /bin/sh www-data -c 'wp core is-installed' || su -s /bin/sh www-data -c 'wp core install --url=\"$OPENSHIP_PUBLIC_URL\" --title=\"$OPENSHIP_SITE_TITLE\" --admin_user=\"$OPENSHIP_ADMIN_USER\" --admin_password=\"$OPENSHIP_ADMIN_PASSWORD\" --admin_email=\"$OPENSHIP_ADMIN_EMAIL\" --skip-email'\nexec docker-entrypoint.sh \"$@\"\n"
+              }
+            ]
+          },
+          "secretEnv": [
+            "WORDPRESS_DB_PASSWORD",
+            "OPENSHIP_ADMIN_PASSWORD"
+          ],
+          "healthcheck": {
+            "test": [
+              "CMD-SHELL",
+              "curl -fsS http://127.0.0.1/ >/dev/null"
+            ],
+            "interval": "15s",
+            "timeout": "5s",
+            "retries": 12,
+            "startPeriod": "120s"
+          },
+          "resources": {
+            "cpuCores": 0.75,
+            "memoryMb": 768,
+            "diskMb": 16384
+          }
+        }
+      ],
+      "configFields": [
+        {
+          "service": "wordpress-db",
+          "key": "MARIADB_ROOT_PASSWORD",
+          "label": "Database root password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "service": "wordpress-db",
+          "key": "MARIADB_PASSWORD",
+          "label": "Database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "wordpress-db"
+        },
+        {
+          "service": "wordpress",
+          "key": "WORDPRESS_DB_PASSWORD",
+          "label": "WordPress database password",
+          "generate": "secret",
+          "secret": true,
+          "generateGroup": "wordpress-db"
+        },
+        {
+          "service": "wordpress",
+          "key": "OPENSHIP_ADMIN_PASSWORD",
+          "label": "Admin password",
+          "generate": "secret",
+          "secret": true
+        },
+        {
+          "key": "OPENSHIP_SITE_TITLE",
+          "service": "wordpress",
+          "label": "Site title",
+          "default": "My website",
+          "required": true
+        },
+        {
+          "key": "OPENSHIP_ADMIN_EMAIL",
+          "service": "wordpress",
+          "label": "Admin email",
+          "default": "admin@example.com",
+          "required": true
+        },
+        {
+          "key": "OPENSHIP_ADMIN_USER",
+          "service": "wordpress",
+          "label": "Admin username",
+          "default": "admin",
+          "required": true
+        }
+      ],
+      "management": {
+        "kind": "schema"
+      },
+      "connection": {
+        "title": "Connect to WordPress",
+        "outputs": [
+          {
+            "id": "site",
+            "label": "Website",
+            "source": "publicUrl:wordpress",
+            "kind": "url"
+          },
+          {
+            "id": "admin",
+            "label": "WordPress Admin",
+            "source": "template:{{publicUrl:wordpress}}/wp-admin/",
+            "kind": "url",
+            "recommended": true
+          },
+          {
+            "id": "username",
+            "label": "Admin username",
+            "source": "env:wordpress:OPENSHIP_ADMIN_USER",
+            "width": "half"
+          },
+          {
+            "id": "password",
+            "label": "Admin password",
+            "source": "env:wordpress:OPENSHIP_ADMIN_PASSWORD",
+            "secret": true,
+            "width": "half"
+          }
+        ],
+        "guide": {
+          "defaultMode": "public"
+        },
+        "firstLogin": {
+          "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+        }
+      },
+      "endpoints": [
+        {
+          "service": "wordpress",
+          "port": 80,
+          "label": "Website and WordPress Admin",
+          "kind": "http",
+          "defaultMode": "domain",
+          "allowedModes": [
+            "domain",
+            "publish",
+            "internal"
+          ]
+        },
+        {
+          "service": "wordpress-db",
+          "port": 3306,
+          "label": "Database",
+          "kind": "tcp",
+          "scope": "internal",
+          "defaultMode": "internal",
+          "allowedModes": [
+            "internal"
+          ]
+        }
+      ],
+      "marketplace": {
+        "features": [
+          {
+            "title": "WordPress Admin",
+            "description": "Manage pages, posts, themes, and plugins in the native control panel."
+          },
+          {
+            "title": "Private database",
+            "description": "A dedicated MariaDB database stays on the project network."
+          },
+          {
+            "title": "Persistent content",
+            "description": "Keep uploads, themes, plugins, and database contents across deployments."
+          }
+        ],
+        "article": "## WordPress with its own control panel\n\nThis stack includes the official WordPress Apache image, WP-CLI, and MariaDB. The generated owner account is created before the website starts accepting requests. Open **WordPress Admin** to manage content, themes, and plugins; Openship manages the deployment, routing, logs, and storage.\n\n## First sign-in\n\nSet a site title and administrator email during installation. The Connection card shows the administrator username and generated password. The public website and `/wp-admin/` share the same domain. Database credentials are separate from the administrator account, and MariaDB is private by default.\n\n## Storage and maintenance\n\nThe WordPress files and database each use persistent volumes. Back up both together before upgrades or plugin changes. Redeployment keeps the existing administrator and content; it does not reset a password you changed in WordPress. The site URL follows the route selected in Openship.\n\nThe stack adds WP-CLI to the official image through Openship's existing inline Docker build. It does not include paid plugins, a mail delivery service, or a separate WordPress hosting panel. Configure outgoing email in WordPress when needed.\n\n[WordPress Docker image](https://hub.docker.com/_/wordpress) · [WordPress administration](https://wordpress.org/documentation/article/administration-screens/)"
+      },
+      "installLayout": {
+        "settings": "single",
+        "columns": 2
+      },
+      "settings": [
+        {
+          "id": "general",
+          "label": "Setup",
+          "columns": 2,
+          "fields": [
+            {
+              "service": "wordpress",
+              "key": "OPENSHIP_SITE_TITLE",
+              "label": "Initial site title",
+              "type": "text",
+              "default": "My website",
+              "installStep": true,
+              "required": true,
+              "help": "Used when creating the site. Edit the site title later in WordPress Admin."
+            },
+            {
+              "service": "wordpress",
+              "key": "OPENSHIP_ADMIN_EMAIL",
+              "label": "Admin email",
+              "type": "text",
+              "default": "admin@example.com",
+              "installStep": true,
+              "required": true,
+              "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "patternError": "Enter an email address.",
+              "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+            },
+            {
+              "service": "wordpress",
+              "key": "OPENSHIP_ADMIN_USER",
+              "label": "Admin username",
+              "type": "text",
+              "default": "admin",
+              "installStep": true,
+              "required": true,
+              "pattern": "^[a-zA-Z0-9_.-]+$",
+              "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+            }
+          ]
+        }
+      ],
+      "repository": "https://github.com/WordPress/WordPress",
+      "minResources": {
+        "cpuCores": 1,
+        "memoryMb": 1280
+      }
     }
   ]
 }
