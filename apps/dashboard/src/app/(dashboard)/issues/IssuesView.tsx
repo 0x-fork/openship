@@ -3,6 +3,9 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
+import { useSearchParams } from "next/navigation";
+import { DeploymentsContent } from "../deployments/components";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -35,6 +38,7 @@ import { MonitoringNavigation, type MonitoringTab } from "@/components/issues/Mo
 import { useBrowserOnline } from "@/hooks/useBrowserOnline";
 import { monitoringScanIncomplete, useMonitoringScan } from "@/hooks/useMonitoringScan";
 import { getActiveOrganizationId } from "@/lib/api/client";
+import { NotificationSettings } from "@/components/notifications/NotificationSettings";
 
 type SeverityFilter = "all" | IssueSeverity;
 
@@ -59,7 +63,16 @@ export function IssuesView() {
   const { selfHosted, deployMode } = usePlatform();
   const online = useBrowserOnline();
   const { toast } = useToast();
-  const [tab, setTab] = useState<MonitoringTab>("open");
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams?.get("tab");
+  const tab: MonitoringTab = requestedTab === "health" || requestedTab === "resolved" || requestedTab === "deployments" || requestedTab === "notifications"
+    ? requestedTab : "open";
+  const setTab = (next: MonitoringTab) => {
+    const url = new URL(window.location.href);
+    if (next === "open") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.pushState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
   const showFleet = selfHosted && tab === "open";
   const infra = useInfraFleet(selfHosted);
   const [operation, setOperation] = useState<{
@@ -113,7 +126,7 @@ export function IssuesView() {
       const organizationId = getActiveOrganizationId();
       const inScope = () => mounted.current && activeTab.current === tab &&
         organizationId === getActiveOrganizationId();
-      if (tab === "health" || !inScope()) return Promise.resolve();
+      if (tab === "health" || tab === "deployments" || tab === "notifications" || !inScope()) return Promise.resolve();
       const key = `${organizationId}:${tab}`;
       const pending = pendingLoad.current;
       if (pending?.key === key) {
@@ -219,7 +232,7 @@ export function IssuesView() {
 
   useEffect(() => {
     void load();
-    if (tab === "health" || !online) return;
+    if (tab === "health" || tab === "deployments" || tab === "notifications" || !online) return;
     const refresh = () => {
       if (document.visibilityState !== "hidden") void load({ silent: true });
     };
@@ -302,7 +315,7 @@ export function IssuesView() {
 
       <MonitoringNavigation value={tab} onChange={setTab} selfHosted={selfHosted} />
 
-      {online && (monitoringScan.error || feedError) && (
+      {tab !== "deployments" && tab !== "notifications" && online && (monitoringScan.error || feedError) && (
         <div role="alert" className="mb-5 flex items-center justify-between gap-3 rounded-xl bg-warning-bg px-4 py-3 text-sm text-warning">
           <p>{monitoringScan.error || feedError}</p>
           <button type="button" onClick={monitoringScan.error ? monitoringScan.refresh : reloadAfterChange} className="shrink-0 rounded-lg bg-warning/10 px-3 py-2 font-medium">
@@ -344,7 +357,11 @@ export function IssuesView() {
         </p>
       )}
 
-      {tab === "health" ? (
+      {tab === "deployments" ? (
+        <DeploymentsContent monitoring hideHeader hideSidebar />
+      ) : tab === "notifications" ? (
+        <NotificationSettings mode="monitoring" />
+      ) : tab === "health" ? (
         <MonitoringHealth />
       ) : loading ? (
         // Two-column skeleton: the feed on the left, the summary rail on the right,

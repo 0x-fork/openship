@@ -130,7 +130,7 @@
     "dependenciesHint": "Bu görev, seçilen görev(ler) başarıyla tamamlandıktan sonra çalışır.",
     "triggers": "Olay tetikleyicileri",
     "notifications": "Bildirimler",
-    "noChannels": "Henüz bildirim kanalı yok — Ayarlar → Bildirimler kısmından ekleyin.",
+    "noChannels": "Henüz bildirim kanalı yok. İzleme → Bildirimler bölümünden ekleyin.",
     "notificationsHint": "Bu görev için genel bildirim ayarlarını geçersiz kılar.",
     "submit": "Görev oluştur",
     "creating": "Kaydediliyor…",

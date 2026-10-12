@@ -214,15 +214,20 @@ export function workspaceBuildResources(
       409,
       "CLOUD_WORKSPACE_BUILD_CAPACITY",
     );
+  if ((requested?.memoryMb && requested.memoryMb > availableMb) ||
+      (requested?.cpuCores && requested.cpuCores > capacity.cpuCores)) {
+    throw new AppError(
+      `The requested build allocation cannot fit: ${availableMb} MB is available with ${capacity.cpuCores} vCPU on this server. Stop an idle app, lower the build allocation, or upgrade, then retry.`,
+      409,
+      "CLOUD_WORKSPACE_BUILD_CAPACITY",
+    );
+  }
   return {
-    cpuCores: Math.min(
-      requested?.cpuCores || capacity.cpuCores,
-      Math.max(
-        0.25,
-        Math.floor(capacity.cpuCores * (1 - Math.min(100, usage.cpuPercent) / 100) * 4) / 4,
-      ),
+    cpuCores: requested?.cpuCores || Math.max(
+      0.25,
+      Math.floor(capacity.cpuCores * (1 - Math.min(100, usage.cpuPercent) / 100) * 4) / 4,
     ),
-    memoryMb: Math.min(requested?.memoryMb || availableMb, availableMb),
+    memoryMb: requested?.memoryMb || availableMb,
     diskMb: capacity.diskMb,
   };
 }

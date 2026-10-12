@@ -34,6 +34,7 @@
     "local": "本地"
   },
   "card": {
+    "more": "更多",
     "liveVersion": "运行版本 v{version}",
     "sourceLocal": "本地",
     "services": "服务",

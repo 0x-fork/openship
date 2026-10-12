@@ -81,6 +81,7 @@ vi.mock("@/context/ProjectSettingsContext", () => ({
   useProjectSettings: () => ({
     id: "project",
     projectData: { id: "project", gitRepo: "repo", gitOwner: "owner", deployTarget: "server" },
+    servicesData: { services: [], isLoading: false, error: null },
     gitData: {
       repository: { url: "https://github.com/example/repo", full_name: "example/repo" },
       branch: "main",

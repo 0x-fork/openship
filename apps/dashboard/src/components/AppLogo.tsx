@@ -13,6 +13,8 @@ const BRAND_LOGO: Record<
   string,
   { slug?: string; src?: string; catalogIcon?: IconName; fill?: boolean; darkInvert?: boolean }
 > = {
+  // Runner capabilities are local information; their platform mark works offline too.
+  linux: { src: "/app-logos/linux.svg", darkInvert: true },
   convex: { src: "https://www.google.com/s2/favicons?domain=convex.dev&sz=128" },
   // simpleicons removed the Slack + Microsoft Teams brand marks (both 404 on the
   // CDN now), so resolve their official colored favicons like convex above —

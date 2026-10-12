@@ -651,9 +651,28 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "İletim geçmişi",
+      "description": "Tüm kanallardaki son 50 iletim.",
+      "refresh": "Yenile",
+      "loading": "İletimler yükleniyor…",
+      "error": "İletim geçmişi yüklenemedi. Yenileyerek tekrar deneyin.",
+      "empty": "Yakın zamanda iletim yok.",
+      "attempts": "Deneme sayısı: {count}",
+      "errorDetails": "Hata ayrıntıları",
+      "unknownCategory": "Bilinmeyen etkinlik",
+      "unknownChannel": "Bilinmeyen kanal",
+      "status": {
+        "sent": "Gönderildi",
+        "queued": "Sırada",
+        "sending": "Gönderiliyor",
+        "failed": "Başarısız",
+        "seen": "Görüldü"
+      }
+    },
     "channels": {
       "title": "Teslimat kanalları",
-      "description": "Bildirimlerinizin nereye gideceği. Doğrulanmış kanallar erişilebilirdir; doğrulanmamış olanlar atlanır.",
+      "description": "Etkin ve doğrulanmış kanallar uyarı alabilir. Teslimatı kontrol etmek için bir test gönderin.",
       "empty": "Henüz kanal yok. Bildirim almaya başlamak için bir tane ekleyin.",
       "verified": "Doğrulandı",
       "unverified": "Doğrulanmadı",
@@ -661,7 +680,11 @@
       "addChannel": "Kanal ekle",
       "confirmDelete": "Bu kanal silinsin mi? Bunu kullanan abonelikler duracaktır.",
       "channelRemoved": "Kanal kaldırıldı",
-      "channelAdded": "Kanal eklendi"
+      "channelAdded": "Kanal eklendi",
+      "enabled": "Etkin",
+      "disabled": "Devre dışı",
+      "edit": "Düzenle",
+      "updated": "Kanal güncellendi"
     },
     "describe": {
       "slackWebhook": "Slack webhook'u",
@@ -687,7 +710,19 @@
       "labelRequired": "Etiket gereklidir",
       "noEmailTransport": "Bu kurulumda e-posta sunucusu yapılandırılmamış; bu nedenle e-posta bildirimleri gönderilmeyecektir.",
       "setUpSmtp": "SMTP'yi kur →",
-      "otherAddress": "Diğer adres…"
+      "otherAddress": "Diğer adres…",
+      "channelType": "Kanal türü",
+      "labels": {
+        "name": "Ad",
+        "address": "E-posta adresi",
+        "url": "Webhook URL’si",
+        "botToken": "Bot belirteci",
+        "chatId": "Sohbet kimliği"
+      },
+      "saving": "Kaydediliyor…",
+      "editHint": "Kayıtlı sırları korumak için kimlik bilgilerini boş bırakın. Hedef değişiklikleri teslimatı doğrulamak için yeni bir test gerektirir.",
+      "signingSecret": "İmzalama sırrı",
+      "secretHint": "Webhook imzalarını doğrulamak için bu sırrı şimdi kopyalayın. Yalnızca bir kez gösterilir."
     },
     "subscriptions": {
       "title": "Neler hakkında bildirim alınacak",
@@ -700,9 +735,16 @@
     },
     "orgDefaults": {
       "title": "Organizasyon varsayılanları",
-      "description": "Bu organizasyona yeni bir üye katıldığında uygulanan varsayılanlar. Üyeler kanal bazında değiştirebilir.",
+      "description": "Bir üye bir uyarı için açık bir seçim yapmadığında kuruluş varsayılanları uygulanır. Üyeler bunları kendi tercihleriyle değiştirebilir.",
       "notifyAria": "{category} bildirimini aç",
       "nChannels": "{n} kanal"
+    },
+    "overview": {
+      "title": "Bildirimler",
+      "description": "Kanallar hesabınıza aittir ve kuruluşlar arasında paylaşılır. Uyarı tercihleri ve varsayılanlar etkin kuruluş için geçerlidir.",
+      "ready": "{total} kanaldan {count} tanesi hazır",
+      "preferences": "Uyarı tercihleri",
+      "retry": "Yeniden dene"
     }
   },
   "audit": {

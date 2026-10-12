@@ -576,9 +576,28 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "Historial de entregas",
+      "description": "Últimas 50 entregas de todos los canales.",
+      "refresh": "Actualizar",
+      "loading": "Cargando entregas…",
+      "error": "No se pudo cargar el historial. Actualiza para intentarlo de nuevo.",
+      "empty": "No hay entregas recientes.",
+      "attempts": "Intentos: {count}",
+      "errorDetails": "Detalles del error",
+      "unknownCategory": "Evento desconocido",
+      "unknownChannel": "Canal desconocido",
+      "status": {
+        "sent": "Enviado",
+        "queued": "En cola",
+        "sending": "Enviando",
+        "failed": "Fallido",
+        "seen": "Visto"
+      }
+    },
     "channels": {
       "title": "Canales de entrega",
-      "description": "A dónde van tus notificaciones. Los canales verificados son accesibles; los no verificados se omiten.",
+      "description": "Los canales activados y verificados pueden recibir alertas. Envía una prueba para comprobar la entrega.",
       "empty": "Aún no hay canales. Añade uno para empezar a recibir notificaciones.",
       "verified": "Verificado",
       "unverified": "Sin verificar",
@@ -588,7 +607,11 @@
       "addChannel": "Añadir canal",
       "confirmDelete": "¿Eliminar este canal? Las suscripciones que lo usan se detendrán.",
       "channelRemoved": "Canal eliminado",
-      "channelAdded": "Canal añadido"
+      "channelAdded": "Canal añadido",
+      "enabled": "Activado",
+      "disabled": "Desactivado",
+      "edit": "Editar",
+      "updated": "Canal actualizado"
     },
     "describe": {
       "slackWebhook": "Webhook de Slack",
@@ -617,7 +640,19 @@
       "telegramHint": "Crea un bot con @BotFather y luego envíale un mensaje (o añádelo a tu grupo) para que pueda responder.",
       "adding": "Añadiendo…",
       "addChannel": "Añadir canal",
-      "labelRequired": "La etiqueta es obligatoria"
+      "labelRequired": "La etiqueta es obligatoria",
+      "channelType": "Tipo de canal",
+      "labels": {
+        "name": "Nombre",
+        "address": "Dirección de correo",
+        "url": "URL del webhook",
+        "botToken": "Token del bot",
+        "chatId": "ID del chat"
+      },
+      "saving": "Guardando…",
+      "editHint": "Deja las credenciales vacías para conservar los secretos guardados. Los cambios de destino requieren una nueva prueba de entrega.",
+      "signingSecret": "Secreto de firma",
+      "secretHint": "Copia este secreto ahora para verificar las firmas del webhook. Solo se muestra una vez."
     },
     "subscriptions": {
       "title": "Sobre qué recibir notificaciones",
@@ -630,9 +665,16 @@
     },
     "orgDefaults": {
       "title": "Valores predeterminados de la organización",
-      "description": "Valores predeterminados aplicados cuando un nuevo miembro se une a esta organización. Los miembros pueden anularlos por canal.",
+      "description": "Los valores predeterminados de la organización se aplican cuando un miembro no ha elegido una preferencia para una alerta. Cada miembro puede cambiarlos con sus propias preferencias.",
       "notifyAria": "Notificar en {category}",
       "nChannels": "{n} canales"
+    },
+    "overview": {
+      "title": "Notificaciones",
+      "description": "Los canales pertenecen a tu cuenta y se comparten entre organizaciones. Las preferencias y los valores predeterminados se aplican a la organización activa.",
+      "ready": "{count} de {total} canales listos",
+      "preferences": "Preferencias de alertas",
+      "retry": "Reintentar"
     }
   },
   "audit": {

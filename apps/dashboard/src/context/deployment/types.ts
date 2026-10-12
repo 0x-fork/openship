@@ -365,6 +365,8 @@ export interface CloudResourceCustom {
 }
 
 export interface DeploymentConfig {
+  /** Explicitly staged Actions links and future push deployment rules. */
+  actions?: Pick<import("@repo/contracts").ActionProjectPolicy, "mode" | "workflowIds" | "requiredWorkflowIds">;
   /** Existing deployable environment to update/deploy, when launched from a project page. */
   projectId?: string;
   /** One-click catalog app (repo-less services project). Deploys from its saved
@@ -468,6 +470,7 @@ export interface DeploymentConfig {
    * and nothing post-start can delay or veto it.
    */
   readiness?: OpenshipReadiness | null;
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks | null;
   /** Ordered commands required before activating a single-app release. */
   releaseCommands?: string[] | null;
   /**
@@ -778,7 +781,16 @@ export interface OutputCheckUI {
   skippedReason?: string;
 }
 
+export interface CloudBuildQueueStatus {
+  position: number | null;
+  reason: "concurrency" | "resources" | "server";
+  simultaneousBuilds: number | null;
+  activeBuilds: number;
+  workspaceId: string;
+}
+
 export interface DeploymentState {
+  queue: CloudBuildQueueStatus | null;
   deploymentId: string | null;
   isDeploying: boolean;
   isStopping: boolean;
@@ -849,6 +861,7 @@ export const BUILD_PHASES: ReadonlyArray<{ id: string; label: string; oneTime?: 
 ];
 
 export const INITIAL_STATE: DeploymentState = {
+  queue: null,
   deploymentId: null,
   isDeploying: false,
   isStopping: false,

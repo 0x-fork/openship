@@ -2285,6 +2285,10 @@ async function prepareServiceStart(ctx: RequestContext, projectId: string, servi
         });
       }
       if (!service.enabled) await repos.service.update(serviceId, { enabled: true });
+      // Reserve a stopped container's slot before releasing the organization lock.
+      // A failed/ambiguous start retains the reservation until a confirmed stop.
+      if (existing?.row?.status === "stopped")
+        await repos.service.updateServiceDeployment(existing.row.id, { status: "starting" });
       return existing;
     } catch (error) {
       disposeRuntime(existing?.runtime);

@@ -4,7 +4,8 @@
   "tabs": {
     "open": "Übersicht",
     "health": "Gesundheit",
-    "resolved": "Verlauf"
+    "resolved": "Verlauf",
+    "notifications": "Benachrichtigungen"
   },
   "monitoringHint": {
     "description": "Dienststatus ansehen und Hintergrundüberwachung verwalten.",
@@ -109,7 +110,7 @@
     "details": "Technische Details",
     "mailTitle": "Mailstatus nicht verfügbar",
     "mailHint": "Openship konnte diesen Mailserver nicht prüfen. Er läuft möglicherweise weiterhin. Prüfe die Verbindung und versuche es erneut.",
-    "apiTitle": "Verbindung zu Openship unterbrochen",
-    "apiHint": "Der angezeigte Status ist möglicherweise veraltet. Prüfe deine Verbindung; deine Apps laufen möglicherweise weiterhin."
+    "apiTitle": "Openship nicht erreichbar",
+    "apiHint": "Statusaktualisierungen können verzögert sein."
   }
 }

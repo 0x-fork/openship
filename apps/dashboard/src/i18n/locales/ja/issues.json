@@ -4,7 +4,8 @@
   "tabs": {
     "open": "概要",
     "health": "ヘルス",
-    "resolved": "履歴"
+    "resolved": "履歴",
+    "notifications": "通知"
   },
   "monitoringHint": {
     "description": "サービスの状態を確認し、バックグラウンド監視を管理します。",
@@ -109,7 +110,7 @@
     "details": "技術的な詳細",
     "mailTitle": "メールの状態を取得できません",
     "mailHint": "Openship はこのメールサーバーの状態を確認できませんでした。サーバーは稼働している可能性があります。接続を確認して再試行してください。",
-    "apiTitle": "Openship への接続が中断されました",
-    "apiHint": "表示されている状態は古い可能性があります。接続を確認してください。アプリは稼働している可能性があります。"
+    "apiTitle": "Openship に接続できません",
+    "apiHint": "ステータスの更新が遅れる場合があります。"
   }
 }

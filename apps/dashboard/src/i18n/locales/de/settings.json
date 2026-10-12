@@ -576,9 +576,28 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "Zustellverlauf",
+      "description": "Die letzten 50 Zustellungen über alle Kanäle.",
+      "refresh": "Aktualisieren",
+      "loading": "Zustellungen werden geladen…",
+      "error": "Der Zustellverlauf konnte nicht geladen werden. Zum erneuten Versuchen aktualisieren.",
+      "empty": "Keine aktuellen Zustellungen.",
+      "attempts": "Versuche: {count}",
+      "errorDetails": "Fehlerdetails",
+      "unknownCategory": "Unbekanntes Ereignis",
+      "unknownChannel": "Unbekannter Kanal",
+      "status": {
+        "sent": "Gesendet",
+        "queued": "In Warteschlange",
+        "sending": "Wird gesendet",
+        "failed": "Fehlgeschlagen",
+        "seen": "Gesehen"
+      }
+    },
     "channels": {
       "title": "Zustellkanäle",
-      "description": "Wohin deine Benachrichtigungen gehen. Verifizierte Kanäle sind erreichbar; nicht verifizierte werden übersprungen.",
+      "description": "Aktivierte, verifizierte Kanäle können Meldungen empfangen. Senden Sie einen Test, um die Zustellung zu prüfen.",
       "empty": "Noch keine Kanäle. Füge einen hinzu, um Benachrichtigungen zu erhalten.",
       "verified": "Verifiziert",
       "unverified": "Nicht verifiziert",
@@ -588,7 +607,11 @@
       "addChannel": "Kanal hinzufügen",
       "confirmDelete": "Diesen Kanal löschen? Abonnements, die ihn verwenden, werden gestoppt.",
       "channelRemoved": "Kanal entfernt",
-      "channelAdded": "Kanal hinzugefügt"
+      "channelAdded": "Kanal hinzugefügt",
+      "enabled": "Aktiviert",
+      "disabled": "Deaktiviert",
+      "edit": "Bearbeiten",
+      "updated": "Kanal aktualisiert"
     },
     "describe": {
       "slackWebhook": "Slack-Webhook",
@@ -617,7 +640,19 @@
       "telegramHint": "Erstelle mit @BotFather einen Bot und schreibe ihm dann eine Nachricht (oder füge ihn deiner Gruppe hinzu), damit er antworten darf.",
       "adding": "Wird hinzugefügt…",
       "addChannel": "Kanal hinzufügen",
-      "labelRequired": "Bezeichnung ist erforderlich"
+      "labelRequired": "Bezeichnung ist erforderlich",
+      "channelType": "Kanaltyp",
+      "labels": {
+        "name": "Name",
+        "address": "E-Mail-Adresse",
+        "url": "Webhook-URL",
+        "botToken": "Bot-Token",
+        "chatId": "Chat-ID"
+      },
+      "saving": "Wird gespeichert…",
+      "editHint": "Lassen Sie Zugangsdaten leer, um gespeicherte Geheimnisse zu behalten. Änderungen am Ziel erfordern einen neuen Zustellungstest.",
+      "signingSecret": "Signaturgeheimnis",
+      "secretHint": "Kopieren Sie dieses Geheimnis jetzt, um Webhook-Signaturen zu prüfen. Es wird nur einmal angezeigt."
     },
     "subscriptions": {
       "title": "Worüber benachrichtigt werden",
@@ -630,9 +665,16 @@
     },
     "orgDefaults": {
       "title": "Organisationsstandards",
-      "description": "Standardwerte, die angewendet werden, wenn ein neues Mitglied dieser Organisation beitritt. Mitglieder können sie pro Kanal überschreiben.",
+      "description": "Organisationsstandards gelten, wenn ein Mitglied für eine Meldung keine eigene Auswahl getroffen hat. Mitglieder können sie mit ihren Einstellungen überschreiben.",
       "notifyAria": "Bei {category} benachrichtigen",
       "nChannels": "{n} Kanäle"
+    },
+    "overview": {
+      "title": "Benachrichtigungen",
+      "description": "Kanäle gehören zu Ihrem Konto und werden organisationsübergreifend verwendet. Benachrichtigungseinstellungen und Standards gelten für die aktive Organisation.",
+      "ready": "{count} von {total} Kanälen bereit",
+      "preferences": "Benachrichtigungseinstellungen",
+      "retry": "Erneut versuchen"
     }
   },
   "audit": {

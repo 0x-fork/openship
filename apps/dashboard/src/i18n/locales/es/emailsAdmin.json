@@ -22,7 +22,7 @@
     "edit": "Editar",
     "emptyTitle": "Aún no hay reglas de notificación",
     "emptyBody": "Añade una regla para recibir un aviso en Slack, Telegram, Discord o un webhook cuando llegue correo a un buzón o a un dominio de este servidor.",
-    "noChannels": "Aún no tienes canales de notificación verificados. Añade y verifica uno en Ajustes → Notificaciones y luego vuelve aquí para crear una regla.",
+    "noChannels": "Añade y verifica un canal en Monitorización → Notificaciones y vuelve para crear una regla.",
     "addChannel": "Añadir un canal de notificación",
     "manageChannels": "Gestionar canales",
     "fieldName": "Nombre",
