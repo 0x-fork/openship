@@ -88,6 +88,25 @@ export function actionWorkflowView(workflow: ActionWorkflow) {
   };
 }
 export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
+  const plan = actionPlanView(run.plan);
+  const scopes = new Map(
+    jobs.flatMap((job) => job.spec?.scope?.map((frame) => [frame.jobId, frame] as const) ?? []),
+  );
+  for (const frame of scopes.values()) {
+    const source = run.configuration.workflows?.[frame.sourceId];
+    const parent = jobs.find((job) => job.id === frame.jobId);
+    if (!source || !parent) continue;
+    plan.jobs.push(
+      ...actionPlanView(source.plan).jobs.map((definition) => ({
+        ...definition,
+        id: `${frame.jobId}/${definition.id}`,
+        name: `${frame.name} / ${definition.name}`,
+        needs: definition.needs.length
+          ? definition.needs.map((key) => `${frame.jobId}/${key}`)
+          : [parent.jobKey],
+      })),
+    );
+  }
   return {
     id: run.id,
     controller: run.controller ?? "openship",
@@ -125,11 +144,13 @@ export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
     finishedAt: run.finishedAt,
     settledAt: run.settledAt,
     createdAt: run.createdAt,
-    plan: actionPlanView(run.plan),
+    plan,
     jobs: jobs.map((job) => ({
       id: job.id,
       externalUrl: job.github?.url ?? null,
       jobKey: job.jobKey,
+      parentJobId: job.spec?.scope?.at(-1)?.jobId ?? null,
+      reusable: !!job.spec?.call,
       name: actionJobName(run.plan, job),
       matrixIndex: job.matrixIndex,
       matrix: job.spec?.matrix ?? {},
@@ -139,9 +160,11 @@ export function actionRunView(run: ActionRun, jobs: ActionJob[]) {
         ? ("finished" as const)
         : job.workerStartedAt || (job.github && job.status === "running")
           ? ("running" as const)
-          : job.runnerId
-            ? ("provisioning" as const)
-            : ("queued" as const),
+          : job.spec?.call && job.startedAt
+            ? ("running" as const)
+            : job.runnerId
+              ? ("provisioning" as const)
+              : ("queued" as const),
       runnerId: job.runnerId,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,

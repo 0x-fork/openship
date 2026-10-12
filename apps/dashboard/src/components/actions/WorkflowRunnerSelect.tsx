@@ -8,9 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { optionCardSurface } from "@/components/shared/OptionCard";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { usePlatform } from "@/context/PlatformContext";
 import { RunnerSetupDialog } from "./RunnerEditor";
-import { ActionBudgetDialog } from "./ActionBudget";
 import { RunnerCapabilities, RunnerDetails, RunnerIdentity } from "./RunnerPresentation";
 
 interface Props {
@@ -23,10 +21,9 @@ interface Props {
 
 export function WorkflowRunnerSelect(props: Props) {
   const { t } = useI18n();
-  const { selfHosted } = usePlatform();
   const a = t.actions;
   const c = a.completion;
-  const [open, setOpen] = useState<"choose" | "create" | "cloud" | null>(null);
+  const [open, setOpen] = useState<"choose" | "create" | null>(null);
   const selected = props.runners.filter((runner) => props.value.includes(runner.id));
   return (
     <section className="space-y-3">
@@ -67,12 +64,6 @@ export function WorkflowRunnerSelect(props: Props) {
           className="size-4 shrink-0 text-muted-foreground"
         />
       </button>
-      {!selfHosted && (
-        <Button variant="ghost" size="sm" className="-ms-2" onClick={() => setOpen("cloud")}>
-          <Icon name="cloud" />
-          {a.setup.prepareCloud}
-        </Button>
-      )}
       {open === "choose" && (
         <RunnerPicker {...props} onCreate={() => setOpen("create")} onClose={() => setOpen(null)} />
       )}
@@ -82,14 +73,6 @@ export function WorkflowRunnerSelect(props: Props) {
           onSaved={(runner) => {
             props.onCreated(runner);
             props.onChange([...new Set([...props.value, runner.id])]);
-            setOpen(null);
-            props.refresh();
-          }}
-        />
-      )}
-      {open === "cloud" && (
-        <ActionBudgetDialog
-          onClose={() => {
             setOpen(null);
             props.refresh();
           }}

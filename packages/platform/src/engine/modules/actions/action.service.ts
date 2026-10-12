@@ -27,6 +27,8 @@ import {
 } from "./access";
 import { actionConcurrency, parseActionWorkflow, record } from "./workflow";
 import { actionRuntimeUrl, authorizeActionStorage } from "./storage";
+import { snapshotActionWorkflows } from "./reusable";
+import { reusableSourceReader } from "./reusable-source";
 import { validateActionNotifications } from "./notifications";
 import {
   actionCallerIdentity,
@@ -490,6 +492,18 @@ export async function triggerActionWorkflow(
   );
   const plan = await parseActionWorkflow(source, workflow.path);
   if (!workflow.owner) validateStandaloneWorkflow(source, plan);
+  const workflows = await snapshotActionWorkflows(
+    {
+      owner: workflow.owner,
+      repo: workflow.repo,
+      path: workflow.path,
+      source,
+      sha: trigger.workflowRevision ?? revision,
+      ref,
+      modified: !!workflow.source,
+    },
+    reusableSourceReader(ctx),
+  );
   if (trigger.requiredBranch) assertRequiredPushWorkflow(plan, trigger.requiredBranch);
   if (!workflow.source && ref === `refs/heads/${defaultBranch}`)
     await repos.actions.refreshDefinition(
@@ -578,6 +592,7 @@ export async function triggerActionWorkflow(
       variables: trigger.untrusted ? {} : workflow.variables,
       secrets: trigger.untrusted ? {} : workflow.secrets,
       storageDestinationId: workflow.storageDestinationId,
+      workflows,
     },
   };
   if (workflow.accessPolicy)

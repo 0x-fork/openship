@@ -62,7 +62,7 @@ describe("Actions workflow planning", () => {
     await expect(
       parseActionWorkflow(source.replace("[push, workflow_dispatch]", "pull_request_target")),
     ).rejects.toThrow("pull_request_target");
-    expect(() => actionPermissions({ "id-token": "write" })).toThrow();
+    expect(actionPermissions({ "id-token": "write" })).toEqual({ "id-token": "write" });
     expect(actionPermissions({ contents: "read", checks: "none" })).toEqual({ contents: "read" });
   });
 

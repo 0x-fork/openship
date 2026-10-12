@@ -854,6 +854,51 @@ export function createActionsRepo(db: Database) {
     async job(org: string, id: string) {
       return (await db.select().from(actionJob).where(jobWhere(org, id)).limit(1))[0];
     },
+    async oidcGrant(org: string, runId: string, jobId: string) {
+      return db.transaction(async (tx) => {
+        const [identity] = await tx.select().from(actionRun).where(runWhere(org, runId));
+        if (!identity) return;
+        const [workflow] = await tx
+          .select()
+          .from(actionWorkflow)
+          .where(workflowWhere(org, identity.workflowId))
+          .for("update");
+        const [run] = await tx.select().from(actionRun).where(runWhere(org, runId)).for("update");
+        const [job] = await tx.select().from(actionJob).where(jobWhere(org, jobId)).for("update");
+        if (
+          !run ||
+          !job ||
+          job.runId !== run.id ||
+          !job.runnerId ||
+          job.cancelRequestedAt ||
+          job.finishedAt ||
+          job.cleanedAt ||
+          !job.workerStartedAt ||
+          run.untrusted ||
+          job.spec?.permissions["id-token"] !== "write"
+        )
+          return;
+        const [runner] = await tx
+          .select()
+          .from(actionRunner)
+          .where(runnerWhere(org, job.runnerId))
+          .for("update");
+        if (!runner || !actionRunnerAdmitted(workflow, run, runner)) return;
+        const ancestors = job.spec.scope?.map((frame) => frame.jobId) ?? [];
+        if (ancestors.length) {
+          const parents = await tx
+            .select()
+            .from(actionJob)
+            .where(and(eq(actionJob.runId, run.id), inArray(actionJob.id, ancestors)));
+          if (
+            parents.length !== ancestors.length ||
+            parents.some((parent) => parent.cancelRequestedAt || parent.finishedAt)
+          )
+            return;
+        }
+        return { run, job };
+      });
+    },
     async expandJobs(
       org: string,
       runId: string,
@@ -882,9 +927,9 @@ export function createActionsRepo(db: Database) {
         if (
           (total?.value ?? 0) +
             Math.max(1, specs.length) +
-            run.plan.jobs.length -
-            run.expandedJobs.length -
-            1 >
+            run.plan.jobs.filter(
+              (definition) => definition.id !== jobKey && !run.expandedJobs.includes(definition.id),
+            ).length >
           ACTIONS_MAX_JOBS
         )
           throw new Error(`Workflow exceeds ${ACTIONS_MAX_JOBS} concrete jobs`);
@@ -1002,7 +1047,7 @@ export function createActionsRepo(db: Database) {
     async reserveRunner(
       org: string,
       jobId: string,
-      runnerId: string,
+      runnerId: string | null,
       owner: string,
     ): Promise<boolean> {
       return db.transaction(async (tx) => {
@@ -1039,23 +1084,29 @@ export function createActionsRepo(db: Database) {
           !run ||
           run.controller !== "openship" ||
           !actionRunAdmitted(workflow, run) ||
-          !workflow!.runnerIds.includes(runnerId)
+          (runnerId !== null && !workflow!.runnerIds.includes(runnerId))
         )
           return false;
         if (job.runnerId) return job.runnerId === runnerId;
-        const [runner] = await tx
-          .select()
-          .from(actionRunner)
-          .where(and(runnerWhere(org, runnerId), eq(actionRunner.enabled, true)))
-          .for("update");
-        if (
-          !runner ||
-          !actionRunnerAdmitted(workflow, run, runner) ||
-          actionRunnerMismatch(runner.capabilities, runner.config, job.spec)
-        )
-          return false;
-        if ((await actionRunnerAllocationCount(tx, org, runner)) >= runner.config.maxParallel)
-          return false;
+        if (runnerId === null) {
+          if (!job.spec.call) return false;
+          if (job.startedAt) return true;
+        } else {
+          if (job.spec.call) return false;
+          const [runner] = await tx
+            .select()
+            .from(actionRunner)
+            .where(and(runnerWhere(org, runnerId), eq(actionRunner.enabled, true)))
+            .for("update");
+          if (
+            !runner ||
+            !actionRunnerAdmitted(workflow, run, runner) ||
+            actionRunnerMismatch(runner.capabilities, runner.config, job.spec)
+          )
+            return false;
+          if ((await actionRunnerAllocationCount(tx, org, runner)) >= runner.config.maxParallel)
+            return false;
+        }
         const [siblings] = await tx
           .select({ value: count() })
           .from(actionJob)
@@ -1063,12 +1114,14 @@ export function createActionsRepo(db: Database) {
             and(
               eq(actionJob.runId, run.id),
               eq(actionJob.jobKey, job.jobKey),
-              sql`${actionJob.runnerId} IS NOT NULL`,
+              sql`${actionJob.startedAt} IS NOT NULL`,
               isNull(actionJob.cleanedAt),
             ),
           );
         if ((siblings?.value ?? 0) >= job.spec.maxParallel) return false;
-        if (job.spec.concurrency) {
+        for (const group of [job.spec.concurrency, job.spec.workflowConcurrency].filter(
+          (value) => !!value,
+        )) {
           const occupied = await tx
             .select({ id: actionJob.id })
             .from(actionJob)
@@ -1078,14 +1131,14 @@ export function createActionsRepo(db: Database) {
                 eq(actionJob.organizationId, org),
                 ne(actionJob.id, job.id),
                 isNull(actionJob.cleanedAt),
-                sql`${actionJob.runnerId} IS NOT NULL`,
-                sql`${actionJob.spec}->'concurrency'->>'group' = ${job.spec.concurrency.group}`,
+                sql`${actionJob.startedAt} IS NOT NULL`,
+                sql`(${actionJob.spec}->'concurrency'->>'group' = ${group.group} OR ${actionJob.spec}->'workflowConcurrency'->>'group' = ${group.group})`,
                 sql`${actionRun.configuration}->>'owner' = ${run.configuration.owner}`,
                 sql`${actionRun.configuration}->>'repo' = ${run.configuration.repo}`,
               ),
             );
           if (occupied.length) {
-            if (job.spec.concurrency.cancelInProgress)
+            if (group.cancelInProgress)
               await tx
                 .update(actionJob)
                 .set({ cancelRequestedAt: new Date() })

@@ -154,6 +154,13 @@ export async function evaluateActionRunAdmission(
         identityKey(triggering),
         run.untrusted,
         run.eventName,
+        ...Object.entries(run.configuration.workflows ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([id, source]) => [
+            id,
+            source.sha,
+            createHash("sha256").update(source.source).digest("hex"),
+          ]),
       ]),
     )
     .digest("hex");

@@ -2,6 +2,9 @@ import "../jobs/_env";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import { createHmac } from "node:crypto";
+import { createLocalJWKSet, jwtVerify } from "jose";
+import { actionOidcService } from "@repo/platform/engine/modules/actions/oidc";
+import { concreteJob } from "@repo/platform/engine/modules/actions/workflow";
 import { initPlatform, resetPlatform, type CommandExecutor } from "@repo/adapters";
 import { generateId } from "@repo/core";
 import { eq } from "@repo/db";
@@ -113,6 +116,7 @@ vi.mock("@repo/platform/engine/modules/github/github.auth", async (original) => 
 }));
 import { jobRoutes } from "../../../src/modules/jobs/job.routes";
 import { actionRoutes } from "../../../src/modules/actions/action.routes";
+import { actionOidcRoutes } from "../../../src/modules/actions/action-oidc.routes";
 import {
   actionRuntimeRoutes,
   actionTwirpRoutes,
@@ -149,6 +153,7 @@ app.onError(handleApiError);
 app.route("/api/actions", actionRoutes);
 app.route("/api/jobs", jobRoutes);
 app.route("/api/actions/runtime", actionRuntimeRoutes);
+app.route("/api/actions/oidc", actionOidcRoutes);
 app.route("/twirp", actionTwirpRoutes);
 app.route("/api/webhooks", webhookRoutes);
 beforeAll(async () => {
@@ -217,6 +222,67 @@ async function fixture() {
 }
 
 describe("Actions HTTP, native SDK and authorization", () => {
+  it("issues verifiable OIDC only for an approved running job and stops after destination revocation", async () => {
+    const runtimeBefore = process.env.OPENSHIP_ACTIONS_RUNTIME_URL;
+    process.env.OPENSHIP_ACTIONS_RUNTIME_URL = "https://ci.example.test";
+    const issuer = "https://ci.example.test/api/actions/oidc";
+    try {
+      const f = await fixture();
+      await f.remote.update(f.workflow.id, {
+        ...f.input,
+        source: source.replace("jobs:", "permissions: {contents: read, id-token: write}\njobs:"),
+      });
+      const view = await f.remote.dispatch(f.workflow.id, { idempotencyKey: "oidc-test-attempt" });
+      await f.remote.approve(view.id, { key: view.admission!.key });
+      const run = (await repos.actions.run(f.owner.orgId, view.id))!;
+      const lease = "oidc-test";
+      await repos.actions.claimRun(f.owner.orgId, run.id, lease);
+      expect(await repos.actions.activateRun(f.owner.orgId, run.id, lease)).toBe(true);
+      const spec = concreteJob(run.plan.jobs[0]!, {}, {}, run.plan);
+      await repos.actions.expandJobs(f.owner.orgId, run.id, lease, "test", [spec]);
+      let [job] = await repos.actions.jobs(f.owner.orgId, run.id);
+      expect(await repos.actions.reserveRunner(f.owner.orgId, job!.id, f.runner.id, lease)).toBe(
+        true,
+      );
+      const environment = await actionOidcService().environment(run, job!);
+      const path =
+        new URL(environment.ACTIONS_ID_TOKEN_REQUEST_URL!).pathname +
+        `?job=${job!.id}&audience=openship-test`;
+      const init = {
+        headers: { authorization: `Bearer ${environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+      };
+      expect((await app.request(path, init)).status).toBe(403); // Not executing yet.
+      await repos.actions.updateJob(f.owner.orgId, job!.id, lease, { workerStartedAt: new Date() });
+      const response = await app.request(path, init);
+      expect(response.status, await response.clone().text()).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      const discovery = await (
+        await app.request("/api/actions/oidc/.well-known/openid-configuration")
+      ).json();
+      expect(discovery.issuer).toBe(issuer);
+      const keys = await (await app.request("/api/actions/oidc/jwks")).json();
+      const { payload } = await jwtVerify((await response.json()).value, createLocalJWKSet(keys), {
+        issuer,
+        audience: "openship-test",
+        algorithms: ["RS256"],
+      });
+      expect(payload.openship_organization_id).toBe(f.owner.orgId);
+      expect(payload.sub).toContain(":source:override");
+      expect(payload.openship_job_id).toBe(job!.id);
+      expect(JSON.stringify(keys)).not.toContain("private");
+      await db
+        .update(schema.actionRunner)
+        .set({ enabled: false })
+        .where(eq(schema.actionRunner.id, f.runner.id));
+      expect((await app.request(path, init)).status).toBe(403);
+      await repos.actions.requestCancel(f.owner.orgId, run.id);
+      expect((await app.request(path, init)).status).toBe(403);
+      await repos.actions.releaseRun(f.owner.orgId, run.id, lease);
+    } finally {
+      if (runtimeBefore === undefined) delete process.env.OPENSHIP_ACTIONS_RUNTIME_URL;
+      else process.env.OPENSHIP_ACTIONS_RUNTIME_URL = runtimeBefore;
+    }
+  });
   it("reports repository Checks through both clients without dispatching or changing GitHub", async () => {
     const owner = await seedOwner();
     const c = await clients(owner);
@@ -577,6 +643,7 @@ describe("Actions HTTP, native SDK and authorization", () => {
       "/api/actions/workflows",
       "/api/actions/runners",
       "/api/actions/runs",
+      "/api/actions/oidc/token?job=other",
       "/api/actions/repository-checks?owner=acme&repo=app&controller=github",
     ])
       expect((await app.request(path)).status).toBe(401);

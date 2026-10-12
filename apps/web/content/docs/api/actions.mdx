@@ -210,5 +210,8 @@ Preserve both paths when configuring an external reverse proxy.
 | Reserve a cache upload. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry`<br />`Handler authentication` |
 | Finalize a cache upload. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.CacheService/FinalizeCacheEntryUpload`<br />`Handler authentication` |
 | Resolve a compatible cache entry. Requires a purpose-bound job capability. | HTTP only | `POST /twirp/github.actions.results.api.v1.CacheService/GetCacheEntryDownloadURL`<br />`Handler authentication` |
+| Discover the configured Openship identity issuer. Public HTTPS metadata contains no credentials. | HTTP only | `GET /api/actions/oidc/.well-known/openid-configuration`<br />`Handler authentication` |
+| Read the issuer's RSA verification keys. Only public parameters are returned. | HTTP only | `GET /api/actions/oidc/jwks`<br />`Handler authentication` |
+| Request a five-minute identity for an approved running job with id-token: write. Requires a job-bound OIDC capability and rechecks authority, destination and cancellation. | HTTP only | `GET /api/actions/oidc/token`<br />`Handler authentication` |
 
 {/* api-operations:end */}

@@ -11,6 +11,8 @@ import {
   type ActionJobResult,
   type ActionNeedsResult,
   type ActionWorkerRequest,
+  type ActionCallFrame,
+  type ActionJobSpec,
 } from "@repo/core";
 import type { ActionJob, ActionRun, ActionRunner, createActionsRepo } from "@repo/db";
 import type { ActionsWorker } from "@repo/adapters";
@@ -19,7 +21,8 @@ import {
   evaluateTemplate,
   type ActionExpressionContext,
 } from "./expressions";
-import { concreteJob, expandMatrix } from "./workflow";
+import { concreteJob, expandMatrix, record } from "./workflow";
+import { actionCallFrame, scopeActionJob, scopedActionRun } from "./reusable";
 
 export type ActionsRepository = ReturnType<typeof createActionsRepo>;
 export interface ActionExecution {
@@ -51,35 +54,8 @@ export interface ActionControllerPorts {
   reportError(error: unknown, context: { runId: string; jobId?: string }): void;
 }
 
-export function actionContext(
-  run: ActionRun,
-  needs: Record<string, ActionNeedsResult> = {},
-): ActionExpressionContext {
-  return {
-    github: {
-      ...run.event,
-      event: run.event,
-      event_name: run.eventName,
-      repository: run.configuration.owner
-        ? `${run.configuration.owner}/${run.configuration.repo}`
-        : "",
-      repository_owner: run.configuration.owner ?? "",
-      ref: run.ref,
-      sha: run.revision,
-      actor: run.actor,
-      workflow: run.plan.name,
-      run_id: run.id,
-      run_number: run.number,
-      run_attempt: run.attempt,
-      ref_name: run.ref.replace(/^refs\/(heads|tags)\//, ""),
-      ref_type: run.ref.startsWith("refs/tags/") ? "tag" : "branch",
-    },
-    inputs: run.inputs,
-    vars: run.configuration.variables,
-    needs,
-    cancelled: !!run.cancelRequestedAt,
-  };
-}
+export { actionContext } from "./context";
+import { actionContext } from "./context";
 
 export function aggregateActionJobs(jobs: ActionJob[]): ActionNeedsResult {
   const failed = jobs.some(
@@ -185,10 +161,12 @@ export class ActionController {
       jobs = await repo.jobs(org, id);
       if (
         !run.finishedAt &&
-        run.expandedJobs.length === run.plan.jobs.length &&
+        run.plan.jobs.every((definition) => run.expandedJobs.includes(definition.id)) &&
         jobs.every((job) => actionFinished(job.status))
       ) {
-        const result = run.cancelRequestedAt ? "cancelled" : aggregateActionJobs(jobs).result;
+        const result = run.cancelRequestedAt
+          ? "cancelled"
+          : aggregateActionJobs(jobs.filter((job) => !job.spec?.scope?.length)).result;
         await repo.updateRun(org, id, this.owner, { status: result, finishedAt: new Date() });
       }
       run = (await repo.run(org, id))!;
@@ -220,17 +198,22 @@ export class ActionController {
     }
   }
 
-  private async expand(run: ActionRun): Promise<void> {
+  private async expand(root: ActionRun, scope: ActionCallFrame[] = []): Promise<void> {
+    const run = scopedActionRun(root, scope);
+    const prefix = scope.length ? `${scope.at(-1)!.jobId}/` : "";
     const repo = this.ports.repo;
-    const jobs = await repo.jobs(run.organizationId, run.id);
+    const jobs = (await repo.jobs(run.organizationId, run.id)).filter((job) =>
+      prefix ? job.jobKey.startsWith(prefix) : !job.jobKey.includes("/"),
+    );
     for (const definition of run.plan.jobs) {
-      if (run.expandedJobs.includes(definition.id)) continue;
+      const key = prefix + definition.id;
+      if (run.expandedJobs.includes(key)) continue;
       const needs: Record<string, ActionNeedsResult> = {};
       let ready = true;
       for (const dep of definition.needs) {
-        const entries = jobs.filter((job) => job.jobKey === dep);
+        const entries = jobs.filter((job) => job.jobKey === prefix + dep);
         if (
-          !run.expandedJobs.includes(dep) ||
+          !run.expandedJobs.includes(prefix + dep) ||
           !entries.length ||
           entries.some((job) => !actionFinished(job.status))
         ) {
@@ -252,27 +235,83 @@ export class ActionController {
         };
         definition.needs.forEach(visit);
         context.failed = [...ancestors].some(
-          (id) => aggregateActionJobs(jobs.filter((job) => job.jobKey === id)).result === "failure",
+          (id) =>
+            aggregateActionJobs(jobs.filter((job) => job.jobKey === prefix + id)).result ===
+            "failure",
         );
         if (run.cancelRequestedAt || !evaluateJobCondition(definition.condition, context)) {
-          await repo.expandJobs(run.organizationId, run.id, this.owner, definition.id, [], true);
+          await repo.expandJobs(
+            run.organizationId,
+            run.id,
+            this.owner,
+            key,
+            [
+              {
+                jobId: definition.id,
+                name: `${scope.at(-1)?.name ? scope.at(-1)!.name + " / " : ""}${definition.name.includes("${{") ? definition.id : definition.name}`,
+                scope,
+                labels: [],
+                matrix: {},
+                strategy: {},
+                needs,
+                timeoutSeconds: 3600,
+                maxParallel: 1,
+                failFast: true,
+                continueOnError: false,
+                concurrency: null,
+                permissions: {},
+                requiresDocker: false,
+              },
+            ],
+            true,
+          );
         } else {
           const matrices = expandMatrix(evaluateTemplate(definition.matrix, context));
           const specs = matrices.map((matrix, index) =>
-            concreteJob(
+            scopeActionJob(
+              run,
               definition,
-              matrix,
-              { ...context, strategy: { "job-index": index, "job-total": matrices.length } },
-              run.plan,
+              concreteJob(
+                definition,
+                matrix,
+                { ...context, strategy: { "job-index": index, "job-total": matrices.length } },
+                run.plan,
+              ),
+              scope,
             ),
           );
-          await repo.expandJobs(run.organizationId, run.id, this.owner, definition.id, specs);
+          await repo.expandJobs(run.organizationId, run.id, this.owner, key, specs);
         }
       } catch (error) {
+        if (scope.length) throw error;
         this.ports.reportError(error, { runId: run.id });
-        await repo.expandJobs(run.organizationId, run.id, this.owner, definition.id, [], true);
+        await repo.expandJobs(
+          run.organizationId,
+          run.id,
+          this.owner,
+          key,
+          [
+            {
+              jobId: definition.id,
+              name: `${scope.at(-1)?.name ? scope.at(-1)!.name + " / " : ""}${definition.name.includes("${{") ? definition.id : definition.name}`,
+              scope,
+              labels: [],
+              matrix: {},
+              strategy: {},
+              needs,
+              timeoutSeconds: 3600,
+              maxParallel: 1,
+              failFast: true,
+              continueOnError: false,
+              concurrency: null,
+              permissions: {},
+              requiresDocker: false,
+            },
+          ],
+          true,
+        );
         const failed = (await repo.jobs(run.organizationId, run.id)).find(
-          (job) => job.jobKey === definition.id,
+          (job) => job.jobKey === key,
         )!;
         await repo.updateJob(run.organizationId, failed.id, this.owner, {
           status: "failure",
@@ -292,7 +331,18 @@ export class ActionController {
     try {
       // Re-read cancellation for each job, including a click during a slow probe.
       run = (await repo.run(org, run.id))!;
-      const cancelled = !!run.cancelRequestedAt || !!job.cancelRequestedAt;
+      const ancestors = job.spec?.scope?.map((frame) => frame.jobId) ?? [];
+      const parents = ancestors.length
+        ? (await repo.jobs(org, run.id)).filter((parent) => ancestors.includes(parent.id))
+        : [];
+      const cancelled =
+        !!run.cancelRequestedAt ||
+        !!job.cancelRequestedAt ||
+        parents.some((parent) => !!parent.cancelRequestedAt || actionFinished(parent.status));
+      if (job.spec?.call) {
+        await this.reconcileCall(run, job, cancelled);
+        return;
+      }
       if (!job.runnerId && !actionFinished(job.status)) {
         if (cancelled) {
           await update({
@@ -448,6 +498,8 @@ export class ActionController {
           "ACTIONS_REQUEST_TOO_LARGE",
           "ACTIONS_RUNTIME_URL_REQUIRED",
           "ACTIONS_RUNTIME_URL_INVALID",
+          "VALIDATION_ERROR",
+          "ACTIONS_OIDC_UNAVAILABLE",
         ].includes(String(error.code));
       const preparationExpired =
         !job.workerStartedAt &&
@@ -492,6 +544,84 @@ export class ActionController {
     }
   }
 
+  private async reconcileCall(run: ActionRun, job: ActionJob, cancelled: boolean): Promise<void> {
+    const repo = this.ports.repo;
+    const update = (changes: Parameters<ActionsRepository["updateJob"]>[3]) =>
+      repo.updateJob(run.organizationId, job.id, this.owner, changes);
+    if (job.cleanedAt) return;
+    let children = (await repo.jobs(run.organizationId, run.id)).filter((child) =>
+      child.spec?.scope?.some((frame) => frame.jobId === job.id),
+    );
+    // A reusable call coordinates separately timed jobs. It has no worker and
+    // must not impose a synthetic 60-minute limit on their combined duration.
+    if (cancelled || actionFinished(job.status)) {
+      for (const child of children)
+        if (!actionFinished(child.status) && !child.cancelRequestedAt)
+          await repo.updateJob(run.organizationId, child.id, this.owner, {
+            cancelRequestedAt: new Date(),
+          });
+      if (!actionFinished(job.status))
+        await update({
+          status: "cancelled",
+          finishedAt: new Date(),
+        });
+      if (children.every((child) => child.cleanedAt)) await update({ cleanedAt: new Date() });
+      return;
+    }
+    if (!job.startedAt && !(await repo.reserveRunner(run.organizationId, job.id, null, this.owner)))
+      return;
+    const scope = [...(job.spec!.scope ?? []), actionCallFrame(run, job.id, job.spec!)];
+    try {
+      await this.expand(run, scope);
+      const current = (await repo.run(run.organizationId, run.id))!;
+      children = (await repo.jobs(run.organizationId, run.id)).filter(
+        (child) => child.spec?.scope?.at(-1)?.jobId === job.id,
+      );
+      const called = scopedActionRun(run, scope);
+      if (
+        called.plan.jobs.every((definition) =>
+          current.expandedJobs.includes(`${job.id}/${definition.id}`),
+        ) &&
+        children.every((child) => actionFinished(child.status) && child.cleanedAt)
+      ) {
+        const jobs = Object.fromEntries(
+          called.plan.jobs.map((definition) => [
+            definition.id,
+            aggregateActionJobs(children.filter((child) => child.spec?.jobId === definition.id)),
+          ]),
+        );
+        const outputs = Object.fromEntries(
+          Object.entries(record(record(called.plan.triggers.workflow_call).outputs)).map(
+            ([name, value]) => [
+              name,
+              String(
+                evaluateTemplate(record(value).value ?? "", { ...actionContext(called), jobs }) ??
+                  "",
+              ),
+            ],
+          ),
+        );
+        const result: ActionJobResult = {
+          conclusion: aggregateActionJobs(children).result,
+          outputs,
+          steps: {},
+        };
+        this.validateResult(result);
+        await update({
+          status: result.conclusion,
+          result,
+          finishedAt: new Date(),
+          cleanedAt: new Date(),
+          error: null,
+        });
+      }
+    } catch (error) {
+      this.ports.reportError(error, { runId: run.id, jobId: job.id });
+      await update({ status: "failure", error: safeErrorMessage(error), finishedAt: new Date() });
+      // The next tick cancels and drains any children already started.
+    }
+  }
+
   private validateResult(result: ActionJobResult): void {
     if (
       !actionFinished(result.conclusion) ||
@@ -521,6 +651,7 @@ export class ActionController {
     secrets: Record<string, string>,
   ): ActionWorkerRequest {
     const spec = job.spec!;
+    run = scopedActionRun(run, spec.scope);
     return {
       version: ACTIONS_PROTOCOL_VERSION,
       id: job.id,
@@ -546,12 +677,14 @@ export class ActionController {
         GITHUB_RUN_NUMBER: String(run.number),
         GITHUB_RUN_ATTEMPT: String(run.attempt),
         GITHUB_RETENTION_DAYS: "30",
+        GITHUB_WORKFLOW: run.configuration.workflows?.root?.plan.name ?? run.plan.name,
       },
       secrets,
       variables: run.untrusted ? {} : run.configuration.variables,
       inputs: Object.fromEntries(
         Object.entries(run.inputs).map(([key, value]) => [key, String(value)]),
       ),
+      typedInputs: run.inputs,
       platforms: Object.fromEntries(
         spec.labels.map((label) => [
           label,

@@ -387,7 +387,20 @@
     "emulationHint": "Ajoute QEMU au moteur Docker de ce serveur. Les jobs émulés peuvent être plus lents.",
     "dockerAccess": "Autoriser l’accès Docker",
     "dockerAccessHint": "Permet de créer des images dans les conteneurs de jobs. Exécutez uniquement des workflows fiables sur ce serveur.",
-    "defaultImageHint": "Chaque job peut choisir sa propre image de conteneur compatible."
+    "defaultImageHint": "Chaque job peut choisir sa propre image de conteneur compatible.",
+    "destinations": {
+      "subtitle": "Où exécuter les tâches ?",
+      "existing": "Utiliser un serveur existant",
+      "existingHint": "Partagez la capacité d’un serveur connecté, y compris Cloud. Fixez des limites par tâche ; la facturation du serveur reste inchangée.",
+      "dedicated": "Obtenir un serveur dédié",
+      "dedicatedHint": "Choisissez un nouveau serveur Cloud et une offre dans le catalogue, puis ajoutez-le comme runner Actions.",
+      "temporary": "Runners Cloud temporaires",
+      "temporaryHint": "Une VM par tâche, supprimée après nettoyage. Calcul et transfert utilisent le solde prépayé Actions.",
+      "cloudOnly": "Les runners temporaires sont disponibles pour les workflows gérés dans Openship Cloud.",
+      "openCloud": "Ouvrir Actions dans Cloud",
+      "back": "Choisir une destination",
+      "fundHint": "Ajoutez du crédit prépayé Actions pour préparer les runners temporaires."
+    }
   },
   "controller": {
     "githubHint": "Openship fournit les runners ; GitHub coordonne les jobs, les vérifications, les secrets et les artefacts. Les modifications du workflow sont enregistrées dans le dépôt.",

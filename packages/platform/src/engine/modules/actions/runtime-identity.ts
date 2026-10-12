@@ -7,7 +7,7 @@ const identity = z.object({
   organizationId: z.string().min(1).max(128),
   runId: z.string().min(1).max(128),
   jobId: z.string().min(1).max(128),
-  purpose: z.enum(["runtime", "upload", "download", "user-download"]),
+  purpose: z.enum(["runtime", "upload", "download", "user-download", "oidc"]),
   objectId: z.number().int().positive().optional(),
   viewer: z
     .object({
@@ -70,7 +70,7 @@ export class ActionRuntimeTokens {
       if (
         !(Array.isArray(purpose) ? purpose : [purpose]).includes(result.purpose) ||
         payload.sub !== result.jobId ||
-        (result.purpose !== "runtime" && !result.objectId) ||
+        (!["runtime", "oidc"].includes(result.purpose) && !result.objectId) ||
         (result.purpose === "user-download" &&
           (!result.viewer || result.viewer.organizationId !== result.organizationId)) ||
         (result.purpose !== "user-download" && result.viewer)

@@ -16,6 +16,7 @@ import {
 } from "@repo/core";
 import { ActionController, type ActionControllerPorts } from "./controller";
 import { parseActionWorkflow } from "./workflow";
+import { snapshotActionWorkflows } from "./reusable";
 
 let connection: DatabaseConnection;
 let repo: ReturnType<typeof createRepositories>["actions"];
@@ -179,6 +180,133 @@ function engine(options: { provisioning?: boolean } = {}) {
 }
 const reconcile = (engine: { controller: ActionController }, run: ActionRun) =>
   engine.controller.reconcile(run.organizationId, run.id);
+
+async function reusableFixture() {
+  const source = `name: Reusable CI
+on: workflow_dispatch
+permissions: {contents: read, id-token: write}
+jobs:
+  call:
+    strategy:
+      matrix: {target: [one, two]}
+      max-parallel: 1
+    uses: ./.github/workflows/build.yml
+    with:
+      target: \${{ matrix.target }}
+  after:
+    needs: call
+    runs-on: [self-hosted, macos]
+    steps:
+      - run: echo done
+`;
+  const child = `name: Called build
+on:
+  workflow_call:
+    inputs:
+      target: {type: string, required: true}
+    outputs:
+      value: {value: '\${{ jobs.build.outputs.value }}'}
+jobs:
+  build:
+    permissions: {contents: read}
+    runs-on: [self-hosted, macos]
+    steps:
+      - run: echo child
+`;
+  const f = await fixture(source);
+  const workflows = await snapshotActionWorkflows(
+    {
+      owner: "acme",
+      repo: "app",
+      path: ".openship/workflows/ci.yml",
+      source,
+      sha: f.run.revision,
+      ref: f.run.ref,
+    },
+    async () => ({
+      owner: "acme",
+      repo: "app",
+      path: ".github/workflows/build.yml",
+      source: child,
+      sha: f.run.revision,
+      ref: f.run.ref,
+    }),
+  );
+  await connection.db
+    .update(schema.actionRun)
+    .set({ configuration: { ...f.run.configuration, workflows } })
+    .where(eq(schema.actionRun.id, f.run.id));
+  return { ...f, run: (await repo.run(f.org, f.run.id))! };
+}
+
+describe("reusable workflows through the durable scheduler", () => {
+  it("does not time out a coordinator while its individually timed jobs are still running", async () => {
+    const f = await reusableFixture();
+    const e = engine();
+    await reconcile(e, f.run);
+    await reconcile(e, f.run);
+    const parent = (await repo.jobs(f.org, f.run.id)).find((job) => job.spec?.call)!;
+    await connection.db
+      .update(schema.actionJob)
+      .set({ startedAt: new Date(Date.now() - 2 * 3600_000) })
+      .where(eq(schema.actionJob.id, parent.id));
+    await reconcile(e, f.run);
+    expect((await repo.job(f.org, parent.id))?.status).toBe("running");
+    expect([...e.executions.values()].every((execution) => !execution.cancelled)).toBe(true);
+  });
+  it("uses separate runner reservations, typed inputs, output aggregation and restart-safe max-parallel", async () => {
+    const f = await reusableFixture();
+    const e = engine();
+    await reconcile(e, f.run);
+    expect(e.executions.size).toBe(0); // A call is a coordinator, never a runner.
+    for (let tick = 0; tick < 20 && !(await repo.run(f.org, f.run.id))!.settledAt; tick++) {
+      e.controller = new ActionController(e.ports);
+      await reconcile(e, f.run);
+      const active = [...e.executions.entries()].filter(([, execution]) => !execution.result);
+      expect(active.length).toBeLessThanOrEqual(1);
+      for (const [id, execution] of active) {
+        if (execution.request.job === "build") {
+          expect(execution.request.workflowPath).toBe(".github/workflows/build.yml");
+          expect(execution.request.environment.GITHUB_WORKFLOW).toBe("Reusable CI");
+          expect(execution.request.environment.GITHUB_REPOSITORY).toBe("acme/app");
+          e.finish(id, "success", { value: execution.request.typedInputs!.target });
+        } else {
+          expect(execution.request.needs.call!.outputs.value).toBe("two");
+          e.finish(id);
+        }
+      }
+    }
+    const run = (await repo.run(f.org, f.run.id))!;
+    expect(run.status).toBe("success");
+    expect(run.settledAt).not.toBeNull();
+    expect(e.executions.size).toBe(3);
+    const jobs = await repo.jobs(f.org, f.run.id);
+    expect(jobs).toHaveLength(5);
+    expect(jobs.filter((job) => job.spec?.call).every((job) => !job.runnerId)).toBe(true);
+    expect(
+      jobs
+        .filter((job) => job.spec?.scope?.length)
+        .every((job) => job.spec?.permissions["id-token"] === undefined),
+    ).toBe(true);
+    expect(e.ports.reportError).not.toHaveBeenCalled();
+  });
+  it("cancels called workers and waits for cleanup before finishing the root", async () => {
+    const f = await reusableFixture();
+    const e = engine();
+    await reconcile(e, f.run);
+    await reconcile(e, f.run);
+    expect(e.executions.size).toBe(1);
+    await repo.requestCancel(f.org, f.run.id);
+    await reconcile(e, f.run);
+    expect([...e.executions.values()][0]!.cancelled).toBe(true);
+    expect((await repo.run(f.org, f.run.id))!.settledAt).toBeNull();
+    for (const id of e.executions.keys()) e.finish(id, "cancelled");
+    for (let tick = 0; tick < 5; tick++) await reconcile(e, f.run);
+    expect((await repo.run(f.org, f.run.id))!.status).toBe("cancelled");
+    expect((await repo.jobs(f.org, f.run.id)).every((job) => job.cleanedAt)).toBe(true);
+    expect(e.executions.size).toBe(1);
+  });
+});
 
 describe("durable Actions controller", () => {
   it("waits for approval, then drains existing workers when access is revoked", async () => {

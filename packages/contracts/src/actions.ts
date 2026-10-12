@@ -224,6 +224,8 @@ export const ActionJobSchema = Type.Object(
     id,
     externalUrl: Type.Optional(nullable(Type.String())),
     jobKey: Type.String(),
+    parentJobId: Type.Optional(nullable(Type.String())),
+    reusable: Type.Optional(Type.Boolean()),
     name: Type.String(),
     matrixIndex: Type.Number(),
     matrix: Type.Record(Type.String(), Type.Unknown()),

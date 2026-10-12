@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,6 +69,54 @@ jobs:
 	}
 	if _, err := os.Stat(filepath.Join(r.Directory, "result.txt")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCalledWorkflowReceivesTypedInputsAndMaskedOIDCCapability(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Header.Get("Authorization") != "Bearer test-oidc-capability" || req.URL.Query().Get("audience") != "example" {
+			http.Error(w, "invalid request", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"value":"test-identity"}`))
+	}))
+	defer server.Close()
+	r := nativeRequest(t, `name: Called workflow
+on:
+  workflow_call:
+    inputs:
+      enabled: {type: boolean, default: true}
+      count: {type: number, default: 0}
+jobs:
+  test:
+    runs-on: self-hosted
+    steps:
+      - if: inputs.enabled
+        run: exit 19
+      - run: |
+          test '${{ toJSON(inputs.enabled) }}' = false
+          test '${{ toJSON(inputs.count) }}' = 2
+          test "$GITHUB_WORKFLOW" = 'Caller workflow'
+          echo "$ACTIONS_ID_TOKEN_REQUEST_TOKEN"
+          curl --fail --silent -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=example" > "$ASSERT_PATH/identity.json"
+`)
+	r.Inputs = map[string]string{"enabled": "false", "count": "2"}
+	r.TypedInputs = map[string]interface{}{"enabled": false, "count": 2}
+	r.Environment["GITHUB_WORKFLOW"] = "Caller workflow"
+	r.Environment["ACTIONS_ID_TOKEN_REQUEST_URL"] = server.URL + "?job=test"
+	r.Environment["ACTIONS_ID_TOKEN_REQUEST_TOKEN"] = "test-oidc-capability"
+	var logs bytes.Buffer
+	result, err := runJob(context.Background(), r, &eventWriter{out: &logs})
+	if err != nil || result.Conclusion != "success" {
+		t.Fatalf("result=%+v err=%v logs=%s", result, err, logs.String())
+	}
+	if strings.Contains(logs.String(), "test-oidc-capability") {
+		t.Fatal("OIDC request credential escaped masking")
+	}
+	contents, err := os.ReadFile(filepath.Join(r.Directory, "identity.json"))
+	if err != nil || !strings.Contains(string(contents), "test-identity") {
+		t.Fatalf("identity request did not finish: %v", err)
 	}
 }
 

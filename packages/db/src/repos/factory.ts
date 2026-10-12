@@ -1,14 +1,32 @@
 import { createClusterStorageRepo } from "./cluster-storage.repo";
 import { createActionsRepo } from "./actions.repo";
+import { createActionOidcRepo } from "./action-oidc.repo";
 import { createActionStorageRepo } from "./action-storage.repo";
 import { createActionBillingRepo } from "./action-billing.repo";
-export { createActionsRepo, type ActionRunner, type ActionWorkflow, type ActionRun, type ActionJob } from "./actions.repo";
+export {
+  createActionsRepo,
+  type ActionRunner,
+  type ActionWorkflow,
+  type ActionRun,
+  type ActionJob,
+} from "./actions.repo";
 import { createCloudAnalyticsRepo } from "./cloud-analytics.repo";
 import { createCloudSupportRepo } from "./cloud-support.repo";
 import { createCloudWorkspaceRepo } from "./cloud-workspace.repo";
 export { createCloudWorkspaceRepo, type CloudWorkspace } from "./cloud-workspace.repo";
-export { createCloudSupportRepo, type CloudSupportRepo, type CloudSupportTicket, type CloudSupportMessage } from "./cloud-support.repo";
-export { createCloudAnalyticsRepo, type CloudAnalyticsRepo, type CloudAnalyticsOutboxInput, type CloudAnalyticsOutboxEvent, type CloudAnalyticsCheckout } from "./cloud-analytics.repo";
+export {
+  createCloudSupportRepo,
+  type CloudSupportRepo,
+  type CloudSupportTicket,
+  type CloudSupportMessage,
+} from "./cloud-support.repo";
+export {
+  createCloudAnalyticsRepo,
+  type CloudAnalyticsRepo,
+  type CloudAnalyticsOutboxInput,
+  type CloudAnalyticsOutboxEvent,
+  type CloudAnalyticsCheckout,
+} from "./cloud-analytics.repo";
 export { createClusterStorageRepo, type ClusterStorageRecord } from "./cluster-storage.repo";
 export { createUserRepo, type User, type NewUser } from "./user.repo";
 export {
@@ -451,6 +469,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     jobRun: createJobRunRepo(db),
     job: createJobRepo(db),
     actions: createActionsRepo(db),
+    actionOidc: createActionOidcRepo(db),
     actionStorage: createActionStorageRepo(db),
     actionBilling: createActionBillingRepo(db),
     orphanedResource: createOrphanedResourceRepo(db),

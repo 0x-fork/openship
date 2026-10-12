@@ -387,7 +387,20 @@
     "emulationHint": "Añade QEMU al motor Docker de este servidor. Los trabajos emulados pueden ser más lentos.",
     "dockerAccess": "Permitir acceso a Docker",
     "dockerAccessHint": "Permite compilar imágenes dentro de los contenedores. Ejecuta solo flujos de confianza en este servidor.",
-    "defaultImageHint": "Cada trabajo puede elegir su propia imagen de contenedor compatible."
+    "defaultImageHint": "Cada trabajo puede elegir su propia imagen de contenedor compatible.",
+    "destinations": {
+      "subtitle": "¿Dónde se ejecutarán los trabajos?",
+      "existing": "Usar un servidor existente",
+      "existingHint": "Comparte capacidad en un servidor conectado, incluidos los servidores Cloud. Define límites por trabajo; la facturación del servidor no cambia.",
+      "dedicated": "Obtener un servidor dedicado",
+      "dedicatedHint": "Elige un servidor Cloud nuevo y un plan del catálogo; después añádelo como runner de Actions.",
+      "temporary": "Runners Cloud temporales",
+      "temporaryHint": "Una VM por trabajo, eliminada tras la limpieza. El cómputo y la transferencia consumen el saldo prepago de Actions.",
+      "cloudOnly": "Los runners temporales están disponibles para flujos gestionados en Openship Cloud.",
+      "openCloud": "Abrir Actions en Cloud",
+      "back": "Elegir destino",
+      "fundHint": "Añade saldo prepago de Actions para preparar los runners temporales."
+    }
   },
   "controller": {
     "githubHint": "Openship proporciona los runners; GitHub coordina trabajos, comprobaciones, secretos y artefactos. Los cambios del flujo se guardan en el repositorio.",

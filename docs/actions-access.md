@@ -90,3 +90,20 @@ webhook identities, cancellation, migration and UI recovery. Worker tests use re
 frames and verify that denial cannot start Worker. Live verification uses an isolated
 private test repository, connected macOS execution and disposable Cloud Linux VMs;
 it checks approved execution, revoked access before Worker and resource cleanup.
+
+## Independent reusable sources and OIDC
+
+Called workflow sources are authorized and pinned before admission. The approval
+key includes every saved source SHA and content digest. Called jobs share the
+root run's identity and policy, but reserve capacity on their own allowed
+destinations. Secrets are evaluated in memory at each call boundary, and token
+permissions cannot expand beyond the caller. Cancelling or failing a call drains
+its workers before releasing its coordinator capacity.
+
+OIDC uses an instance-wide RSA key encrypted with the instance's credential key.
+Only public verification parameters are returned by discovery/JWKS. Purpose-bound
+request capabilities identify one organization, run and job; the token endpoint
+rechecks current authority, admission, assigned runner, execution start and
+cancellation before signing. Fork runs cannot request identities. Tokens expire
+within five minutes, and edited workflow subjects are marked as overrides.
+External services must trust the Openship issuer explicitly.

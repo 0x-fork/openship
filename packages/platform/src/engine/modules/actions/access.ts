@@ -72,6 +72,15 @@ export async function authorizeActionRun(
 ): Promise<void> {
   if (run.organizationId !== ctx.organizationId) throw new NotFoundError("Workflow run");
   await authorizeActionRepository(ctx, run.configuration.owner, run.configuration.repo);
+  if (write) {
+    const checked = new Set([`${run.configuration.owner}/${run.configuration.repo}`.toLowerCase()]);
+    for (const source of Object.values(run.configuration.workflows ?? {})) {
+      const repository = `${source.owner}/${source.repo}`.toLowerCase();
+      if (checked.has(repository)) continue;
+      await authorizeActionRepository(ctx, source.owner, source.repo);
+      checked.add(repository);
+    }
+  }
   await authorizeActionRunners(ctx, run.configuration.runnerIds, write);
 }
 

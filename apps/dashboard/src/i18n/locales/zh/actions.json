@@ -387,7 +387,20 @@
     "emulationHint": "为此服务器的 Docker 添加 QEMU 支持。模拟运行的作业可能较慢。",
     "dockerAccess": "允许访问 Docker",
     "dockerAccessHint": "允许在作业容器内构建镜像。仅在此服务器上运行可信的工作流。",
-    "defaultImageHint": "每个作业都可以选择自己的兼容容器镜像。"
+    "defaultImageHint": "每个作业都可以选择自己的兼容容器镜像。",
+    "destinations": {
+      "subtitle": "作业在哪里运行？",
+      "existing": "使用现有服务器",
+      "existingHint": "共享已连接服务器的容量，包括 Cloud 服务器。设置每个作业的资源上限；服务器计费方式不变。",
+      "dedicated": "创建专用服务器",
+      "dedicatedHint": "在服务器目录中选择新的 Cloud 服务器和套餐，然后添加为 Actions 运行器。",
+      "temporary": "临时 Cloud 运行器",
+      "temporaryHint": "每个作业使用独立虚拟机，清理后删除。计算和流量使用 Actions 预付余额。",
+      "cloudOnly": "在 Openship Cloud 中管理的工作流可以使用临时运行器。",
+      "openCloud": "在 Cloud 中打开 Actions",
+      "back": "选择运行目标",
+      "fundHint": "充值 Actions 预付余额以准备临时运行器。"
+    }
   },
   "controller": {
     "githubHint": "Openship 提供运行器；GitHub 协调作业、检查、密钥和构建产物。工作流更改会提交到仓库。",

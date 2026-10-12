@@ -387,7 +387,20 @@
     "emulationHint": "Bu sunucunun Docker motoruna QEMU desteği ekler. Öykünen işler daha yavaş çalışabilir.",
     "dockerAccess": "Docker erişimine izin ver",
     "dockerAccessHint": "İş konteynerlerinde imaj derlemeyi etkinleştirir. Bu sunucuda yalnızca güvenilir iş akışları çalıştırın.",
-    "defaultImageHint": "Her iş kendi uyumlu konteyner imajını seçebilir."
+    "defaultImageHint": "Her iş kendi uyumlu konteyner imajını seçebilir.",
+    "destinations": {
+      "subtitle": "İşler nerede çalıştırılsın?",
+      "existing": "Mevcut sunucuyu kullan",
+      "existingHint": "Cloud sunucuları dahil bağlı bir sunucunun kapasitesini paylaşın. İş başına sınır belirleyin; sunucu faturalandırması değişmez.",
+      "dedicated": "Özel sunucu edinin",
+      "dedicatedHint": "Katalogdan yeni bir Cloud sunucusu ve plan seçip Actions çalıştırıcısı olarak ekleyin.",
+      "temporary": "Geçici Cloud çalıştırıcıları",
+      "temporaryHint": "Her iş için ayrı bir sanal makine oluşturulur ve temizlikten sonra silinir. İşlem ve aktarım, ön ödemeli Actions bakiyesini kullanır.",
+      "cloudOnly": "Geçici çalıştırıcılar, Openship Cloud tarafından yönetilen iş akışlarında kullanılabilir.",
+      "openCloud": "Cloud’da Actions’ı aç",
+      "back": "Hedef seç",
+      "fundHint": "Geçici çalıştırıcıları hazırlamak için ön ödemeli Actions kredisi ekleyin."
+    }
   },
   "controller": {
     "githubHint": "Openship çalıştırıcıları sağlar; GitHub işleri, kontrolleri, gizli bilgileri ve çıktıları koordine eder. İş akışı değişiklikleri depoya kaydedilir.",

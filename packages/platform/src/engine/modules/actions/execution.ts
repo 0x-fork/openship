@@ -1,6 +1,8 @@
 import { repos } from "@repo/db";
 import { diagnostics } from "@repo/core/diagnostics";
 import { resolveExecutionAuthority } from "../../lib/execution-authority";
+import { calledSecrets } from "./reusable";
+import { actionOidcService } from "./oidc";
 import { decrypt } from "../../lib/encryption";
 import { getInstallationToken } from "../github/github.auth";
 import { authorizeActionRun } from "./access";
@@ -28,28 +30,37 @@ export const actionControllerPorts: ActionControllerPorts = {
       repos.actions.updateJob(run.organizationId, job.id, owner, patch),
     ),
   async secrets(run, job) {
-    const secrets: Record<string, string> = {};
+    let secrets: Record<string, string> = {};
     if (!run.untrusted)
       for (const [key, value] of Object.entries(run.configuration.secrets ?? {}))
         secrets[key] = decrypt(value);
-    if (!run.configuration.owner || !run.configuration.repo) return secrets;
+    if (!run.configuration.owner || !run.configuration.repo)
+      return calledSecrets(run, job.spec?.scope, secrets);
     const ctx = await resolveExecutionAuthority(run.authority, `actions-token:${run.id}`);
     // Untrusted forks get no stored secrets and no write credential, even after approval.
     const permissions = Object.fromEntries(
-      Object.entries(job.spec?.permissions ?? {}).map(([key, value]) => [
-        key.replaceAll("-", "_"),
-        run.untrusted ? ("read" as const) : value,
-      ]),
+      Object.entries(job.spec?.permissions ?? {})
+        .filter(([key]) => key !== "id-token")
+        .map(([key, value]) => [
+          key.replaceAll("-", "_"),
+          run.untrusted ? ("read" as const) : value,
+        ]),
     );
     const token = await getInstallationToken(ctx, run.configuration.owner, undefined, {
       repositories: [run.configuration.repo],
       permissions,
       noCache: true,
     });
+    // Named mappings may use the automatic token, with this leaf job's reduced
+    // grant. Neither token values nor evaluated secret mappings enter snapshots.
+    secrets = calledSecrets(run, job.spec?.scope, secrets, token ?? undefined);
     if (token) secrets.GITHUB_TOKEN = token;
     return secrets;
   },
-  environment: actionRuntimeEnvironment,
+  environment: async (run, job) => ({
+    ...(await actionRuntimeEnvironment(run, job)),
+    ...(await actionOidcService().environment(run, job)),
+  }),
   cleanup: (run, job, runner, owner) =>
     removeActionWorker(job, runner, owner, (patch) =>
       repos.actions.updateJob(run.organizationId, job.id, owner, patch),

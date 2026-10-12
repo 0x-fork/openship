@@ -18,6 +18,8 @@ export interface ActionExpressionContext {
   strategy?: Record<string, unknown>;
   inputs?: Record<string, unknown>;
   vars?: Record<string, string>;
+  secrets?: Record<string, string>;
+  jobs?: Record<string, unknown>;
   cancelled?: boolean;
   failed?: boolean;
 }
@@ -47,6 +49,8 @@ function parse(source: string, ctx: ActionExpressionContext) {
     strategy: ctx.strategy ?? {},
     inputs: ctx.inputs ?? {},
     vars: ctx.vars ?? {},
+    secrets: ctx.secrets ?? {},
+    jobs: ctx.jobs ?? {},
   };
   const fns = functions(ctx);
   const tree = new Parser(new Lexer(source).lex().tokens, Object.keys(values), [

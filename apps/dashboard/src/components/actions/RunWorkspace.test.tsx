@@ -173,6 +173,30 @@ function consoleText() {
   return host.querySelector('[role="region"][aria-label="Logs"]')?.textContent;
 }
 
+it("shows nested reusable jobs once and keeps the selected child logs while its parent is collapsed", async () => {
+  const value = run([
+    job("call", "Build pipeline", { reusable: true, steps: {} }),
+    job("nested", "Build pipeline / Tests", { reusable: true, parentJobId: "call", steps: {} }),
+    job("leaf", "Build pipeline / Tests / Linux", { parentJobId: "nested" }),
+  ]);
+  await render(value);
+  expect(host.querySelectorAll('button[aria-label="Build pipeline / Tests / Linux"]')).toHaveLength(
+    1,
+  );
+  await click("Build pipeline / Tests / Linux");
+  await click("View step logs: Test Build pipeline / Tests / Linux");
+  expect(consoleText()).toContain("leaf: tests passed");
+  await click("Hide steps: Build pipeline");
+  expect(host.querySelector('nav[aria-label="Job list"]')?.textContent).not.toContain(
+    "Test Build pipeline / Tests / Linux",
+  );
+  expect(consoleText()).toContain("leaf: tests passed");
+  await click("Show steps: Build pipeline");
+  expect(
+    button("View step logs: Test Build pipeline / Tests / Linux").getAttribute("aria-current"),
+  ).toBe("step");
+});
+
 it("keeps independent job expansions and one selection/log stream across list and topology", async () => {
   await render();
   expect(button("Hide steps: Build").getAttribute("aria-expanded")).toBe("true");

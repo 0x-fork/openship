@@ -194,7 +194,13 @@ minutes or a separate included transfer allowance. Payment returns reconcile the
 saved purchase, then distinguish confirmed funds from runner setup. Preserve page
 state and show an unavailable balance as unknown, not zero. Connected Macs default
 to native execution and clear incompatible labels when the destination changes.
-Runner setup starts with the shared server picker and a compact environment summary.
+Runner setup starts with three destination choices: existing server, dedicated
+managed server, or temporary Cloud pool. Reuse the shared server acquisition and
+plan dialogs; return the new server to the same capability form. Temporary pool
+funding stays in the shared Budget dialog. Preserve the workflow draft and show
+an unavailable pool distinctly from an empty pool. Existing and dedicated servers
+keep their normal billing and explicit per-job capacity limits.
+The capability form starts with the shared server picker and a compact environment summary.
 Browse catalog opens visual Ubuntu, native macOS/Linux and custom-image presets using
 the shared logos and option cards. Only offer presets compatible with the inspected
 server. Presets fill the existing runner configuration and keep resource limits; new

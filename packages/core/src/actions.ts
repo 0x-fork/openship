@@ -204,6 +204,8 @@ export interface ActionWorkerRequest {
   secrets: Record<string, string>;
   variables: Record<string, string>;
   inputs: Record<string, string>;
+  /** Preserve workflow_call boolean/number inputs in the expression context. */
+  typedInputs?: Record<string, unknown>;
   platforms: Record<string, string>;
   timeoutSeconds: number;
   containerCpu: number;
@@ -233,8 +235,10 @@ export interface ActionJobDefinition {
   name: string;
   needs: string[];
   runsOn: unknown;
-  /** GitHub resolves called workflows; the editor retains their original definition. */
+  /** A reusable workflow reference, resolved to immutable source before admission. */
   uses?: string;
+  with?: Record<string, unknown>;
+  secrets?: "inherit" | Record<string, unknown>;
   condition?: string | boolean;
   matrix?: unknown;
   failFast: unknown;
@@ -269,4 +273,36 @@ export interface ActionJobSpec {
   concurrency: { group: string; cancelInProgress: boolean } | null;
   permissions: Record<string, "read" | "write">;
   requiresDocker: boolean;
+  /** Called jobs share the root run's approval, artifacts, leases and limits. */
+  scope?: ActionCallFrame[];
+  call?: { sourceId: string; inputs: Record<string, unknown> };
+  workflowConcurrency?: { group: string; cancelInProgress: boolean } | null;
+}
+
+export interface ActionCallFrame {
+  jobId: string;
+  sourceId: string;
+  name: string;
+  inputs: Record<string, unknown>;
+  permissions: Record<string, "read" | "write">;
+  /** Caller expression context for secret mappings; contains no secret values. */
+  caller: {
+    inputs: Record<string, unknown>;
+    matrix: Record<string, unknown>;
+    needs: Record<string, ActionNeedsResult>;
+    strategy: Record<string, number | boolean>;
+  };
+  secrets: "inherit" | Record<string, unknown>;
+}
+
+export interface ActionWorkflowSnapshot {
+  modified?: boolean;
+  owner: string | null;
+  repo: string | null;
+  path: string;
+  sha: string;
+  ref: string;
+  source: string;
+  plan: ActionWorkflowPlan;
+  calls: Record<string, string>;
 }

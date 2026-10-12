@@ -28,6 +28,7 @@ import type {
   ActionAccessPolicy,
   ActionActorIdentity,
   ActionRunAdmission,
+  ActionWorkflowSnapshot,
 } from "@repo/core";
 import { organization } from "./organization";
 import { servers } from "./servers";
@@ -82,6 +83,8 @@ export interface ActionRunConfiguration {
   variables: Record<string, string>;
   /** Encrypted at rest, never part of the run view or diagnostics. */
   secrets: Record<string, string>;
+  /** Immutable imports captured before approval. Never fetched again by a worker. */
+  workflows?: Record<string, ActionWorkflowSnapshot>;
   storageDestinationId?: string | null;
   /** Configuration approved when this immutable run was dispatched. */
   workflowVersion?: string;

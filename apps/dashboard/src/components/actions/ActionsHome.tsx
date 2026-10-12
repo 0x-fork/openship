@@ -114,9 +114,9 @@ function Home() {
       </Button>
     ) : (
       <Button asChild>
-        <Link href={selfHosted ? "/actions/runners/new" : "/actions/billing"}>
+        <Link href="/actions/runners/new">
           <Icon name={selfHosted ? "plus" : "cloud"} />
-          {selfHosted ? a.newRunner : a.setup.prepareCloud}
+          {a.newRunner}
         </Link>
       </Button>
     );

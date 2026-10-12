@@ -57,7 +57,15 @@ export function RunWorkspace({
   const [topologyExpanded, setTopologyExpanded] = useState<Record<string, boolean>>({});
   useEffect(() => {
     if (job)
-      setExpanded((current) => (job.id in current ? current : { ...current, [job.id]: true }));
+      setExpanded((current) => {
+        const next = { ...current, [job.id]: current[job.id] ?? true };
+        let parent = job.parentJobId;
+        while (parent) {
+          next[parent] = true;
+          parent = run.jobs.find((row) => row.id === parent)?.parentJobId;
+        }
+        return next;
+      });
   }, [job?.id]);
   const progress = new Map(
     run.jobs.map((row) => [row.id, jobProgress(logs.eventsFor(row.id), row)]),
@@ -65,7 +73,7 @@ export function RunWorkspace({
   const steps = job ? (progress.get(job.id) ?? []) : [];
   const step = steps.find((step) => step.id === selectedStep);
   const expandedJobs = run.jobs
-    .filter((row) => expanded[row.id] ?? row.id === job?.id)
+    .filter((row) => expanded[row.id] ?? (row.id === job?.id || !!row.reusable))
     .map((row) => row.id);
   const select = (job: string, step?: string | null) => {
     setExpanded((current) => ({ ...current, [job]: true }));

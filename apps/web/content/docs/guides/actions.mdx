@@ -86,8 +86,18 @@ requester and approval before starting workflow code. Configure that policy in t
 
 ## Add a runner
 
-Open **Actions → Runners** and select an existing server. Openship probes its OS,
-architecture, Git, Node and Docker capabilities before enabling a runtime.
+Open **Actions → Runners → Add runner** and choose a destination:
+
+- **Existing server:** select a connected or managed application server. Set
+  per-job CPU, memory and parallel limits to leave capacity for its applications.
+  The server keeps its existing billing.
+- **Dedicated server:** create a managed server through the shared server and plan
+  dialog, then configure it as a runner. Its normal server subscription applies.
+- **Temporary Cloud runners:** choose a disposable VM profile using your prepaid
+  Actions balance. Each executed job gets a VM, which is removed after cleanup.
+
+Openship probes the selected server's OS, architecture, Git, Node and Docker
+capabilities before enabling a runtime.
 
 - **Linux containers:** use a runner image with the tools your workflow needs.
   Docker and service-container actions require Docker on the destination.
@@ -429,6 +439,62 @@ Runners must be able to reach the instance's public API. Set
 the artifact API and `/twirp` proxy routes. Runtime URLs use short-lived tokens
 scoped to one organization, run and job.
 
+## Independent reusable workflows
+
+Use `jobs.<job>.uses` to call a YAML file in `.openship/workflows/` or
+`.github/workflows/`. Local calls use the caller's immutable commit. Remote calls
+use `owner/repository/path@ref`; Openship resolves the ref and saves every called
+source before approval. A later tag change cannot alter an approved attempt.
+
+```yaml
+jobs:
+  gate:
+    uses: ./.openship/workflows/test.yml
+    with:
+      enabled: false
+      version: 22
+    secrets:
+      registry_token: ${{ secrets.REGISTRY_TOKEN }}
+```
+
+The called file declares `on: workflow_call`, typed inputs, accepted secrets and
+outputs. Its jobs select their own allowed runners and appear in the same run,
+with logs, Checks and cancellation. Boolean and number inputs retain their types.
+Permissions can stay the same or narrow at each call. Secrets must be forwarded
+explicitly; `secrets: inherit` is permitted only within the same owner.
+Nesting is limited to 10 workflow levels, 50 called files, 2 MiB of combined source
+and 256 total concrete jobs. Protected environment settings remain unsupported
+in independent mode.
+
+## Openship OIDC
+
+Independent jobs can request an identity with `permissions: {id-token: write}`.
+Publish the controller at a stable HTTPS origin reachable from runners and the
+external service. Configure that service to trust
+`https://your-controller/api/actions/oidc` as its issuer. Discovery is available at
+`/api/actions/oidc/.well-known/openid-configuration`; RSA verification keys are at
+`/api/actions/oidc/jwks`.
+
+The job receives the standard `ACTIONS_ID_TOKEN_REQUEST_URL` and
+`ACTIONS_ID_TOKEN_REQUEST_TOKEN` environment variables. Actions using the standard
+OIDC toolkit can request a token with their required audience. Credentials such as
+AWS or Azure trust policies must allow this Openship issuer; GitHub-specific
+issuer policies do not grant access automatically.
+
+Restrict the provider's trust to the organization, repository, ref and workflow
+identity. A normal repository subject is
+`openship:organization:<org-id>:repo:<owner>/<repo>:ref:refs/heads/main`.
+A workflow edited in Openship includes `:source:override` in its subject and sets
+`openship_workflow_modified`, so it cannot impersonate the repository's committed
+workflow. Claims also identify the run, job, destination and immutable called
+workflow source (`job_workflow_ref`, `job_workflow_sha`).
+
+Tokens expire within five minutes. Issuance rechecks approval, actor access,
+runner access and cancellation; fork jobs receive no OIDC capability. The
+instance's signing key is encrypted in its database and included only in a full
+instance transfer, preserving its key when credentials are transferred securely.
+Keep the issuer address stable when moving a control plane.
+
 ## Cancellation and limits
 
 Cancel stops the remote execution and then cleans its resources. A runner remains
@@ -440,9 +506,9 @@ to a 60-minute timeout and can request up to 360 minutes. Logs are bounded at
 8 MiB per job. Settled run history is retained for 30 days, with runs referenced
 by retained artifacts or retry attempts protected from early removal.
 
-Independent workflows reject reusable workflows, protected environments, OIDC and
-attestations where they can be determined before dispatch. Repository integration delegates
-those features to GitHub and its official runner. Openship-managed destinations
+Independent workflows support reusable workflows and Openship-issued OIDC.
+Protected environments and attestations require GitHub-coordinated workflows;
+independent mode rejects those features before dispatch. Openship-managed destinations
 currently support Linux and macOS; Windows and GitHub Enterprise Server are not
 available. Official runner registrations execute one job and expire after six hours;
 idle registrations are removed after ten minutes. Choose a runner image with the

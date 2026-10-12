@@ -54,7 +54,10 @@ vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "owner" }, session: { activeOrganizationId: "org" } } }),
 }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => "local" }));
-vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ selfHosted: true }) }));
+vi.mock("@/context/PlatformContext", () => ({
+  usePlatform: () => ({ selfHosted: true, cloudAuthUrl: "https://app.openship.io" }),
+}));
+vi.mock("@/components/servers/add-server-modal", () => ({ useAddServerModal: () => vi.fn() }));
 vi.mock("@/components/github/RepositoryPicker", () => ({ RepositoryPicker: () => null }));
 vi.mock("@/components/github/RepositoryBranchSelect", () => ({
   RepositoryBranchSelect: () => <span>main</span>,
@@ -308,6 +311,9 @@ describe("shared workflow setup", () => {
     await click("Allowed runners");
     expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-label")).toBe(
       "Add runner",
+    );
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('button[value="existing"]')!.click(),
     );
     await click("Use build server");
     await click("Verify and save runner");

@@ -20,6 +20,7 @@ import { Modal } from "@/components/ui/Modal";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
 import ServerSelector from "@/components/shared/ServerSelector";
 import { useI18n } from "@/components/i18n-provider";
+import { RunnerDestination } from "./RunnerDestination";
 import { ActionError } from "./ActionStatus";
 import { ActionField } from "./ActionField";
 import { useActionMutation, useActionResource, useActionScope } from "./useActions";
@@ -38,12 +39,16 @@ function Form({
   onCancel,
   onBusyChange,
   embedded = false,
+  initialServer,
+  onBack,
 }: {
   runner?: ActionRunnerView;
   onSaved: (runner: ActionRunnerView) => void;
   onCancel: () => void;
   onBusyChange?: (busy: boolean) => void;
   embedded?: boolean;
+  initialServer?: { id: string; name: string };
+  onBack?: () => void;
 }) {
   const { t } = useI18n();
   const a = t.actions;
@@ -54,8 +59,10 @@ function Form({
   useEffect(() => {
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
-  const [serverId, setServerId] = useState<string | null>(runner?.serverId ?? null);
-  const [name, setName] = useState(runner?.name ?? "");
+  const [serverId, setServerId] = useState<string | null>(
+    runner?.serverId ?? initialServer?.id ?? null,
+  );
+  const [name, setName] = useState(runner?.name ?? initialServer?.name ?? "");
   const [config, setConfig] = useState<ActionRunnerConfig>(
     () =>
       runner?.config ??
@@ -150,6 +157,19 @@ function Form({
                 <Icon name="arrow-left" className="rtl:rotate-180" />
                 {a.back}
               </Link>
+            </Button>
+          )}
+          {onBack && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="mb-2 -ms-3"
+              disabled={busy}
+              onClick={onBack}
+            >
+              <Icon name="arrow-left" className="rtl:rotate-180" />
+              {c.destinations.back}
             </Button>
           )}
           <h1 className="text-2xl font-medium tracking-tight text-foreground">
@@ -485,11 +505,26 @@ function Loader({ id }: { id?: string }) {
     <PageContainer>
       <ActionError message={resource.error} onRetry={resource.refresh} />
       {resource.data ? (
-        <Form
-          runner={resource.data.runner}
-          onSaved={() => router.push("/actions")}
-          onCancel={() => router.push("/actions")}
-        />
+        resource.data.runner ? (
+          <Form
+            runner={resource.data.runner}
+            onSaved={() => router.push("/actions")}
+            onCancel={() => router.push("/actions")}
+          />
+        ) : (
+          <RunnerDestination
+            onSaved={() => router.push("/actions")}
+            onCancel={() => router.push("/actions")}
+            renderForm={(server, back) => (
+              <Form
+                initialServer={server}
+                onBack={back}
+                onSaved={() => router.push("/actions")}
+                onCancel={() => router.push("/actions")}
+              />
+            )}
+          />
+        )
       ) : resource.loading ? (
         <div className="h-72 animate-pulse rounded-2xl bg-card" />
       ) : null}
@@ -536,7 +571,21 @@ export function RunnerSetupDialog({
         onKeyDown={onKeyDown}
         className="p-4 outline-none sm:p-5"
       >
-        <Form key={scope} embedded onSaved={onSaved} onCancel={close} onBusyChange={setBusy} />
+        <RunnerDestination
+          key={scope}
+          onSaved={onSaved}
+          onCancel={close}
+          renderForm={(server, back) => (
+            <Form
+              embedded
+              initialServer={server}
+              onBack={back}
+              onSaved={onSaved}
+              onCancel={close}
+              onBusyChange={setBusy}
+            />
+          )}
+        />
       </div>
     </Modal>
   );

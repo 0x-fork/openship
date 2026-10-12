@@ -114,4 +114,5 @@ export {
   actionCommand,
 } from "./actions";
 export { actionStorageObject, actionStorageChunk } from "./action-storage";
+export { actionOidcKey } from "./action-oidc";
 export { actionBudget, actionCreditPurchase } from "./action-billing";

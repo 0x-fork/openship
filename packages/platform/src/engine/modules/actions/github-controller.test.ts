@@ -320,11 +320,11 @@ describe("GitHub-owned workflows", () => {
       expect.objectContaining({ job: expect.objectContaining({ id: f.job.id }) }),
     );
   });
-  it("preserves reusable calls, protected environments and OIDC only for GitHub", async () => {
+  it("preserves GitHub workflow features while independent protected environments remain gated", async () => {
     const plan = await parseActionWorkflow(source, ".github/workflows/ci.yml", "github");
     expect(plan.jobs[0]?.uses).toBe("./.github/workflows/shared.yml");
     expect(plan.jobs[1]?.environment).toBe("production");
-    await expect(parseActionWorkflow(source)).rejects.toThrow("reusable workflows");
+    await expect(parseActionWorkflow(source)).rejects.toThrow("protected environments");
   });
   it("mirrors native runs without admitting them to the independent scheduler", async () => {
     const f = await fixture();

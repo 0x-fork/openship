@@ -102,12 +102,12 @@ describe("Actions home setup flow", () => {
     expect(host.querySelector('[aria-current="step"]')?.textContent).toContain("Choose a runner");
   });
 
-  it("takes first-time Cloud users to the separate Actions budget", async () => {
+  it("takes first-time Cloud users to the destination choices", async () => {
     h.selfHosted = false;
     await render();
     const action = host.querySelector('[role="tabpanel"] a');
-    expect(action?.textContent).toBe("Set up Cloud runners");
-    expect(action?.getAttribute("href")).toBe("/actions/billing");
+    expect(action?.textContent).toBe("Add runner");
+    expect(action?.getAttribute("href")).toBe("/actions/runners/new");
     expect(host.textContent).not.toContain("Keep automations online");
   });
 

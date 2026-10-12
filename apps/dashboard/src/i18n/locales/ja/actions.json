@@ -387,7 +387,20 @@
     "emulationHint": "このサーバーのDockerにQEMU対応を追加します。エミュレーションしたジョブは遅くなる場合があります。",
     "dockerAccess": "Dockerアクセスを許可",
     "dockerAccessHint": "ジョブコンテナ内でイメージをビルドできます。このサーバーでは信頼できるワークフローのみ実行してください。",
-    "defaultImageHint": "各ジョブで互換性のあるコンテナイメージを個別に選択できます。"
+    "defaultImageHint": "各ジョブで互換性のあるコンテナイメージを個別に選択できます。",
+    "destinations": {
+      "subtitle": "ジョブの実行先",
+      "existing": "既存のサーバーを使う",
+      "existingHint": "Cloud を含む接続済みサーバーの容量を共有します。ジョブごとの上限を設定できます。サーバーの課金は変わりません。",
+      "dedicated": "専用サーバーを用意する",
+      "dedicatedHint": "カタログで新しい Cloud サーバーとプランを選び、Actions ランナーとして追加します。",
+      "temporary": "一時的な Cloud ランナー",
+      "temporaryHint": "ジョブごとに VM を用意し、後処理後に削除します。計算資源と転送に Actions のプリペイド残高を使います。",
+      "cloudOnly": "一時ランナーは Openship Cloud で管理するワークフローで利用できます。",
+      "openCloud": "Cloud で Actions を開く",
+      "back": "実行先を選ぶ",
+      "fundHint": "Actions のプリペイド残高を追加して、一時ランナーを準備します。"
+    }
   },
   "controller": {
     "githubHint": "Openship がランナーを提供し、GitHub がジョブ、チェック、シークレット、アーティファクトを管理します。ワークフローの変更はリポジトリにコミットされます。",

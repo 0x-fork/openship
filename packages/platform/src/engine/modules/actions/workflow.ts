@@ -65,9 +65,14 @@ export async function parseActionWorkflow(
   for (const trigger of Object.keys(triggers)) {
     if (
       independent &&
-      !["push", "pull_request", "workflow_dispatch", "schedule", "repository_dispatch"].includes(
-        trigger,
-      )
+      ![
+        "push",
+        "pull_request",
+        "workflow_dispatch",
+        "workflow_call",
+        "schedule",
+        "repository_dispatch",
+      ].includes(trigger)
     )
       unsupported(`on.${trigger}`);
   }
@@ -102,7 +107,6 @@ export async function parseActionWorkflow(
   if (independent && record(raw.concurrency).queue) unsupported("concurrency.queue");
   const jobs = Object.entries(record(raw.jobs)).map(([id, value]): ActionJobDefinition => {
     const job = record(value);
-    if (independent && job.uses) unsupported(`jobs.${id}.uses (reusable workflows)`);
     if (independent && job.environment)
       unsupported(`jobs.${id}.environment (protected environments)`);
     if (independent && record(job.concurrency).queue) unsupported(`jobs.${id}.concurrency.queue`);
@@ -124,6 +128,10 @@ export async function parseActionWorkflow(
             : [],
       runsOn: job["runs-on"],
       ...(typeof job.uses === "string" && { uses: job.uses }),
+      ...(typeof job.uses === "string" && {
+        with: record(job.with),
+        secrets: job.secrets === "inherit" ? ("inherit" as const) : record(job.secrets),
+      }),
       condition: job.if as string | boolean | undefined,
       matrix: strategy.matrix,
       failFast: strategy["fail-fast"] ?? true,
@@ -248,8 +256,7 @@ export function actionConcurrency(
   };
 }
 
-// Permission names supported by GitHub App installation tokens. OIDC/attestation
-// identity cannot be emulated with an installation token; fail before executing.
+// OIDC is issued separately by Openship; it is never sent to GitHub's token API.
 const permissionNames = [
   "actions",
   "checks",
@@ -273,6 +280,10 @@ export function actionPermissions(value: unknown): ActionJobSpec["permissions"] 
   const result: ActionJobSpec["permissions"] = {};
   for (const [key, access] of Object.entries(value)) {
     if (access === "none") continue;
+    if (key === "id-token" && access === "write") {
+      result[key] = access;
+      continue;
+    }
     if (!permissionNames.includes(key)) unsupported(`permissions.${key}`);
     if (access !== "read" && access !== "write")
       throw new ValidationError(`Invalid permission ${key}`);
@@ -290,10 +301,10 @@ export function concreteJob(
   const context = { ...ctx, matrix };
   const runsOn = evaluateTemplate(job.runsOn, context);
   if (runsOn && typeof runsOn === "object" && !Array.isArray(runsOn)) unsupported("runs-on groups");
-  const labels = typeof runsOn === "string" ? [runsOn] : runsOn;
+  const labels = job.uses ? [] : typeof runsOn === "string" ? [runsOn] : runsOn;
   if (
     !Array.isArray(labels) ||
-    !labels.length ||
+    (!job.uses && !labels.length) ||
     labels.some((l) => typeof l !== "string" || !l.trim() || l.length > 100)
   )
     throw new ValidationError(`${job.id}: runs-on must resolve to runner labels`);

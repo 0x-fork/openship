@@ -49,6 +49,7 @@ type jobRequest struct {
 	Secrets           map[string]string      `json:"secrets"`
 	Variables         map[string]string      `json:"variables"`
 	Inputs            map[string]string      `json:"inputs"`
+	TypedInputs       map[string]interface{} `json:"typedInputs,omitempty"`
 	Platforms         map[string]string      `json:"platforms"`
 	TimeoutSeconds    int                    `json:"timeoutSeconds"`
 	ContainerCPU      float64                `json:"containerCpu"`
@@ -185,6 +186,9 @@ func runJob(parent context.Context, request jobRequest, events *eventWriter) (jo
 		return jobResult{}, fmt.Errorf("invalid workflow: %w", err)
 	}
 	workflow.File = request.WorkflowPath
+	if name := request.Environment["GITHUB_WORKFLOW"]; name != "" {
+		workflow.Name = name
+	}
 	job := workflow.GetJob(request.Job)
 	if job == nil {
 		return jobResult{}, errors.New("requested job is absent from the workflow")
@@ -252,7 +256,7 @@ func runJob(parent context.Context, request jobRequest, events *eventWriter) (jo
 	request.Environment["RUNNER_TRACKING_ID"] = "openship-action-" + request.ID
 	rc := &runner.RunContext{
 		Name: request.ID, JobName: request.Job, Config: config,
-		Run: &model.Run{Workflow: workflow, JobID: request.Job}, Matrix: request.Matrix, RuntimeStrategy: request.Strategy,
+		Run: &model.Run{Workflow: workflow, JobID: request.Job}, Matrix: request.Matrix, RuntimeStrategy: request.Strategy, RuntimeInputs: request.TypedInputs,
 		EventJSON: string(request.Event), StepResults: make(map[string]*model.StepResult),
 	}
 	for _, value := range request.Secrets {
@@ -260,8 +264,10 @@ func runJob(parent context.Context, request jobRequest, events *eventWriter) (jo
 			rc.Masks = append(rc.Masks, value)
 		}
 	}
-	if token := request.Environment["ACTIONS_RUNTIME_TOKEN"]; token != "" {
-		rc.Masks = append(rc.Masks, token)
+	for _, name := range []string{"ACTIONS_RUNTIME_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"} {
+		if token := request.Environment[name]; token != "" {
+			rc.Masks = append(rc.Masks, token)
+		}
 	}
 	events.masks = &rc.Masks
 	ctx = runner.WithJobLoggerFactory(ctx, loggerFactory{events})

@@ -82,7 +82,7 @@ export function prepareRunnerModule() {
   source = readFileSync(join(patched, "pkg/runner/run_context.go"), "utf8");
   replace(
     "\tMatrix              map[string]interface{}\n",
-    "\tMatrix              map[string]interface{}\n\tRuntimeStrategy     map[string]interface{}\n\tRuntimeServices     map[string]model.ServiceContext\n\tRuntimeContainer    model.ContainerContext\n",
+    "\tMatrix              map[string]interface{}\n\tRuntimeStrategy     map[string]interface{}\n\tRuntimeInputs       map[string]interface{}\n\tRuntimeServices     map[string]model.ServiceContext\n\tRuntimeContainer    model.ContainerContext\n",
   );
   replace(
     'return createContainerName("act", rc.String())',
@@ -166,6 +166,10 @@ func ExecutionDetails(ctx context.Context, environment ExecutionsEnvironment) (s
 `,
   );
   source = readFileSync(join(patched, "pkg/runner/expression.go"), "utf8");
+  replace(
+    "\treturn inputs\n}\n\nfunc setupWorkflowInputs",
+    "\tfor key, value := range rc.RuntimeInputs { inputs[key] = value }\n\treturn inputs\n}\n\nfunc setupWorkflowInputs",
+  );
   replace("Strategy:  strategy,", "Strategy:  rc.runtimeStrategy(strategy),");
   replace("Strategy: strategy,", "Strategy: rc.runtimeStrategy(strategy),");
   source += `

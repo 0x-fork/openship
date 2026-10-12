@@ -642,6 +642,9 @@ Every remaining route has an explicit boundary: browser authorization, streaming
 | `GET /.well-known/oauth-protected-resource/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /.well-known/oauth-protected-resource/api/proxy/api/mcp` | Authentication, credential issuance or MCP transport. These modules cannot become tools. |
 | `GET /accept-invite/:id` | Browser landing pages for API-only instances. |
+| `GET /api/actions/oidc/.well-known/openid-configuration` | Public OIDC discovery and RSA verification keys contain no credentials or tenant data. |
+| `GET /api/actions/oidc/jwks` | Public OIDC discovery and RSA verification keys contain no credentials or tenant data. |
+| `GET /api/actions/oidc/token` | Requires a purpose-bound job capability and rechecks running job, actor, approval, destination and id-token permission before issuing a five-minute identity. |
 | `GET /api/actions/runtime/_apis/artifactcache/cache` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
 | `POST /api/actions/runtime/_apis/artifactcache/caches` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |
 | `PATCH /api/actions/runtime/_apis/artifactcache/caches/:id` | Authenticates an expiring, purpose-bound Actions job capability and rechecks the saved actor and organization; user sessions and provider keys are not accepted. |

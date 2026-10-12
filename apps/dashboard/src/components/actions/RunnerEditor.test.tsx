@@ -21,6 +21,10 @@ vi.mock("@/lib/api/actions", () => ({
     runners: h.runners,
   },
 }));
+vi.mock("@/context/PlatformContext", () => ({
+  usePlatform: () => ({ selfHosted: true, cloudAuthUrl: "https://app.openship.io" }),
+}));
+vi.mock("@/components/servers/add-server-modal", () => ({ useAddServerModal: () => vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }) }));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "owner" }, session: { activeOrganizationId: "org" } } }),
@@ -89,6 +93,7 @@ beforeEach(async () => {
       </I18nProvider>,
     ),
   );
+  await act(async () => host.querySelector<HTMLButtonElement>('button[value="existing"]')!.click());
 });
 afterEach(async () => {
   await act(async () => root.unmount());
