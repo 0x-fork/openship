@@ -36,6 +36,11 @@ describe("computePkceChallenge", () => {
 describe("app installation post-auth return", () => {
   const destination = "/apps/new/open-webui?projectId=proj_draft";
 
+  it("preserves custom catalog identifiers without restricting them to bundled app names", () => {
+    const returnTo = "/apps/new/Custom_app_42";
+    expect(getPostAuthRedirect(new URLSearchParams({ returnTo }))).toBe(returnTo);
+  });
+
   it("keeps the app across login, registration, verification, 2FA and organization selection", () => {
     let href = authContinuationHref("/login", destination);
     href = buildAuthPageHref("/register", new URL(href, "https://app.openship.io").searchParams);

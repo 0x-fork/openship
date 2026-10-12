@@ -240,7 +240,7 @@ export function validateReturnTo(input: string | null): string | null {
   const ALLOWED_PREFIXES = ["/cloud-authorize", "/mcp/authorize", "/"];
   const isAllowed =
     isInvitationClaim ||
-    /^\/apps\/new\/[a-z0-9]+(?:-[a-z0-9]+)*$/.test(pathOnly) ||
+    /^\/apps\/new\/[A-Za-z0-9][A-Za-z0-9_-]*$/.test(pathOnly) ||
     pathOnly === "/billing/plans" ||
     pathOnly === "/cloud-billing" ||
     ALLOWED_PREFIXES.some((prefix) => {
