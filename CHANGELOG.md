@@ -185,7 +185,9 @@ all changes since 0.8.2.
   native service source precedence, case-sensitive manifest names and monorepo
   Docker build-context metadata. Compose projects keep service detection on
   redeploy. Exec cancellation reliably reaps watchdog timers, including BusyBox
-  hosts. Cloud cleanup follows the saved keep-resources policy.
+  hosts. Cloud cleanup follows the saved keep-resources policy. Shared storage
+  removal keeps Longhorn's bounded native retry for an uninstall startup cache
+  race and waits for confirmed completion before cleanup.
 
 ### Diagnostics, CLI, SDK and webmail
 
@@ -211,7 +213,8 @@ all changes since 0.8.2.
 - **Additional compatibility fixes** — preserve cookie encoding in dashboard
   server requests, complete partially applied instance-controller migrations,
   filter invalid custom app templates, and add Farm.js configuration support and
-  its square icon.
+  its square icon. Whole-instance recovery rebinds the imported local administrator
+  atomically, preventing project reads from failing after a database wipe.
 - **Release verification** — required gates cover real Linux and macOS Actions
   execution, instance moves, Docker deployment/rollback, scaling and shared
   storage, HTTPS, database upgrades and installed SDK packages. Failed release
