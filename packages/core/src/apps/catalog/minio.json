@@ -168,5 +168,22 @@
       ],
       "category": "database"
     }
-  ]
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "S3-compatible API",
+        "description": "Connect existing S3 clients and SDKs."
+      },
+      {
+        "title": "Object storage",
+        "description": "Store uploads, assets, and application files."
+      },
+      {
+        "title": "Web console",
+        "description": "Inspect buckets and objects through a browser."
+      }
+    ],
+    "articleFile": "articles/minio.md"
+  }
 }

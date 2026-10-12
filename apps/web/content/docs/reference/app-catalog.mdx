@@ -53,6 +53,7 @@ autocomplete field names rather than typing them from memory.
     id: { type: 'string', description: 'Stable kebab-case slug. Must match the filename and be globally unique.', required: true },
     name: { type: 'string', description: 'Display name shown in the catalog.', required: true },
     description: { type: 'string', description: 'One-line summary shown on the catalog card.', required: true },
+    marketplace: { type: 'AppMarketplaceContent', description: 'Optional public feature summaries and a Markdown article. Presentation only; never changes installation.' },
     kind: { type: '"template" | "flow"', description: 'template instantiates services; flow points at a bespoke wizard.', required: true },
     logo: { type: 'string', description: 'A simpleicons slug, or an id mapped to a vendored SVG. See Add an app.', required: true },
     category: { type: '"backend" | "database" | "cms" | "mail" | "analytics" | "automation" | "other"', description: 'Catalog grouping. Closed enum — an unknown value fails validation.', required: true },
@@ -81,6 +82,42 @@ autocomplete field names rather than typing them from memory.
     repository: { type: 'string (URL)', description: 'Upstream source repository. Must be a valid URL.' },
   }}
 />
+
+## Public app pages
+
+The public [Apps directory](/apps) uses the same catalog as the installer. `name`, `description`,
+`logo`, `category`, and `tags` provide its cards and search. `unlisted` entries stay hidden;
+`available: false` entries appear as coming soon without an install button. Deployment settings
+and generated credentials are never included in the website's client data.
+
+Add optional `marketplace` content for the app's detail page:
+
+```json
+{
+  "marketplace": {
+    "features": [
+      { "title": "Private analytics", "description": "Understand your audience without tracking individual visitors." },
+      { "title": "Your own database", "description": "Keep analytics data on the infrastructure you choose." }
+    ],
+    "articleFile": "articles/umami.md"
+  }
+}
+```
+
+`features` contains short titles with optional descriptions. For a longer overview, author
+`packages/core/src/apps/catalog/articles/umami.md` and reference it with `articleFile`.
+The filename must follow `articles/<slug>.md`; paths outside that directory are rejected.
+Alternatively, use an inline `article` Markdown string. Choose one article source, not both.
+
+Run `bun scripts/gen-catalog.ts` from `packages/core` after editing the JSON or Markdown.
+The generator embeds the file as `marketplace.article` in the published `catalog.json` and
+removes the authoring path. No separate article request is needed. The website renders
+Markdown headings, lists, code, images, and safe links; raw HTML is displayed as text.
+Apps without an article still have an overview, their feature summaries, and included services.
+
+Development uses the bundled catalog to preview unpublished changes. Production reads the
+published GitHub artifact with a ten-minute cache and falls back to the bundled catalog if
+the fetch fails. Marketplace content is presentation only and never changes installation.
 
 ## Services
 
