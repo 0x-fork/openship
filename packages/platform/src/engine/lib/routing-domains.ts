@@ -826,6 +826,12 @@ export function createTrackedSslProvider(
   };
 }
 
+function hostnameOwnershipConflict(hostname: string, owner: Domain): ConflictError {
+  return new ConflictError(owner.ownerType === "mail" && owner.projectId === null
+    ? `Hostname ${hostname} is reserved for the mail service. Open the mail server's Deploy webmail screen to reconnect its webmail app, or choose another hostname.`
+    : `Hostname ${hostname} is routed by another project and cannot be claimed here.`);
+}
+
 export async function ensureRouteDomainRecord(opts: {
   projectId: string;
   route: PlannedRouteDomain;
@@ -858,9 +864,7 @@ export async function ensureRouteDomainRecord(opts: {
   }
 
   if (owner && owner.projectId !== projectId) {
-    throw new ConflictError(
-      `Hostname ${route.hostname} is routed by another project and cannot be claimed here.`,
-    );
+    throw hostnameOwnershipConflict(route.hostname, owner);
   }
 
   const existing = domainByHostname.get(key);
@@ -930,9 +934,7 @@ export async function ensureRouteDomainRecord(opts: {
   // foreign project won that race, findOrCreateWithStatus returns its row; it
   // must not be installed in this project's route map or edge configuration.
   if (result.domain.projectId !== projectId) {
-    throw new ConflictError(
-      `Hostname ${route.hostname} is routed by another project and cannot be claimed here.`,
-    );
+    throw hostnameOwnershipConflict(route.hostname, result.domain);
   }
   domainByHostname.set(key, result.domain);
   return result;

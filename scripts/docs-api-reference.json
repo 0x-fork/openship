@@ -2979,7 +2979,7 @@
     },
     "mail.deployWebmail": {
       "page": "mail",
-      "description": "Create a webmail project + deployment and start the build.",
+      "description": "Install or redeploy webmail; reconnectProjectId explicitly recovers an existing app after its mail-server link was lost.",
       "route": "POST /api/mail/webmail/deploy-project"
     },
     "mail.deployExternalWebmail": {

@@ -631,3 +631,14 @@ Inspect light, dim, and dark themes; narrow and wide containers; and expanded an
 navigation. Check keyboard focus, open dropdowns, long labels, and RTL when the layout changes.
 Use focused behavior tests for changes to field selection, validation, or payloads. A copy or
 spacing adjustment needs visual verification, not a test that asserts a CSS class string.
+
+## Mail webmail recovery
+
+When a mail registration has lost its webmail link, the Deploy webmail screen
+shows existing catalog apps that already use that mail hostname on the mail
+server. Suggestions are read-only and require an explicit selection before
+Reconnect and deploy. Reuse the selected project's credentials, service and
+volume identities. Keep its server and hostname fixed during recovery, and show
+that constraint inline. Never create a second app or grant hostname ownership
+just because an app looks like webmail. A failed status read shows the shared
+error and Retry state; a changed link requires refreshing before another attempt.
