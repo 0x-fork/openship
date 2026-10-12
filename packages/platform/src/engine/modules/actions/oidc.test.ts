@@ -99,6 +99,17 @@ async function request(
 }
 
 describe("Openship Actions OIDC", () => {
+  it("keeps public verification available but refuses to replace an imported identity without credentials", async () => {
+    const f = fixture();
+    const original = await f.service.jwks();
+    const saved = (await repo.key(issuer))!;
+    const ports = { ...f.ports, key: async () => ({ ...saved, privateKeyEnc: "" }) };
+    const restored = new ActionOidcService(ports);
+    expect(await restored.jwks()).toEqual(original);
+    await expect(restored.environment(f.run, f.job)).rejects.toMatchObject({
+      code: "ACTIONS_OIDC_CREDENTIALS_MISSING",
+    });
+  });
   it("persists one encrypted RSA identity across racing controllers and signs verifiable, tenant-bound claims", async () => {
     const f = fixture();
     const second = new ActionOidcService(f.ports);

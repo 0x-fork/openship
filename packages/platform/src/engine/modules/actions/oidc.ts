@@ -8,6 +8,8 @@ import { refreshActionRunAdmission } from "./run-access";
 import { actionRuntimeUrl } from "./storage";
 import { ActionRuntimeTokens } from "./runtime-identity";
 import { ActionOidcService } from "./oidc-service";
+import { actionOidcCache } from "./oidc-cache";
+export { invalidateActionOidcKeyCache } from "./oidc-cache";
 
 export function actionOidcIssuer() {
   const url = new URL(actionRuntimeUrl());
@@ -20,9 +22,8 @@ export function actionOidcIssuer() {
   return `${url.origin}/api/actions/oidc`;
 }
 
-let service: ActionOidcService | undefined;
 export function actionOidcService() {
-  return (service ??= new ActionOidcService({
+  return (actionOidcCache.service ??= new ActionOidcService({
     issuer: actionOidcIssuer,
     tokens: new ActionRuntimeTokens(env.BETTER_AUTH_SECRET),
     key: repos.actionOidc.key,

@@ -500,6 +500,7 @@ export class ActionController {
           "ACTIONS_RUNTIME_URL_INVALID",
           "VALIDATION_ERROR",
           "ACTIONS_OIDC_UNAVAILABLE",
+          "ACTIONS_OIDC_CREDENTIALS_MISSING",
         ].includes(String(error.code));
       const preparationExpired =
         !job.workerStartedAt &&

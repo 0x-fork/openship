@@ -35,6 +35,7 @@ export interface SecretColumn {
 
 /** table.column → { drizzle table, scheme }. Keys mirror ENCRYPTED_COLUMNS. */
 const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> = {
+  "action_oidc_key.privateKeyEnc": { table: schema.actionOidcKey, scheme: "scalar" },
   "action_credit_purchase.checkoutUrlEnc": { table: schema.actionCreditPurchase, scheme: "scalar" },
   "action_workflow.secrets": { table: schema.actionWorkflow, scheme: "map" },
   "action_run.configuration": { table: schema.actionRun, scheme: "json" },

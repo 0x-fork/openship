@@ -634,6 +634,45 @@ describe("two-factor account transfer", () => {
 });
 
 describe("secret-codec round-trips (extract → seal → decrypt)", () => {
+  it("preserves the OIDC RSA identity while re-encrypting its private key for another instance", async () => {
+    const originalKey = env.BETTER_AUTH_SECRET;
+    const registered = SECRET_COLUMNS.find(
+      (entry) => entry.sqlName === "action_oidc_key" && entry.column === "privateKeyEnc",
+    )!;
+    const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const pem = privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+    const stored = encrypt(pem);
+    const entry = await extractPlaintext(registered, "https://ci.test/api/actions/oidc", stored);
+    const tables = {
+      action_oidc_key: [
+        {
+          id: "https://ci.test/api/actions/oidc",
+          kid: "original-key",
+          privateKeyEnc: stored,
+          publicKey: publicKey.export({ format: "jwk" }),
+        },
+      ],
+    };
+    stripTransferSecrets(tables);
+    expect(tables.action_oidc_key[0]!.privateKeyEnc).toBe("");
+    expect(JSON.stringify(tables)).not.toContain(pem);
+    expect(entry?.value).toBe(pem);
+    let restored: string;
+    try {
+      env.BETTER_AUTH_SECRET = "destination-oidc-signing-key-123456789";
+      closeEncryption();
+      restored = (await sealForInstance(registered, entry!)) as string;
+      expect(decrypt(restored)).toBe(pem);
+      expect(createPublicKey(decrypt(restored)).export({ format: "jwk" })).toEqual(
+        tables.action_oidc_key[0]!.publicKey,
+      );
+      expect(tables.action_oidc_key[0]!.kid).toBe("original-key");
+    } finally {
+      env.BETTER_AUTH_SECRET = originalKey;
+      closeEncryption();
+    }
+    expect(() => decrypt(restored)).toThrow();
+  });
   it("redacts runner registration tokens and re-encrypts them for another instance", async () => {
     const originalKey = env.BETTER_AUTH_SECRET;
     const registered = SECRET_COLUMNS.find(

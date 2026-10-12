@@ -72,6 +72,12 @@ export class ActionOidcService {
         }
         // A restored instance without its encrypted credentials must not quietly
         // replace an existing issuer identity with a new key.
+        if (!row.privateKeyEnc)
+          throw new AppError(
+            "This OIDC signing key was transferred without credentials. Restore an instance archive that includes its credentials to use this issuer.",
+            409,
+            "ACTIONS_OIDC_CREDENTIALS_MISSING",
+          );
         const privateKey = await importPKCS8(this.ports.decrypt(row.privateKeyEnc), "RS256");
         return { row, privateKey };
       })();
@@ -127,7 +133,9 @@ export class ActionOidcService {
   }
 
   async jwks(): Promise<{ keys: JWK[] }> {
-    const { row } = await this.signingKey();
+    // Verification of already issued identities does not require the private
+    // key, including when an archive intentionally omits its credentials.
+    const row = (await this.ports.key(this.ports.issuer())) ?? (await this.signingKey()).row;
     // Whitelist RSA public parameters even if stored metadata is malformed.
     const { kty, n, e } = row.publicKey;
     return { keys: [{ kty, n, e, kid: row.kid, alg: "RS256", use: "sig" }] };

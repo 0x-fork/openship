@@ -39,6 +39,11 @@ Platform/API coverage checks immutable imports, cycle and input validation,
 permission reduction, explicit secret forwarding, repeated-reference pinning,
 approval, nested cancellation, cleanup and restart-safe matrix limits. Calls do
 not introduce a synthetic total timeout; each executable job keeps its timeout.
+Full API boot and 19 real instance handoff/invitation/relay/privacy cases also pass.
+The signing key is registered in the transfer cipher registry, re-encrypted for the
+destination, and invalidated in the shared post-import cache boundary. Public keys
+remain available when credentials are intentionally omitted; signing then fails
+with a recovery message instead of replacing the imported identity.
 OIDC tests cover encrypted key persistence, racing initialization, signature and
 audience validation, expiry, wrong capabilities, queued/cancelled/finished jobs,
 foreign organizations and revoked destination access.

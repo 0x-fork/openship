@@ -1,7 +1,7 @@
 import "../jobs/_env";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import { createHmac } from "node:crypto";
+import { createHmac, generateKeyPairSync } from "node:crypto";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import { actionOidcService } from "@repo/platform/engine/modules/actions/oidc";
 import { concreteJob } from "@repo/platform/engine/modules/actions/workflow";
@@ -127,7 +127,8 @@ import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
 import { flushAudit } from "@repo/platform/engine/lib/audit-emitter";
-import { decrypt } from "@repo/platform/engine/lib/encryption";
+import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
+import { reconcileRuntimeStateAfterImport } from "../../../src/lib/database-runtime-state";
 import {
   captureExecutionAuthority,
   resolveExecutionAuthority,
@@ -270,6 +271,29 @@ describe("Actions HTTP, native SDK and authorization", () => {
       expect(payload.sub).toContain(":source:override");
       expect(payload.openship_job_id).toBe(job!.id);
       expect(JSON.stringify(keys)).not.toContain("private");
+      // A committed instance import replaces its stored signing identity.
+      // The old process cache must not keep issuing tokens from a removed key.
+      const replacement = generateKeyPairSync("rsa", { modulusLength: 2048 });
+      await db
+        .update(schema.actionOidcKey)
+        .set({
+          kid: "restored-identity",
+          publicKey: replacement.publicKey.export({ format: "jwk" }) as Record<string, string>,
+          privateKeyEnc: encrypt(
+            replacement.privateKey.export({ format: "pem", type: "pkcs8" }).toString(),
+          ),
+        })
+        .where(eq(schema.actionOidcKey.id, issuer));
+      await reconcileRuntimeStateAfterImport();
+      const restoredKeys = await (await app.request("/api/actions/oidc/jwks")).json();
+      const restoredResponse = await app.request(path, init);
+      expect(restoredResponse.status).toBe(200);
+      const restored = await jwtVerify(
+        (await restoredResponse.json()).value,
+        createLocalJWKSet(restoredKeys),
+        { issuer, audience: "openship-test", algorithms: ["RS256"] },
+      );
+      expect(restored.protectedHeader.kid).toBe("restored-identity");
       await db
         .update(schema.actionRunner)
         .set({ enabled: false })

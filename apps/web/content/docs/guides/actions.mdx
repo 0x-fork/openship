@@ -493,7 +493,9 @@ Tokens expire within five minutes. Issuance rechecks approval, actor access,
 runner access and cancellation; fork jobs receive no OIDC capability. The
 instance's signing key is encrypted in its database and included only in a full
 instance transfer, preserving its key when credentials are transferred securely.
-Keep the issuer address stable when moving a control plane.
+Keep the issuer address stable when moving a control plane. An archive that omits
+credentials retains public verification metadata but cannot issue new tokens;
+restore an archive containing the signing credentials to use that issuer.
 
 ## Cancellation and limits
 
