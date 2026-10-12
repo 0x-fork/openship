@@ -16,6 +16,7 @@ export function ConnectionNotice({
   actions,
   role = "status",
   retryLabel,
+  compact = false,
 }: {
   title: string;
   message: string;
@@ -26,17 +27,18 @@ export function ConnectionNotice({
   actions?: ReactNode;
   role?: "status" | "alert";
   retryLabel?: string;
+  compact?: boolean;
 }) {
   const { t } = useI18n();
   return (
-    <div role={role} className="flex items-start gap-3 rounded-2xl bg-card p-4">
-      <span className={`flex size-9 shrink-0 items-center justify-center rounded-xl ${retrying || tone === "neutral" ? "bg-muted text-muted-foreground" : "bg-warning-bg text-warning"}`}>
+    <div role={role} className={`flex items-start gap-3 bg-card ${compact ? "rounded-xl p-3" : "rounded-2xl p-4"}`}>
+      <span className={`flex shrink-0 items-center justify-center ${compact ? "mt-0.5 size-5 text-muted-foreground" : `size-9 rounded-xl ${retrying || tone === "neutral" ? "bg-muted text-muted-foreground" : "bg-warning-bg text-warning"}`}`}>
         <Icon name={retrying ? "spinner" : "plug"} className={`size-4 ${retrying ? "motion-safe:animate-spin" : ""}`} />
       </span>
       <div className="flex min-w-0 flex-1 flex-wrap items-start gap-x-4 gap-y-3">
         <div className="min-w-0 flex-1 basis-56">
           <p className="text-sm font-medium text-foreground">{title}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{message}</p>
+          <p className={`${compact ? "mt-0.5 text-xs" : "mt-1 text-sm"} text-muted-foreground`}>{message}</p>
           {detail && (
             <details className="mt-2 text-xs text-muted-foreground">
               <summary className="cursor-pointer">{t.issues.connectivity.details}</summary>

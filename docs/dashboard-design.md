@@ -338,6 +338,11 @@ copy and a read-only status retry where available. Keep last-known details, labe
 unknown, and reserve repair/setup prompts for confirmed states. The root layout owns the browser/API
 connection notice. Monitoring groups explicit network failures across affected servers and keeps
 raw diagnostics in a closed Technical details disclosure.
+The global notice is compact and has no drop shadow. Brief transport interruptions
+that recover within 1.5 seconds do not flash it; a slow individual request is not
+evidence that the API is disconnected. Its retry reads API liveness only, never
+repeats a failed mutation. Any newer HTTP response clears obsolete connection
+failures, while the original request still reports its own error to its caller.
 
 Service terminals distinguish a pending status read from a confirmed stopped service. Keep the
 terminal mounted when a status check becomes unavailable; offer a manual terminal connection
