@@ -882,6 +882,74 @@ describe("triggerDeployment", () => {
     },
   );
 
+  it.each([null, "  "])(
+    "reconciles an imported Compose project behind app markers with an unset path %j (#1020)",
+    async (composePath) => {
+      const localPath = mkdtempSync(join(tmpdir(), "openship-compose-app-markers-"));
+      try {
+        writeFileSync(
+          join(localPath, "package.json"),
+          JSON.stringify({ devDependencies: { vite: "^6.0.0" } }),
+        );
+        writeFileSync(join(localPath, "vite.config.ts"), "export default {};\n");
+        writeFileSync(join(localPath, "Dockerfile"), "FROM node:22-alpine\n");
+        writeFileSync(
+          join(localPath, "compose.yaml"),
+          [
+            "services:",
+            "  web:",
+            "    build: .",
+            "    environment:",
+            "      SOURCE_VALUE: refreshed",
+          ].join("\n"),
+        );
+        const baseline = { ...composeServices[0], buildArgs: {}, environment: {} };
+        const state = installStatefulComposeRepo({
+          ...baseline,
+          projectId: "project-1",
+          environment: { OPERATOR_VALUE: "keep-me" },
+          importedSpec: toComposeSpec(baseline),
+        });
+        repos.project.findById.mockResolvedValue(
+          baseProject({
+            framework: "docker",
+            composePath,
+            localPath,
+          }),
+        );
+        const actualPrepare = await vi.importActual<
+          typeof import("@repo/platform/engine/modules/deployments/prepare.service")
+        >("@repo/platform/engine/modules/deployments/prepare.service");
+        resolveProjectInfo.mockImplementationOnce(actualPrepare.resolveProjectInfo);
+        const actualPipeline = await vi.importActual<
+          typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+        >("@repo/platform/engine/modules/deployments/build-pipeline");
+        resolveServicePipelineMode.mockImplementationOnce(
+          actualPipeline.resolveServicePipelineMode,
+        );
+
+        await triggerDeployment(ctx, { projectId: "project-1" });
+
+        expect(state.stored().environment).toEqual({
+          SOURCE_VALUE: "refreshed",
+          OPERATOR_VALUE: "keep-me",
+        });
+        expect(repos.service.reconcileFromCompose).toHaveBeenCalledOnce();
+        expect(repos.deployment.create).toHaveBeenCalledOnce();
+        expect(repos.deployment.create.mock.calls[0]![0].meta.composeServices).toEqual([
+          expect.objectContaining({
+            name: "web",
+            build: ".",
+            environment: { SOURCE_VALUE: "refreshed", OPERATOR_VALUE: "keep-me" },
+          }),
+        ]);
+        expect(kickoffBuild).toHaveBeenCalledOnce();
+      } finally {
+        rmSync(localPath, { recursive: true, force: true });
+      }
+    },
+  );
+
   it.each([
     { framework: "node", importedSpec: toComposeSpec(composeServices[0]) },
     { framework: "unknown", importedSpec: null },
@@ -905,6 +973,11 @@ describe("triggerDeployment", () => {
       try {
         mkdirSync(join(localPath, "go-api"));
         writeFileSync(join(localPath, "go-api", "Dockerfile"), "FROM node:22-alpine\n");
+        // This belongs to local development, not the native production services.
+        writeFileSync(
+          join(localPath, "go-api", "compose.yaml"),
+          "services:\n  dev-db:\n    image: postgres:16\n    network_mode: host\n",
+        );
         const config = {
           rootDirectory: manifestLocation === "repository" ? "go-api" : "./",
           env: { API_URL: "https://source.example.com" },
