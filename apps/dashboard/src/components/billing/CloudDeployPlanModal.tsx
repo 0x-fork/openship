@@ -95,7 +95,7 @@ export function CloudDeployPlanModal({
     setRetrying(true);
     setRetryError(null);
     try { await onRetry(); }
-    catch (error) { setRetryError(error instanceof Error ? error.message : copy.loadError); }
+    catch (error) { observeCaughtError(error, "dashboard/components/billing/CloudDeployPlanModal"); setRetryError(error instanceof Error ? error.message : copy.loadError); }
     finally { setRetrying(false); }
   }
 

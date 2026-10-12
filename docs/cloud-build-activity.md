@@ -12,12 +12,12 @@ resources in the same database transaction as the deployment execution claim.
 exclusivePreparation)` is the composition helper. The last argument defaults to
 `false`; its persisted value must match on an idempotent retry.
 
-| State | Capacity | Lifecycle protection |
-| --- | --- | --- |
-| Reserved, `ownerToken = null` | Resources remain reserved | No host admission; lifecycle work can still start |
-| Activated, slot retained | Resources remain reserved | Per-execution activity plus legacy singleton barrier |
-| Activated, slot released | Build capacity is available again | Activity and singleton still protect deployment/cleanup |
-| Finished | No reservation | Last active execution clears the singleton barrier |
+| State                         | Capacity                          | Lifecycle protection                                    |
+| ----------------------------- | --------------------------------- | ------------------------------------------------------- |
+| Reserved, `ownerToken = null` | Resources remain reserved         | No host admission; lifecycle work can still start       |
+| Activated, slot retained      | Resources remain reserved         | Per-execution activity plus legacy singleton barrier    |
+| Activated, slot released      | Build capacity is available again | Activity and singleton still protect deployment/cleanup |
+| Finished                      | No reservation                    | Last active execution clears the singleton barrier      |
 
 `listReservations` returns outstanding capacity reservations. `listActive` returns
 all unfinished rows for the workspace/organization, including unactivated rows and
