@@ -39,6 +39,11 @@ export function affectsScope(path: string, scope: string): boolean {
   // Native/API archives can contain source and fixture files. Builds retain the
   // full tree as input; only the installed SDK excludes the API's test tree.
   if (scope === "sdk" && path.startsWith("apps/api/test/")) return false;
+  // This fixture is used only by the platform unit suite. Keep archives and the
+  // installed SDK conservative, while allowing unchanged real-host journeys to
+  // retain their verified results after a fixture-only type correction.
+  if (path === "packages/platform/src/engine/modules/actions/github-checks.test.ts")
+    return scope === "unit" || scope === "build" || scope === "sdk";
   const exclusive =
     path === "apps/api/test/helpers/cluster-host-lab.ts" ||
     path.startsWith("apps/api/test/fixtures/cluster-host/")

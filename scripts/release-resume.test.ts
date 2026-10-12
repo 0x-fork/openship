@@ -266,7 +266,15 @@ describe("release continuation", () => {
     try {
       git("init", "-q");
       write(".github/workflows/scaling-e2e.yml", workflow);
+      write(
+        ".github/workflows/release-gate.yml",
+        readFileSync(new URL("../.github/workflows/release-gate.yml", import.meta.url), "utf8"),
+      );
       write("packages/adapters/src/cluster/job.ts", "original production code");
+      write(
+        "packages/platform/src/engine/modules/actions/github-checks.test.ts",
+        "original Checks fixture",
+      );
       commit();
       const previous = { ...run, head_sha: git("rev-parse", "HEAD") };
       write(".github/workflows/scaling-e2e.yml", resumedWorkflow);
@@ -280,7 +288,12 @@ describe("release continuation", () => {
         const path = String(url);
         return Response.json(
           path.includes("/jobs?")
-            ? { jobs: [{ ...job, conclusion: successful ? "success" : "failure" }] }
+            ? {
+                jobs: [
+                  { ...job, conclusion: successful ? "success" : "failure" },
+                  { ...job, name: "Release gate / Typecheck + tests", conclusion: "success" },
+                ],
+              }
             : path.includes("/artifacts?")
               ? { artifacts: [{ id: 789, name: "result", expired }] }
               : previous,
@@ -301,6 +314,26 @@ describe("release continuation", () => {
         url: job.html_url,
         artifactId: 789,
       });
+      const unitOptions = {
+        ...options,
+        scope: "unit",
+        jobName: "Typecheck + tests",
+        workflow: ".github/workflows/release-gate.yml",
+        jobId: "test",
+        artifact: undefined,
+      };
+      expect(await findReusableJob(unitOptions)).toEqual({ runId: "123", url: job.html_url });
+      write(
+        "packages/platform/src/engine/modules/actions/github-checks.test.ts",
+        "corrected typed Checks fixture",
+      );
+      commit();
+      expect(await findReusableJob(options)).toEqual({
+        runId: "123",
+        url: job.html_url,
+        artifactId: 789,
+      });
+      expect(await findReusableJob(unitOptions)).toBeUndefined();
       expired = true;
       expect(await findReusableJob(options)).toBeUndefined();
       expired = false;
