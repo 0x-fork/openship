@@ -1,6 +1,6 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { ilike, type SQL, eq, and, asc, desc, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
-import { generateId, AppError, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
+import { generateId, AppError, summarizeDeploymentHistory, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
 import { isDeepStrictEqual } from "node:util";
 import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
@@ -77,7 +77,13 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     const perPage = opts.perPage ?? 20;
     const conditions = [scope];
     if (opts.environment) conditions.push(eq(deployment.environment, opts.environment));
-    if (opts.status) conditions.push(inArray(deployment.status, [...DEPLOYMENT_HISTORY_STATUSES[opts.status]]));
+    const now = new Date();
+    if (opts.days) {
+      const since = new Date(now);
+      since.setUTCHours(0, 0, 0, 0);
+      since.setUTCDate(since.getUTCDate() - opts.days + 1);
+      conditions.push(gte(deployment.createdAt, since), lte(deployment.createdAt, now));
+    }
     const query = opts.search?.trim();
     if (query) {
       // A literal search: '%' and '_' in a commit message are not wildcards.
@@ -89,6 +95,21 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         sql`exists (select 1 from "project" where "project"."id" = ${deployment.projectId} and "project"."name" ilike ${pattern})`,
       )!);
     }
+    // Outcome facets cover the entire selected window/search, independent of
+    // pagination and the status drill-down. No deployment payloads are loaded.
+    let summary;
+    if (opts.days) {
+      const date = sql<string>`to_char(${deployment.createdAt}, 'YYYY-MM-DD')`;
+      const measuredBuild = sql`${deployment.status} = 'ready' and ${deployment.buildDurationMs} > 0`;
+      const buckets = await db.select({
+        date, projectId: deployment.projectId, status: deployment.status,
+        count: sql<number>`count(*)`,
+        buildMs: sql<number>`coalesce(sum(${deployment.buildDurationMs}) filter (where ${measuredBuild}), 0)`,
+        builds: sql<number>`count(*) filter (where ${measuredBuild})`,
+      }).from(deployment).where(and(...conditions)).groupBy(date, deployment.projectId, deployment.status);
+      summary = summarizeDeploymentHistory(buckets, opts.days, now);
+    }
+    if (opts.status) conditions.push(inArray(deployment.status, [...DEPLOYMENT_HISTORY_STATUSES[opts.status]]));
     const where = and(...conditions);
     const rows = (await db.query.deployment.findMany({
       where,
@@ -97,7 +118,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       offset: (page - 1) * perPage,
     })).map(codec.openDeployment);
     const [{ value: total }] = await db.select({ value: sql<number>`count(*)` }).from(deployment).where(where);
-    return { rows, total: Number(total), page, perPage };
+    return { rows, total: Number(total), page, perPage, ...(summary ? { summary } : {}) };
   }
 
   return {

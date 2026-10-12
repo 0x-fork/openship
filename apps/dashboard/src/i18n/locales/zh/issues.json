@@ -4,7 +4,8 @@
   "tabs": {
     "open": "概览",
     "health": "健康",
-    "resolved": "历史"
+    "resolved": "历史",
+    "notifications": "通知"
   },
   "monitoringHint": {
     "description": "查看服务状态并管理后台监控。",

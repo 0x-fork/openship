@@ -201,5 +201,26 @@
     "next": "Próxima página",
     "pageOf": "Página {page} de {total}",
     "range": "Implantações {from}–{to} de {total}"
+  },
+  "monitoring": {
+    "title": "Visão dos deployments",
+    "scope": "Projeto e pesquisa selecionados · dias UTC · histórico retido",
+    "period": "Período",
+    "days": "{count} dias",
+    "refresh": "Atualizar",
+    "attempts": "Tentativas de deployment",
+    "window": "No período selecionado",
+    "successRate": "Taxa de sucesso",
+    "rateHint": "Sucessos / (sucessos + falhas); exclui cancelamentos",
+    "failedHint": "Inclui versões parciais e bloqueadas",
+    "activeHint": "Tentativas em execução ou na fila neste período",
+    "unavailable": "Visão indisponível. Tente atualizar.",
+    "trend": "Resultados diários",
+    "avgBuild": "Build bem-sucedido médio",
+    "empty": "Nenhum deployment neste período.",
+    "projects": "Detalhes por projeto",
+    "projectHint": "Os 6 primeiros por falhas, depois tentativas ativas",
+    "failedShort": "falhas",
+    "history": "Histórico de deployments"
   }
 }

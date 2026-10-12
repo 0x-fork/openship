@@ -22,7 +22,7 @@
     "edit": "编辑",
     "emptyTitle": "暂无通知规则",
     "emptyBody": "添加一条规则，当邮件送达此服务器上的某个邮箱或域名时，即可在 Slack、Telegram、Discord 或 webhook 中收到通知。",
-    "noChannels": "你还没有已验证的通知渠道。请先在 设置 → 通知 中添加并验证一个，然后回来创建规则。",
+    "noChannels": "在监控 → 通知中添加并验证渠道，然后返回创建规则。",
     "addChannel": "添加通知渠道",
     "manageChannels": "管理渠道",
     "fieldName": "名称",

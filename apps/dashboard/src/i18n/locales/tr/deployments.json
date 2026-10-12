@@ -201,5 +201,26 @@
     "next": "Sonraki sayfa",
     "pageOf": "Sayfa {page} / {total}",
     "range": "{total} dağıtımdan {from}–{to}"
+  },
+  "monitoring": {
+    "title": "Dağıtım özeti",
+    "scope": "Seçilen proje ve arama · UTC takvim günleri · saklanan geçmiş",
+    "period": "Zaman aralığı",
+    "days": "{count} gün",
+    "refresh": "Yenile",
+    "attempts": "Dağıtım denemeleri",
+    "window": "Seçilen zaman aralığında",
+    "successRate": "Başarı oranı",
+    "rateHint": "Başarılı / (başarılı + başarısız); iptaller hariç",
+    "failedHint": "Kısmi ve engellenen sürümler dahil",
+    "activeHint": "Bu aralıkta çalışan veya sıradaki denemeler",
+    "unavailable": "Özet kullanılamıyor. Yenilemeyi deneyin.",
+    "trend": "Günlük sonuçlar",
+    "avgBuild": "Ortalama başarılı derleme",
+    "empty": "Bu aralıkta dağıtım yok.",
+    "projects": "Proje dökümü",
+    "projectHint": "Hatalara, sonra etkin denemelere göre ilk 6",
+    "failedShort": "başarısız",
+    "history": "Dağıtım geçmişi"
   }
 }

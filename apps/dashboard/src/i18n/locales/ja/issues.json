@@ -4,7 +4,8 @@
   "tabs": {
     "open": "概要",
     "health": "ヘルス",
-    "resolved": "履歴"
+    "resolved": "履歴",
+    "notifications": "通知"
   },
   "monitoringHint": {
     "description": "サービスの状態を確認し、バックグラウンド監視を管理します。",

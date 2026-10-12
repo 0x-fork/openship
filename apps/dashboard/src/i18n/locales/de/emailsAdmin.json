@@ -22,7 +22,7 @@
     "edit": "Bearbeiten",
     "emptyTitle": "Noch keine Benachrichtigungsregeln",
     "emptyBody": "Fügen Sie eine Regel hinzu, um in Slack, Telegram, Discord oder per Webhook benachrichtigt zu werden, wenn Mail an ein Postfach oder eine Domain auf diesem Server eintrifft.",
-    "noChannels": "Sie haben noch keine verifizierten Benachrichtigungskanäle. Fügen Sie unter Einstellungen → Benachrichtigungen einen hinzu, verifizieren Sie ihn und kommen Sie dann zurück, um eine Regel zu erstellen.",
+    "noChannels": "Füge unter Monitoring → Benachrichtigungen einen Kanal hinzu und bestätige ihn. Erstelle danach eine Regel.",
     "addChannel": "Benachrichtigungskanal hinzufügen",
     "manageChannels": "Kanäle verwalten",
     "fieldName": "Name",

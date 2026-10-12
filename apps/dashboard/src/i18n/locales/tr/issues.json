@@ -4,7 +4,8 @@
   "tabs": {
     "open": "Genel bakış",
     "health": "Sağlık",
-    "resolved": "Geçmiş"
+    "resolved": "Geçmiş",
+    "notifications": "Bildirimler"
   },
   "monitoringHint": {
     "description": "Servis durumunu görün ve arka plan izlemeyi yönetin.",

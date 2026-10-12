@@ -131,7 +131,7 @@
     "dependenciesHint": "This job runs after the selected job(s) succeed.",
     "triggers": "Event triggers",
     "notifications": "Notifications",
-    "noChannels": "No notification channels yet — add one in Settings → Notifications.",
+    "noChannels": "No notification channels yet — add one in Monitoring → Notifications.",
     "notificationsHint": "Overrides the global notification settings for this job.",
     "submit": "Create job",
     "creating": "Saving…",

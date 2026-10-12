@@ -201,5 +201,26 @@
     "untouchedNote": "These keep running and are not touched: {names}",
     "confirm": "Roll back",
     "cancel": "Cancel"
+  },
+  "monitoring": {
+    "title": "Deployment overview",
+    "scope": "Selected project and search · UTC calendar days · retained deployment history",
+    "period": "Time window",
+    "days": "{count} days",
+    "refresh": "Refresh",
+    "attempts": "Deployment attempts",
+    "window": "Across the selected window",
+    "successRate": "Success rate",
+    "rateHint": "Successful / (successful + failed); excludes cancellations",
+    "failedHint": "Includes partial and blocked releases",
+    "activeHint": "Running or queued attempts in this window",
+    "unavailable": "Overview unavailable. Try refreshing.",
+    "trend": "Daily outcomes",
+    "avgBuild": "Average successful build",
+    "empty": "No deployments in this window.",
+    "projects": "Project breakdown",
+    "projectHint": "Top 6 by failures, then active attempts",
+    "failedShort": "failed",
+    "history": "Deployment history"
   }
 }

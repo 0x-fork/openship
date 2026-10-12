@@ -201,5 +201,26 @@
     "next": "Nächste Seite",
     "pageOf": "Seite {page} von {total}",
     "range": "Bereitstellungen {from}–{to} von {total}"
+  },
+  "monitoring": {
+    "title": "Deployment-Übersicht",
+    "scope": "Gewähltes Projekt und Suche · UTC-Kalendertage · gespeicherter Verlauf",
+    "period": "Zeitraum",
+    "days": "{count} Tage",
+    "refresh": "Aktualisieren",
+    "attempts": "Deployment-Versuche",
+    "window": "Im gewählten Zeitraum",
+    "successRate": "Erfolgsquote",
+    "rateHint": "Erfolgreich / (erfolgreich + fehlgeschlagen); ohne Abbrüche",
+    "failedHint": "Einschließlich teilweiser und blockierter Releases",
+    "activeHint": "Laufende oder wartende Versuche im Zeitraum",
+    "unavailable": "Übersicht nicht verfügbar. Versuchen Sie es erneut.",
+    "trend": "Tägliche Ergebnisse",
+    "avgBuild": "Ø erfolgreicher Build",
+    "empty": "Keine Deployments in diesem Zeitraum.",
+    "projects": "Projektübersicht",
+    "projectHint": "Top 6 nach Fehlern, dann aktiven Versuchen",
+    "failedShort": "fehlgeschlagen",
+    "history": "Deployment-Verlauf"
   }
 }

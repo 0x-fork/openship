@@ -201,5 +201,26 @@
     "next": "Page suivante",
     "pageOf": "Page {page} sur {total}",
     "range": "Déploiements {from}–{to} sur {total}"
+  },
+  "monitoring": {
+    "title": "Vue des déploiements",
+    "scope": "Projet et recherche sélectionnés · jours UTC · historique conservé",
+    "period": "Période",
+    "days": "{count} jours",
+    "refresh": "Actualiser",
+    "attempts": "Tentatives de déploiement",
+    "window": "Sur la période sélectionnée",
+    "successRate": "Taux de réussite",
+    "rateHint": "Réussis / (réussis + échoués) ; hors annulations",
+    "failedHint": "Inclut les versions partielles et bloquées",
+    "activeHint": "Tentatives en cours ou en attente sur cette période",
+    "unavailable": "Vue indisponible. Essayez d’actualiser.",
+    "trend": "Résultats quotidiens",
+    "avgBuild": "Build réussi moyen",
+    "empty": "Aucun déploiement sur cette période.",
+    "projects": "Détail par projet",
+    "projectHint": "Les 6 premiers par échecs, puis tentatives actives",
+    "failedShort": "échoués",
+    "history": "Historique des déploiements"
   }
 }
