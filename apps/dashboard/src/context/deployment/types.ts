@@ -787,7 +787,16 @@ export interface OutputCheckUI {
   skippedReason?: string;
 }
 
+export interface CloudBuildQueueStatus {
+  position: number | null;
+  reason: "concurrency" | "resources" | "server";
+  simultaneousBuilds: number | null;
+  activeBuilds: number;
+  workspaceId: string;
+}
+
 export interface DeploymentState {
+  queue: CloudBuildQueueStatus | null;
   deploymentId: string | null;
   isDeploying: boolean;
   isStopping: boolean;
@@ -858,6 +867,7 @@ export const BUILD_PHASES: ReadonlyArray<{ id: string; label: string; oneTime?: 
 ];
 
 export const INITIAL_STATE: DeploymentState = {
+  queue: null,
   deploymentId: null,
   isDeploying: false,
   isStopping: false,

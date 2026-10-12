@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
+  cloud: false,
+  activity: null as any,
+  recoverBuild: vi.fn(),
+  updateStatus: vi.fn(),
   current: null as any,
   session: null as any,
   project: null as any,
@@ -10,10 +14,13 @@ const h = vi.hoisted(() => ({
   acknowledge: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({ repos: { deployment: {
+  updateStatus: h.updateStatus,
   findById: async () => h.current,
   findBuildSessionByDeploymentId: async () => h.session,
   acknowledgeBuildExecutionFinished: h.acknowledge,
-}, project: { findById: async () => h.project } } }));
+}, project: { findById: async () => h.project }, cloudBuildActivity: { find: async () => h.activity } } }));
+vi.mock("@repo/platform/engine/config/env", () => ({ env: { get CLOUD_MODE() { return h.cloud; } } }));
+vi.mock("@repo/platform/engine/lib/cloud-build-activity", () => ({ recoverCloudBuildActivity: h.recoverBuild }));
 vi.mock("@repo/platform/engine/lib/cloud-workspace-lock", () => ({ tryWithCloudWorkspaceActivity: h.admission }));
 vi.mock("@repo/platform/engine/modules/projects/project-cleanup.service", () => ({
   collectDeploymentManifest: h.collect, executeCleanup: h.cleanup,
@@ -24,6 +31,10 @@ import { recoverManagedDeploymentExecution } from "@repo/platform/engine/modules
 const project = { id: "project", organizationId: "org", serverId: "server", workspaceId: "subscription" } as any;
 beforeEach(() => {
   vi.resetAllMocks();
+  h.cloud = false;
+  h.activity = null;
+  h.recoverBuild.mockImplementation(async (_identity, cleanup) => { await cleanup({ activated: true }); return true; });
+  h.updateStatus.mockResolvedValue(true);
   h.current = { id: "deployment", projectId: project.id, organizationId: project.organizationId,
     status: "cancelled", meta: { deployTarget: "cloud", serverId: project.serverId, managedWorkspaceId: project.workspaceId } };
   h.session = { id: "build", startedAt: new Date(), finishedAt: null };
@@ -34,6 +45,49 @@ beforeEach(() => {
 });
 
 describe("managed deployment completion after a controller restart", () => {
+  it("recovers an interrupted shared build only after its exact execution is admitted", async () => {
+    h.cloud = true;
+    h.activity = { deploymentId: "deployment" };
+    h.current.status = "building";
+    await expect(recoverManagedDeploymentExecution(h.current, project, { recoverInterrupted: true })).resolves.toBe(true);
+    expect(h.admission).not.toHaveBeenCalled();
+    expect(h.recoverBuild).toHaveBeenCalledWith(expect.objectContaining({ deploymentId: "deployment", workspaceId: "subscription" }), expect.any(Function));
+    expect(h.updateStatus).toHaveBeenCalledWith("deployment", "failed", expect.objectContaining({ errorCode: "DEPLOYMENT_INTERRUPTED" }));
+    expect(h.cleanup).toHaveBeenCalledOnce();
+    expect(h.acknowledge).toHaveBeenCalledWith("build");
+  });
+
+  it("does not change a shared execution when its live owner still holds the lock", async () => {
+    h.cloud = true;
+    h.activity = {};
+    h.current.status = "building";
+    h.recoverBuild.mockResolvedValue(false);
+    expect(await recoverManagedDeploymentExecution(h.current, project, { recoverInterrupted: true })).toBe(false);
+    expect(h.updateStatus).not.toHaveBeenCalled();
+    expect(h.cleanup).not.toHaveBeenCalled();
+    expect(h.acknowledge).not.toHaveBeenCalled();
+  });
+
+  it("recovers a never-activated reservation without touching the host", async () => {
+    h.cloud = true;
+    h.activity = { ownerToken: null };
+    h.current.status = "building";
+    h.recoverBuild.mockImplementation(async (_identity, cleanup) => { await cleanup({ activated: false }); return true; });
+    expect(await recoverManagedDeploymentExecution(h.current, project, { recoverInterrupted: true })).toBe(true);
+    expect(h.updateStatus).toHaveBeenCalledOnce();
+    expect(h.collect).not.toHaveBeenCalled();
+    expect(h.cleanup).not.toHaveBeenCalled();
+    expect(h.acknowledge).toHaveBeenCalledOnce();
+  });
+
+  it("retains a shared execution lease if artifact cleanup fails", async () => {
+    h.cloud = true;
+    h.activity = {};
+    h.cleanup.mockResolvedValue({ failed: [{ ref: "artifact" }] });
+    await expect(recoverManagedDeploymentExecution(h.current, project)).rejects.toMatchObject({ code: "DEPLOYMENT_RECOVERY_PENDING" });
+    expect(h.acknowledge).not.toHaveBeenCalled();
+  });
+
   it("recovers cancellation under the exact server/project fence before acknowledging completion", async () => {
     await expect(recoverManagedDeploymentExecution(h.current, project)).resolves.toBe(true);
     expect(h.admission).toHaveBeenCalledWith(project.workspaceId, expect.any(Function), "project:project");

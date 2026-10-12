@@ -803,6 +803,7 @@ export const EXCLUDED_TABLES: Record<string, string> = {
   platform_instance: "the receiving installation retains its own identity and encryption-key binding",
   // Ephemeral / in-flight — re-created on demand, meaningless on another host.
   build_session: "in-flight build state; a migration never resumes a build mid-flight",
+  cloud_build_activity: "Cloud build admission and command ownership belong to the source installation; never transfer live reservations or resume its builds on another instance",
   deployment_check_run: "GitHub check-run mirror, re-created by the next deploy",
   terminal_sessions: "SSH session audit bound to a live WS; open rows are swept at boot",
   service_terminal_sessions: "as terminal_sessions, for container shells",

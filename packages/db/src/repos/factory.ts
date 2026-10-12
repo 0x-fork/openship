@@ -1,3 +1,5 @@
+import { createCloudBuildActivityRepo } from "./cloud-build-activity.repo";
+export { createCloudBuildActivityRepo, reserveCloudBuildActivity, type CloudBuildActivityIdentity, type CloudBuildResources } from "./cloud-build-activity.repo";
 import { createClusterStorageRepo } from "./cluster-storage.repo";
 import { createActionsRepo } from "./actions.repo";
 import { createActionStorageRepo } from "./action-storage.repo";
@@ -412,6 +414,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     cloudWebhookBinding: createCloudWebhookBindingRepo(db),
     cloudDockerWorkspace: createCloudDockerWorkspaceRepo(db),
     cloudWorkspace: createCloudWorkspaceRepo(db),
+    cloudBuildActivity: createCloudBuildActivityRepo(db),
     projectConnection: createProjectConnectionRepo(db),
     customAppTemplate: createCustomAppTemplateRepo(db),
     webhookDelivery: createWebhookDeliveryRepo(db),

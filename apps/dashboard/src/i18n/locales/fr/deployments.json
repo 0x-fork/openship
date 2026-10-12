@@ -201,5 +201,21 @@
     "next": "Page suivante",
     "pageOf": "Page {page} sur {total}",
     "range": "Déploiements {from}–{to} sur {total}"
+  },
+  "cloudBuildQueue": {
+    "label": "File de compilation Cloud",
+    "title": "Compilation en attente",
+    "position": "Compilation en attente · Position {position}",
+    "concurrency": "En attente d’une place pour une compilation simultanée.",
+    "resources": "En attente de processeur ou de mémoire disponible sur le serveur.",
+    "server": "En attente de l’acceptation de cette compilation par le serveur.",
+    "automaticStart": "Elle démarrera automatiquement.",
+    "allowance": "Compilations simultanées autorisées par votre offre : {count}.",
+    "unlimited": "Votre offre ne limite pas les compilations simultanées.",
+    "active": "Compilations actives : {count}.",
+    "comparePlans": "Comparer les offres",
+    "optionalUpgrade": "Le changement d’offre est facultatif. Vous pouvez continuer à attendre.",
+    "compareConcurrency": "Comparez les offres pour exécuter davantage de compilations simultanées. Votre compilation peut rester dans la file d’attente.",
+    "compareResources": "Comparez les offres pour obtenir plus de processeur ou de mémoire. Vous pouvez continuer à attendre que des ressources soient disponibles sur le serveur."
   }
 }

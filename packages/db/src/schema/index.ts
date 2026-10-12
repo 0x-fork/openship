@@ -115,3 +115,5 @@ export {
 } from "./actions";
 export { actionStorageObject, actionStorageChunk } from "./action-storage";
 export { actionBudget, actionCreditPurchase } from "./action-billing";
+
+export { cloudBuildActivity, type CloudBuildActivity } from "./cloud-build-activity";

@@ -16,6 +16,7 @@ export { DEV_LOCK_TAKEOVER_GRACE_MS, isDevWatchReload } from "./pglite-lock";
 export {
   withAdvisoryLock,
   tryAcquireAdvisoryLock,
+  runOutsideAdvisoryLock,
   hashStringToInt,
   type AdvisoryLockHandle,
 } from "./advisory-lock";
@@ -283,4 +284,6 @@ export {
   type ClusterDatabaseRecord,
 } from "./repos/cluster-database.repo";
 
+export type { CloudBuildActivity } from "./schema/cloud-build-activity";
+export { createCloudBuildActivityRepo, reserveCloudBuildActivity, type CloudBuildActivityIdentity, type CloudBuildResources } from "./repos/cloud-build-activity.repo";
 export { createDeploymentCheckRepo, type DeploymentCheck } from "./repos/deployment-check.repo";

@@ -32,6 +32,7 @@ const planLimits = Type.Object({
     cpuCores: Type.Number({ exclusiveMinimum: 0 }), memoryMb: Type.Integer({ exclusiveMinimum: 0 }),
   }, { additionalProperties: false }), Type.Null()])),
   computeMinutesPerMonth: numberOrNull, buildMinutesPerMonth: numberOrNull,
+  concurrentBuilds: Type.Optional(Type.Union([Type.Integer({ minimum: 0 }), Type.Null()])),
   freeSubdomains: numberOrNull, customDomains: numberOrNull, seats: numberOrNull,
 });
 const capacityLimit = Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]);

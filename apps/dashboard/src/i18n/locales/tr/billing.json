@@ -343,6 +343,7 @@
     }
   },
   "resourcesGuide": {
+    "concurrentBuilds": "Eşzamanlı derlemeler",
     "title": "Cloud kullanımı nasıl hesaplanır?",
     "credits": "Cloud kredileri",
     "creditsHint": "Derlemeler ve çalışan uygulamalar CPU, bellek, disk etkinliği ve veri aktarımı için kredi tüketir. Daha büyük iş yükleri kredileri daha hızlı tüketir.",

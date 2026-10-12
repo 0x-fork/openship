@@ -201,5 +201,21 @@
     "next": "Sonraki sayfa",
     "pageOf": "Sayfa {page} / {total}",
     "range": "{total} dağıtımdan {from}–{to}"
+  },
+  "cloudBuildQueue": {
+    "label": "Bulut derleme kuyruğu",
+    "title": "Derleme kuyrukta",
+    "position": "Derleme kuyrukta · Sıra {position}",
+    "concurrency": "Eşzamanlı derleme için boş yer bekleniyor.",
+    "resources": "Sunucuda kullanılabilir CPU veya bellek bekleniyor.",
+    "server": "Sunucunun bu derlemeyi kabul etmesi bekleniyor.",
+    "automaticStart": "Otomatik olarak başlayacak.",
+    "allowance": "Planınızın izin verdiği eşzamanlı derleme sayısı: {count}.",
+    "unlimited": "Planınızda eşzamanlı derleme sınırı yok.",
+    "active": "Etkin derleme sayısı: {count}.",
+    "comparePlans": "Planları karşılaştır",
+    "optionalUpgrade": "Yükseltme isteğe bağlıdır. Beklemeye devam edebilirsiniz.",
+    "compareConcurrency": "Daha fazla eşzamanlı derleme için planları karşılaştırın. Derlemeniz kuyrukta kalabilir.",
+    "compareResources": "Daha fazla CPU veya bellek için planları karşılaştırın. Sunucu kaynakları kullanılabilir olana kadar beklemeye devam edebilirsiniz."
   }
 }
