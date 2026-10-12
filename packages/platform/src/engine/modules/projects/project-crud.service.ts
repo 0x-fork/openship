@@ -95,6 +95,7 @@ import type {
 } from "@repo/contracts";
 import { UpdateProjectBody } from "@repo/contracts";
 import { readDeployMeta, resolveProjectDeployTarget } from "./project-deploy-target";
+import { assertCloudRoutingCapabilities, assertProjectRoutingCapabilities } from "./project-routing-capabilities";
 import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { requireOrgServer } from "../../lib/server-target";
 import { resolveCloudProjectServer, requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
@@ -906,6 +907,7 @@ async function createProductionProject(
   // and do it before ensureProjectApp writes anything so a rejected binding is
   // atomic (no orphan project-group row).
   const selectedServer = data.serverId ? await requireOrgServer(data.serverId, organizationId) : null;
+  assertCloudRoutingCapabilities(data.routingConfig, !!selectedServer?.workspaceId);
   if (selectedServer && !env.CLOUD_MODE) {
     if (selectedServer.workspaceId) {
       const { requireLinkedCloudServer } = await import("../../lib/cloud/server-link");
@@ -924,6 +926,8 @@ async function createProductionProject(
       data = { ...data, workspaceId: workspace.id, serverId: server!.id };
     }
   }
+
+  assertCloudRoutingCapabilities(data.routingConfig, !!data.workspaceId);
 
   // Multi-tenant SaaS: never trust a client-supplied installationId. It binds the
   // project to a GitHub App installation, and the push-webhook fan-out deploys by
@@ -1502,6 +1506,8 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   }
   let created = false;
 
+  if (project) await assertProjectRoutingCapabilities(project, data.routingConfig);
+
   if (!project) {
     // No existing match → this ensure will create. Enforce the cap here too
     // (the folder-upload deploy flow reaches creation only through ensure).
@@ -1743,6 +1749,7 @@ export async function updateProject(
 
   // Shared route validation covers custom hostnames and scoped free-domain
   // allowances before any accompanying project fields are written.
+  await assertProjectRoutingCapabilities(p, data.routingConfig);
   const nextRoutes = data.publicEndpoints !== undefined
     ? await prepareProjectRouteState(p, { nextPublicEndpoints: data.publicEndpoints })
     : null;
