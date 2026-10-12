@@ -277,7 +277,18 @@
     "sharedSettings": "Runner and notification settings apply to all selected files.",
     "saveWorkflows": "Save {count} workflows",
     "fileLimit": "Select up to 50 files per import.",
-    "triggerScope": "Each workflow keeps its own triggers. Edits apply only to this file."
+    "triggerScope": "Each workflow keeps its own triggers. Edits apply only to this file.",
+    "customWorkflow": "Use a custom workflow instead",
+    "requirements": {
+      "title": "Complete setup",
+      "repository": "Choose a repository or use a custom workflow",
+      "validating": "Checking workflow…",
+      "yaml": "Review the workflow validation error",
+      "source": "Load a workflow or use a custom workflow",
+      "files": "Select at least one workflow file",
+      "name": "Add a workflow name",
+      "runners": "Select at least one runner"
+    }
   },
   "editor": {
     "setupHint": "Build your workflow, then choose how and where it runs.",

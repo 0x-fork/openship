@@ -277,7 +277,18 @@
     "sharedSettings": "Les paramètres des exécuteurs et des notifications s’appliquent à tous les fichiers sélectionnés.",
     "saveWorkflows": "Enregistrer {count} workflows",
     "fileLimit": "Sélectionnez jusqu’à 50 fichiers par import.",
-    "triggerScope": "Chaque workflow conserve ses propres déclencheurs. Les modifications concernent uniquement ce fichier."
+    "triggerScope": "Chaque workflow conserve ses propres déclencheurs. Les modifications concernent uniquement ce fichier.",
+    "customWorkflow": "Utiliser un workflow personnalisé",
+    "requirements": {
+      "title": "Terminer la configuration",
+      "repository": "Choisissez un dépôt ou utilisez un workflow personnalisé",
+      "validating": "Vérification du workflow…",
+      "yaml": "Consultez l’erreur de validation du workflow",
+      "source": "Chargez un workflow ou utilisez-en un personnalisé",
+      "files": "Sélectionnez au moins un fichier de workflow",
+      "name": "Nommez le workflow",
+      "runners": "Sélectionnez au moins un exécuteur"
+    }
   },
   "editor": {
     "setupHint": "Créez votre workflow, puis choisissez comment et où il s’exécute.",

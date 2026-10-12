@@ -135,6 +135,12 @@ Repository setup offers a compact file checklist with Select all. Keep a separat
 draft and undo history for each file while previewing them on the same canvas.
 Keep repository entry, the picker and refresh on one row, with icon buttons
 and accessible labels; branch/tag selection follows underneath.
+Below repository entry, offer a direct **Use a custom workflow instead** shortcut to
+Standalone. Initialize new workflow names from their validated YAML, preserving
+explicit edits and cleared names. A blocked Continue or Save action has a compact
+inline requirements list above it; each actionable requirement opens the relevant
+settings or YAML editor. Keep validation-in-progress distinct from an invalid draft,
+and use the neutral workflow icon for canvas guidance, without a brand logo.
 Runner destinations, enabled state and project links apply to the selected files;
 trigger edits belong to the previewed file. Review every changed file before a
 repository commit. Import files and links in one transaction; a retry reuses saved

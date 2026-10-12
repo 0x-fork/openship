@@ -277,7 +277,18 @@
     "sharedSettings": "Runner- und Benachrichtigungseinstellungen gelten für alle ausgewählten Dateien.",
     "saveWorkflows": "{count} Workflows speichern",
     "fileLimit": "Bis zu 50 Dateien pro Import auswählen.",
-    "triggerScope": "Jeder Workflow behält seine eigenen Auslöser. Änderungen gelten nur für diese Datei."
+    "triggerScope": "Jeder Workflow behält seine eigenen Auslöser. Änderungen gelten nur für diese Datei.",
+    "customWorkflow": "Stattdessen eigenen Workflow verwenden",
+    "requirements": {
+      "title": "Einrichtung abschließen",
+      "repository": "Repository auswählen oder eigenen Workflow verwenden",
+      "validating": "Workflow wird geprüft…",
+      "yaml": "Fehler bei der Workflow-Prüfung ansehen",
+      "source": "Workflow laden oder eigenen Workflow verwenden",
+      "files": "Mindestens eine Workflow-Datei auswählen",
+      "name": "Workflow benennen",
+      "runners": "Mindestens einen Runner auswählen"
+    }
   },
   "editor": {
     "setupHint": "Erstelle deinen Workflow und wähle, wie und wo er ausgeführt wird.",

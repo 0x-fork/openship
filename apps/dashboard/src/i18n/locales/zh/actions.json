@@ -277,7 +277,18 @@
     "sharedSettings": "运行器和通知设置应用于所有选中的文件。",
     "saveWorkflows": "保存 {count} 个工作流",
     "fileLimit": "每次最多选择 50 个文件。",
-    "triggerScope": "每个工作流保留各自的触发条件。修改仅应用于此文件。"
+    "triggerScope": "每个工作流保留各自的触发条件。修改仅应用于此文件。",
+    "customWorkflow": "改用自定义工作流",
+    "requirements": {
+      "title": "完成设置",
+      "repository": "选择仓库或使用自定义工作流",
+      "validating": "正在检查工作流…",
+      "yaml": "查看工作流验证错误",
+      "source": "加载工作流或使用自定义工作流",
+      "files": "至少选择一个工作流文件",
+      "name": "添加工作流名称",
+      "runners": "至少选择一个运行器"
+    }
   },
   "editor": {
     "setupHint": "创建工作流，然后选择运行方式和运行位置。",
