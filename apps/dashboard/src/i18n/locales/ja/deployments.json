@@ -201,5 +201,21 @@
     "next": "次のページ",
     "pageOf": "{page} / {total} ページ",
     "range": "全 {total} 件中 {from}–{to} 件"
+  },
+  "cloudBuildQueue": {
+    "label": "クラウドビルドキュー",
+    "title": "ビルド待機中",
+    "position": "ビルド待機中 · 順番 {position}",
+    "concurrency": "同時ビルド枠が空くのを待っています。",
+    "resources": "サーバーのCPUまたはメモリが空くのを待っています。",
+    "server": "サーバーがこのビルドを受け付けるのを待っています。",
+    "automaticStart": "自動的に開始されます。",
+    "allowance": "プランで許可されている同時ビルド数：{count}。",
+    "unlimited": "このプランには同時ビルド数の制限はありません。",
+    "active": "実行中のビルド数：{count}。",
+    "comparePlans": "プランを比較",
+    "optionalUpgrade": "アップグレードは任意です。そのまま待つこともできます。",
+    "compareConcurrency": "同時ビルド数を増やせるプランを比較できます。ビルドはキューで待機したままにできます。",
+    "compareResources": "CPUやメモリを増やせるプランを比較できます。サーバーのリソースが空くまで待つこともできます。"
   }
 }

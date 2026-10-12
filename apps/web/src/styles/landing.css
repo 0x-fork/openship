@@ -2016,25 +2016,42 @@
 .pp-solid-cta:hover { background: var(--th-btn-bg-hover); }
 .pp-plan-resources {
   display: grid;
-  gap: 14px;
-  margin-top: 26px;
+  gap: 18px;
+  margin-top: 24px;
   color: var(--th-text-title);
 }
-.pp-plan-resource dt {
-  margin-bottom: 5px;
-  font-size: 13px;
+.pp-plan-capacity {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 16px 12px;
+  border-radius: 14px;
+  background: var(--th-sf-04);
+}
+.pp-plan-capacity > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+.pp-plan-capacity dt {
+  order: 1;
+  font-size: 12px;
   color: var(--th-text-body);
 }
-.pp-plan-resource dd {
-  font-size: 15px;
+.pp-plan-capacity dd {
+  font-size: 16px;
   font-weight: 500;
-  line-height: 1.5;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
 }
-.pp-plan-resource dd span {
-  display: block;
+.pp-plan-capacity-fallback {
   font-size: 14px;
-  font-weight: 400;
   color: var(--th-text-body);
+}
+.pp-plan-limits {
+  display: grid;
+  gap: 10px;
 }
 .pp-plan-limit {
   display: flex;
@@ -2048,9 +2065,8 @@
 .pp-plan-limit dt { color: var(--th-text-body); }
 .pp-plan-limit dd { font-weight: 500; }
 .pp-plan-support {
-  margin-top: 22px;
-  padding-top: 20px;
-  border-top: 1px solid var(--th-on-06);
+  margin-top: auto;
+  padding-top: 22px;
   font-size: 14px;
   color: var(--th-text-strong);
 }
@@ -2477,4 +2493,15 @@
 @media (max-width: 640px) {
   .hiw-step { grid-template-columns: 46px 1fr; gap: 16px; }
   .hiw-step::before { left: 22px; }
+}
+
+.pp-email-note {
+  margin-top: 14px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--th-text-body);
+}
+.pp-email-note strong {
+  font-weight: 500;
+  color: var(--th-text-title);
 }

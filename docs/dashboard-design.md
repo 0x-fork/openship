@@ -359,7 +359,9 @@ check retryable before starting the move.
   Transfer uses the provider's current-period usage and explicit unlimited benefit.
   Zero available bytes alone does not mean blocked access; respect its grace/status.
   Expired compute coverage never presents an unlimited benefit as active access.
-- Plan comparisons lead with CPU, memory, storage and service/project limits. Keep build
+- Plan comparisons lead with CPU, memory, storage and the offer’s support level. Show
+  finite project, service and build-concurrency allowances when the offer defines them.
+  Omit per-service ceilings and repeated unlimited rows. Preserve saved plan terms. Keep build
   time separate from runtime capacity; show minutes only when the offer defines a time
   allowance. Summarize monthly coverage and shared capacity in the common checklist
   below the comparison, alongside shared capabilities. Keep additional transfer, backup

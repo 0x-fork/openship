@@ -293,7 +293,13 @@ describe("workflow rules in the shared deployment wizard", () => {
 describe("deployment counter (#919)", () => {
   it("picks up a queued build's start time even after its stream connects", async () => {
     await mount();
-    await load({ status: "queued", is_active: false, buildStartedAt: null });
+    const queue = { position: 3, reason: "concurrency", simultaneousBuilds: 1, activeBuilds: 1, workspaceId: "ws-1" };
+    await load({ status: "queued", is_active: false, buildStartedAt: null, queue });
+    expect(build.state.queue).toEqual(queue);
+    expect(build.state.deploymentFailed).toBe(false);
+    api.status.mockResolvedValue(snapshot({ status: "queued", is_active: false, buildStartedAt: null, queue: { ...queue, position: 2 } }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(build.state.queue?.position).toBe(2);
     expect(build.state.isDeploying).toBe(true);
     expect(clockText()).toBe("—");
     const actualStart = new Date(Date.now() + 1000).toISOString();
@@ -302,6 +308,7 @@ describe("deployment counter (#919)", () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(build.state.buildStartedAt).toBe(actualStart);
+    expect(build.state.queue).toBeNull();
     expect(clockText()).toBe("0:02");
     const reads = api.status.mock.calls.length;
     await act(async () => {

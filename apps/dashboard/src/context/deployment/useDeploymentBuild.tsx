@@ -351,6 +351,7 @@ export function useDeploymentBuild(
         currentProgress: 100,
         currentStepIndex: 5,
         isDeploying: false,
+        queue: null,
         failureMessage: "",
         warningMessage,
         // THE SERVER'S FLAG ONLY. Never inferred from the presence of a warning.
@@ -407,6 +408,7 @@ export function useDeploymentBuild(
         cancellationPending: false,
         pendingPrompt: null,
         isDeploying: false,
+        queue: null,
         failureMessage: errorMessage,
         warningMessage: "",
         errorCode: errorCode || "",
@@ -448,6 +450,7 @@ export function useDeploymentBuild(
       }
       return {
         ...prev,
+        queue: null,
         currentStepIndex: currentStep,
         currentProgress: progress,
         phaseDurations: nextDurations,
@@ -467,6 +470,7 @@ export function useDeploymentBuild(
       deploymentFailed: false,
       deploymentSuccess: false,
       isDeploying: false,
+      queue: null,
       isStopping: false,
       failureMessage: cancelMessage,
       warningMessage: "",
@@ -1094,7 +1098,7 @@ export function useDeploymentBuild(
     const needsStatus =
       waitingCancellation ||
       needsTerminalStatus ||
-      (active && (!buildStream.isConnected || !state.buildStartedAt || !!state.pendingPrompt));
+      (active && (!buildStream.isConnected || !!state.queue || !state.buildStartedAt || !!state.pendingPrompt));
     if (!deploymentId || !needsStatus) return;
 
     let cancelled = false;
@@ -1138,6 +1142,7 @@ export function useDeploymentBuild(
             currentProgress: data.progress ?? prev.currentProgress,
             currentStepIndex: data.currentStep ?? prev.currentStepIndex,
             isDeploying: isLive,
+            queue: status === "queued" ? (data.queue ?? null) : null,
             deploymentSuccess: !isLive && status === "ready",
             deploymentFailed: !isLive && status === "failed",
             deploymentCanceled: !isLive && status === "cancelled",
@@ -1199,6 +1204,7 @@ export function useDeploymentBuild(
     state.cancellationPending,
     state.pendingPrompt,
     state.buildStartedAt,
+    state.queue,
     buildStream.isConnected,
     buildStream.disconnect,
     invalidateOnTerminal,
@@ -1375,6 +1381,7 @@ export function useDeploymentBuild(
           cancellationPending: !!data.cancellationPending,
           pendingPrompt: isActive ? (data.pendingPrompt ?? null) : null,
           isDeploying: isLive,
+          queue: status === "queued" ? (data.queue ?? null) : null,
           screenshots: !isActive ? (data.screenshots || []) : [],
           failureMessage: !isActive
             ? data.failureMessage ||

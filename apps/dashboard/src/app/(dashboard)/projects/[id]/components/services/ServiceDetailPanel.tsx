@@ -347,7 +347,10 @@ export function ServiceDetailPanel({
         changeTab("env");
         return;
       }
-      if (action !== "stop" && showCloudPricing(err)) return;
+      if (action !== "stop" && showCloudPricing(err, async () => {
+        await servicesApi[action](projectId, service.id);
+        onRefresh();
+      })) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.deployFailed),
         "error",

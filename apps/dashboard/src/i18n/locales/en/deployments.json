@@ -201,5 +201,21 @@
     "untouchedNote": "These keep running and are not touched: {names}",
     "confirm": "Roll back",
     "cancel": "Cancel"
+  },
+  "cloudBuildQueue": {
+    "label": "Cloud build queue",
+    "title": "Build queued",
+    "position": "Build queued · Position {position}",
+    "concurrency": "Waiting for a simultaneous build slot.",
+    "resources": "Waiting for available CPU or memory on the server.",
+    "server": "Waiting for the server to accept this build.",
+    "automaticStart": "It will start automatically.",
+    "allowance": "Simultaneous builds allowed by your plan: {count}.",
+    "unlimited": "Your plan has no simultaneous build limit.",
+    "active": "Active builds: {count}.",
+    "comparePlans": "Compare plans",
+    "optionalUpgrade": "Upgrading is optional. You can keep waiting.",
+    "compareConcurrency": "Compare plans for more simultaneous builds. Your build can remain in the queue.",
+    "compareResources": "Compare plans for more CPU or memory. You can keep waiting for server resources to become available."
   }
 }

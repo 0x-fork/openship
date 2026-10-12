@@ -45,7 +45,7 @@ function Harness() {
   const showPricing = useCloudDeployPricing();
   const [name, setName] = useState("My configured project");
   const deploy = async () => {
-    try { await mocks.deploy(); } catch (error) { if (!showPricing(error)) mocks.toast(error); }
+    try { await mocks.deploy(); } catch (error) { if (!showPricing(error, () => mocks.deploy())) mocks.toast(error); }
   };
   return <>
     <input aria-label="Project name" value={name} onChange={(event) => setName(event.target.value)} />
@@ -90,6 +90,22 @@ afterEach(async () => {
 });
 
 describe("deployment plan selection", () => {
+  it("retries after an entitlement refresh and keeps configuration when the retry fails", async () => {
+    await render();
+    await click("Deploy");
+    mocks.state.mockResolvedValue(paid);
+    await click(copy.deployGate.checkPlan);
+    mocks.deploy.mockRejectedValueOnce(new Error("Server is still provisioning"));
+    await click(copy.workspaces.retryDeployment);
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.body.textContent).toContain("Server is still provisioning");
+    expect(container.querySelector("input")?.value).toBe("My configured project");
+    mocks.deploy.mockResolvedValueOnce({ deploymentId: "retry-deploy" });
+    await click(copy.workspaces.retryDeployment);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(mocks.deploy).toHaveBeenCalledTimes(3);
+  });
+
   it("waits for Deploy, preserves project settings on dismissal, and allows a later retry", async () => {
     await render();
     await click("Save configuration");

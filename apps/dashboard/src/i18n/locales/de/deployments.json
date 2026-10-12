@@ -201,5 +201,21 @@
     "next": "Nächste Seite",
     "pageOf": "Seite {page} von {total}",
     "range": "Bereitstellungen {from}–{to} von {total}"
+  },
+  "cloudBuildQueue": {
+    "label": "Cloud-Build-Warteschlange",
+    "title": "Build eingereiht",
+    "position": "Build eingereiht · Position {position}",
+    "concurrency": "Warten auf einen freien Platz für einen gleichzeitigen Build.",
+    "resources": "Warten auf verfügbare CPU oder Arbeitsspeicher auf dem Server.",
+    "server": "Warten, bis der Server diesen Build annimmt.",
+    "automaticStart": "Der Build startet automatisch.",
+    "allowance": "Gleichzeitige Builds in deinem Tarif: {count}.",
+    "unlimited": "Dein Tarif begrenzt gleichzeitige Builds nicht.",
+    "active": "Aktive Builds: {count}.",
+    "comparePlans": "Tarife vergleichen",
+    "optionalUpgrade": "Ein Upgrade ist optional. Du kannst weiter warten.",
+    "compareConcurrency": "Vergleiche Tarife für mehr gleichzeitige Builds. Dein Build kann in der Warteschlange bleiben.",
+    "compareResources": "Vergleiche Tarife für mehr CPU oder Arbeitsspeicher. Du kannst weiter warten, bis Serverressourcen verfügbar sind."
   }
 }

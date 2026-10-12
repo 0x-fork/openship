@@ -343,6 +343,7 @@
     }
   },
   "resourcesGuide": {
+    "concurrentBuilds": "并发构建",
     "title": "了解 Cloud 用量",
     "credits": "Cloud 积分",
     "creditsHint": "构建和运行中的应用会因 CPU、内存、磁盘读写和数据传输消耗积分。工作负载越大，积分消耗越快。",
