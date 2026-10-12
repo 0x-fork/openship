@@ -277,7 +277,18 @@
     "sharedSettings": "Çalıştırıcı ve bildirim ayarları seçilen tüm dosyalara uygulanır.",
     "saveWorkflows": "{count} iş akışını kaydet",
     "fileLimit": "Her içe aktarmada en fazla 50 dosya seçin.",
-    "triggerScope": "Her iş akışı kendi tetikleyicilerini korur. Değişiklikler yalnızca bu dosyaya uygulanır."
+    "triggerScope": "Her iş akışı kendi tetikleyicilerini korur. Değişiklikler yalnızca bu dosyaya uygulanır.",
+    "customWorkflow": "Bunun yerine özel iş akışı kullan",
+    "requirements": {
+      "title": "Kurulumu tamamlayın",
+      "repository": "Bir depo seçin veya özel iş akışı kullanın",
+      "validating": "İş akışı kontrol ediliyor…",
+      "yaml": "İş akışı doğrulama hatasını inceleyin",
+      "source": "Bir iş akışı yükleyin veya özel iş akışı kullanın",
+      "files": "En az bir iş akışı dosyası seçin",
+      "name": "İş akışına bir ad ekleyin",
+      "runners": "En az bir çalıştırıcı seçin"
+    }
   },
   "editor": {
     "setupHint": "İş akışınızı oluşturun, ardından nasıl ve nerede çalışacağını seçin.",

@@ -27,11 +27,21 @@ export function useCloudDeployPricing(selectedWorkspaceId?: string | null) {
     const workspaceCapacity = workspaceId && body?.code === "CLOUD_WORKSPACE_BUILD_CAPACITY";
     if (!restriction && !capacity && !workspaceCapacity) return false;
     if (openModal.current) return true;
-    const retry = onRetry ? async () => {
-      const result = await onRetry();
-      openModal.current = null;
-      hideModal(id);
-      return result;
+    let retryInFlight: Promise<unknown> | null = null;
+    const retry = onRetry ? () => {
+      // Share one attempt even if two clicks arrive before React disables the
+      // button. A rejection keeps the same modal and configuration available.
+      retryInFlight ??= Promise.resolve()
+        .then(onRetry)
+        .then((result) => {
+          if (openModal.current === id) {
+            openModal.current = null;
+            hideModal(id);
+          }
+          return result;
+        })
+        .finally(() => { retryInFlight = null; });
+      return retryInFlight;
     } : undefined;
     const id = showModal({
       customContent: capacity || workspaceCapacity

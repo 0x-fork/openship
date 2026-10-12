@@ -192,6 +192,12 @@ function SetupForm({
   const name =
     names[identity] ?? (workflow && (standalone || workflow.path === path) ? workflow.name : "");
   const setName = (name: string) => setNames((current) => ({ ...current, [identity]: name }));
+  const initializeName = useCallback((name: string, key: string) => {
+    if (!name) return;
+    setNames((current) =>
+      Object.hasOwn(current, key) ? current : { ...current, [key]: name.slice(0, 100) },
+    );
+  }, []);
   const originals = useRef(
     new Map<
       string,
@@ -284,8 +290,19 @@ function SetupForm({
     loaded.current = { identity, source: value.source, file: value };
     setOriginal(value);
     originals.current.set(identity, value);
-    if (!name && value.plan?.name) setName(value.plan.name);
-  }, [file.data, identity, workflow, source, mode, review, draft.reset, draft.initialized, name]);
+    if (!name && value.plan?.name) initializeName(value.plan.name, identity);
+  }, [
+    file.data,
+    identity,
+    workflow,
+    source,
+    mode,
+    review,
+    draft.reset,
+    draft.initialized,
+    name,
+    initializeName,
+  ]);
   // One shared preview validates both imported YAML and edits to its trigger controls.
   const [debounced, setDebounced] = useState(source);
   useEffect(() => {
@@ -300,8 +317,11 @@ function SetupForm({
   );
   const [lastPlan, setLastPlan] = useState<{ identity: string; plan: ActionPlanView } | null>(null);
   useEffect(() => {
-    if (preview.data && source === debounced) setLastPlan({ identity, plan: preview.data });
-  }, [preview.data, source, debounced, identity]);
+    if (preview.data && source === debounced) {
+      setLastPlan({ identity, plan: preview.data });
+      if (!workflow) initializeName(preview.data.name, identity);
+    }
+  }, [preview.data, source, debounced, identity, workflow, initializeName]);
   const readySource =
     !!source.trim() &&
     source === debounced &&
@@ -313,11 +333,53 @@ function SetupForm({
     (r) => r.kind === "cloud" && r.enabled && runnerIds.includes(r.id),
   );
   const differsFromRepository = original?.identity === identity && original.source !== source;
-  const canRequestSave =
-    readySource && !!selectedPaths.length && !!name.trim() && !!runnerIds.length && !mutation.busy;
   const accessValid =
     validWorkflowAccess(accessPolicy) && (accessPolicy.forks !== "review" || hasIsolated);
-  const canSave = canRequestSave && accessValid;
+  const requirements: Array<{
+    id: string;
+    message: string;
+    step: typeof step;
+    yaml?: boolean;
+    pending?: boolean;
+    retry?: () => void;
+  }> = [];
+  if (!standalone && !repositoryValid)
+    requirements.push({ id: "repository", message: c.requirements.repository, step: "workflow" });
+  else if (!readySource) {
+    const pending = files.loading || file.loading || preview.loading || source !== debounced;
+    requirements.push({
+      id: "source",
+      message: pending
+        ? c.requirements.validating
+        : preview.error
+          ? c.requirements.yaml
+          : c.requirements.source,
+      step: "workflow",
+      yaml: !!source.trim(),
+      pending,
+      retry: preview.error ? preview.refresh : file.error ? file.refresh : undefined,
+    });
+  }
+  if (!selectedPaths.length)
+    requirements.push({ id: "files", message: c.requirements.files, step: "workflow" });
+  if (!name.trim())
+    requirements.push({ id: "name", message: c.requirements.name, step: "workflow" });
+  if (!runnerIds.length)
+    requirements.push({ id: "runners", message: c.requirements.runners, step: "rules" });
+  if (!accessValid)
+    requirements.push({
+      id: "access",
+      message: validWorkflowAccess(accessPolicy) ? a.access.needIsolated : a.access.validation,
+      step: "access",
+    });
+  const canRequestSave = !mutation.busy && !requirements.some((item) => item.id !== "access");
+  const canSave = !mutation.busy && !requirements.length;
+  const continuing = step !== "checks" && (!reviewedCompletion || !runnerIds.length);
+  const visibleRequirements = continuing
+    ? requirements.filter(
+        (requirement) => requirement.step === step || requirement.step === "workflow",
+      )
+    : requirements;
   const savedId = useRef(workflow?.id);
   const chooseStandalone = (value: boolean) => {
     setStandalone(value);
@@ -652,6 +714,7 @@ function SetupForm({
                       <>
                         <ActionField label={a.name}>
                           <Input
+                            id={`${prefix}-name`}
                             variant="filled"
                             value={name}
                             maxLength={100}
@@ -720,6 +783,15 @@ function SetupForm({
                                   <Icon name="refresh" />
                                 </Button>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => chooseStandalone(true)}
+                                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                              >
+                                <Icon name="terminal" className="size-3.5" />
+                                {c.customWorkflow}
+                                <Icon name="arrow-right" className="size-3.5 rtl:rotate-180" />
+                              </button>
                               {repositoryValid && (
                                 <>
                                   <ActionField label={a.ref}>
@@ -1031,14 +1103,52 @@ function SetupForm({
               )}
             </div>
             <div className="shrink-0 space-y-3 p-4 pt-3">
+              {!!visibleRequirements.length && !mutation.busy && (
+                <div
+                  id={`${prefix}-requirements`}
+                  role="status"
+                  aria-live="polite"
+                  className="rounded-xl bg-warning-bg p-3 text-xs text-warning"
+                >
+                  <p className="flex items-center gap-1.5 font-medium">
+                    <Icon name="info" className="size-3.5 shrink-0" />
+                    {c.requirements.title}
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {visibleRequirements.map((requirement) => (
+                      <li key={requirement.id}>
+                        {requirement.pending ? (
+                          <span>{requirement.message}</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              selectWorkflowItem(null);
+                              showSettings(requirement.step);
+                              if (requirement.yaml) setView("yaml");
+                              requirement.retry?.();
+                              if (requirement.id === "name")
+                                requestAnimationFrame(() =>
+                                  document.getElementById(`${prefix}-name`)?.focus(),
+                                );
+                            }}
+                            className="text-start underline underline-offset-4 hover:opacity-80 focus-visible:outline-2 focus-visible:outline-ring"
+                          >
+                            {requirement.message}
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <p className="text-xs leading-relaxed text-muted-foreground">{e.draftHint}</p>
-              {step !== "checks" && (!reviewedCompletion || !runnerIds.length) ? (
+              {continuing ? (
                 <Button
                   className="w-full"
-                  disabled={
-                    !readySource ||
-                    (step === "rules" && !runnerIds.length) ||
-                    (step === "access" && !accessValid)
+                  disabled={!readySource || !!visibleRequirements.length || mutation.busy}
+                  aria-describedby={
+                    visibleRequirements.length ? `${prefix}-requirements` : undefined
                   }
                   onClick={() => {
                     selectWorkflowItem(null);
@@ -1053,7 +1163,10 @@ function SetupForm({
               ) : (
                 <Button
                   className="w-full"
-                  disabled={!canRequestSave}
+                  disabled={!canSave}
+                  aria-describedby={
+                    visibleRequirements.length ? `${prefix}-requirements` : undefined
+                  }
                   onClick={() => void requestSave()}
                 >
                   {mutation.busy

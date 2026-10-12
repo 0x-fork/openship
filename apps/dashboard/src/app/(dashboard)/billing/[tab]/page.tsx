@@ -52,7 +52,7 @@ export default async function BillingTabPage({
   // The shared purchase component creates an explicitly scoped identity on selection.
   if (newServer) return <BillingPageView view={{ ...view, plansOnly: true }}>
     <BillingWorkspaceProvider>
-      <BillingContent layout="purchase" sidebar={null}><ManagedServerPurchase /></BillingContent>
+      <BillingContent layout="purchase" sidebar={null}><ManagedServerPurchase requestedPlanId={typeof query.plan === "string" ? query.plan : undefined} /></BillingContent>
     </BillingWorkspaceProvider>
   </BillingPageView>;
   let result = await getBillingPageState(workspaceId);

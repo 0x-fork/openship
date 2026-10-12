@@ -277,7 +277,18 @@
     "sharedSettings": "As configurações de executores e notificações se aplicam a todos os arquivos selecionados.",
     "saveWorkflows": "Salvar {count} workflows",
     "fileLimit": "Selecione até 50 arquivos por importação.",
-    "triggerScope": "Cada fluxo mantém seus próprios gatilhos. As alterações se aplicam apenas a este arquivo."
+    "triggerScope": "Cada fluxo mantém seus próprios gatilhos. As alterações se aplicam apenas a este arquivo.",
+    "customWorkflow": "Usar um fluxo personalizado",
+    "requirements": {
+      "title": "Conclua a configuração",
+      "repository": "Escolha um repositório ou use um fluxo personalizado",
+      "validating": "Verificando o fluxo…",
+      "yaml": "Confira o erro de validação do fluxo",
+      "source": "Carregue um fluxo ou use um personalizado",
+      "files": "Selecione pelo menos um arquivo de fluxo",
+      "name": "Adicione um nome ao fluxo",
+      "runners": "Selecione pelo menos um executor"
+    }
   },
   "editor": {
     "setupHint": "Crie seu workflow e escolha como e onde ele será executado.",

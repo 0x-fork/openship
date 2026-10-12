@@ -49,7 +49,6 @@ import {
   AppDestinationPicker,
   type AppDestination,
 } from "@/components/deploy/AppDestinationPicker";
-import { workspaceBillingHref } from "@/components/billing/BillingWorkspaceContext";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
 import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import { resolvePublicEndpointHostname } from "@/lib/public-endpoint-payload";
@@ -682,23 +681,28 @@ export default function AppInstallPage() {
       /* resume just won't survive a reload */
     }
   }, [w.installFailed, w.phaseQueued]);
-  const retryDeployment = useCallback(async function retry(): Promise<void> {
+  const resumeDeployment = useCallback(async (): Promise<void> => {
     if (!deploymentId || !projectId || submitting.current) return;
     submitting.current = true;
     setBusy(true);
     try {
       attachDeployment(await deployApi.buildRedeploy(deploymentId), projectId);
-    } catch (error) {
-      if (!showCloudPricing(error, retry)) showToast(getApiErrorMessage(error, w.installFailed), "error");
     } finally {
       submitting.current = false;
       setBusy(false);
     }
-  }, [deploymentId, projectId, attachDeployment, showCloudPricing, showToast, w.installFailed]);
+  }, [deploymentId, projectId, attachDeployment]);
+  const retryDeployment = useCallback(async (): Promise<void> => {
+    try {
+      await resumeDeployment();
+    } catch (error) {
+      if (!showCloudPricing(error, resumeDeployment)) showToast(getApiErrorMessage(error, w.installFailed), "error");
+    }
+  }, [resumeDeployment, showCloudPricing, showToast, w.installFailed]);
   useEffect(() => {
     if (phase !== "error" || !cloudFailure || !deploymentId || shownRecovery.current === deploymentId) return;
-    if (showCloudPricing(cloudFailure, retryDeployment)) shownRecovery.current = deploymentId;
-  }, [phase, cloudFailure, deploymentId, showCloudPricing, retryDeployment]);
+    if (showCloudPricing(cloudFailure, resumeDeployment)) shownRecovery.current = deploymentId;
+  }, [phase, cloudFailure, deploymentId, showCloudPricing, resumeDeployment]);
   const resolveTerminal = async (fallback: {
     ok: boolean;
     message?: string;
@@ -1233,11 +1237,23 @@ export default function AppInstallPage() {
     // failure rejects buildAccess BEFORE that, so `started` stays false and the
     // catch surfaces a toast instead of the full-screen error card.
     let started = false;
-    try {
+    let pid = adoptedProjectId ?? projectId;
+    const startDeploy = async (targetPid: string) => {
+      const dep = await deployApi.buildAccess({
+        projectId: targetPid,
+        serviceDeploymentMode: "services",
+        deployTarget: destination?.deployTarget,
+        serverId: destination?.serverId,
+      });
+      attachDeployment(dep, targetPid);
+      started = true;
+    };
+    // Keep the confirmed routes, configuration and created project in this
+    // continuation. Checkout never remounts the form or creates a second draft.
+    const prepareAndDeploy = async () => {
       // Reuse an adopted / already-created draft; only create when we have none.
       // A fresh install carries the routing IN the create write (one atomic write
       // per service); an existing draft has no create write, so it's re-applied.
-      let pid = adoptedProjectId ?? projectId;
       if (!pid) {
         const res = await appsApi.install({
           templateId: appId,
@@ -1280,33 +1296,6 @@ export default function AppInstallPage() {
         }
       }
 
-      const startDeploy = async (targetPid: string) => {
-        try {
-          const dep = await deployApi.buildAccess({
-            projectId: targetPid,
-            serviceDeploymentMode: "services",
-            // Where to install — reuses the deploy wizard's target selection.
-            // Undefined falls back to the project/meta default server-side.
-            deployTarget: destination?.deployTarget,
-            serverId: destination?.serverId,
-          });
-          attachDeployment(dep, targetPid);
-          started = true;
-        } catch (err) {
-          if (!started && showCloudPricing(err, () => startDeploy(targetPid))) return;
-          const msg = getApiErrorMessage(err, w.installFailed).replace(
-            /^Pre-deploy checks failed:\s*/i,
-            "",
-          );
-          if (started) {
-            setErrorMsg(msg);
-            setPhase("error");
-          } else {
-            showToast(msg, "error");
-          }
-        }
-      };
-
       // Pre-deploy DNS gate (custom domains): surface the records to add
       // or auto-configure BEFORE the deploy so DNS is pointed when the first-deploy
       // SSL attempt runs.
@@ -1334,9 +1323,17 @@ export default function AppInstallPage() {
         }
       }
 
-      await startDeploy(pid);
+      const targetPid = pid;
+      retryAction = () => startDeploy(targetPid);
+      await retryAction();
+    };
+    let retryAction = prepareAndDeploy;
+    try {
+      await prepareAndDeploy();
     } catch (err) {
-      if (!started && showCloudPricing(err)) return;
+      // Retry failures must reject to the recovery modal instead of being
+      // swallowed as success, so a still-blocked deployment stays recoverable.
+      if (!started && showCloudPricing(err, withSubmission(() => retryAction()))) return;
       // Strip the server's "Pre-deploy checks failed:" prefix for a cleaner
       // message. Nothing deployed yet → toast + stay on the form; a deploy that
       // already started keeps the log-bearing error card (with build details).
@@ -1547,7 +1544,7 @@ export default function AppInstallPage() {
         recoveryAction={cloudFailure ? {
           label: cloudFailure.status === 409 ? t.billing.capacityEditor.title : t.billing.deployGate.manageBilling,
           pending: busy,
-          onClick: () => { showCloudPricing(cloudFailure, retryDeployment); },
+          onClick: () => { showCloudPricing(cloudFailure, resumeDeployment); },
         } : undefined}
         onStop={stopInstall}
         isStopping={isStopping}
@@ -1942,37 +1939,25 @@ export default function AppInstallPage() {
             {/* Actions */}
             <div className="space-y-2">
               {configurationNotice}
-              {needsCloudUpgrade ? (
-                <a
-                  href={workspaceBillingHref("/billing/plans", destination?.workspaceId)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-primary"
-                >
-                  {w.upgradePlan}
-                  <UiIcon name="arrow-up-right" className="size-4" />
-                </a>
-              ) : (
-                <button
-                  type="button"
-                  onClick={install}
-                  disabled={
-                    busy ||
-                    !destinationReady ||
-                    checkingCloudCapacity ||
-                    !exposureReady ||
-                    (formValidity ? !formValidity.valid : false)
-                  }
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {busy ? (
-                    <UiIcon name="spinner" className="size-4 animate-spin" />
-                  ) : (
-                    <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
-                  )}
-                  {checkingCloudCapacity ? w.checkingCapacity : w.install}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={install}
+                disabled={
+                  busy ||
+                  !destinationReady ||
+                  checkingCloudCapacity ||
+                  !exposureReady ||
+                  (formValidity ? !formValidity.valid : false)
+                }
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {busy ? (
+                  <UiIcon name="spinner" className="size-4 animate-spin" />
+                ) : (
+                  <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
+                )}
+                {checkingCloudCapacity ? w.checkingCapacity : needsCloudUpgrade ? w.upgradePlan : w.install}
+              </button>
               <button
                 type="button"
                 onClick={goAdvanced}

@@ -261,7 +261,7 @@ export function WorkflowWorkspace({
         role="status"
       >
         <Icon
-          name={invalid ? "alert-circle" : "cursor"}
+          name={invalid ? "alert-circle" : "workflow"}
           className={`size-3.5 shrink-0 ${invalid ? "text-warning" : ""}`}
         />
         <span>

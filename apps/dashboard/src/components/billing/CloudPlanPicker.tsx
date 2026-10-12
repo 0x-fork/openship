@@ -54,7 +54,9 @@ function PlanPicker({
   purchaseDetails,
   purchaseDisabled = false,
   billingState,
+  requestedPlanId,
 }: {
+  requestedPlanId?: string;
   /** Existing server's saved terms, supplied by the billing route. */
   billingState?: BillingState;
   workspaceId?: string;
@@ -115,7 +117,12 @@ function PlanPicker({
   const showOtherPlans = selected?.other ?? false;
   const selectConfiguration = (configuration: "plans" | "custom", other = showOtherPlans) =>
     setChoice({ key: choiceKey, configuration, other });
-  const visiblePlans = compareUpgrades && !showOtherPlans ? choices.upgrades : choices.available;
+  const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
+  const requestedPlan = !hasPlan && choices.available.find((plan) => plan.id === requestedPlanId);
+  const showRequestedPlan = requestedPlan && expandedRequest !== requestedPlanId;
+  const visiblePlans = showRequestedPlan
+    ? [requestedPlan]
+    : compareUpgrades && !showOtherPlans ? choices.upgrades : choices.available;
   const summaryAside = Boolean(
     billingState &&
     hasPlan &&
@@ -241,6 +248,17 @@ function PlanPicker({
 
   const controls = (
     <div className="flex flex-wrap items-center justify-end gap-3">
+      {showRequestedPlan && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          onClick={() => setExpandedRequest(requestedPlanId ?? null)}
+        >
+          {copy.otherPlans}
+        </Button>
+      )}
       {compareUpgrades && (choices.other.length > 0 || showOtherPlans) && (
         <Button
           type="button"
