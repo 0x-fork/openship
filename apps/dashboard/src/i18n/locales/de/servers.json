@@ -1146,6 +1146,29 @@
       "listeners": "Lauschende Ports",
       "general": "Allgemein",
       "ssh": "SSH"
+    },
+    "cloudConnection": {
+      "titles": {
+        "not_connected": "Bei Openship Cloud anmelden",
+        "account_mismatch": "Cloud-Konto des Servers verbinden",
+        "unavailable": "Cloud-Status nicht verfügbar"
+      },
+      "descriptions": {
+        "not_connected": "Dies ist ein gespeicherter Link zu einem Cloud-Server. Melde dich beim zugehörigen Konto und der Organisation an, um den aktuellen Status zu sehen und den Server zu verwalten.",
+        "account_mismatch": "Dieser Server gehört zu einem anderen Cloud-Konto oder einer anderen Organisation. Verbinde das zugehörige Konto.",
+        "unavailable": "Der Server konnte über Cloud nicht verifiziert werden. Aktualisiere seinen Status, bevor du ihn verwaltest."
+      },
+      "labels": {
+        "not_connected": "Cloud-Anmeldung erforderlich",
+        "account_mismatch": "Anderes Cloud-Konto",
+        "unavailable": "Cloud nicht verfügbar"
+      },
+      "signIn": "Bei Cloud anmelden",
+      "connecting": "Verbindung wird hergestellt…"
+    },
+    "controlUnavailable": {
+      "title": "Steuerung nicht verfügbar",
+      "description": "Diese Steuerung ist in der verbundenen Cloud-API-Version noch nicht verfügbar. Openship Cloud muss vor der Nutzung aktualisiert werden."
     }
   }
 }

@@ -1146,6 +1146,29 @@
       "listeners": "待ち受けポート",
       "general": "一般",
       "ssh": "SSH"
+    },
+    "cloudConnection": {
+      "titles": {
+        "not_connected": "Openship Cloud にログイン",
+        "account_mismatch": "サーバー所有者の Cloud アカウントに接続",
+        "unavailable": "Cloud の状態を取得できません"
+      },
+      "descriptions": {
+        "not_connected": "これは Cloud サーバーへの保存済みリンクです。所有者のアカウントと組織にログインすると、現在の状態を確認して管理できます。",
+        "account_mismatch": "このサーバーは別の Cloud アカウントまたは組織に属しています。所有者のアカウントに接続してください。",
+        "unavailable": "Cloud 経由でサーバーを確認できませんでした。管理操作を行う前に状態を更新してください。"
+      },
+      "labels": {
+        "not_connected": "Cloud へのログインが必要",
+        "account_mismatch": "別の Cloud アカウント",
+        "unavailable": "Cloud を利用できません"
+      },
+      "signIn": "Cloud にログイン",
+      "connecting": "接続中…"
+    },
+    "controlUnavailable": {
+      "title": "操作を利用できません",
+      "description": "接続先の Cloud API バージョンはこの操作にまだ対応していません。利用するには Openship Cloud の更新が必要です。"
     }
   }
 }

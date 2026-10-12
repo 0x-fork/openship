@@ -1146,6 +1146,29 @@
       "listeners": "Ports en écoute",
       "general": "Général",
       "ssh": "SSH"
+    },
+    "cloudConnection": {
+      "titles": {
+        "not_connected": "Connectez-vous à Openship Cloud",
+        "account_mismatch": "Connectez le compte Cloud du serveur",
+        "unavailable": "État Cloud indisponible"
+      },
+      "descriptions": {
+        "not_connected": "Ceci est un lien enregistré vers un serveur Cloud. Connectez-vous au compte et à l’organisation propriétaires pour consulter son état actuel et le gérer.",
+        "account_mismatch": "Ce serveur appartient à un autre compte ou à une autre organisation Cloud. Connectez le compte propriétaire pour continuer.",
+        "unavailable": "Le serveur n’a pas pu être vérifié via Cloud. Actualisez son état avant d’utiliser ses commandes."
+      },
+      "labels": {
+        "not_connected": "Connexion Cloud requise",
+        "account_mismatch": "Autre compte Cloud",
+        "unavailable": "Cloud indisponible"
+      },
+      "signIn": "Se connecter à Cloud",
+      "connecting": "Connexion…"
+    },
+    "controlUnavailable": {
+      "title": "Commande indisponible",
+      "description": "Cette commande n’est pas encore disponible dans la version de l’API Cloud connectée. Openship Cloud doit être mis à jour avant son utilisation."
     }
   }
 }
