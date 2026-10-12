@@ -16,12 +16,16 @@ export function projectBuildKitWorker(projectId: string) {
  * the issuing commands, so an old buildx client cannot recreate the worker.
  * Docker, not the exec process group, owns this container. CLI metadata absence
  * is not proof of exit; query the daemon and require confirmed container absence. */
-export async function removeProjectBuildKitWorker(executor: Pick<CommandExecutor, "exec">, projectId: string): Promise<void> {
+export async function removeProjectBuildKitWorker(
+  executor: Pick<CommandExecutor, "exec">,
+  projectId: string,
+): Promise<void> {
   const { builderName, containerName } = projectBuildKitWorker(projectId);
   const list = `docker container ls --all --filter ${sq(`name=^/${containerName}$`)} --format ${sq("{{.Names}}")}`;
   const exists = async () => {
     const names = (await executor.exec(list)).trim().split(/\r?\n/).filter(Boolean);
-    if (names.some(name => name !== containerName)) throw new Error("Docker returned a different build worker identity");
+    if (names.some((name) => name !== containerName))
+      throw new Error("Docker returned a different build worker identity");
     return names.length > 0;
   };
   try {
@@ -36,7 +40,13 @@ export async function removeProjectBuildKitWorker(executor: Pick<CommandExecutor
       if (await exists()) throw new Error("Docker still reports the project build worker");
     }
   } catch (cause) {
-    throw Object.assign(new AppError("Could not confirm the project's BuildKit worker stopped. Build capacity remains reserved until recovery succeeds.",
-      503, "CLOUD_BUILD_WORKER_EXIT_UNCONFIRMED"), { cause });
+    throw Object.assign(
+      new AppError(
+        "Could not confirm the project's BuildKit worker stopped. Build capacity remains reserved until recovery succeeds.",
+        503,
+        "CLOUD_BUILD_WORKER_EXIT_UNCONFIRMED",
+      ),
+      { cause },
+    );
   }
 }

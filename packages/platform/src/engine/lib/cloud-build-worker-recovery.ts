@@ -9,16 +9,36 @@ import { cloudBuildActivityContext } from "./cloud-build-activity-context";
 export async function verifyCloudBuildWorkerStopped(): Promise<void> {
   const state = cloudBuildActivityContext.getStore();
   if (!state?.active)
-    throw new AppError("Build worker recovery requires an active Cloud build activity", 409, "CLOUD_BUILD_ACTIVITY_CHANGED");
+    throw new AppError(
+      "Build worker recovery requires an active Cloud build activity",
+      409,
+      "CLOUD_BUILD_ACTIVITY_CHANGED",
+    );
   const { identity } = state;
   const [row, binding] = await Promise.all([
     repos.cloudBuildActivity.find(identity),
-    repos.cloudDockerWorkspace.find({ ownerWorkspaceId: identity.workspaceId }, identity.organizationId),
+    repos.cloudDockerWorkspace.find(
+      { ownerWorkspaceId: identity.workspaceId },
+      identity.organizationId,
+    ),
   ]);
-  if (!row || row.ownerToken !== state.ownerToken || row.finishedAt || binding?.workspaceId !== row.providerWorkspaceId)
-    throw new AppError("The build's Cloud server binding or execution owner changed", 409, "CLOUD_SERVER_IDENTITY_MISMATCH");
+  if (
+    !row ||
+    row.ownerToken !== state.ownerToken ||
+    row.finishedAt ||
+    binding?.workspaceId !== row.providerWorkspaceId
+  )
+    throw new AppError(
+      "The build's Cloud server binding or execution owner changed",
+      409,
+      "CLOUD_SERVER_IDENTITY_MISMATCH",
+    );
   if (row.commands.length)
-    throw new AppError("Recover the build commands before removing their worker", 503, "CLOUD_COMMAND_EXIT_UNCONFIRMED");
+    throw new AppError(
+      "Recover the build commands before removing their worker",
+      503,
+      "CLOUD_COMMAND_EXIT_UNCONFIRMED",
+    );
   const { openCloudWorkspaceExecutor } = await import("./cloud-workspace-host");
   const executor = await openCloudWorkspaceExecutor(identity.organizationId, identity.workspaceId);
   try {

@@ -4,12 +4,12 @@ These limits apply to new Cloud offers (offer version 11). Existing purchased
 offers retain their saved limits. Self-hosted installations do not use these
 Cloud quota gates.
 
-| Plan | Monthly price | CPU | RAM | Disk | Projects/apps | Running services | Build admission ceiling |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Hobby | $5 | 1 vCPU | 2 GB | 40 GB | 3 | 4 | 1 |
-| Starter | $20 | 2 vCPU | 8 GB | 128 GB | 10 | 15 | 4 |
-| Pro | $39 | 4 vCPU | 16 GB | 250 GB | 25 | 40 | 8 |
-| Scale | $99 | 8 vCPU | 32 GB | 600 GB | 100 | 100 | 20 |
+| Plan    | Monthly price | CPU    | RAM   | Disk   | Projects/apps | Running services | Build admission ceiling |
+| ------- | ------------- | ------ | ----- | ------ | ------------- | ---------------- | ----------------------- |
+| Hobby   | $5            | 1 vCPU | 2 GB  | 40 GB  | 3             | 4                | 1                       |
+| Starter | $20           | 2 vCPU | 8 GB  | 128 GB | 10            | 15               | 4                       |
+| Pro     | $39           | 4 vCPU | 16 GB | 250 GB | 25            | 40               | 8                       |
+| Scale   | $99           | 8 vCPU | 32 GB | 600 GB | 100           | 100              | 20                      |
 
 Starter is the featured plan. Projects/apps share one project allowance; services
 share the subscribed server's capacity. Container resource ceilings do not
