@@ -1,4 +1,10 @@
 {
+  "cloudComingSoon": {
+    "title": "Managed email",
+    "badge": "Coming soon",
+    "description": "Managed email on Openship Cloud is coming soon. Cloud server plans are for hosting applications and do not provision a mail server.",
+    "selfHosted": "Self-hosted email is available on your own server through a self-hosted Openship installation."
+  },
   "page": {
     "title": "Email Server",
     "subtitle": "Set up a self-hosted mail server with a few clicks",

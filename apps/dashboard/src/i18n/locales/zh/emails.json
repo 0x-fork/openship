@@ -1,4 +1,10 @@
 {
+  "cloudComingSoon": {
+    "title": "托管邮件",
+    "badge": "即将推出",
+    "description": "Openship Cloud 托管邮件即将推出。Cloud 服务器套餐用于托管应用，不会创建邮件服务器。",
+    "selfHosted": "您可以通过自托管 Openship 在自己的服务器上运行邮件服务。"
+  },
   "page": {
     "title": "邮件服务器",
     "subtitle": "几次点击即可搭建自托管邮件服务器",
