@@ -255,6 +255,7 @@ beforeEach(() => {
     const value = parse(yaml);
     return {
       ...plan,
+      name: value.name ?? "Workflow",
       jobs: Object.entries(value.jobs).map(([id, raw]) => {
         const job = raw as Record<string, unknown>;
         return {
@@ -288,6 +289,132 @@ afterEach(async () => {
 });
 
 describe("shared workflow setup", () => {
+  it("creates a custom workflow with its YAML name without requiring a hidden name edit", async () => {
+    await render();
+    await click("Use a custom workflow instead");
+    await preview();
+    expect(button("Standalone").getAttribute("aria-selected")).toBe("true");
+    expect(host.querySelector<HTMLInputElement>('input[id$="-name"]')!.value).toBe("Automation");
+    await click("Continue");
+    await selectRunner();
+    await click("Continue");
+    await click("Continue");
+    expect(button("Save workflow").disabled).toBe(false);
+    await click("Save workflow");
+    expect(h.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Automation",
+        owner: null,
+        repo: null,
+        source: expect.stringContaining("name: Automation"),
+        runnerIds: ["linux"],
+        accessPolicy: { audience: "owner", users: [], approval: "required", forks: "deny" },
+      }),
+      undefined,
+    );
+    expect(h.onSaved).toHaveBeenCalledOnce();
+    expect(h.importWorkflows).not.toHaveBeenCalled();
+  });
+
+  it("explains a cleared name on Checks and returns to its input without overwriting the edit", async () => {
+    await render();
+    await click("Use a custom workflow instead");
+    await preview();
+    await fill("Name", "");
+    await click("YAML");
+    await editYaml(
+      "name: Another name\non: workflow_dispatch\njobs:\n  run:\n    runs-on: linux\n    steps:\n      - run: echo changed\n",
+    );
+    expect(host.querySelector<HTMLInputElement>('input[id$="-name"]')!.value).toBe("");
+    await click("Run settings");
+    await selectRunner();
+    await click("Checks");
+    const save = button("Save workflow");
+    expect(save.disabled).toBe(true);
+    expect(document.getElementById(save.getAttribute("aria-describedby")!)!.textContent).toContain(
+      "Add a workflow name",
+    );
+    await click("Add a workflow name");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30);
+    });
+    expect(button("Workflow").getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(host.querySelector('input[id$="-name"]'));
+    await fill("Name", "My custom workflow");
+    await click("Checks");
+    expect(button("Save workflow").disabled).toBe(false);
+    await click("Save workflow");
+    expect(h.save.mock.calls[0]![0].name).toBe("My custom workflow");
+  });
+
+  it("explains missing runners on Checks and links back to destination selection", async () => {
+    await render();
+    await click("Standalone");
+    await preview();
+    await click("Checks");
+    expect(button("Save workflow").disabled).toBe(true);
+    await click("Select at least one runner");
+    expect(button("Run settings").getAttribute("aria-selected")).toBe("true");
+    await selectRunner();
+    expect(host.textContent).not.toContain("Select at least one runner");
+    expect(button("Save workflow").disabled).toBe(false);
+  });
+
+  it("explains an incomplete repository even when Run settings is opened directly", async () => {
+    await render();
+    await click("Run settings");
+    expect(button("Continue").disabled).toBe(true);
+    await click("Choose a repository or use a custom workflow");
+    expect(button("Workflow").getAttribute("aria-selected")).toBe("true");
+    expect(button("Use a custom workflow instead")).toBeDefined();
+  });
+
+  it("requires an included file and restores saving after the checklist is corrected", async () => {
+    await selectFiles();
+    await click("Workflow");
+    await click("Clear");
+    await click("Checks");
+    expect(button("Save workflow").disabled).toBe(true);
+    await click("Select at least one workflow file");
+    expect(button("Workflow").getAttribute("aria-selected")).toBe("true");
+    await click("Select all");
+    expect(button("Save 2 workflows").disabled).toBe(false);
+    await click("Save 2 workflows");
+    expect(h.importWorkflows).toHaveBeenCalledOnce();
+  });
+
+  it("keeps save blocked while checking a changed draft and exposes a retryable validation error", async () => {
+    await render();
+    await click("Standalone");
+    await preview();
+    await click("Run settings");
+    await selectRunner();
+    await click("Checks");
+    await click("YAML");
+    let rejectPreview!: (error: Error) => void;
+    h.preview.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectPreview = reject;
+        }),
+    );
+    await editYaml(
+      "name: Automation\non: workflow_dispatch\njobs:\n  run:\n    runs-on: linux\n    steps:\n      - run: echo changed\n",
+    );
+    expect(button("Save workflow").disabled).toBe(true);
+    expect(host.textContent).toContain("Checking workflow…");
+    await act(async () => rejectPreview(new Error("Validation service unavailable")));
+    expect(host.textContent).toContain("Validation service unavailable");
+    expect(button("Save workflow").disabled).toBe(true);
+    expect(h.save).not.toHaveBeenCalled();
+    await click("Review the workflow validation error");
+    expect(button("Workflow").getAttribute("aria-selected")).toBe("true");
+    expect(button("YAML").getAttribute("aria-selected")).toBe("true");
+    expect(button("Save workflow").disabled).toBe(false);
+    await click("Save workflow");
+    expect(h.save).toHaveBeenCalledOnce();
+  });
+
   it("keeps the current project implicit and creates a required runner without leaving the draft", async () => {
     h.runners.mockResolvedValue([]);
     await act(async () =>
@@ -838,7 +965,8 @@ describe("shared workflow setup", () => {
     await chooseAccess("Who can run", "Selected GitHub users");
     expect(button("Continue").disabled).toBe(true);
     await click("Checks");
-    await click("Save workflow");
+    expect(button("Save workflow").disabled).toBe(true);
+    await click("Add 1–30 valid GitHub usernames.");
     expect(button("Access").getAttribute("aria-selected")).toBe("true");
     expect(h.importWorkflows).not.toHaveBeenCalled();
     await fill("GitHub users", "@octocat");
