@@ -34,6 +34,7 @@
     "local": "Yerel"
   },
   "card": {
+    "more": "Diğer",
     "liveVersion": "Canlı sürüm v{version}",
     "appBadge": "Uygulama",
     "sourceLocal": "Yerel",

@@ -34,6 +34,7 @@
     "local": "ローカル"
   },
   "card": {
+    "more": "その他",
     "liveVersion": "稼働中のバージョン v{version}",
     "sourceLocal": "ローカル",
     "services": "サービス",

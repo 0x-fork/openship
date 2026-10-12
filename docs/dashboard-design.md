@@ -363,6 +363,22 @@ check retryable before starting the move.
   Connected local installations use the person's own verified Cloud account and show its
   email. A shared team connection never exposes its owner's private inbox to teammates;
   offer a Cloud sign-in link when the current person has no personal link.
+- Backups uses a compact storage summary above full-width history and destination sections.
+  Keep secondary descriptions quiet, and stack history rows on phones while retaining dates,
+  sizes, payloads and restore/detail actions. Destination detail pages retain their sidebar summary.
+- Keep project grid cards within their original compact footprint. Put identity and domain
+  beside the shared More dropdown, followed by a quiet status, destination and timestamp row.
+  Keep service, deployment and log shortcuts left-aligned at the bottom as content-width
+  `bg-muted` controls, which lift in dim/dark themes rather than using the recessed input background.
+  Live sits at the bottom-right with the existing `ServiceStatusIndicator` hollow ring and muted text, without a filled pill; keep attention states
+  prominent and preserve their action links. Give More menu items their shared icons.
+  Show Services only when the persisted count is positive; never invent a count.
+  Keep Projects loading inside the same search/view layout, with skeletons matching the
+  selected grid or list view and the grid’s actual column widths and card spacing. Reserve
+  the same responsive 340px right column while loading, with filter and guidance placeholders.
+  Use flat theme surfaces and color-only hover feedback, with no drop shadows, elevation
+  or hover movement. Project names use 16px text, domains 14px, and metadata/status 12px;
+  do not shrink metadata to 10–11px.
 - Projects and catalog Apps have separate top-level sidebar entries and lists, backed by the
   same project data and status handling. Apps uses a compact installed list with Home's
   app illustration and a link to the full catalog alongside it. The illustration's icons
