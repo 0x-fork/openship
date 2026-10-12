@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
@@ -45,6 +45,7 @@ export function AppDirectory({
 }) {
   const [category, setCategory] = useState(categoryValue(initialCategory));
   const [query, setQuery] = useState(initialQuery);
+  const directoryRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const restore = () => {
       const params = new URLSearchParams(window.location.search);
@@ -64,8 +65,18 @@ export function AppDirectory({
     window.history.replaceState(null, "", url);
   };
   const chooseCategory = (value: string) => {
+    const directory = directoryRef.current;
+    const returnToResults =
+      directory &&
+      directory.getBoundingClientRect().top <
+        parseFloat(getComputedStyle(directory).scrollMarginTop);
     setCategory(value);
     updateUrl(value, query);
+    if (returnToResults) {
+      requestAnimationFrame(() =>
+        directoryRef.current?.scrollIntoView({ block: "start", behavior: "instant" }),
+      );
+    }
   };
   const search = (value: string) => {
     setQuery(value);
@@ -79,7 +90,7 @@ export function AppDirectory({
   const visible = filterMarketplaceApps(apps, category, query);
 
   return (
-    <div className="marketplace-directory">
+    <div className="marketplace-directory" ref={directoryRef}>
       <aside className="marketplace-categories">
         <p className="marketplace-label">Browse by category</p>
         <div className="marketplace-category-list" role="group" aria-label="App categories">
