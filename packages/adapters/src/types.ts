@@ -650,12 +650,14 @@ export interface ProxyRouteConfig extends BaseRouteConfig {
   /** Target container IP + port */
   targetUrl: string;
   staticRoot?: never;
+  notFound?: never;
 }
 
 export interface StaticRouteConfig extends BaseRouteConfig {
   /** Absolute path on the target machine to serve via Nginx root. */
   staticRoot: string;
   targetUrl?: never;
+  notFound?: never;
   /**
    * This root is being ADOPTED from a proxy we're taking over, not produced by an
    * Openship build.
@@ -672,7 +674,14 @@ export interface StaticRouteConfig extends BaseRouteConfig {
   staticRootAdopted?: boolean;
 }
 
-export type RouteConfig = ProxyRouteConfig | StaticRouteConfig;
+/** Only explicit proxy locations serve traffic; unmatched paths return 404. */
+export interface PathRouteConfig extends BaseRouteConfig {
+  notFound: true;
+  targetUrl?: never;
+  staticRoot?: never;
+}
+
+export type RouteConfig = ProxyRouteConfig | StaticRouteConfig | PathRouteConfig;
 
 /** An operator-supplied certificate to install verbatim (no ACME). */
 export interface ManualCert {

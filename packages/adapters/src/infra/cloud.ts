@@ -297,7 +297,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
    * overwriting the workspace API's single custom-domain binding. */
   async publishRoute(
     hostname: string,
-    hostPort: number,
+    hostPort: number | undefined,
     custom: boolean,
     input?: RoutesInput,
   ): Promise<void> {
@@ -331,10 +331,11 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         hostPort === CLOUD_DOCKER_BRIDGE_PORT)
     )
       throw new Error("Invalid cloud routing port");
-    if (hostPort === undefined && !staticRoot)
+    const pathsOnly = hostPort === undefined && !staticRoot;
+    if (pathsOnly && !input?.routes.some((rule) => rule.action.kind === "proxy"))
       throw new Error("A route needs a process or a static release");
     const slug = this.routeSlug(hostname, custom);
-    const routes = input ?? {
+    let routes = input ?? {
       routes: [
         {
           match: { path: "/", type: "prefix" as const },
@@ -342,6 +343,12 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         },
       ],
     };
+    // routes.set uses a static export only when `static` is supplied. Keep
+    // paths-only tables free of that fallback and explicitly disable SPA misses.
+    if (pathsOnly) {
+      if (routes.static) throw new Error("Path-only routes cannot have a static fallback");
+      routes = { ...routes, spa: false };
+    }
     await this.assertRouteTargets(routes, hostPort, staticRoot ? slug : undefined);
     const path = `${this.routeRoot}/${slug}`;
     let page;

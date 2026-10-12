@@ -4036,8 +4036,13 @@ async function deployComposeServicesUnlocked(
       // A redirect only goes live when its target is a hostname this project actually
       // routes — the same gate, and the same hostname set, the live re-apply applies.
       const projectLevelHostnames = projectLevelRoutes.map((r) => r.hostname);
+      const pathOnlyHostnames = new Set((project.compositeRoutes ?? [])
+        .filter(route => !route.rootServiceId).map(route => route.hostname.toLowerCase()));
       for (const route of projectLevelRoutes) {
         const routeKey = route.hostname.toLowerCase();
+        // The topology below owns these domains. A project port default must
+        // never create a temporary catch-all for a path-only hostname.
+        if (pathOnlyHostnames.has(routeKey)) continue;
         // A hostname a SERVICE already registered this pass is that service's, not the
         // project's — never overwrite the more specific answer with a broader one.
         if (seenRouteDomains.has(routeKey) || route.targetPort === undefined) continue;
@@ -4292,7 +4297,7 @@ async function deployComposeServicesUnlocked(
             reg.hostname,
             routeContext.domainByHostname.get(reg.hostname.toLowerCase()),
           ),
-          targetUrl: reg.targetUrl!,
+          ...(reg.notFound ? { notFound: true as const } : { targetUrl: reg.targetUrl! }),
           ...routingFields,
           ...(proxyLocations.length ? { proxyLocations } : {}),
           ...(routeContext.proxy ? { proxy: routeContext.proxy } : {}),
