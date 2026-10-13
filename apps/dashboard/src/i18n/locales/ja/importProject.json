@@ -360,6 +360,17 @@
       "skipError": "この警告を非表示にできませんでした。もう一度お試しください。"
     }
   },
+  "deploymentHealth": {
+    "recheck": "状態を再確認",
+    "checking": "確認中…",
+    "healthy": "サービスは正常です",
+    "atDeployment": "デプロイ時の警告",
+    "currentHealth": "現在のサービス状態",
+    "startupHint": "起動中なら、少し待ってから再確認してください。再起動やエラーが続く場合はログで原因を確認してください。",
+    "viewLogs": "ログを見る",
+    "unavailable": "状態を確認できませんでした。サーバーの接続が回復したら再確認してください。",
+    "historical": "このデプロイは現在稼働していません。プロジェクトを開いて現在のサービスを確認してください。"
+  },
   "composeDeployment": {
     "title": {
       "cancelled": "デプロイをキャンセルしました",

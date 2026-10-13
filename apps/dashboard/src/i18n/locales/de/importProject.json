@@ -360,6 +360,17 @@
       "skipError": "Dieser Hinweis konnte nicht ausgeblendet werden. Bitte erneut versuchen."
     }
   },
+  "deploymentHealth": {
+    "recheck": "Zustand erneut prüfen",
+    "checking": "Wird geprüft…",
+    "healthy": "Die Dienste sind gesund",
+    "atDeployment": "Warnung beim Deployment",
+    "currentHealth": "Aktueller Dienststatus",
+    "startupHint": "Wenn die App noch startet, warten Sie und prüfen Sie erneut. Bei Neustarts oder Fehlern öffnen Sie die Logs, um die Ursache zu finden.",
+    "viewLogs": "Logs anzeigen",
+    "unavailable": "Der Zustand konnte nicht geprüft werden. Versuchen Sie es erneut, wenn der Server erreichbar ist.",
+    "historical": "Dieses Deployment ist nicht mehr aktiv. Öffnen Sie das Projekt für die aktuellen Dienste."
+  },
   "composeDeployment": {
     "title": {
       "cancelled": "Bereitstellung abgebrochen",

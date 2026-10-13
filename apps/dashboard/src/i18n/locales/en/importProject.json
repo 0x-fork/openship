@@ -374,6 +374,17 @@
     "detailDomains": "Domains",
     "detailDomain": "Domain"
   },
+  "deploymentHealth": {
+    "recheck": "Recheck health",
+    "checking": "Checking…",
+    "healthy": "Services are healthy",
+    "atDeployment": "Warning recorded at deployment",
+    "currentHealth": "Current service status",
+    "startupHint": "If the app is still starting, wait a moment and recheck. If it keeps restarting or reports an error, open its logs to find the cause.",
+    "viewLogs": "View logs",
+    "unavailable": "Current health could not be verified. Recheck when the server is reachable.",
+    "historical": "This is no longer the active deployment. Open the project to check its current services."
+  },
   "composeDeployment": {
     "title": {
       "cancelled": "Deployment Cancelled",

@@ -1624,6 +1624,7 @@ export interface LiveServiceContainer {
    *  out-of-band recreate. */
   containerId: string | null;
   status: ServiceContainerState;
+  health?: "healthy" | "starting" | "unhealthy" | null;
   ip: string | null;
   hostPort: number | null;
   imageRef: string | null;
@@ -1738,6 +1739,7 @@ export async function getActiveServiceContainers(
                   serviceName: svc.name,
                   containerId: m?.containerId ?? null,
                   status: m?.status ?? "stopped",
+                  health: m?.health ?? null,
                   ip: m?.ip ?? null,
                   hostPort: m?.hostPort ?? hint?.hostPort ?? null,
                   imageRef: m?.image ?? hint?.imageRef ?? null,
