@@ -207,6 +207,10 @@ keeps the rest of the command unchanged.
 }
 ```
 
+Warming runs before the server through `&&`. A failing `php artisan optimize`
+short-circuits the chain, so the web role never boots. Opt in only when the
+command succeeds reliably in your runtime environment.
+
 ### Override the web command directly
 
 You can warm the web role without the flag. Override `startCommand` and keep the
