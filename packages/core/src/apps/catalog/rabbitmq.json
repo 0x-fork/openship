@@ -88,7 +88,8 @@
       }
     ],
     "guide": {
-      "defaultMode": "public"
+      "defaultMode": "internal",
+      "useHint": "Use the private connection URL for projects on this server, or Open in localhost for a client on your machine."
     },
     "firstLogin": {
       "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
