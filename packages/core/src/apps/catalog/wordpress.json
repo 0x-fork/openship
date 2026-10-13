@@ -256,5 +256,6 @@
   "minResources": {
     "cpuCores": 1.0,
     "memoryMb": 1280
-  }
+  },
+  "tags": ["cms", "blog", "website", "ecommerce"]
 }

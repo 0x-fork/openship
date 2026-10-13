@@ -16,11 +16,11 @@
       "restart": "unless-stopped",
       "image": "postgres:17.11-alpine",
       "environment": {
-        "POSTGRES_USER": "odoo",
+        "POSTGRES_USER": "postgres",
         "POSTGRES_DB": "postgres"
       },
       "volumes": ["odoo_db_data:/var/lib/postgresql/data"],
-      "secretEnv": ["POSTGRES_PASSWORD"],
+      "secretEnv": ["POSTGRES_PASSWORD", "OPENSHIP_APP_PASSWORD"],
       "healthcheck": {
         "test": ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""],
         "interval": "10s",
@@ -78,10 +78,9 @@
     {
       "service": "odoo-db",
       "key": "POSTGRES_PASSWORD",
-      "label": "Database password",
+      "label": "Database administrator password",
       "generate": "secret",
-      "secret": true,
-      "generateGroup": "odoo-db"
+      "secret": true
     },
     {
       "service": "odoo",
@@ -111,6 +110,14 @@
       "label": "Admin email",
       "default": "admin@example.com",
       "required": true
+    },
+    {
+      "service": "odoo-db",
+      "key": "OPENSHIP_APP_PASSWORD",
+      "label": "Application database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "odoo-db"
     }
   ],
   "management": {
@@ -216,8 +223,9 @@
   "files": [
     {
       "service": "odoo-db",
-      "path": "/docker-entrypoint-initdb.d/openship-role.sql",
-      "content": "ALTER ROLE odoo NOSUPERUSER CREATEDB NOCREATEROLE;\n"
+      "path": "/docker-entrypoint-initdb.d/openship-role.sh",
+      "content": "#!/bin/sh\nset -eu\npsql -v ON_ERROR_STOP=1 --username \"$POSTGRES_USER\" --dbname \"$POSTGRES_DB\" --set app_password=\"$OPENSHIP_APP_PASSWORD\" <<'SQL'\nCREATE ROLE odoo WITH LOGIN NOSUPERUSER NOCREATEROLE CREATEDB PASSWORD :'app_password';\nSQL\n"
     }
-  ]
+  ],
+  "tags": ["erp", "crm", "sales", "inventory", "business"]
 }

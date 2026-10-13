@@ -184,5 +184,6 @@
       "path": "/var/www/html/plugins-enabled/openship-servers.php",
       "content": "<?php\nrequire_once __DIR__ . '/../plugins/login-servers.php';\nreturn new AdminerLoginServers(['MariaDB' => ['server' => 'mariadb', 'driver' => 'server']]);\n"
     }
-  ]
+  ],
+  "tags": ["mysql", "sql", "adminer", "relational"]
 }

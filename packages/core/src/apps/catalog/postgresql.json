@@ -216,5 +216,6 @@
   "minResources": {
     "cpuCores": 1.0,
     "memoryMb": 1024
-  }
+  },
+  "tags": ["postgres", "sql", "pgadmin", "relational"]
 }

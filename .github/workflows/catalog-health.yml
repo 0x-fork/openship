@@ -87,3 +87,11 @@ jobs:
       - uses: docker/setup-buildx-action@v4
       - name: Test the canonical stack and generated credentials
         run: bun scripts/smoke-catalog-apps.ts ${{ matrix.app }}
+      - name: Save sanitized startup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: catalog-${{ matrix.app }}-${{ matrix.arch }}-diagnostics
+          path: /tmp/openship-catalog-smoke*failure.log
+          if-no-files-found: ignore
+          retention-days: 5

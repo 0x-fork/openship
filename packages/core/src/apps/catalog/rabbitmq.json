@@ -141,5 +141,6 @@
   "minResources": {
     "cpuCores": 1,
     "memoryMb": 768
-  }
+  },
+  "tags": ["amqp", "queue", "messaging", "workers"]
 }

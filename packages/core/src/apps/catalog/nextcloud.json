@@ -271,5 +271,6 @@
   "minResources": {
     "cpuCores": 1.5,
     "memoryMb": 1920
-  }
+  },
+  "tags": ["files", "sync", "storage", "collaboration"]
 }
