@@ -22,7 +22,7 @@ daemon. `CATALOG_TEST_PLATFORM` can select either architecture.
 WordPress, Odoo Community, PostgreSQL + pgAdmin, MariaDB + Adminer, RabbitMQ,
 Authentik, and Nextcloud have native AMD64 and ARM64 smoke jobs as well. They
 materialize the canonical images, inline builds, environment, volumes, mounted
-files, and required setup hooks. Tests exercise application access and generated
+files with the engine's read-only binding semantics, and required setup hooks. Tests exercise application access and generated
 credentials, write data, replace all containers, and verify persistence. Authentik
 checks the stored administrator password through its authentication backend and
 the public login page; it does not drive a browser SSO integration.

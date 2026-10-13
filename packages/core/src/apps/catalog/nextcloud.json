@@ -31,7 +31,7 @@
       "resources": {
         "cpuCores": 0.25,
         "memoryMb": 512,
-        "diskMb": 8192
+        "diskMb": 4096
       }
     },
     {
@@ -87,7 +87,7 @@
       "resources": {
         "cpuCores": 0.75,
         "memoryMb": 1024,
-        "diskMb": 16384
+        "diskMb": 8192
       }
     },
     {
@@ -244,12 +244,7 @@
   "files": [
     {
       "service": "nextcloud",
-      "path": "/var/www/html/config/openship.config.php",
-      "content": "<?php\n$url = parse_url(getenv('OPENSHIP_PUBLIC_URL'));\n$host = $url['host'] ?? 'localhost';\n$authority = $host . (isset($url['port']) ? ':' . $url['port'] : '');\n$CONFIG = [\n  'trusted_domains' => [$host],\n  'overwritehost' => $authority,\n  'overwriteprotocol' => $url['scheme'] ?? 'http',\n  'overwrite.cli.url' => getenv('OPENSHIP_PUBLIC_URL'),\n];\n"
-    },
-    {
-      "service": "nextcloud-cron",
-      "path": "/var/www/html/config/openship.config.php",
+      "path": "/usr/src/nextcloud/config/openship.config.php",
       "content": "<?php\n$url = parse_url(getenv('OPENSHIP_PUBLIC_URL'));\n$host = $url['host'] ?? 'localhost';\n$authority = $host . (isset($url['port']) ? ':' . $url['port'] : '');\n$CONFIG = [\n  'trusted_domains' => [$host],\n  'overwritehost' => $authority,\n  'overwriteprotocol' => $url['scheme'] ?? 'http',\n  'overwrite.cli.url' => getenv('OPENSHIP_PUBLIC_URL'),\n];\n"
     }
   ],

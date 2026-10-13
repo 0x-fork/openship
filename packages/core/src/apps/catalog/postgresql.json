@@ -31,7 +31,7 @@
       "resources": {
         "cpuCores": 0.5,
         "memoryMb": 512,
-        "diskMb": 8192
+        "diskMb": 4096
       }
     },
     {
@@ -193,7 +193,8 @@
           "required": true,
           "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
           "patternError": "Enter an email address.",
-          "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+          "help": "Used for the initial administrator. Manage existing accounts in the app control panel.",
+          "fullWidth": true
         }
       ]
     }

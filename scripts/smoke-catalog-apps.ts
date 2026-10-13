@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { promisify } from "node:util";
@@ -57,6 +57,7 @@ async function smokeApp(app: AppTemplate) {
   const dir = await mkdtemp(join(tmpdir(), prefix));
   const names = new Map(app.services!.map((s) => [s.name, prefix + "-" + s.name]));
   const volumes = new Map<string, string>();
+  const configVolumes = new Map<string, string>();
   const images = new Map<string, string>();
   const environment = new Map<string, Record<string, string>>();
   const urls = new Map<string, string>();
@@ -170,39 +171,57 @@ async function smokeApp(app: AppTemplate) {
       ] as const)
         if (value) args.push(flag, value);
     }
+    const files = (app.files ?? []).filter((f) => f.service === s.name);
+    if (files.length) {
+      const fileRoot = join(dir, "config", s.name);
+      const volume = configVolumes.get(s.name) ?? prefix + "-" + s.name + "-config";
+      if (!configVolumes.has(s.name)) {
+        await docker("volume", "create", "--label", "openship.test=catalog-apps", volume);
+        configVolumes.set(s.name, volume);
+      }
+      const helper = prefix + "-" + s.name + "-config-writer";
+      try {
+        await docker(
+          "create",
+          "--name",
+          helper,
+          "--label",
+          "openship.test=catalog-apps",
+          "--network",
+          "none",
+          "--entrypoint",
+          "sh",
+          "--mount",
+          "type=volume,source=" + volume + ",target=/config",
+          images.get(s.name)!,
+        );
+        for (const [index, file] of files.entries()) {
+          assert(
+            file.path.startsWith("/") && !file.path.split("/").includes(".."),
+            "Unsafe catalog file path",
+          );
+          const path = join(fileRoot, String(index));
+          await mkdir(fileRoot, { recursive: true });
+          await writeFile(path, resolve(file.content), { mode: 0o644 });
+          await chmod(path, 0o644);
+          await docker("cp", path, helper + ":/config/" + index);
+        }
+      } finally {
+        await docker("rm", "-f", "-v", helper).catch(() => {});
+      }
+      // Mirror the engine's individual read-only file binds. Staging in a
+      // daemon volume works with local Linux, Colima, and remote test daemons.
+      const source = await docker("volume", "inspect", "--format", "{{.Mountpoint}}", volume);
+      for (const [index, file] of files.entries())
+        args.push(
+          "--mount",
+          "type=bind,source=" + source + "/" + index + ",target=" + file.path + ",readonly",
+        );
+    }
     args.push(images.get(s.name)!);
     if (s.commandArgv) args.push(...s.commandArgv);
     else if (s.command) args.push("sh", "-c", s.command);
     await docker(...args);
-    const files = (app.files ?? []).filter((f) => f.service === s.name);
-    if (files.length) {
-      const fileRoot = join(dir, "config", s.name);
-      await docker(
-        "run",
-        "--rm",
-        "--network",
-        "none",
-        "--volumes-from",
-        names.get(s.name)!,
-        "--user",
-        "0",
-        "--entrypoint",
-        "sh",
-        images.get(s.name)!,
-        "-c",
-        "mkdir -p " + files.map((file) => quote(dirname(file.path))).join(" "),
-      );
-      for (const file of files) {
-        assert(
-          file.path.startsWith("/") && !file.path.split("/").includes(".."),
-          "Unsafe catalog file path",
-        );
-        const path = join(fileRoot, file.path);
-        await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, resolve(file.content));
-        await docker("cp", path, names.get(s.name)! + ":" + file.path);
-      }
-    }
   };
   const start = async () => {
     for (const s of app.services!) {
@@ -547,6 +566,8 @@ async function smokeApp(app: AppTemplate) {
     for (const name of [...names.values()].reverse())
       await docker("rm", "-f", name).catch(() => {});
     for (const volume of volumes.values()) await docker("volume", "rm", volume).catch(() => {});
+    for (const volume of configVolumes.values())
+      await docker("volume", "rm", volume).catch(() => {});
     await docker("network", "rm", prefix).catch(() => {});
     for (const image of images.values())
       if (image.startsWith(prefix + "/")) await docker("image", "rm", image).catch(() => {});

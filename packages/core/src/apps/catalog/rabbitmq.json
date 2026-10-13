@@ -39,7 +39,7 @@
       "resources": {
         "cpuCores": 1,
         "memoryMb": 768,
-        "diskMb": 8192
+        "diskMb": 4096
       }
     }
   ],

@@ -5165,7 +5165,7 @@
           "resources": {
             "cpuCores": 0.5,
             "memoryMb": 512,
-            "diskMb": 8192
+            "diskMb": 4096
           }
         },
         {
@@ -5420,7 +5420,8 @@
               "required": true,
               "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
               "patternError": "Enter an email address.",
-              "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+              "help": "Used for the initial administrator. Manage existing accounts in the app control panel.",
+              "fullWidth": true
             }
           ]
         }
@@ -5488,7 +5489,7 @@
           "resources": {
             "cpuCores": 0.75,
             "memoryMb": 512,
-            "diskMb": 8192
+            "diskMb": 4096
           }
         },
         {
@@ -5702,7 +5703,7 @@
           "resources": {
             "cpuCores": 0.25,
             "memoryMb": 512,
-            "diskMb": 8192
+            "diskMb": 4096
           }
         },
         {
@@ -5776,7 +5777,7 @@
           "resources": {
             "cpuCores": 0.75,
             "memoryMb": 1024,
-            "diskMb": 16384
+            "diskMb": 8192
           }
         },
         {
@@ -5950,12 +5951,7 @@
       "files": [
         {
           "service": "nextcloud",
-          "path": "/var/www/html/config/openship.config.php",
-          "content": "<?php\n$url = parse_url(getenv('OPENSHIP_PUBLIC_URL'));\n$host = $url['host'] ?? 'localhost';\n$authority = $host . (isset($url['port']) ? ':' . $url['port'] : '');\n$CONFIG = [\n  'trusted_domains' => [$host],\n  'overwritehost' => $authority,\n  'overwriteprotocol' => $url['scheme'] ?? 'http',\n  'overwrite.cli.url' => getenv('OPENSHIP_PUBLIC_URL'),\n];\n"
-        },
-        {
-          "service": "nextcloud-cron",
-          "path": "/var/www/html/config/openship.config.php",
+          "path": "/usr/src/nextcloud/config/openship.config.php",
           "content": "<?php\n$url = parse_url(getenv('OPENSHIP_PUBLIC_URL'));\n$host = $url['host'] ?? 'localhost';\n$authority = $host . (isset($url['port']) ? ':' . $url['port'] : '');\n$CONFIG = [\n  'trusted_domains' => [$host],\n  'overwritehost' => $authority,\n  'overwriteprotocol' => $url['scheme'] ?? 'http',\n  'overwrite.cli.url' => getenv('OPENSHIP_PUBLIC_URL'),\n];\n"
         }
       ],
@@ -6026,7 +6022,7 @@
           "resources": {
             "cpuCores": 0.25,
             "memoryMb": 512,
-            "diskMb": 8192
+            "diskMb": 4096
           }
         },
         {
@@ -6077,7 +6073,7 @@
           "resources": {
             "cpuCores": 0.75,
             "memoryMb": 1536,
-            "diskMb": 16384
+            "diskMb": 8192
           }
         }
       ],
@@ -6223,7 +6219,8 @@
               "required": true,
               "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
               "patternError": "Enter an email address.",
-              "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+              "help": "Used for the initial administrator. Manage existing accounts in the app control panel.",
+              "fullWidth": true
             }
           ]
         }
@@ -6288,7 +6285,7 @@
           "resources": {
             "cpuCores": 0.5,
             "memoryMb": 512,
-            "diskMb": 8192
+            "diskMb": 4096
           }
         },
         {
@@ -6465,7 +6462,8 @@
               "required": true,
               "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
               "patternError": "Enter an email address.",
-              "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+              "help": "Used for the initial administrator. Manage existing accounts in the app control panel.",
+              "fullWidth": true
             }
           ]
         }
@@ -6548,7 +6546,7 @@
           "resources": {
             "cpuCores": 1,
             "memoryMb": 768,
-            "diskMb": 8192
+            "diskMb": 4096
           }
         }
       ],
@@ -6709,7 +6707,7 @@
           "resources": {
             "cpuCores": 0.25,
             "memoryMb": 512,
-            "diskMb": 8192
+            "diskMb": 4096
           }
         },
         {
@@ -6761,7 +6759,7 @@
           "resources": {
             "cpuCores": 0.75,
             "memoryMb": 768,
-            "diskMb": 16384
+            "diskMb": 8192
           }
         }
       ],
@@ -6918,7 +6916,8 @@
               "default": "My website",
               "installStep": true,
               "required": true,
-              "help": "Used when creating the site. Edit the site title later in WordPress Admin."
+              "help": "Used when creating the site. Edit the site title later in WordPress Admin.",
+              "fullWidth": true
             },
             {
               "service": "wordpress",

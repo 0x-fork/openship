@@ -31,7 +31,7 @@
       "resources": {
         "cpuCores": 0.25,
         "memoryMb": 512,
-        "diskMb": 8192
+        "diskMb": 4096
       }
     },
     {
@@ -73,7 +73,7 @@
       "resources": {
         "cpuCores": 0.75,
         "memoryMb": 768,
-        "diskMb": 16384
+        "diskMb": 8192
       }
     }
   ],
@@ -224,7 +224,8 @@
           "default": "My website",
           "installStep": true,
           "required": true,
-          "help": "Used when creating the site. Edit the site title later in WordPress Admin."
+          "help": "Used when creating the site. Edit the site title later in WordPress Admin.",
+          "fullWidth": true
         },
         {
           "service": "wordpress",
