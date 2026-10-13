@@ -31,6 +31,7 @@
 /// <reference path="./tar-fs.d.ts" />
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import Dockerode from "dockerode";
+import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
 import { randomUUID } from "node:crypto";
 import { projectBuildKitWorker } from "./docker-buildkit-worker";
@@ -2679,14 +2680,17 @@ export class DockerRuntime implements RuntimeAdapter {
         observeCaughtError(featureErr, "adapters/runtime/docker");
         throw new Error(this.formatDockerConnectivityError(featureErr));
       }
-      await this.pullImage(requestedRef, { force: config.forcePull });
+      const preparedImage = await this.prepareDeploymentImage(requestedRef, {
+        force: config.forcePull,
+        refreshMutableTag: config.refreshMutableTag,
+        signal: abort.signal,
+      });
 
       // A pull cannot currently be interrupted through every Docker transport,
       // but cancellation must still prevent the acquired image from deploying.
       if (abort.signal.aborted) return cancelled();
 
-      const deployRef =
-        (await this.resolveImageDigest(requestedRef).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/docker"); return undefined; })) ?? requestedRef;
+      const deployRef = preparedImage.deploymentRef;
       log.log(
         deployRef === requestedRef
           ? `Image ${requestedRef} is ready.\n`
@@ -4494,6 +4498,18 @@ export class DockerRuntime implements RuntimeAdapter {
     }
   }
 
+  protected async inspectDeploymentImage(ref: string) {
+    return this.docker.getImage(ref).inspect();
+  }
+
+  /** Strict preparation for a deployment cohort; activation uses the frozen ref. */
+  async prepareDeploymentImage(ref: string, options: DockerImagePreparationOptions = {}) {
+    return prepareDockerImage(ref, options, {
+      inspect: image => this.inspectDeploymentImage(image),
+      pull: (image, intent) => this.pullImage(image, intent),
+    });
+  }
+
   /** Is this image tag present on THIS daemon? Distinguishes a locally-built
    *  image (must be transferred cross-server) from a registry tag (the target
    *  just pulls it). */
@@ -4733,6 +4749,7 @@ export class DockerRuntime implements RuntimeAdapter {
     return {
       containerId,
       status,
+      imageId: data.Image,
       ip,
       hostPort,
       ...(hostPortByContainerPort ? { hostPortByContainerPort } : {}),
@@ -5706,6 +5723,11 @@ export class DockerRuntime implements RuntimeAdapter {
         });
         throw err;
       }
+    } else if (/(?:^|@)sha256:[a-f0-9]{64}$/.test(config.image)) {
+      // A prepared ref may have been pruned after cohort preflight. Validate
+      // availability again before stopping the old container, without pulling
+      // a mutable substitute or contacting the registry during cutover.
+      await this.inspectDeploymentImage(config.image);
     }
 
     // Flush the existing service before removing it, using Docker's normal

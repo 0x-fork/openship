@@ -279,6 +279,8 @@ export interface ImageArtifactConfig {
   resources: ResourceConfig;
   /** Refresh a mutable tag even when it is already present on the target. */
   forcePull?: boolean;
+  /** Refresh cached registry tags while preserving images built only on this host. */
+  refreshMutableTag?: boolean;
 }
 
 export interface DeployPublicEndpoint {
@@ -458,6 +460,8 @@ export interface ProvisionLock {
 export interface ContainerInfo {
   containerId: string;
   status: ContainerStatus;
+  /** Immutable image actually used by this container (Docker runtimes). */
+  imageId?: string;
   /** Container IP on the internal network */
   ip?: string;
   /** Mapped port on host (if applicable). The FIRST binding the daemon reports —

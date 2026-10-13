@@ -159,6 +159,7 @@ import {
 import { serviceKind, type DeployableService } from "../../lib/deployable-service";
 import { resolveProjectRouteState } from "../domains/project-route.service";
 import { type DeploymentConfigSnapshot } from "./build.service";
+import { deploymentImagePullPolicy } from "./image-pull-policy";
 import * as settingsService from "../settings/settings.service";
 import {
   registerDeploymentExecution,
@@ -1383,10 +1384,11 @@ async function executeBuildAndDeploy(
             ...(workload === "web" ? { PORT: String(snapshot.port) } : {}),
           },
           resources: prodResources,
-          // An explicit update is the one operation that promises to refresh a
-          // mutable upstream ref. Versioned release refs are otherwise reused
-          // when already present on the target.
-          forcePull: dep.trigger === "update" || snapshot.forcePullImages === true,
+          // Updates, deploy hooks and manual deploys of a mutable ref refresh the
+          // image; digest-pinned refs are reused when already present. Shared with
+          // the Compose path so Docker and the cluster builder behave the same.
+          forcePull: deploymentImagePullPolicy(dep, snapshot.forcePullImages, releaseImageRef).force,
+          refreshMutableTag: deploymentImagePullPolicy(dep, snapshot.forcePullImages, releaseImageRef).refreshMutableTag,
         },
         logger,
       );
