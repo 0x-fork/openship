@@ -141,7 +141,21 @@
     "dnsOtherServer": "DNS points to a different server",
     "txtMissing": "Ownership TXT record missing",
     "mailCertExpired": "The mail certificate has expired.",
-    "certEdgeFailed": "Couldn't confirm a certificate ({detail}). Make sure the domain points at this server (a CDN like Cloudflare in front is fine) and ports 80/443 are reachable, then Verify again."
+    "certEdgeFailed": "Couldn't confirm a certificate ({detail}). Make sure the domain points at this server (a CDN like Cloudflare in front is fine) and ports 80/443 are reachable, then Verify again.",
+    "certDnsUnresolved": "{domain} doesn't resolve to this server yet — the DNS A record is missing or hasn't propagated. Wait for propagation, then retry from the Domains tab.",
+    "certPort80Unreachable": "Port 80 for {domain} isn't reachable from the internet — a firewall / cloud security group is blocking it, the domain doesn't point at this server, or another proxy is still bound to :80.",
+    "certCloudflareProxy": "Cloudflare's proxy is answering the certificate challenge for {domain} instead of forwarding it to this server: it redirects the request to HTTPS, then rejects the origin's TLS. Fix it one of three ways — set SSL/TLS → Overview to \"Full\" (not \"Full (strict)\") until the first certificate is issued, or turn the orange cloud off for this record until it is, or upload a Cloudflare Origin CA certificate from the Domains tab and skip Let's Encrypt entirely.",
+    "certRedirect404": "The challenge for {domain} was redirected from HTTP to HTTPS and then answered with a 404 — so whatever served it isn't routing that hostname. If {domain} is behind Cloudflare, its \"Always Use HTTPS\" is doing the redirect: set SSL/TLS → Overview to \"Full\" (not \"Full (strict)\") until the first certificate is issued, or turn the orange cloud off for this record. Otherwise check the A record points at this server and the domain is registered here. Nothing is occupying :80, so take-over / migrate will not help.",
+    "certPort80NotAcme": "Port 80 answered but not with our ACME challenge — another web server is still serving :80, so the takeover didn't complete. Re-run and choose take-over / migrate.",
+    "certRateLimited": "Let's Encrypt rate limit reached for {domain} — wait before retrying.",
+    "certPortBindFailure": "Couldn't start the certificate challenge listener for {domain} on port {port}: something on this server is already holding it. That port is used only while a certificate is being issued, so this is almost always a certificate run from an earlier attempt that hasn't exited — retry, and if it persists find the holder with  and stop it. Nothing was requested from Let's Encrypt, so this is not a DNS or routing problem.",
+    "certFailedGeneric": "certbot failed to issue a certificate for {domain}",
+    "requestTimeout": "Request timed out. The server took too long to respond.",
+    "requestCancelled": "Request cancelled.",
+    "requestFailed": "Request failed.",
+    "networkUnreachable": "Cannot reach Openship. Check the connection and server availability.",
+    "hostUnreachable": "Host is not reachable",
+    "sshConnectionRefused": "SSH connection refused"
   },
   "monitoring": {
     "autoCard": {

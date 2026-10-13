@@ -34,6 +34,7 @@ import {
   type AuditFacets,
   type AuditSource,
 } from "@/lib/api";
+import { resolveAuditEventCopy } from "@/lib/i18n/localize-audit";
 import {
   AUDIT_CATEGORIES,
   auditResourceLabel,
@@ -253,13 +254,10 @@ function AuditDetailsBody({
   const { t, locale } = useI18n();
   const [showTechnical, setShowTechnical] = useState(false);
   const info = describeAuditEvent(event.eventType);
-  const eventLoc =
-    (t.settings.audit as any)?.events?.[event.eventType] ||
-    (t.settings.audit as any)?.events?.[event.eventType.replace(".", ":")] ||
-    (t.settings.audit as any)?.events?.[event.eventType.replace(":", ".")];
-  const rawAction = eventLoc?.action || info.action;
-  const label = eventLoc?.label || info.label;
-  const description = eventLoc?.description || info.description;
+  const localized = resolveAuditEventCopy(event.eventType, info, t.settings.audit, locale);
+  const rawAction = localized.action;
+  const label = localized.label;
+  const description = localized.description;
   const tone = info.tone ?? "neutral";
   const hasBefore = event.before !== null && event.before !== undefined;
   const hasAfter = event.after !== null && event.after !== undefined;
@@ -269,7 +267,7 @@ function AuditDetailsBody({
   });
   const resource = resourceDisplay(event, (t.settings.audit as any)?.resourceLabels);
   const action = !resource.isSpecific
-    ? (eventLoc?.actionWithoutResource || rawAction.replace(/\s+(for|of|on|from|to|in|для|от|к|в)$/i, ""))
+    ? (localized?.actionWithoutResource || rawAction.replace(/\s+(for|of|on|from|to|in|для|от|к|в)$/i, ""))
     : rawAction;
 
   return (
@@ -971,11 +969,8 @@ export function AuditLog() {
               <div className="divide-y divide-border/40">
                 {day.rows.map((e) => {
                   const info = describeAuditEvent(e.eventType);
-                  const eventLoc =
-                    (t.settings.audit as any)?.events?.[e.eventType] ||
-                    (t.settings.audit as any)?.events?.[e.eventType.replace(".", ":")] ||
-                    (t.settings.audit as any)?.events?.[e.eventType.replace(":", ".")];
-                  const rawAction = eventLoc?.action || info.action;
+                  const localized = resolveAuditEventCopy(e.eventType, info, t.settings.audit, locale);
+                  const rawAction = localized.action;
                   const tone = info.tone ?? "neutral";
                   const actor = actorDisplay(e, {
                     system: t.settings.audit.system,
@@ -983,7 +978,7 @@ export function AuditLog() {
                   });
                   const resource = resourceDisplay(e, (t.settings.audit as any)?.resourceLabels);
                   const action = !resource.isSpecific
-                    ? (eventLoc?.actionWithoutResource || rawAction.replace(/\s+(for|of|on|from|to|in|для|от|к|в)$/i, ""))
+                    ? (localized?.actionWithoutResource || rawAction.replace(/\s+(for|of|on|from|to|in|для|от|к|в)$/i, ""))
                     : rawAction;
                   return (
                     <button
