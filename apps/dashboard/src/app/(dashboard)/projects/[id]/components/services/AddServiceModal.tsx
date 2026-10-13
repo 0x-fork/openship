@@ -12,6 +12,7 @@ import { defaultDomainType } from "@/lib/default-domain-type";
 import { getApiErrorMessage } from "@/lib/api";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
+import type { ComposeGpu } from "@repo/core";
 import { LOCAL_SERVICE_CATALOG } from "./local-service-catalog";
 import { ProjectConnectionForm } from "../UseInProjectModal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -38,6 +39,11 @@ const CUSTOM_ENTRY: ImageCatalogEntry = {
 
 function isCustom(entry: ImageCatalogEntry | null): boolean {
   return entry?.id === CUSTOM_ENTRY.id;
+}
+
+/** Catalog entries are loosely typed; accept only the GPU request shape the API validates. */
+function isGpuRequest(value: unknown): value is ComposeGpu {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function envObjectFromRows(rows: EnvRow[]): Record<string, string> {
@@ -134,7 +140,7 @@ const CATEGORIES: CategoryDef[] = [
     id: "vector",
     label: "Vector & AI",
     icon: "sparkles",
-    match: ["vector", "qdrant", "weaviate", "milvus", "chroma", "pgvector", "embedding", "llm", "ollama"],
+    match: ["vector", "qdrant", "weaviate", "milvus", "chroma", "pgvector", "embedding", "llm", "ollama", "vllm"],
   },
   {
     id: "queue",
@@ -397,6 +403,11 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
       // arguments. Matching catalog images keep argv intact (never `sh -c`).
       ...(trimmedImage === selected?.image && selected.commandArgv
         ? { commandArgv: [...selected.commandArgv] }
+        : {}),
+      // A catalog entry that needs a GPU (Ollama / vLLM GPU variants) carries its
+      // request; a replacement image keeps nothing, like commandArgv above.
+      ...(trimmedImage === selected?.image && isGpuRequest(selected.gpus)
+        ? { advanced: { gpus: { ...selected.gpus } } }
         : {}),
       restart: "unless-stopped",
       enabled: true,

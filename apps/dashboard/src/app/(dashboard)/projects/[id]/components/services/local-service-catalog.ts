@@ -279,6 +279,32 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     ports: [11434],
     defaultVolumes: ["ollama_data:/root/.ollama"],
   },
+  {
+    id: "ollama-gpu",
+    name: "Ollama (NVIDIA GPU)",
+    image: "ollama/ollama:latest",
+    logo: si("ollama"),
+    category: "vector",
+    description:
+      "Ollama with every NVIDIA GPU on the server. Needs a GPU server with the NVIDIA Container Toolkit.",
+    ports: [11434],
+    defaultVolumes: ["ollama_data:/root/.ollama"],
+    gpus: { driver: "nvidia", count: "all", capabilities: ["gpu"] },
+  },
+  {
+    id: "vllm-gpu",
+    name: "vLLM (NVIDIA GPU)",
+    image: "vllm/vllm-openai:latest",
+    // The image's entrypoint is `vllm serve`; the argv is the model to load.
+    commandArgv: ["Qwen/Qwen2.5-0.5B-Instruct"],
+    logo: gh("vllm-project"),
+    category: "vector",
+    description:
+      "OpenAI-compatible LLM server on NVIDIA GPUs. Change the model in the command after adding. Needs a GPU server.",
+    ports: [8000],
+    defaultVolumes: ["hf_cache:/root/.cache/huggingface"],
+    gpus: { driver: "nvidia", count: "all", capabilities: ["gpu"] },
+  },
 
   /* ── Queues & Streams ─────────────────────────────────────────────── */
   {
