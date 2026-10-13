@@ -10,7 +10,7 @@ export interface BuildConfigSnapshotLike {
   branch: string;
   framework: string;
   buildImage: string;
-  phpVersion?: import("@repo/core").PhpVersion;
+  runtimeVersion?: string;
   runtimeImage: string;
   packageManager: string;
   installCommand: string;
@@ -92,7 +92,7 @@ export function createBuildConfig(opts: BuildConfigFactoryOptions): BuildConfig 
     buildStrategy: snapshot.buildStrategy,
     stack: snapshot.framework,
     buildImage: snapshot.buildImage,
-    phpVersion: snapshot.phpVersion,
+    runtimeVersion: snapshot.runtimeVersion,
     runtimeImage: snapshot.runtimeImage,
     packageManager: snapshot.packageManager,
     installCommand: snapshot.hasBuild ? snapshot.installCommand : "",

@@ -75,9 +75,9 @@
       "onFailureWarn": "Mantener el despliegue activo y marcarlo para revisión",
       "onFailureFail": "Hacer fallar el despliegue y mantener sirviendo la versión anterior"
     },
-    "phpVersionLabel": "Versión de PHP",
-    "phpVersionDefault": "Predeterminada",
-    "phpVersionDesc": "Usa imágenes de compilación PHP y ejecución FrankenPHP compatibles. Requiere una compilación Docker generada.",
+    "runtimeVersionLabel": "Versión del entorno de ejecución",
+    "runtimeVersionDefault": "Predeterminada",
+    "runtimeVersionDesc": "Usa imágenes de compilación y ejecución compatibles con la versión seleccionada. Requiere una compilación Docker generada por Openship.",
     "buildImageLabel": "Imagen de compilación",
     "buildImageDesc": "Imagen del contenedor compilador para compilaciones en la nube o en el servidor. Sobrescríbela cuando la imagen base detectada sea incorrecta.",
     "productionPathsLabel": "Rutas de producción",

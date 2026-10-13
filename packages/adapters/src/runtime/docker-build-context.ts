@@ -642,8 +642,8 @@ export async function resolveServiceDockerfile(
       )
     : await resolveDockerfileName(contextDir, resolvedRootDirectory, config.dockerfilePath);
   const hasRepositoryDockerfile = repositoryDockerfileName !== null;
-  if (hasRepositoryDockerfile && config.phpVersion != null) {
-    throw new Error("phpVersion cannot change a repository Dockerfile. Remove phpVersion or configure PHP in that Dockerfile.");
+  if (hasRepositoryDockerfile && config.runtimeVersion != null) {
+    throw new Error("runtimeVersion cannot change a repository Dockerfile. Remove runtimeVersion or configure the runtime in that Dockerfile.");
   }
 
   // A generated recipe COPYs from the source root, so it cannot be satisfied by a

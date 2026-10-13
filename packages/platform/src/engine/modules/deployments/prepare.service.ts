@@ -5,7 +5,7 @@
  * No database writes, no deployment logic.
  */
 
-import { assertPhpVersionTarget, resolvePhpImages, ValidationError } from "@repo/core";
+import { assertRuntimeVersionTarget, resolveRuntimeImages, ValidationError } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import * as githubService from "../github/github.service";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -230,7 +230,7 @@ export interface ProjectInfo {
   installCommand: string;
   startCommand: string;
   buildImage: string;
-  phpVersion?: import("@repo/core").PhpVersion;
+  runtimeVersion?: string;
   outputDirectory: string;
   rootDirectory: string;
   /**
@@ -419,8 +419,8 @@ function extractOpenshipConfig(fileContents: Record<string, string>): ExtractedO
   }
 
   const { config, errors, warnings } = parseOpenshipConfig(raw);
-  const phpErrors = errors.filter((error) => error.startsWith("phpVersion:"));
-  if (phpErrors.length) throw new ValidationError(phpErrors.join(" · "));
+  const runtimeErrors = errors.filter((error) => error.startsWith("runtimeVersion:"));
+  if (runtimeErrors.length) throw new ValidationError(runtimeErrors.join(" · "));
   // Only a non-object root nulls the config — every field-level failure still
   // yields a partial config that overlays. So `!config` is the whole-file case,
   // and the flag says so without the message having to.
@@ -574,11 +574,11 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
   if (config.packageManager) info.packageManager = config.packageManager;
   if (config.rootDirectory) info.rootDirectory = config.rootDirectory;
   if (config.buildImage) info.buildImage = config.buildImage;
-  if (config.phpVersion !== undefined) {
-    assertPhpVersionTarget({ phpVersion: config.phpVersion, framework: info.stack, projectType: info.projectType, runtimeMode: config.runtime, composePath: info.composePath, workloadType: config.workload });
-    const php = resolvePhpImages(config.phpVersion, config.buildImage);
-    info.phpVersion = php.phpVersion;
-    info.buildImage = php.buildImage;
+  if (config.runtimeVersion !== undefined) {
+    assertRuntimeVersionTarget({ runtimeVersion: config.runtimeVersion, framework: info.stack, projectType: info.projectType, runtimeMode: config.runtime, composePath: info.composePath, workloadType: config.workload });
+    const runtime = resolveRuntimeImages(info.stack, config.runtimeVersion, config.buildImage);
+    info.runtimeVersion = runtime.runtimeVersion;
+    info.buildImage = runtime.buildImage;
   }
   if (config.productionPaths) info.productionPaths = config.productionPaths;
   // Declared `[]` is meaningful (persistence off), so test for presence, not truth.
@@ -681,7 +681,7 @@ export function projectInfoToScanResponse(result: ProjectInfo, options: SourceSc
     buildCommand: publicInfo.buildCommand,
     startCommand: publicInfo.startCommand,
     buildImage: publicInfo.buildImage,
-    ...(publicInfo.phpVersion && { phpVersion: publicInfo.phpVersion }),
+    ...(publicInfo.runtimeVersion && { runtimeVersion: publicInfo.runtimeVersion }),
     outputDirectory: publicInfo.outputDirectory,
     rootDirectory: publicInfo.rootDirectory,
     ...(publicInfo.composePath && { composePath: publicInfo.composePath }),

@@ -217,8 +217,8 @@ export const project = pgTable(
     releaseCommands: jsonb("release_commands").$type<string[] | null>(),
     /** Docker image for build environment (e.g. node:22, oven/bun:latest) */
     buildImage: text("build_image"),
-    /** Selected major/minor for generated PHP recipes; null keeps the legacy 8.4 default. */
-    phpVersion: text("php_version"),
+    /** Explicit runtime version, validated by the selected stack; null preserves its defaults. */
+    runtimeVersion: text("runtime_version"),
     /** Production mode: host, static, standalone */
     productionMode: text("production_mode").default("host"),
     /** Port the app listens on (inside the container / the bare process). */

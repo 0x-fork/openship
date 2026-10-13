@@ -21,7 +21,7 @@ const cleanups: Array<() => Promise<void>> = [];
 it("refuses explicit PHP selection on a user Dockerfile without rewriting it", async () => {
   const repo = await makeRepo("");
   const original = await readFile(join(repo, "Dockerfile"), "utf8");
-  await expect(resolveServiceDockerfile(repo, { ...config(repo), phpVersion: "8.3", stack: "laravel" })).rejects.toThrow(/cannot change a repository Dockerfile/);
+  await expect(resolveServiceDockerfile(repo, { ...config(repo), runtimeVersion: "8.3", stack: "laravel" })).rejects.toThrow(/cannot change a repository Dockerfile/);
   expect(await readFile(join(repo, "Dockerfile"), "utf8")).toBe(original);
   expect((await resolveServiceDockerfile(repo, config(repo))).dockerfileName).toBe("Dockerfile");
 });

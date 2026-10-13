@@ -1,6 +1,6 @@
 import { parseInput, EnsureProjectBody, BuildAccessBody, type ProjectOperations, type SourceOperations, type DeploymentOperations } from "@repo/contracts";
 import type { DeploySourceInput, SourceDeploymentResult } from "./source-input";
-import { phpNeedsInstall } from "@repo/core";
+import { runtimeNeedsInstall } from "@repo/core";
 
 /** Identical orchestration for native and remote sources; transports only stage the bytes. */
 export async function deploySourceWorkflow(ship: { projects: ProjectOperations; sources: SourceOperations; deployments: DeploymentOperations }, input: DeploySourceInput): Promise<SourceDeploymentResult> {
@@ -13,7 +13,7 @@ export async function deploySourceWorkflow(ship: { projects: ProjectOperations; 
   const serverId = scan.serverId ?? session.serverId ?? input.serverId;
   const services = scan.services?.map(service => ({ ...service, commandArgv: service.commandArgv ?? undefined }));
   step("Creating project");
-  const hasBuild = Boolean(scan.buildCommand) || phpNeedsInstall(scan.phpVersion, scan.installCommand), hasServer = scan.workloadType !== "worker" && Boolean(scan.startCommand);
+  const hasBuild = Boolean(scan.buildCommand) || runtimeNeedsInstall(scan.stack, scan.runtimeVersion, scan.installCommand), hasServer = scan.workloadType !== "worker" && Boolean(scan.startCommand);
   const ensured = await ship.projects.ensure(parseInput(EnsureProjectBody, {
     name: scan.name || input.name || "app", projectId: input.projectId, serverId,
     deploymentEnvironment: input.environment,
@@ -21,7 +21,7 @@ export async function deploySourceWorkflow(ship: { projects: ProjectOperations; 
     framework: scan.stack, projectType: scan.projectType, packageManager: scan.packageManager,
     installCommand: scan.installCommand, buildCommand: scan.buildCommand, startCommand: scan.startCommand || undefined,
     releaseCommands: scan.releaseCommands,
-    outputDirectory: scan.outputDirectory, rootDirectory: scan.rootDirectory, buildImage: scan.buildImage, phpVersion: scan.phpVersion,
+    outputDirectory: scan.outputDirectory, rootDirectory: scan.rootDirectory, buildImage: scan.buildImage, runtimeVersion: scan.runtimeVersion,
     productionPaths: Array.isArray(scan.productionPaths) ? scan.productionPaths.join(",") : undefined,
     hasBuild, hasServer, productionMode: scan.productionMode ?? (hasServer ? "standalone" : "static"),
     workloadType: scan.workloadType, runtimeMode: scan.runtimeMode,

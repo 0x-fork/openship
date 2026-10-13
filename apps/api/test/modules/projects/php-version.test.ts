@@ -42,30 +42,30 @@ describe("project PHP settings across configuration surfaces", () => {
       if (entry === "options")
         await updateOptions(
           project.id,
-          parseInput(SetOptionsBody, { phpVersion: "8.3" }),
+          parseInput(SetOptionsBody, { runtimeVersion: "8.3" }),
           owner.organizationId,
         );
       if (entry === "update")
-        await updateProject(project.id, { phpVersion: "8.3" }, owner.organizationId);
+        await updateProject(project.id, { runtimeVersion: "8.3" }, owner.organizationId);
       if (entry === "ensure")
         await ensureProject(
           parseInput(EnsureProjectBody, {
             projectId: project.id,
             name: project.name,
-            phpVersion: "8.3",
+            runtimeVersion: "8.3",
           }),
           owner.organizationId,
         );
       const saved = (await repos.project.findById(project.id))!;
-      expect(saved).toMatchObject({ phpVersion: "8.3", buildImage: "php:8.3-cli-bookworm" });
+      expect(saved).toMatchObject({ runtimeVersion: "8.3", buildImage: "php:8.3-cli-bookworm" });
       const frozen = buildConfigSnapshot(saved);
       expect(frozen).toMatchObject({
-        phpVersion: "8.3",
+        runtimeVersion: "8.3",
         buildImage: "php:8.3-cli-bookworm",
         runtimeImage: "dunglas/frankenphp:1-php8.3-bookworm",
       });
-      await updateOptions(project.id, { phpVersion: "8.4" }, owner.organizationId);
-      expect(frozen.phpVersion).toBe("8.3");
+      await updateOptions(project.id, { runtimeVersion: "8.4" }, owner.organizationId);
+      expect(frozen.runtimeVersion).toBe("8.3");
       expect(frozen.runtimeImage).toBe("dunglas/frankenphp:1-php8.3-bookworm");
     },
   );
@@ -75,16 +75,16 @@ describe("project PHP settings across configuration surfaces", () => {
       buildImage: "php:8.4-cli",
       runtimeImage: "dunglas/frankenphp:1-php8.4-bookworm",
     });
-    expect(buildConfigSnapshot(project)).not.toHaveProperty("phpVersion");
+    expect(buildConfigSnapshot(project)).not.toHaveProperty("runtimeVersion");
     await expect(
       updateOptions(
         project.id,
-        { phpVersion: "8.5", buildCommand: "changed" },
+        { runtimeVersion: "8.5", buildCommand: "changed" },
         owner.organizationId,
       ),
-    ).rejects.toThrow(/Unsupported phpVersion/);
+    ).rejects.toThrow(/Unsupported runtimeVersion/);
     expect((await repos.project.findById(project.id))?.buildCommand).toBe(project.buildCommand);
-    await updateOptions(project.id, { phpVersion: "8.3" }, owner.organizationId);
+    await updateOptions(project.id, { runtimeVersion: "8.3" }, owner.organizationId);
     await expect(
       updateOptions(
         project.id,
@@ -101,12 +101,53 @@ describe("project PHP settings across configuration surfaces", () => {
       buildCommand: project.buildCommand,
     });
   });
+  it("validates a generic contract against the project runtime before any update", async () => {
+    const { owner, project } = await fixture();
+    expect(parseInput(SetOptionsBody, { runtimeVersion: "22" })).toEqual({ runtimeVersion: "22" });
+    expect(() => parseInput(SetOptionsBody, { runtimeVersion: "8.3\nFROM evil" })).toThrow();
+    await updateOptions(project.id, { runtimeVersion: "8.3" }, owner.organizationId);
+    await expect(
+      updateProject(
+        project.id,
+        { framework: "node", buildCommand: "changed" },
+        owner.organizationId,
+      ),
+    ).rejects.toThrow(/not supported for node/);
+    expect(await repos.project.findById(project.id)).toMatchObject({
+      framework: "laravel",
+      runtimeVersion: "8.3",
+      buildCommand: project.buildCommand,
+    });
+    await updateProject(
+      project.id,
+      { framework: "node", runtimeVersion: null, buildImage: "node:22" },
+      owner.organizationId,
+    );
+    expect(await repos.project.findById(project.id)).toMatchObject({
+      framework: "node",
+      runtimeVersion: null,
+      buildImage: "node:22",
+    });
+    await expect(
+      updateOptions(
+        project.id,
+        { runtimeVersion: "22", buildCommand: "changed" },
+        owner.organizationId,
+      ),
+    ).rejects.toThrow(/not supported for node/);
+    expect((await repos.project.findById(project.id))?.buildCommand).toBe(project.buildCommand);
+  });
   it("refuses an incompatible builder before creating a project group", async () => {
     const owner = await seedOrg();
     const before = await repos.projectGroup.listByOrganization(owner.organizationId);
     await expect(
       createProject(
-        { name: "invalid-php", framework: "laravel", phpVersion: "8.3", buildImage: "php:8.4-cli" },
+        {
+          name: "invalid-php",
+          framework: "laravel",
+          runtimeVersion: "8.3",
+          buildImage: "php:8.4-cli",
+        },
         owner.organizationId,
       ),
     ).rejects.toThrow(/uses PHP 8.4/);
@@ -120,17 +161,17 @@ describe("project PHP settings across configuration surfaces", () => {
       join(path, "composer.json"),
       JSON.stringify({ require: { "laravel/framework": "^12.0" } }),
     );
-    await writeFile(join(path, "openship.json"), JSON.stringify({ phpVersion: "8.3" }));
+    await writeFile(join(path, "openship.json"), JSON.stringify({ runtimeVersion: "8.3" }));
     const info = await resolveProjectInfo({ source: "local", path });
     expect(projectInfoToScanResponse(info)).toMatchObject({
-      phpVersion: "8.3",
+      runtimeVersion: "8.3",
       buildImage: "php:8.3-cli-bookworm",
     });
-    await writeFile(join(path, "openship.json"), JSON.stringify({ phpVersion: "8.5" }));
-    await expect(resolveProjectInfo({ source: "local", path })).rejects.toThrow(/phpVersion/);
+    await writeFile(join(path, "openship.json"), JSON.stringify({ runtimeVersion: "8.5" }));
+    await expect(resolveProjectInfo({ source: "local", path })).rejects.toThrow(/runtimeVersion/);
     await writeFile(
       join(path, "openship.json"),
-      JSON.stringify({ phpVersion: "8.3", runtime: "bare" }),
+      JSON.stringify({ runtimeVersion: "8.3", runtime: "bare" }),
     );
     await expect(resolveProjectInfo({ source: "local", path })).rejects.toThrow(
       /generated PHP Docker/,

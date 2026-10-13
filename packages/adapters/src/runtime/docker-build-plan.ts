@@ -1,5 +1,5 @@
 import type { BuildConfig } from "../types";
-import { packageManagerEnsureCommand, nodeBinDirs, normalizeImageRef, resolvePhpImages, assertPhpVersionTarget } from "@repo/core";
+import { packageManagerEnsureCommand, nodeBinDirs, normalizeImageRef, resolveRuntimeImages, assertRuntimeVersionTarget } from "@repo/core";
 
 import { sq } from "./build-pipeline";
 import { normalizeDockerRootDirectory } from "./docker-paths";
@@ -231,9 +231,9 @@ const PHP_ASSET_BUILD_IMAGE = "node:22-bookworm-slim";
 
 const PHP_EXT_INSTALL_LINE = `RUN install-php-extensions ${PHP_EXTENSIONS.join(" ")} > /dev/null`;
 
-function phpVersionCheck(config: BuildConfig): string[] {
-  if (!config.phpVersion) return [];
-  return [`RUN php -r 'if (PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION !== "${config.phpVersion}") { fwrite(STDERR, "Openship requires PHP ${config.phpVersion}; image provides " . PHP_VERSION . "\\n"); exit(1); }'`];
+function phpBinaryVersionCheck(config: BuildConfig): string[] {
+  if (!config.runtimeVersion) return [];
+  return [`RUN php -r 'if (PHP_MAJOR_VERSION . "." . PHP_MINOR_VERSION !== "${config.runtimeVersion}") { fwrite(STDERR, "Openship requires PHP ${config.runtimeVersion}; image provides " . PHP_VERSION . "\\n"); exit(1); }'`];
 }
 
 function phpPlatformCheck(composer: string): string {
@@ -267,7 +267,7 @@ function generatePhpDockerfile(config: BuildConfig): string {
 
   const lines: string[] = [
     `FROM ${config.buildImage} AS builder`,
-    ...phpVersionCheck(config),
+    ...phpBinaryVersionCheck(config),
     // php:*-cli ships no Composer — pull the binary from the official image.
     `COPY --from=composer:2 /usr/bin/composer /usr/bin/composer`,
     `COPY --from=${PHP_EXT_INSTALLER_IMAGE} /usr/bin/install-php-extensions /usr/bin/install-php-extensions`,
@@ -277,7 +277,7 @@ function generatePhpDockerfile(config: BuildConfig): string {
     `WORKDIR ${sourceDir}`,
   ];
   if (installLine) lines.push(installLine);
-  if (config.phpVersion) lines.push(phpPlatformCheck("composer"));
+  if (config.runtimeVersion) lines.push(phpPlatformCheck("composer"));
 
   if (assetBuildLine) {
     // The asset stage is a Node image running the JS build, so it needs the same
@@ -299,7 +299,7 @@ function generatePhpDockerfile(config: BuildConfig): string {
 
   lines.push(
     `FROM ${config.runtimeImage} AS runtime`,
-    ...phpVersionCheck(config),
+    ...phpBinaryVersionCheck(config),
     PHP_EXT_INSTALL_LINE,
     // --chown on the COPY instead of a trailing `chown -R`: the recursive form
     // rewrites every file into a second layer, doubling the app's size on disk.
@@ -315,7 +315,7 @@ function generatePhpDockerfile(config: BuildConfig): string {
     );
   }
   lines.push(`WORKDIR /app`);
-  if (config.phpVersion) {
+  if (config.runtimeVersion) {
     lines.push(
       `COPY --from=builder /usr/bin/composer /tmp/openship-composer`,
       phpPlatformCheck("php /tmp/openship-composer") + ` && rm -f /tmp/openship-composer`,
@@ -561,11 +561,11 @@ function generateStaticDockerfile(config: BuildConfig): string {
 }
 
 export function generateDockerfile(config: BuildConfig): string {
-  if (config.phpVersion != null) {
-    assertPhpVersionTarget({ phpVersion: config.phpVersion, framework: config.stack, workloadType: config.isStatic ? "static" : "web" });
-    resolvePhpImages(config.phpVersion, config.buildImage);
+  if (config.runtimeVersion != null) {
+    assertRuntimeVersionTarget({ runtimeVersion: config.runtimeVersion, framework: config.stack, workloadType: config.isStatic ? "static" : "web" });
+    resolveRuntimeImages(config.stack, config.runtimeVersion, config.buildImage);
     if (config.dockerfilePath || config.dockerfileContent || !isPhpRuntime(config)) {
-      throw new Error("phpVersion requires the generated FrankenPHP Docker recipe. Remove phpVersion when using your own Dockerfile or runtime image.");
+      throw new Error("runtimeVersion requires the generated FrankenPHP Docker recipe. Remove runtimeVersion when using your own Dockerfile or runtime image.");
     }
   }
   // Static builds are served as files by a minimal nginx image (SPA fallback).

@@ -766,7 +766,7 @@ export function useDeploymentBuild(
             framework: config.framework,
             packageManager: config.packageManager,
             buildImage: config.buildImage,
-            phpVersion: config.phpVersion,
+            runtimeVersion: config.runtimeVersion,
             installCommand: config.options.installCommand,
             buildCommand: config.options.buildCommand,
             startCommand: config.options.startCommand,
@@ -818,7 +818,7 @@ export function useDeploymentBuild(
         framework: config.framework,
         packageManager: config.packageManager,
         buildImage: config.buildImage,
-        phpVersion: config.phpVersion,
+        runtimeVersion: config.runtimeVersion,
         buildCommand: config.options.buildCommand,
         // Blank default must be OMITTED, not sent as "": the ensure schema's
         // outputDirectory pattern rejects an empty string → 400 before the

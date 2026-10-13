@@ -75,9 +75,9 @@
       "onFailureWarn": "保持部署上线，并标记为待复查",
       "onFailureFail": "让部署失败，并继续由上一个版本提供服务"
     },
-    "phpVersionLabel": "PHP 版本",
-    "phpVersionDefault": "默认",
-    "phpVersionDesc": "使用匹配的 PHP 构建和 FrankenPHP 运行镜像。需要自动生成的 Docker 构建。",
+    "runtimeVersionLabel": "运行时版本",
+    "runtimeVersionDefault": "默认",
+    "runtimeVersionDesc": "使用与所选版本匹配的构建和运行镜像。需要由 Openship 生成的 Docker 构建。",
     "buildImageLabel": "构建镜像",
     "buildImageDesc": "用于云端或服务器构建的构建容器镜像。当检测到的基础镜像有误时可覆盖此项。",
     "productionPathsLabel": "生产路径",

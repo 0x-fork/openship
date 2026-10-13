@@ -30,7 +30,7 @@ import {
   type ParseResult,
 } from "./schema";
 import { isValidEnvKey, normalizeProjectRootDirectory } from "../utils";
-import { PHP_VERSIONS } from "../php-version";
+import { isRuntimeVersion, runtimeVersionError } from "../runtime-version";
 import { isValidServiceName } from "../service-name";
 
 const TOP_LEVEL_KEYS = new Set([
@@ -45,7 +45,7 @@ const TOP_LEVEL_KEYS = new Set([
   "releaseCommands",
   "outputDirectory",
   "buildImage",
-  "phpVersion",
+  "runtimeVersion",
   "productionPaths",
   "volumes",
   "runtime",
@@ -466,6 +466,15 @@ function parsePackageManager(ctx: Ctx, v: unknown, path: string): string | undef
   return s;
 }
 
+function parseRuntimeVersion(ctx: Ctx, raw: unknown): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!isRuntimeVersion(raw)) {
+    ctx.err("runtimeVersion", "must be a numeric version such as 8.3 or 8.3.1");
+    return undefined;
+  }
+  return raw;
+}
+
 /** Parse + validate raw `openship.json` JSON (already `JSON.parse`d) into a config. */
 export function parseOpenshipConfig(raw: unknown): ParseResult {
   const ctx = new Ctx();
@@ -488,7 +497,7 @@ export function parseOpenshipConfig(raw: unknown): ParseResult {
     releaseCommands: ctx.strArray(raw.releaseCommands, "releaseCommands"),
     outputDirectory: ctx.str(raw.outputDirectory, "outputDirectory"),
     buildImage: ctx.str(raw.buildImage, "buildImage"),
-    phpVersion: ctx.enumOf(raw.phpVersion, "phpVersion", PHP_VERSIONS),
+    runtimeVersion: parseRuntimeVersion(ctx, raw.runtimeVersion),
     productionPaths: ctx.strArray(raw.productionPaths, "productionPaths"),
     volumes: ctx.strArray(raw.volumes, "volumes"),
     runtime: ctx.enumOf(raw.runtime, "runtime", OPENSHIP_RUNTIMES),
@@ -503,6 +512,11 @@ export function parseOpenshipConfig(raw: unknown): ParseResult {
     services: parseServices(ctx, raw.services, "services"),
     monorepo: parseMonorepo(ctx, raw.monorepo, "monorepo"),
   };
+
+  if (config.framework && config.runtimeVersion) {
+    const error = runtimeVersionError(config.framework, config.runtimeVersion);
+    if (error) ctx.err("runtimeVersion", error);
+  }
 
   // Strip undefined so the overlay only carries fields the user actually declared.
   for (const k of Object.keys(config) as (keyof OpenshipConfig)[]) {

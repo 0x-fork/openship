@@ -57,7 +57,7 @@ describeDockerE2E("PHP selection through build, deploy and rollback (#937)", () 
     expect((await runtime.docker.getContainer(row.containerId!).inspect()).State.Running).toBe(
       true,
     );
-    expect((row.meta as { phpVersion: string }).phpVersion).toBe(version);
+    expect((row.meta as { runtimeVersion: string }).runtimeVersion).toBe(version);
     expect((await runtime.getUsage(row.containerId!)).memoryMb).toBeGreaterThan(0);
   }
 
@@ -80,7 +80,7 @@ describeDockerE2E("PHP selection through build, deploy and rollback (#937)", () 
       localPath: directory,
       framework: "laravel",
       packageManager: "composer",
-      phpVersion: "8.3",
+      runtimeVersion: "8.3",
       buildImage: "php:8.3-cli-bookworm",
       installCommand: "composer install --no-dev --no-plugins --no-scripts --no-interaction",
       buildCommand: "",
@@ -161,7 +161,7 @@ describeDockerE2E("PHP selection through build, deploy and rollback (#937)", () 
     const first = await builds.triggerDeployment(ctx, { projectId: project.id, trigger: "manual" });
     const v83 = await ready(first.deployment.id);
     await check(v83, "8.3");
-    await projects.updateOptions(project.id, { phpVersion: "8.4" }, owner.organizationId);
+    await projects.updateOptions(project.id, { runtimeVersion: "8.4" }, owner.organizationId);
     const second = await builds.triggerDeployment(ctx, {
       projectId: project.id,
       trigger: "manual",
@@ -216,6 +216,6 @@ describeDockerE2E("PHP selection through build, deploy and rollback (#937)", () 
     expect(v83Restored.imageRef).toBe(v83.imageRef);
     expect(buildSpy).not.toHaveBeenCalled();
     await check(v83Restored, "8.3");
-    expect((await repos.project.findById(project.id))?.phpVersion).toBe("8.4");
+    expect((await repos.project.findById(project.id))?.runtimeVersion).toBe("8.4");
   }, 1_800_000);
 });

@@ -11,7 +11,7 @@ import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { getPublicEndpointHosts, getRecommendedSingleAppBuildImage, workloadOf, type PublicEndpoint } from "@/context/deployment/types";
-import { PHP_VERSIONS, DEFAULT_PHP_VERSION, isPhpFramework, phpProjectUpdate, phpNeedsInstall, type WorkloadType } from "@repo/core";
+import { getRuntimeVersionPolicy, runtimeProjectUpdate, runtimeNeedsInstall, type WorkloadType } from "@repo/core";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -55,6 +55,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   const { baseDomain } = usePlatform();
   const { t } = useI18n();
   const bs = t.importProject.buildSettings;
+  const runtimePolicy = getRuntimeVersionPolicy(config?.framework);
 
   const fieldPrefix = useId();
 
@@ -62,7 +63,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   const [tempValues, setTempValues] = useState<{ [key: string]: string }>({});
   const [expanded, setExpanded] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [phpError, setPhpError] = useState<string | null>(null);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
 
   const buildData = mode === 'advanced' ? externalBuildData : config?.options;
   const needsBuild = config?.framework !== "node" && config?.framework !== "static";
@@ -504,51 +505,51 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                 />
               </div>
               <div className="min-w-0 space-y-4 empty:hidden @min-[40rem]/build-settings:col-start-1 @min-[40rem]/build-settings:row-start-2">
-                {(isPhpFramework(config?.framework) || config?.phpVersion != null) && (
+                {(runtimePolicy || config?.runtimeVersion != null) && (
                   <div className="space-y-1.5">
                     <label
-                      htmlFor={`${fieldPrefix}-php-version`}
+                      htmlFor={`${fieldPrefix}-runtime-version`}
                       className="block text-sm font-medium text-foreground"
                     >
-                      {bs.phpVersionLabel}
+                      {bs.runtimeVersionLabel}
                     </label>
                     <CustomSelect
-                      id={`${fieldPrefix}-php-version`}
+                      id={`${fieldPrefix}-runtime-version`}
                       variant="filled"
                       triggerClassName="bg-muted/60 hover:bg-muted"
-                      value={config.phpVersion ?? ""}
+                      value={config.runtimeVersion ?? ""}
                       options={[
-                        { value: "", label: `${bs.phpVersionDefault} (${DEFAULT_PHP_VERSION})` },
-                        ...PHP_VERSIONS.map((version) => ({
+                        { value: "", label: runtimePolicy ? `${bs.runtimeVersionDefault} (${runtimePolicy.defaultVersion})` : bs.runtimeVersionDefault },
+                        ...(runtimePolicy?.versions ?? []).map((version) => ({
                           value: version,
-                          label: `PHP ${version}`,
+                          label: `${runtimePolicy!.label} ${version}`,
                         })),
                       ]}
                       onChange={(value) => {
-                        const phpVersion = value || null;
+                        const runtimeVersion = value || null;
                         try {
-                          const php = !isPhpFramework(config?.framework) && phpVersion == null
-                            ? { phpVersion: null }
-                            : phpProjectUpdate(config, { phpVersion });
+                          const runtime = !runtimePolicy && runtimeVersion == null
+                            ? { runtimeVersion: null }
+                            : runtimeProjectUpdate(config, { runtimeVersion });
                           // Keep Composer enabled on first selection, even if detection
                           // found no separate JavaScript asset build.
                           updateConfig?.({
-                            ...php,
-                            ...(!config.phpVersion && !hasBuild && phpNeedsInstall(phpVersion, config.options?.installCommand)
+                            ...runtime,
+                            ...(!config.runtimeVersion && !hasBuild && runtimeNeedsInstall(config.framework, runtimeVersion, config.options?.installCommand)
                               ? { options: { ...config.options, hasBuild: true } }
                               : {}),
                           });
-                          setPhpError(null);
+                          setRuntimeError(null);
                         } catch (error) {
                           observeCaughtError(error, "dashboard/components/import-project/BuildSettings");
-                          setPhpError(error instanceof Error ? error.message : bs.phpVersionDesc);
+                          setRuntimeError(error instanceof Error ? error.message : bs.runtimeVersionDesc);
                         }
                       }}
                     />
-                    <p className="text-xs text-muted-foreground">{bs.phpVersionDesc}</p>
-                    {phpError && (
+                    <p className="text-xs text-muted-foreground">{bs.runtimeVersionDesc}</p>
+                    {runtimeError && (
                       <p role="alert" className="text-xs text-danger">
-                        {phpError}
+                        {runtimeError}
                       </p>
                     )}
                   </div>

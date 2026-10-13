@@ -51,12 +51,12 @@ it("offers a matched builder selection in the existing PHP configuration", async
   expect(host.textContent).toContain("Default (8.4)");
   await choose("8.3");
   expect(h.updateConfig).toHaveBeenCalledWith({
-    phpVersion: "8.3",
+    runtimeVersion: "8.3",
     buildImage: "php:8.3-cli-bookworm",
   });
 });
 it("shows why a custom builder cannot be used with another version", async () => {
-  h.config.phpVersion = "8.3";
+  h.config.runtimeVersion = "8.3";
   h.config.buildImage = "php:8.3.30-cli-bookworm";
   await act(async () => root.render(<BuildSettings />));
   await choose("8.4");
@@ -67,7 +67,7 @@ it("does not show PHP controls for other stacks", async () => {
   h.config.framework = "node";
   await act(async () => root.render(<BuildSettings />));
   expect(host.textContent).not.toContain(
-    baseDictionary.importProject.buildSettings.phpVersionLabel,
+    baseDictionary.importProject.buildSettings.runtimeVersionLabel,
   );
 });
 
@@ -81,7 +81,7 @@ it("keeps Composer enabled when a new version is selected without an asset build
   await act(async () => root.render(<BuildSettings />));
   await choose("8.3");
   expect(h.updateConfig).toHaveBeenCalledWith({
-    phpVersion: "8.3",
+    runtimeVersion: "8.3",
     buildImage: "php:8.3-cli-bookworm",
     options: { ...h.config.options, hasBuild: true },
   });

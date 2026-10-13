@@ -8,8 +8,8 @@ import { Type, type Static, type TLiteral } from "@sinclair/typebox";
 import { GitHubDeploymentChecksSchema } from "./deployment-checks";
 import {
   STACK_IDS,
-  PHP_VERSIONS,
-  type PhpVersion,
+  RUNTIME_VERSION_PATTERN,
+  RUNTIME_VERSION_MAX_LENGTH,
   ALL_PACKAGE_MANAGERS,
   ALL_RESOURCE_TIERS,
   PROXY_DIRECTIVES,
@@ -20,8 +20,12 @@ import {
 
 // ─── Shared enums (derived from registry) ────────────────────────────────────
 
-export const PhpVersionSchema = Type.Union(PHP_VERSIONS.map((v) => Type.Literal(v)) as [TLiteral<PhpVersion>, ...TLiteral<PhpVersion>[]]);
-export const OptionalPhpVersionSchema = Type.Optional(Type.Union([PhpVersionSchema, Type.Null()]));
+export const RuntimeVersionSchema = Type.String({
+  pattern: RUNTIME_VERSION_PATTERN,
+  maxLength: RUNTIME_VERSION_MAX_LENGTH,
+  description: "Runtime version; supported versions and images are validated for the selected stack.",
+});
+export const OptionalRuntimeVersionSchema = Type.Optional(Type.Union([RuntimeVersionSchema, Type.Null()]));
 
 export const FrameworkEnum = Type.String({
   maxLength: 100,
@@ -408,7 +412,7 @@ export const CreateProjectBody = Type.Object({
     Type.Union([Type.Null(), Type.Array(Type.String({ maxLength: 1000 }), { maxItems: 20 })]),
   ),
   buildImage: Type.Optional(Type.String({ maxLength: 200 })),
-  phpVersion: OptionalPhpVersionSchema,
+  runtimeVersion: OptionalRuntimeVersionSchema,
   productionMode: Type.Optional(
     Type.Union([Type.Literal("host"), Type.Literal("static"), Type.Literal("standalone")]),
   ),
@@ -693,7 +697,7 @@ export const SetOptionsBody = Type.Object(
     productionPort: Type.Optional(Type.Union([Type.Number(), Type.String()])),
     packageManager: Type.Optional(Type.String()),
     buildImage: Type.Optional(Type.String()),
-    phpVersion: OptionalPhpVersionSchema,
+    runtimeVersion: OptionalRuntimeVersionSchema,
     framework: Type.Optional(Type.String()),
     productionMode: Type.Optional(Type.String({ description: "host | static | standalone." })),
     hasServer: Type.Optional(Type.Boolean()),

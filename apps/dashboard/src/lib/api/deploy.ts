@@ -128,7 +128,7 @@ export interface PrepareAppConfig {
   installCommand: string;
   startCommand: string;
   buildImage: string;
-  phpVersion?: import("@repo/core").PhpVersion | null;
+  runtimeVersion?: string | null;
   outputDirectory: string;
   rootDirectory: string;
   productionPaths: string[];

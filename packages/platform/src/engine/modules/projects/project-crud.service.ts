@@ -14,8 +14,8 @@ import {
 } from "@repo/db";
 import {
   slugify,
-  phpProjectUpdate,
-  assertPhpVersionTarget,
+  runtimeProjectUpdate,
+  assertRuntimeVersionTarget,
   AppError,
   NotFoundError,
   ConflictError,
@@ -731,7 +731,7 @@ function buildProductionProjectInput(
     // is what every project did before the phase existed.
     releaseCommands: data.releaseCommands ?? null,
     buildImage: data.buildImage,
-    phpVersion: data.phpVersion,
+    runtimeVersion: data.runtimeVersion,
     productionMode: workload.productionMode,
     port: data.port ?? 3000,
     hasServer: workload.hasServer,
@@ -899,9 +899,9 @@ async function createProductionProject(
   access?: { tokenId: string },
   ctx?: RequestContext,
 ) {
-  // Reject incompatible PHP settings before any group/project insert.
-  assertPhpVersionTarget(data);
-  data = { ...data, ...phpProjectUpdate(null, data) };
+  // Reject incompatible runtime settings before any group/project insert.
+  assertRuntimeVersionTarget(data);
+  data = { ...data, ...runtimeProjectUpdate(null, data) };
   // The project type is derived from persisted service rows. Accepting an
   // explicit monorepo without app metadata creates a different project from
   // the one requested (including CLI --type monorepo). Reject before writes.
@@ -1536,8 +1536,8 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     if (data.startCommand !== undefined) update.startCommand = data.startCommand;
     if (data.releaseCommands !== undefined) update.releaseCommands = data.releaseCommands;
     if (data.buildImage !== undefined) update.buildImage = data.buildImage;
-    Object.assign(update, phpProjectUpdate(project, data));
-    assertPhpVersionTarget({ ...project, ...data, ...update });
+    Object.assign(update, runtimeProjectUpdate(project, data));
+    assertRuntimeVersionTarget({ ...project, ...data, ...update });
     if (data.port !== undefined) update.port = data.port;
     // Workload axis (workloadType / hasServer / productionMode) — one choke
     // point keeps the three columns in lockstep (issue #538). Only written when
@@ -1782,8 +1782,8 @@ export async function updateProject(
     if (PROJECT_IDENTITY_KEYS.has(key)) continue;
     if (raw[key] !== undefined) update[key] = raw[key];
   }
-  Object.assign(update, phpProjectUpdate(p, update));
-  assertPhpVersionTarget({ ...p, ...update });
+  Object.assign(update, runtimeProjectUpdate(p, update));
+  assertRuntimeVersionTarget({ ...p, ...update });
   // A rename changes the DISPLAY NAME only — `slug` is deliberately NOT
   // recomputed. The slug is this project's infrastructure identity, not a label:
   // it names the `openship-<slug>` docker network, the `openship-<slug>-<svc>`
@@ -2108,7 +2108,7 @@ export async function createProjectEnvironment(
     startCommand: base.startCommand,
     releaseCommands: base.releaseCommands,
     buildImage: base.buildImage,
-    phpVersion: base.phpVersion,
+    runtimeVersion: base.runtimeVersion,
     productionMode: base.productionMode,
     port: base.port,
     hasServer: base.hasServer,
@@ -2738,8 +2738,8 @@ export async function updateOptions(
     update.runtimeMode = options.runtimeMode;
   }
 
-  Object.assign(update, phpProjectUpdate(p, options));
-  assertPhpVersionTarget({ ...p, ...update });
+  Object.assign(update, runtimeProjectUpdate(p, options));
+  assertRuntimeVersionTarget({ ...p, ...update });
 
   // Persist the canonical config FIRST, then reconcile routes (best-effort) on a
   // port change. Ordering the project write before route-sync means a route-sync

@@ -77,9 +77,9 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
       type: "string",
       description: 'Docker image used for the build (e.g. "node:22").',
     },
-    phpVersion: {
-      type: '"8.3" | "8.4"',
-      description: "PHP version for generated Docker builds. Omit to keep the existing PHP 8.4 default. See PHP version selection below.",
+    runtimeVersion: {
+      type: "string",
+      description: "Runtime version resolved by the selected stack. Omit to preserve detected defaults. See Runtime version selection below.",
     },
     productionPaths: {
       type: "string[]",
@@ -88,15 +88,21 @@ It's **JSON, not JSONC** — no comments, no trailing commas.
   }}
 />
 
-## PHP version selection
+## Runtime version selection
 
-For the Laravel and Symfony stacks, select a PHP version in the deploy wizard's
+`runtimeVersion` is one setting shared by runtime policies; it is not a global PHP enum.
+The selected or detected stack validates supported versions and chooses matching build/runtime images.
+Explicit selection currently supports PHP 8.3 and 8.4 for generated Docker builds. Other runtimes
+keep their existing repository detection and defaults; an explicit unsupported selection fails
+before a project write or build instead of being ignored.
+
+For the Laravel and Symfony stacks, select a version in the deploy wizard's
 build settings or declare it in `openship.json`:
 
 ```json
 {
   "framework": "laravel",
-  "phpVersion": "8.3",
+  "runtimeVersion": "8.3",
   "installCommand": "composer install --no-dev --optimize-autoloader"
 }
 ```
@@ -127,9 +133,9 @@ a custom builder, update both settings together.
 This project-level setting applies to generated Docker builds on self-hosted and managed Cloud
 Docker destinations. It cannot configure a user-owned Dockerfile, Compose/monorepo service image,
 bare runtime, static site, or prebuilt image. Explicit selection on these paths is refused; configure
-PHP in their own image instead. Existing projects and user Dockerfiles without `phpVersion` are unchanged.
+PHP in their own image instead. Existing projects and user Dockerfiles without `runtimeVersion` are unchanged.
 
-The API and SDK accept `phpVersion` in project creation, ensure/update and build options. Send
+The API and SDK accept `runtimeVersion` in project creation, ensure/update and build options. Send
 `null` in project options to restore the default PHP version; custom builder overrides are preserved. Folder scans, the SDK source deployment flow,
 and `openship deploy --folder` preserve repository declarations. The CLI validates this field with
 `openship config validate`. Version and resolved image references are frozen in each deployment
@@ -487,7 +493,7 @@ the required roots and start commands.
 
 | `openship.json`                                                                                                | Deploy wizard / API                               |
 | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `framework`, `packageManager`, `*Command`, `outputDirectory`, `buildImage`, `phpVersion`, `productionPaths`, `rootDirectory` | Build settings                                    |
+| `framework`, `packageManager`, `*Command`, `outputDirectory`, `buildImage`, `runtimeVersion`, `productionPaths`, `rootDirectory` | Build settings                                    |
 | `port`, `productionMode`, `runtime`                                                                            | Runtime settings (`hasServer`, runtime isolation) |
 | `releaseCommands`                                                                                              | Build settings → Before activation                  |
 | `volumes`                                                                                                      | Configuration → Persistent storage                |
