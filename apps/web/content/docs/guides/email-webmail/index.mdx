@@ -261,6 +261,12 @@ client does not prove that this server can reach it. For an Openship-managed mai
 should use `mail.<install-domain>` on IMAP port **993** and SMTP port **465**, even for mailboxes on additional
 domains or when outgoing mail uses a relay. The webmail address may be different from this backend hostname.
 
+When webmail runs on the mail server itself, Openship maps this backend hostname to Docker's
+`host-gateway` in the service configuration. This avoids a host DNS resolver returning a loopback
+address inside the container while preserving the hostname used to verify the mail certificate.
+The mapping is saved for redeploy and rollback. Cloud and other-server webmail use the mail server's
+ordinary DNS address; external-backend settings are left as supplied.
+
 Connection failures and invalid or expired certificates show a mail-server connection error. “Invalid email
 or password” is reserved for a credential rejection from IMAP. Check the webmail host's DNS and network path,
 the mail server's client ports, and its certificate; keep TLS verification enabled. After changing a mailbox

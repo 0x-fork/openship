@@ -343,6 +343,9 @@ export type ComposeAdvanced = {
    * nothing else (it keeps its own network identity, ports, and aliases).
    */
   pidMode?: string;
+  /** Docker/Compose hostname-to-address mappings, including host-gateway.
+   * Frozen with the service definition for redeploy and rollback. */
+  extraHosts?: Record<string, string>;
   /**
    * Custom east-west DNS alias for this service, resolving ALONGSIDE the default
    * `service.name` on the project network — both names reach the container. Set

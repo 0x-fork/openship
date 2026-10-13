@@ -14,6 +14,14 @@ import {
  * surfaces.
  */
 describe("compose command drift stability (#332)", () => {
+  it("keeps host mappings in specs and explicitly removes deleted source mappings", () => {
+    const stored = { advanced: { extraHosts: { mail: "host-gateway" }, readiness: { enabled: true } } };
+    expect(toComposeSpec(stored).advanced?.extraHosts).toEqual({ mail: "host-gateway" });
+    const patch = composeWritePatch({ name: "web", advanced: {} }, stored, true);
+    expect(patch.advanced?.extraHosts).toBeUndefined();
+    expect(patch.advanced?.readiness).toEqual({ enabled: true });
+    expect(composeSpecsEqual(toComposeSpec(stored), toComposeSpec({ advanced: { extraHosts: { mail: "127.0.0.1" } } }))).toBe(false);
+  });
   it("legacy text command ≡ re-parsed command+argv (no phantom drift)", () => {
     const legacy = toComposeSpec({ command: "serve --host 0.0.0.0" }); // argv null → derived
     const reparsed = toComposeSpec({

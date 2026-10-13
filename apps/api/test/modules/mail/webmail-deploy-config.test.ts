@@ -4,6 +4,7 @@ import { initPlatform, resetPlatform } from "@repo/adapters";
 import { getAppTemplate } from "@repo/core";
 import { repos, seedOwner, seedServer } from "../jobs/_harness";
 import { decrypt } from "@repo/platform/engine/lib/encryption";
+import { updateService } from "@repo/platform/engine/modules/services/service.service";
 import { mergeServiceDeployEnv } from "@repo/platform/engine/modules/deployments/compose/service-env-layers";
 import {
   buildServicePublicUrlMap,
@@ -308,6 +309,7 @@ describe("Deploy webmail backend configuration", () => {
     };
     const first = await startWebmailDeploy(ctx, input);
     const initial = await deploymentEnv(first.projectId);
+    expect(initial.service.advanced).toMatchObject({ extraHosts: { "mail.example.com": "host-gateway" } });
     expect(initial.values).toMatchObject({
       DEFAULT_IMAP_HOST: "mail.example.com",
       DEFAULT_IMAP_PORT: "993",
@@ -323,6 +325,7 @@ describe("Deploy webmail backend configuration", () => {
     expect(retry.projectId).toBe(first.projectId);
     const next = await deploymentEnv(retry.projectId);
     expect(next.service.id).toBe(initial.service.id);
+    expect(next.service.advanced).toMatchObject({ extraHosts: { "mail.example.com": "host-gateway" } });
     expect(next.values).toEqual({
       ...initial.values,
       TRUSTED_ORIGINS: "https://inbox.example.com",
@@ -346,7 +349,8 @@ describe("Deploy webmail backend configuration", () => {
       workspaceId: workspace.id,
       serverId: managedServer.id,
     });
-    const { values } = await deploymentEnv(installed.projectId);
+    const { values, service } = await deploymentEnv(installed.projectId);
+    expect(service.advanced?.extraHosts).toBeUndefined();
     expect(values).toMatchObject({
       DEFAULT_IMAP_HOST: "mail.example.com",
       DEFAULT_IMAP_PORT: "993",
@@ -365,6 +369,30 @@ describe("Deploy webmail backend configuration", () => {
     });
     expect(retried.projectId).toBe(installed.projectId);
     expect((await deploymentEnv(retried.projectId)).values).toEqual(values);
+  });
+
+  it("removes a stale local-backend mapping on another server while preserving other aliases", async () => {
+    const { ctx, serverId, owner } = await prepared();
+    const otherServerId = await seedServer(owner.orgId);
+    const input = { mailServerId: serverId, hostname: `other-${otherServerId.replace(/_/g, "-")}.example.com`, target: { kind: "self" as const, serverId: otherServerId } };
+    const installed = await startWebmailDeploy(ctx, input);
+    const initial = await deploymentEnv(installed.projectId);
+    expect(initial.service.advanced?.extraHosts).toBeUndefined();
+    await repos.service.update(initial.service.id, { advanced: { ...initial.service.advanced, extraHosts: { "mail.example.com": "host-gateway", "private.example.com": "10.0.0.2" } } });
+    await startWebmailDeploy(ctx, input);
+    const next = await deploymentEnv(installed.projectId);
+    expect(next.service.advanced?.extraHosts).toEqual({"private.example.com":"10.0.0.2"});
+    expect(next.values).toEqual(initial.values);
+  });
+
+  it("rejects an invalid host mapping without partially editing a working service", async () => {
+    const {ctx,serverId}=await prepared();
+    const installed=await startWebmailDeploy(ctx,{mailServerId:serverId,hostname:"webmail.example.com",target:{kind:"self",serverId}});
+    const {service}=await deploymentEnv(installed.projectId);
+    await expect(updateService(ctx,installed.projectId,service.id,{enabled:false,advanced:{extraHosts:{mail:"invalid"}}})).rejects.toThrow(/addresses/);
+    const saved=(await repos.service.listByProject(installed.projectId))[0]!;
+    expect(saved.enabled).toBe(true);
+    expect(saved.advanced?.extraHosts).toEqual({"mail.example.com":"host-gateway"});
   });
 
   it.each(["missing", "foreign", "unmanaged"] as const)(
@@ -467,6 +495,7 @@ describe("Deploy webmail backend configuration", () => {
       };
       const first = await startExternalWebmailDeploy(ctx, input);
       const initial = await deploymentEnv(first.projectId);
+      expect(initial.service.advanced?.extraHosts).toBeUndefined();
       expect(initial.values).toMatchObject({
         DEFAULT_IMAP_HOST: input.backend.imapHost,
         DEFAULT_IMAP_PORT: "143",

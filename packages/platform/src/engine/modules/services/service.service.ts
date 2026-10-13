@@ -22,6 +22,7 @@ import {
   isValidEnvKey,
   looksLikeSecretKey,
   mergeAdvanced,
+  parseContainerHosts,
   normalizeServiceLabel,
   normalizeAliasStrict,
   resolveCommandArgv,
@@ -671,6 +672,9 @@ export async function createService(
   // strips the `null`-means-remove sentinels the update path accepts, so a
   // caller can send one payload shape to both.
   const advanced = mergeAdvanced(null, data.advanced);
+  if (advanced.extraHosts !== undefined) {
+    advanced.extraHosts = parseContainerHosts(advanced.extraHosts);
+  }
   if (advanced.files !== undefined) {
     assertValidGeneratedConfigFiles(advanced.files);
   }
@@ -803,6 +807,10 @@ export async function updateService(
   // deep merge would make a partially-specified healthcheck inherit stale fields.
   if ("advanced" in patch) {
     patch.advanced = mergeAdvanced(svc.advanced as ComposeAdvanced | null, patch.advanced);
+    const extraHosts = (patch.advanced as ComposeAdvanced).extraHosts;
+    if (extraHosts !== undefined) {
+      (patch.advanced as ComposeAdvanced).extraHosts = parseContainerHosts(extraHosts);
+    }
     if ((patch.advanced as ComposeAdvanced).files !== undefined) {
       assertValidGeneratedConfigFiles((patch.advanced as ComposeAdvanced).files);
     }
@@ -1491,6 +1499,9 @@ export async function syncComposeServices(
       ? unmaskEnv(svc.environment, storedEnvByName.get(svc.name) ?? null)
       : svc.environment;
     const advanced = svc.advanced as ComposeAdvanced | undefined;
+    if (advanced?.extraHosts !== undefined) {
+      advanced.extraHosts = parseContainerHosts(advanced.extraHosts);
+    }
     const hasExplicitTemplateMarker = Object.hasOwn(advanced ?? {}, "environmentTemplateKeys");
     const markedTemplateKeys = advanced?.environmentTemplateKeys ?? [];
     // Three provenance levels, in priority order:

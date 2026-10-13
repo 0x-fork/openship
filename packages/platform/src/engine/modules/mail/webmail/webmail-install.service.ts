@@ -285,6 +285,9 @@ interface WebmailInstallPlan {
    * certificate renewal, not to any project.
    */
   routeAfterLink?: boolean;
+  /** Same-host mail daemons are reached through Docker's host gateway while
+   * their certificate hostname remains unchanged. Remote backends use DNS. */
+  hostBackend?: { hostname: string; local: boolean };
 }
 
 async function runWebmailInstall(
@@ -342,6 +345,25 @@ async function runWebmailInstall(
   // Before the deploy, never after: the deploy's success hook resolves the mail
   // server FROM the project, and a build can finish before a later write lands.
   await plan.beforeDeploy?.(projectId);
+  if (plan.hostBackend) {
+    const service = (await repos.service.listByProject(projectId)).find(
+      (row) => row.name === webmailEndpoint(template).service,
+    );
+    if (!service) {
+      throw new AppError("The webmail service is missing. Refresh before deploying.", 409, "WEBMAIL_SERVICE_MISSING");
+    }
+    const previous = (service.advanced as ComposeAdvanced | null)?.extraHosts ?? {};
+    const aliases = { ...previous };
+    if (plan.hostBackend.local) aliases[plan.hostBackend.hostname] = "host-gateway";
+    else if (aliases[plan.hostBackend.hostname] === "host-gateway") {
+      delete aliases[plan.hostBackend.hostname];
+    }
+    if (JSON.stringify(aliases) !== JSON.stringify(previous)) {
+      await updateService(ctx, projectId, service.id, {
+        advanced: { extraHosts: Object.keys(aliases).length ? aliases : null },
+      });
+    }
+  }
 
   // The mail host's route, now that the link authorizing it exists. Same plan builder
   // and same per-service write as a first install — the only difference is that it could
@@ -592,6 +614,10 @@ export async function startWebmailDeploy(
     // `mail.<install>` is routable only by the mail server's LINKED webmail, and the
     // link is stamped in `beforeDeploy` — so this one route has to wait for it (#566).
     routeAfterLink: isOwnMailSubdomain && !useProxyVariant,
+    hostBackend: {
+      hostname: mailHost,
+      local: target.deployTarget === "server" && target.serverId === input.mailServerId,
+    },
     beforeDeploy: async (projectId) => {
       if (reconnect) {
         const current = await repos.mailServer.get(input.mailServerId);

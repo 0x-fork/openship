@@ -13,6 +13,7 @@ import {
   composeMountToSpec,
   composePortToSpec,
   parseComposeNamespace,
+  parseContainerHosts,
   parseEnvFile,
 } from "@repo/core";
 import type { ComposeAdvanced, ComposeHealthcheck, ComposeNamespaceField } from "@repo/core";
@@ -604,6 +605,8 @@ function parseAdvanced(
 
   const pidMode = parseNamespaceField(svc.pid, "pid", env, serviceName, unsupported);
   if (pidMode) advanced.pidMode = pidMode;
+  const extraHosts = parseContainerHosts(svc.extra_hosts, (value) => interpolateComposeString(value, env));
+  if (extraHosts !== undefined) advanced.extraHosts = extraHosts;
 
   // Entrypoint (#575), on exactly the terms `parseCommand` uses for `command`:
   // list → argv verbatim, string → shell-word-split (no implicit `sh -c`).
