@@ -908,6 +908,38 @@
       "billing.payment_failed": {
         "label": "支払い失敗",
         "description": "サブスクリプションの支払いに失敗しました。"
+      },
+      "domain.expiring": {
+        "label": "SSL証明書の有効期限切れ間近",
+        "description": "日次チェック — カスタムドメイン証明書の有効期限が7日未満で、更新処理がホストに接続できない場合に通知します。"
+      },
+      "domain.verification_failed": {
+        "label": "ドメイン検証失敗",
+        "description": "ドメインの初期設定時にDNSチェックに合格しませんでした。"
+      },
+      "member.added": {
+        "label": "新しいメンバーが参加しました",
+        "description": "招待が承認され、新しいメンバーがこの組織に参加しました。"
+      },
+      "invitation.sent": {
+        "label": "招待状を送信しました",
+        "description": "管理者が新しいメンバーに招待を送信しました。セキュリティシグナルとして役立ちます。"
+      },
+      "mail.inbound_received": {
+        "label": "監視対象アドレスにメールが到着",
+        "description": "通知ルールのいずれかが監視しているメールボックスまたはドメインにメッセージが届きました。"
+      },
+      "action.run.cancelled": {
+        "label": "ワークフローがキャンセルされました",
+        "description": "Actions ワークフローの実行がキャンセルされました。"
+      },
+      "billing.alert": {
+        "label": "請求アラート",
+        "description": "支払いの失敗、プラン制限への到達、または請求書の期限超過。常に請求管理者に通知します。"
+      },
+      "quota.warning": {
+        "label": "クォータ警告",
+        "description": "プランの制限（ストレージ、デプロイ、メンバー）に近づいています。エラーが発生する前の事前通知です。"
       }
     }
   },

@@ -908,6 +908,38 @@
       "billing.payment_failed": {
         "label": "支付失败",
         "description": "订阅付款失败，需要处理。"
+      },
+      "domain.expiring": {
+        "label": "SSL 证书即将到期",
+        "description": "每日检查 — 当任何自定义域名证书剩余时间少于 7 天且续订程序无法连接到主机时触发。"
+      },
+      "domain.verification_failed": {
+        "label": "域名验证失败",
+        "description": "在初始域名设置期间 DNS 检查未通过。"
+      },
+      "member.added": {
+        "label": "新成员加入",
+        "description": "有人接受了邀请并加入了此组织。"
+      },
+      "invitation.sent": {
+        "label": "已发送邀请",
+        "description": "管理员向新成员发送了邀请。可用作安全信号。"
+      },
+      "mail.inbound_received": {
+        "label": "监视的地址收到邮件",
+        "description": "邮件已到达您的通知规则所监视的邮箱或域名。"
+      },
+      "action.run.cancelled": {
+        "label": "工作流已取消",
+        "description": "Actions 工作流运行已被取消。"
+      },
+      "billing.alert": {
+        "label": "账单警报",
+        "description": "付款失败、达到方案限额或账单逾期。始终通知账单所有者。"
+      },
+      "quota.warning": {
+        "label": "配额警告",
+        "description": "您即将达到方案限制（存储、部署、成员）。在出现故障前发出提醒。"
       }
     }
   },

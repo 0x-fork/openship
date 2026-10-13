@@ -908,6 +908,38 @@
       "billing.payment_failed": {
         "label": "Zahlung fehlgeschlagen",
         "description": "Eine Abonnement-Zahlung ist fehlgeschlagen."
+      },
+      "domain.expiring": {
+        "label": "SSL-Zertifikat läuft ab",
+        "description": "Tägliche Prüfung — wird ausgelöst, wenn ein benutzerdefiniertes Zertifikat weniger als 7 Tage gültig ist und der Erneuerungsdienst den Host nicht erreichen kann."
+      },
+      "domain.verification_failed": {
+        "label": "Domain-Verifizierung fehlgeschlagen",
+        "description": "DNS-Prüfung bei der Ersteinrichtung der Domain nicht bestanden."
+      },
+      "member.added": {
+        "label": "Neues Mitglied beigetreten",
+        "description": "Jemand hat eine Einladung angenommen und ist dieser Organisation beigetreten."
+      },
+      "invitation.sent": {
+        "label": "Einladungen gesendet",
+        "description": "Ein Administrator hat Einladung(en) an neue Mitglieder gesendet. Nützlich als Sicherheitssignal."
+      },
+      "mail.inbound_received": {
+        "label": "E-Mail an überwachter Adresse eingetroffen",
+        "description": "Eine Nachricht ist an einem Postfach oder einer Domain eingegangen, die von einer Ihrer Benachrichtigungsregeln überwacht wird."
+      },
+      "action.run.cancelled": {
+        "label": "Workflow abgebrochen",
+        "description": "Ein Actions-Workflow-Lauf wurde abgebrochen."
+      },
+      "billing.alert": {
+        "label": "Abrechnungsbenachrichtigung",
+        "description": "Zahlung fehlgeschlagen, Tariflimit erreicht oder Rechnung überfällig. Benachrichtigt immer die Abrechnungsinhaber."
+      },
+      "quota.warning": {
+        "label": "Kontingentwarnung",
+        "description": "Sie nähern sich einem Tariflimit (Speicher, Deployments, Mitglieder). Vorwarnung, bevor Fehler auftreten."
       }
     }
   },

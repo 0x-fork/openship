@@ -257,5 +257,35 @@
     "empty": "暂无输出。",
     "close": "关闭",
     "exit": "退出代码 {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "部署成功",
+      "description": "生产环境部署已成功完成。"
+    },
+    "deployment.failed": {
+      "label": "部署失败",
+      "description": "构建或部署发生错误。"
+    },
+    "backup_run.succeeded": {
+      "label": "备份成功",
+      "description": "计划或手动备份已完成。"
+    },
+    "backup_run.failed": {
+      "label": "备份失败",
+      "description": "备份执行发生错误。"
+    },
+    "backup_restore.completed": {
+      "label": "恢复完成",
+      "description": "恢复操作已完成。"
+    },
+    "ssl.renewal_failed": {
+      "label": "SSL 续期失败",
+      "description": "证书未能成功续期。"
+    },
+    "domain.verification_failed": {
+      "label": "域名验证失败",
+      "description": "域名的 DNS 检查未通过。"
+    }
   }
 }

@@ -908,6 +908,38 @@
       "billing.payment_failed": {
         "label": "Paiement échoué",
         "description": "Un paiement d'abonnement a échoué et nécessite une attention."
+      },
+      "domain.expiring": {
+        "label": "Expiration du certificat SSL",
+        "description": "Vérification quotidienne — se déclenche lorsqu'un certificat de domaine personnalisé a moins de 7 jours restants et que le service de renouvellement ne peut pas joindre l'hôte."
+      },
+      "domain.verification_failed": {
+        "label": "Échec de vérification du domaine",
+        "description": "La vérification DNS n'a pas abouti lors de la configuration initiale du domaine."
+      },
+      "member.added": {
+        "label": "Nouveau membre a rejoint",
+        "description": "Quelqu'un a accepté une invitation et a rejoint cette organisation."
+      },
+      "invitation.sent": {
+        "label": "Invitations envoyées",
+        "description": "Un administrateur a envoyé une ou des invitations à de nouveaux membres. Utile comme signal de sécurité."
+      },
+      "mail.inbound_received": {
+        "label": "E-mail reçu à une adresse surveillée",
+        "description": "Un message est arrivé dans une boîte aux lettres ou un domaine surveillé par l'une de vos règles de notification."
+      },
+      "action.run.cancelled": {
+        "label": "Workflow annulé",
+        "description": "Une exécution de workflow Actions a été annulée."
+      },
+      "billing.alert": {
+        "label": "Alerte de facturation",
+        "description": "Échec du paiement, limite du forfait atteinte ou facture en retard. Avertit toujours les propriétaires de la facturation."
+      },
+      "quota.warning": {
+        "label": "Avertissement de quota",
+        "description": "Vous approchez d'une limite de forfait (stockage, déploiements, membres). Avertissement avant que des erreurs ne surviennent."
       }
     }
   },

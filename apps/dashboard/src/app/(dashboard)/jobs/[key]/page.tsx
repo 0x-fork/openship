@@ -184,7 +184,7 @@ export default function JobDetailPage() {
               {cfg.secrets && Object.keys(cfg.secrets).length > 0 && <InfoRow icon={"git-branch"} label={j.create.secrets} value={Object.keys(cfg.secrets).map((k) => `${k}=••••`).join(", ")} />}
               </>}
               {job.dependsOn && job.dependsOn.length > 0 && <InfoRow icon={"git-branch"} label={j.create.dependencies} value={job.dependsOn.join(", ")} />}
-              {job.triggerEvents && job.triggerEvents.length > 0 && <InfoRow icon={"bolt"} label={j.create.triggers} value={job.triggerEvents.join(", ")} />}
+              {job.triggerEvents && job.triggerEvents.length > 0 && <InfoRow icon={"bolt"} label={j.create.triggers} value={job.triggerEvents.map((id) => (j as any)?.eventTriggers?.[id]?.label || id).join(", ")} />}
               {job.notifyConfig && job.notifyConfig.channels.length > 0 && (
                 <InfoRow icon={"bell"} label={j.create.notifications} value={interpolate(j.detail.notifyValue, { c: String(job.notifyConfig.channels.length), s: job.notifyConfig.states.join(", ") })} />
               )}

@@ -257,5 +257,35 @@
     "empty": "出力はまだありません。",
     "close": "閉じる",
     "exit": "終了コード {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "デプロイ成功",
+      "description": "本番デプロイが正常に完了しました。"
+    },
+    "deployment.failed": {
+      "label": "デプロイ失敗",
+      "description": "ビルドまたはデプロイでエラーが発生しました。"
+    },
+    "backup_run.succeeded": {
+      "label": "バックアップ成功",
+      "description": "定期または手動バックアップが完了しました。"
+    },
+    "backup_run.failed": {
+      "label": "バックアップ失敗",
+      "description": "バックアップ実行でエラーが発生しました。"
+    },
+    "backup_restore.completed": {
+      "label": "復元完了",
+      "description": "復元処理が完了しました。"
+    },
+    "ssl.renewal_failed": {
+      "label": "SSL更新失敗",
+      "description": "証明書を更新できませんでした。"
+    },
+    "domain.verification_failed": {
+      "label": "ドメイン確認失敗",
+      "description": "ドメインのDNS確認に失敗しました。"
+    }
   }
 }

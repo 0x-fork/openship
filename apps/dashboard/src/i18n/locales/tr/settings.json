@@ -947,6 +947,38 @@
       "billing.payment_failed": {
         "label": "Ödeme başarısız",
         "description": "Bir abonelik ödemesi başarısız oldu."
+      },
+      "domain.expiring": {
+        "label": "SSL sertifikasının süresi doluyor",
+        "description": "Günlük kontrol — özel alan adı sertifikalarınızdan herhangi birinin 7 günden az süresi kaldığında ve yenileyici ana bilgisayara ulaşamadığında tetiklenir."
+      },
+      "domain.verification_failed": {
+        "label": "Alan adı doğrulaması başarısız",
+        "description": "İlk alan adı kurulumunda DNS kontrolü geçilemedi."
+      },
+      "member.added": {
+        "label": "Yeni üye katıldı",
+        "description": "Biri bir daveti kabul etti ve bu organizasyona katıldı."
+      },
+      "invitation.sent": {
+        "label": "Davetler gönderildi",
+        "description": "Bir yönetici yeni üyelere davet gönderdi. Güvenlik sinyali olarak yararlıdır."
+      },
+      "mail.inbound_received": {
+        "label": "İzlenen bir adrese e-posta geldi",
+        "description": "Bildirim kurallarınızdan birinin izlediği bir posta kutusuna veya alan adına bir ileti ulaştı."
+      },
+      "action.run.cancelled": {
+        "label": "İş akışı iptal edildi",
+        "description": "Bir Actions iş akışı çalıştırması iptal edildi."
+      },
+      "billing.alert": {
+        "label": "Fatura uyarısı",
+        "description": "Ödeme başarısız oldu, plan sınırına ulaşıldı veya faturanın vadesi geçti. Her zaman fatura sahiplerini bilgilendirir."
+      },
+      "quota.warning": {
+        "label": "Kota uyarısı",
+        "description": "Plan sınırına yaklaşıyorsunuz (depolama, dağıtımlar, üyeler). Sorunlar başlamadan önce ön uyarı."
       }
     }
   },

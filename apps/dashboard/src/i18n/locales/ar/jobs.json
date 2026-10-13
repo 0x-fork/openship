@@ -257,5 +257,35 @@
     "empty": "لا توجد مخرجات بعد.",
     "close": "إغلاق",
     "exit": "رمز الخروج {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "نجح النشر",
+      "description": "اكتمل نشر الإنتاج بنجاح."
+    },
+    "deployment.failed": {
+      "label": "فشل النشر",
+      "description": "حدث خطأ أثناء البناء أو النشر."
+    },
+    "backup_run.succeeded": {
+      "label": "نجح النسخ الاحتياطي",
+      "description": "اكتمل النسخ الاحتياطي المجدول أو اليدوي."
+    },
+    "backup_run.failed": {
+      "label": "فشل النسخ الاحتياطي",
+      "description": "حدث خطأ أثناء تشغيل النسخ الاحتياطي."
+    },
+    "backup_restore.completed": {
+      "label": "اكتملت الاستعادة",
+      "description": "اكتملت عملية الاستعادة."
+    },
+    "ssl.renewal_failed": {
+      "label": "فشل تجديد SSL",
+      "description": "تعذر تجديد الشهادة."
+    },
+    "domain.verification_failed": {
+      "label": "فشل التحقق من النطاق",
+      "description": "فشل فحص DNS للنطاق."
+    }
   }
 }

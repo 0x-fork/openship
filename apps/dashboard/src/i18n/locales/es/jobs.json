@@ -257,5 +257,35 @@
     "empty": "Aún no hay salida.",
     "close": "Cerrar",
     "exit": "Código de salida {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Despliegue exitoso",
+      "description": "Un despliegue a producción finalizó correctamente."
+    },
+    "deployment.failed": {
+      "label": "Error en el despliegue",
+      "description": "La compilación o el despliegue fallaron."
+    },
+    "backup_run.succeeded": {
+      "label": "Copia de seguridad completada",
+      "description": "Una copia de seguridad programada o manual se completó."
+    },
+    "backup_run.failed": {
+      "label": "Error en copia de seguridad",
+      "description": "Falló la ejecución de la copia de seguridad."
+    },
+    "backup_restore.completed": {
+      "label": "Restauración completada",
+      "description": "Finalizó una restauración."
+    },
+    "ssl.renewal_failed": {
+      "label": "Error de renovación SSL",
+      "description": "No se pudo renovar el certificado."
+    },
+    "domain.verification_failed": {
+      "label": "Error de verificación de dominio",
+      "description": "Falló la comprobación de DNS del dominio."
+    }
   }
 }

@@ -257,5 +257,35 @@
     "Update scan": "Update scan",
     "Free-domain target verification": "Free-domain target verification",
     "Domain DNS verification": "Domain DNS verification"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Deploy succeeded",
+      "description": "A production deploy finished successfully."
+    },
+    "deployment.failed": {
+      "label": "Deploy failed",
+      "description": "A build or deploy errored out."
+    },
+    "backup_run.succeeded": {
+      "label": "Backup succeeded",
+      "description": "A scheduled or manual backup completed."
+    },
+    "backup_run.failed": {
+      "label": "Backup failed",
+      "description": "A backup run errored out."
+    },
+    "backup_restore.completed": {
+      "label": "Restore completed",
+      "description": "A restore finished."
+    },
+    "ssl.renewal_failed": {
+      "label": "SSL renewal failed",
+      "description": "A certificate could not be renewed."
+    },
+    "domain.verification_failed": {
+      "label": "Domain verification failed",
+      "description": "A domain's DNS check failed."
+    }
   }
 }

@@ -257,5 +257,35 @@
     "empty": "Noch keine Ausgabe.",
     "close": "Schließen",
     "exit": "Exit-Code {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Deployment erfolgreich",
+      "description": "Ein Produktions-Deployment wurde erfolgreich abgeschlossen."
+    },
+    "deployment.failed": {
+      "label": "Deployment fehlgeschlagen",
+      "description": "Build oder Deployment mit Fehler abgebrochen."
+    },
+    "backup_run.succeeded": {
+      "label": "Backup erfolgreich",
+      "description": "Ein geplantes oder manuelles Backup wurde abgeschlossen."
+    },
+    "backup_run.failed": {
+      "label": "Backup fehlgeschlagen",
+      "description": "Ein Backup-Lauf wurde mit einem Fehler beendet."
+    },
+    "backup_restore.completed": {
+      "label": "Wiederherstellung abgeschlossen",
+      "description": "Eine Wiederherstellung wurde abgeschlossen."
+    },
+    "ssl.renewal_failed": {
+      "label": "SSL-Verlängerung fehlgeschlagen",
+      "description": "Zertifikat konnte nicht verlängert werden."
+    },
+    "domain.verification_failed": {
+      "label": "Domain-Verifizierung fehlgeschlagen",
+      "description": "DNS-Prüfung der Domain fehlgeschlagen."
+    }
   }
 }

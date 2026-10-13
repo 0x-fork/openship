@@ -257,5 +257,35 @@
     "empty": "Nenhuma saída ainda.",
     "close": "Fechar",
     "exit": "Código de saída {code}"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Implantação bem-sucedida",
+      "description": "Uma implantação de produção foi concluída com sucesso."
+    },
+    "deployment.failed": {
+      "label": "Falha na implantação",
+      "description": "Erro na compilação ou na implantação."
+    },
+    "backup_run.succeeded": {
+      "label": "Backup concluído",
+      "description": "Um backup agendado ou manual foi concluído."
+    },
+    "backup_run.failed": {
+      "label": "Falha no backup",
+      "description": "A execução do backup apresentou erro."
+    },
+    "backup_restore.completed": {
+      "label": "Restauração concluída",
+      "description": "Uma restauração foi finalizada."
+    },
+    "ssl.renewal_failed": {
+      "label": "Falha na renovação do SSL",
+      "description": "Não foi possível renovar o certificado."
+    },
+    "domain.verification_failed": {
+      "label": "Falha na verificação do domínio",
+      "description": "A verificação de DNS do domínio falhou."
+    }
   }
 }

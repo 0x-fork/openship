@@ -257,5 +257,35 @@
     "Update scan": "Поиск обновлений",
     "Free-domain target verification": "Проверка бесплатных доменов",
     "Domain DNS verification": "Проверка DNS доменов"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Деплой успешен",
+      "description": "Продакшн-деплой завершился успешно."
+    },
+    "deployment.failed": {
+      "label": "Ошибка деплоя",
+      "description": "Сборка или деплой завершились с ошибкой."
+    },
+    "backup_run.succeeded": {
+      "label": "Резервная копия создана",
+      "description": "Плановое или ручное резервное копирование завершено."
+    },
+    "backup_run.failed": {
+      "label": "Ошибка резервного копирования",
+      "description": "Создание резервной копии завершилось с ошибкой."
+    },
+    "backup_restore.completed": {
+      "label": "Восстановление завершено",
+      "description": "Восстановление из резервной копии завершено."
+    },
+    "ssl.renewal_failed": {
+      "label": "Ошибка продления SSL",
+      "description": "Не удалось продлить SSL-сертификат."
+    },
+    "domain.verification_failed": {
+      "label": "Ошибка проверки домена",
+      "description": "Проверка DNS для домена не пройдена."
+    }
   }
 }

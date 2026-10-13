@@ -908,6 +908,38 @@
       "billing.payment_failed": {
         "label": "Pago fallido",
         "description": "Un pago de suscripción falló y requiere atención."
+      },
+      "domain.expiring": {
+        "label": "Certificado SSL a punto de expirar",
+        "description": "Comprobación diaria: se activa cuando a cualquier certificado de dominio personalizado le quedan menos de 7 días y el renovador no puede comunicarse con el host."
+      },
+      "domain.verification_failed": {
+        "label": "Fallo en la verificación del dominio",
+        "description": "La comprobación de DNS no pasó durante la configuración inicial del dominio."
+      },
+      "member.added": {
+        "label": "Nuevo miembro se unió",
+        "description": "Alguien aceptó una invitación y se unió a esta organización."
+      },
+      "invitation.sent": {
+        "label": "Invitaciones enviadas",
+        "description": "Un administrador envió invitaciones a nuevos miembros. Útil como señal de seguridad."
+      },
+      "mail.inbound_received": {
+        "label": "Correo recibido en una dirección observada",
+        "description": "Llegó un mensaje a un buzón o dominio observado por una de sus reglas de notificación."
+      },
+      "action.run.cancelled": {
+        "label": "Flujo de trabajo cancelado",
+        "description": "Se canceló una ejecución del flujo de trabajo de Actions."
+      },
+      "billing.alert": {
+        "label": "Alerta de facturación",
+        "description": "Error en el pago, límite del plan alcanzado o factura vencida. Siempre notifica a los propietarios de facturación."
+      },
+      "quota.warning": {
+        "label": "Advertencia de cuota",
+        "description": "Te estás acercando al límite del plan (almacenamiento, despliegues, miembros). Aviso antes de que comiencen los fallos."
       }
     }
   },

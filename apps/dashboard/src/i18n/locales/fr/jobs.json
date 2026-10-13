@@ -257,5 +257,35 @@
     "Update scan": "Recherche de mises à jour",
     "Free-domain target verification": "Vérification des domaines gratuits",
     "Domain DNS verification": "Vérification DNS du domaine"
+  },
+  "eventTriggers": {
+    "deployment.succeeded": {
+      "label": "Déploiement réussi",
+      "description": "Un déploiement en production s'est terminé avec succès."
+    },
+    "deployment.failed": {
+      "label": "Échec du déploiement",
+      "description": "La compilation ou le déploiement a échoué."
+    },
+    "backup_run.succeeded": {
+      "label": "Sauvegarde réussie",
+      "description": "Une sauvegarde planifiée ou manuelle est terminée."
+    },
+    "backup_run.failed": {
+      "label": "Échec de la sauvegarde",
+      "description": "Une exécution de sauvegarde a échoué."
+    },
+    "backup_restore.completed": {
+      "label": "Restauration terminée",
+      "description": "Une restauration est terminée."
+    },
+    "ssl.renewal_failed": {
+      "label": "Échec du renouvellement SSL",
+      "description": "Impossible de renouveler le certificat."
+    },
+    "domain.verification_failed": {
+      "label": "Échec de vérification du domaine",
+      "description": "La vérification DNS du domaine a échoué."
+    }
   }
 }
