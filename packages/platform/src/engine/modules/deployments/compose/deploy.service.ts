@@ -12,6 +12,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
+import { deploymentForcesImagePull, deploymentImagePullPolicy, isMutableImageRef } from "../image-pull-policy";
 import { assertCloudDeploymentLimits } from "../../../lib/plan-guard";
 import { resolveInheritedResources, resolveRuntimeResources } from "../../../lib/resources";
 import { posix as pathPosix } from "node:path";
@@ -610,13 +611,8 @@ function resolveServiceResources(
   return resolveInheritedResources((service.advanced as ComposeAdvanced | null)?.resources, projectResources);
 }
 
-/** @internal Exported so the image-refresh contract can be tested without a Docker host. */
-export function deploymentForcesImagePull(
-  dep: Pick<Deployment, "trigger">,
-  forcePullImages?: boolean,
-): boolean {
-  return dep.trigger === "update" || forcePullImages === true;
-}
+/** @internal Re-exported so the image-refresh contract can be tested without a Docker host. */
+export { deploymentForcesImagePull, isMutableImageRef };
 
 /** @internal Recognize only a host directory explicitly produced/pinned for
  * this service by the build phase. An arbitrary absolute `service.image` is
@@ -718,10 +714,11 @@ export function createServiceRuntimeConfig(opts: {
     command: runtimeCommand,
     commandArgv,
     restart: service.restart ?? "unless-stopped",
-    // Explicit updates and incoming deploy hooks force a fresh pull so a moved
-    // mutable tag (:latest/:1) actually rolls forward. Ordinary redeploys stay
-    // pull-if-missing.
-    forcePull: !opts.imageAlreadyPrepared && deploymentForcesImagePull(dep, opts.forcePullImages),
+    // Explicit updates, incoming deploy hooks and manual deploys of a mutable tag
+    // force a fresh pull so a moved tag (:latest/:1) actually rolls forward.
+    // Webhook/rollback deploys of an already-present image stay pull-if-missing.
+    forcePull:
+      !opts.imageAlreadyPrepared && deploymentForcesImagePull(dep, opts.forcePullImages, image),
     imageAlreadyPrepared: opts.imageAlreadyPrepared,
     advanced: service.advanced ?? undefined,
     // Operator-chosen east-west alias (service.advanced.alias) resolving
@@ -1360,43 +1357,69 @@ async function deployComposeServicesUnlocked(
   const previousByServiceId = new Map(previousServiceDeps.map((row) => [row.serviceId, row]));
   const enabledServiceIds = new Set(enabled.map((svc) => svc.id));
 
-  // A multi-service mutable-tag refresh must acquire EVERY replacement image
-  // before the first running service is touched. Otherwise service A can cut
-  // over successfully and service B can then fail its registry pull, producing
-  // exactly the split rollout this webhook feature is intended to avoid. Docker
-  // activation skips its own second force-pull after this cohort succeeds.
-  const forcePullBeforeCutover =
-    runtime instanceof DockerRuntime && deploymentForcesImagePull(dep, opts?.forcePullImages);
-  const prePulledImageRefs = new Set<string>();
-  if (forcePullBeforeCutover) {
-    const pullRefs = new Set<string>();
+  const isNewerThanRelease = newerThanRestoredRelease(dep);
+  type PreparedImage = Awaited<ReturnType<DockerRuntime["prepareDeploymentImage"]>> & { requestedRef: string };
+  const preparedImages = new Map<string, PreparedImage>();
+  // Freeze the entire replacement cohort before activation. First capture
+  // retained artifacts, so refreshing a shared tag cannot change a pinned
+  // service's image. Then acquire registry images, including missing digests.
+  if (runtime instanceof DockerRuntime) {
+    const candidates: { service: Service; image: string; requestedRef: string; retained: boolean; refresh: boolean }[] = [];
+    const namespaceReplacementNames = new Set(ordered
+      .filter(service => !opts?.targetServiceIds || opts.targetServiceIds.has(service.id))
+      .map(service => service.name));
     for (const service of ordered) {
-      if (opts?.targetServiceIds && !opts.targetServiceIds.has(service.id)) continue;
-      if (opts?.buildFailures?.has(service.id)) continue;
-      const image = resolveDeployImage({
+      throwIfDeploymentCancelled(opts?.signal);
+      if (service.projectId !== project.id) continue;
+      const outsideScope = opts?.targetServiceIds && !opts.targetServiceIds.has(service.id);
+      if (outsideScope && opts?.strictScope) continue;
+      const previous = previousByServiceId.get(service.id);
+      const live = previous?.containerId ? await readCarriedContainerInfo(previous.containerId) : undefined;
+      const namespaceAffected = composeNamespaceDependencies(service.advanced as ComposeAdvanced | null)
+        .some(name => namespaceReplacementNames.has(name));
+      if (namespaceAffected) namespaceReplacementNames.add(service.name);
+      if ((outsideScope || isNewerThanRelease(service)) && previous?.containerId &&
+        (live === undefined || live.status === "running") && !namespaceAffected) continue;
+      const buildFailure = opts?.buildFailures?.get(service.id);
+      if (buildFailure) throw new Error(`Image preparation failed for ${service.name}: ${buildFailure}. No service was activated.`);
+      const reusingBuild = !opts?.builtImages?.has(service.id) &&
+        !!(service.build || (service.advanced as ComposeAdvanced | null)?.build ||
+          (serviceKind(service) === "monorepo" && !service.image));
+      const image = reusingBuild && previous?.imageRef ? previous.imageRef : resolveDeployImage({
         builtImage: opts?.builtImages?.get(service.id),
         rowImage: service.image,
-        previousImageRef: previousByServiceId.get(service.id)?.imageRef,
+        previousImageRef: previous?.imageRef,
       });
-      if (
-        image &&
-        !isStaticHostArtifact(
-          service.id,
-          image,
-          opts?.staticServiceIds,
-          opts?.staticArtifactRefs,
-          previousByServiceId.get(service.id),
-        ) &&
-        !isPreparedLocalImage(service, image, opts?.preparedLocalImages)
-      ) {
-        pullRefs.add(image);
+      if (!image) throw new Error(`No image is available for ${service.name}; no service was activated.`);
+      if (isStaticHostArtifact(service.id, image, opts?.staticServiceIds, opts?.staticArtifactRefs, previous)) continue;
+      if (!opts?.targetServiceIds && service.image && !reusingBuild && live?.status === "running" && !live.imageId) {
+        throw new Error(`Cannot inspect the running image for ${service.name}; no service was activated.`);
       }
+      const retainRunning = (outsideScope || isNewerThanRelease(service)) && namespaceAffected && live?.status === "running";
+      if (retainRunning && !live?.imageId) throw new Error(`Cannot inspect the running image for ${service.name}; no service was activated.`);
+      namespaceReplacementNames.add(service.name);
+      candidates.push({ service, image: retainRunning ? live!.imageId! : image,
+        requestedRef: retainRunning ? previous?.imageRef ?? image : image,
+        retained: !!retainRunning || reusingBuild || isPreparedLocalImage(service, image, opts?.preparedLocalImages),
+        refresh: !outsideScope });
     }
-    for (const image of pullRefs) {
-      logger.log(`Preparing replacement image ${image} before service cutover...\n`);
-      await runtime.pullImage(image, { force: true });
-      prePulledImageRefs.add(image);
+    const byRef = new Map<string, Awaited<ReturnType<DockerRuntime["prepareDeploymentImage"]>>>();
+    for (const { service, image, requestedRef, retained, refresh } of candidates.sort((a, b) => Number(b.retained) - Number(a.retained))) {
+      throwIfDeploymentCancelled(opts?.signal);
+      const key = `${retained ? "retained" : refresh ? "registry" : "existing"}\0${image}`;
+      let prepared = byRef.get(key);
+      if (!prepared) {
+        logger.log(`Preparing image ${image} before service cutover...\n`);
+        const policy = refresh ? deploymentImagePullPolicy(dep, opts?.forcePullImages, image)
+          : { force: false, refreshMutableTag: false };
+        prepared = await runtime.prepareDeploymentImage(image, {
+          ...policy, requirePresent: retained, signal: opts?.signal,
+        });
+        byRef.set(key, prepared);
+      }
+      preparedImages.set(service.id, { ...prepared, requestedRef });
     }
+    throwIfDeploymentCancelled(opts?.signal);
   }
 
   // A same-named Docker Compose stack is not implicitly ours. Before this gate,
@@ -1459,7 +1482,6 @@ async function deployComposeServicesUnlocked(
       .map((m) => m.serviceId as string),
   );
   const isExternalUnchanged = (svc: Service): boolean => {
-    if (deploymentForcesImagePull(dep, opts?.forcePullImages)) return false;
     // A rollback REPLAYS a release: its frozen env (`frozenEnvWins` above) and its
     // pinned images only reach the container by recreating it. Carrying an
     // external forward instead applies neither, so the restore reports success
@@ -1485,19 +1507,24 @@ async function deployComposeServicesUnlocked(
     if (carryProjectEnvChanged || carryEnvChangedServiceIds.has(svc.id)) return false; // env changed
     const prev = previousByServiceId.get(svc.id);
     if (!prev?.containerId) return false; // nothing running to carry
+    const prepared = preparedImages.get(svc.id);
+    if (prepared) {
+      const live = carriedContainerInfoById.get(prev.containerId);
+      // Compare actual content, not the mutable tag or an old database digest.
+      // An unknown image cannot be assumed unchanged.
+      if (!live?.imageId || live.imageId !== prepared.imageId) return false;
+    } else if (deploymentForcesImagePull(dep, opts?.forcePullImages, svc.image ?? undefined)) {
+      return false;
+    }
     // Against the image this deploy INTENDS, not the service row's: a pinned ref
     // (a rollback replay, a migration cutover's `handoverImages`) arrives via
     // `builtImages` and is first read PAST the carry `continue`, so comparing
     // `svc.image` carried a service whose intended image differed from the running
     // one — comparing the row against itself.
-    const intended = opts?.builtImages?.get(svc.id) ?? svc.image;
+    const intended = prepared?.requestedRef ?? opts?.builtImages?.get(svc.id) ?? svc.image;
     if (prev.imageRef && prev.imageRef !== intended) return false;
     return true;
   };
-
-  // Rollback: a service added after the release being restored is carried
-  // forward, not recreated (see newerThanRestoredRelease).
-  const isNewerThanRelease = newerThanRestoredRelease(dep);
 
   // Sanitized rather than passed through: this reaches generated nginx config, and
   // the row can also carry a value seeded from a repo config, not just the API.
@@ -1974,7 +2001,7 @@ async function deployComposeServicesUnlocked(
     const failures: string[] = [];
     const serviceByName = new Map(enabled.map((service) => [service.name, service]));
     for (const service of generatedConfigPreflightServices) {
-      const image = resolveDeployImage({
+      const image = preparedImages.get(service.id)?.requestedRef ?? resolveDeployImage({
         builtImage: opts.builtImages?.get(service.id),
         rowImage: service.image,
         previousImageRef: previousByServiceId.get(service.id)?.imageRef,
@@ -2461,7 +2488,7 @@ async function deployComposeServicesUnlocked(
       // Resolved HERE rather than at the create site further down so the scope gate
       // immediately below and the "no image available" failure it guards read the same
       // answer. They are two verdicts on one question and must not drift.
-      const image = resolveDeployImage({
+      const image = preparedImages.get(svc.id)?.requestedRef ?? resolveDeployImage({
         builtImage: opts?.builtImages?.get(svc.id),
         rowImage: svc.image,
         previousImageRef: previousByServiceId.get(svc.id)?.imageRef,
@@ -2967,13 +2994,13 @@ async function deployComposeServicesUnlocked(
         project,
         dep,
         service: svc,
-        image,
+        image: preparedImages.get(svc.id)?.deploymentRef ?? image,
         environment: mergedEnv,
         resources: serviceResources,
         namespaces: resolvedNamespaces.namespaces,
         forcePullImages: opts?.forcePullImages,
         imageAlreadyPrepared:
-          prePulledImageRefs.has(image) ||
+          preparedImages.has(svc.id) ||
           isPreparedLocalImage(svc, image, opts?.preparedLocalImages),
       });
 
@@ -3011,7 +3038,7 @@ async function deployComposeServicesUnlocked(
         project,
         dep,
         service: svc,
-        image,
+        image: preparedImages.get(svc.id)?.deploymentRef ?? image,
         environment: mergedEnv,
         resources: serviceResources,
         buildSessionId: opts?.buildSessionId,
@@ -3295,7 +3322,9 @@ async function deployComposeServicesUnlocked(
             cpuCores: serviceResources.cpuCores, memoryMb: serviceResources.memoryMb } : null,
           status: "success",
           imageRef: image,
-          imageDigest: result.imageDigest ?? null,
+          imageDigest: preparedImages.has(svc.id)
+            ? preparedImages.get(svc.id)!.registryDigest ?? null
+            : result.imageDigest ?? null,
           hostPort: persistedHostPort,
           hostPorts: Object.keys(persistedHostPorts).length > 0 ? persistedHostPorts : null,
           ip: result.ip ?? null,

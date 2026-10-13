@@ -222,6 +222,9 @@ export class CloudDockerRuntime extends DockerRuntime {
       throw new AppError("Image belongs to another project", 404, "IMAGE_NOT_FOUND");
     return image;
   }
+  protected override async inspectDeploymentImage(ref: string) {
+    return this.accessibleImage(ref);
+  }
   override async removeImage(ref: string) {
     try {
       if ((await this.accessibleImage(ref)).Config?.Labels?.["openship.project"] !== this.projectId)
