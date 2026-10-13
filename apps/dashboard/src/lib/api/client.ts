@@ -1,6 +1,7 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { getRestApiBaseUrl } from "./urls";
 import { reportClientError } from "../error-reporting";
+import { localizeDiagnosisMessage } from "../i18n/localize-issues";
 
 /**
  * Standard API client for the Openship dashboard.
@@ -117,15 +118,19 @@ export function isNetworkError(err: unknown): boolean {
 export function getApiErrorMessage(
   err: unknown,
   fallback = "Request failed",
+  msgs?: Record<string, string>,
 ): string {
   reportClientError(err);
   // Before the generic Error arm: an abort's own message is the browser's
   // internal wording, never something to show.
-  if (isAbortError(err)) return callerAborts.has(err as Error) ? "Request cancelled." : REQUEST_TIMEOUT_MESSAGE;
+  if (isAbortError(err)) {
+    const abortMsg = callerAborts.has(err as Error) ? "Request cancelled." : REQUEST_TIMEOUT_MESSAGE;
+    return msgs ? localizeDiagnosisMessage(abortMsg, msgs) : abortMsg;
+  }
   if (err instanceof ApiError) {
     const body = err.body as Record<string, unknown> | undefined;
-    if (body && typeof body.message === "string") return body.message;
-    if (body && typeof body.error === "string") return body.error;
+    if (body && typeof body.message === "string") return msgs ? localizeDiagnosisMessage(body.message, msgs) : body.message;
+    if (body && typeof body.error === "string") return msgs ? localizeDiagnosisMessage(body.error, msgs) : body.error;
     // TypeBox schema-validation 400s carry `{ success:false, errors:[{path,message}] }`
     // with no top-level message/error, so they used to collapse to the opaque
     // "API 400: Bad Request" (#427). Surface the first field error instead.
@@ -135,10 +140,13 @@ export function getApiErrorMessage(
       const path = typeof first.path === "string" ? first.path : "";
       if (message) return path ? `${path} ${message}` : message;
     }
-    return err.message || fallback;
+    const raw = err.message || fallback;
+    return msgs ? localizeDiagnosisMessage(raw, msgs) : raw;
   }
-  if (err instanceof Error) return err.message;
-  return fallback;
+  let msg: string;
+  if (err instanceof Error) msg = err.message;
+  else msg = fallback;
+  return msgs ? localizeDiagnosisMessage(msg, msgs) : msg;
 }
 
 /**

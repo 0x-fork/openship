@@ -16,6 +16,7 @@ import {
 import { timeAgo } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { KIND_ICON, SEVERITY_TONE, UNKNOWN_KIND_ICON } from "./issueMeta";
+import { localizeDiagnosisMessage } from "@/lib/i18n/localize-issues";
 
 /**
  * One issue, rendered from the feed's own fields — no fetching, no re-derivation.
@@ -105,7 +106,7 @@ function localizeIssueMessage(rawMsg: string, msgs?: Record<string, string>): st
   if (certEdge) {
     return msgs.certEdgeFailed ? interpolate(msgs.certEdgeFailed, { detail: certEdge[1] }) : rawMsg;
   }
-  return rawMsg;
+  return localizeDiagnosisMessage(rawMsg, msgs);
 }
 
 export function IssueRow({

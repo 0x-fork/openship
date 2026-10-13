@@ -141,7 +141,21 @@
     "dnsOtherServer": "El DNS apunta a un servidor diferente",
     "txtMissing": "Falta el registro TXT de propiedad",
     "mailCertExpired": "El certificado de correo ha caducado.",
-    "certEdgeFailed": "No se pudo confirmar el certificado ({detail}). Asegúrese de que el dominio apunte a este servidor y los puertos 80/443 sean accesibles."
+    "certEdgeFailed": "No se pudo confirmar el certificado ({detail}). Asegúrese de que el dominio apunte a este servidor y los puertos 80/443 sean accesibles.",
+    "certDnsUnresolved": "{domain} aún no apunta a este servidor: el registro DNS A falta o no se ha propagado. Espera la propagación y reinténtalo desde la pestaña Dominios.",
+    "certPort80Unreachable": "El puerto 80 para {domain} no es accesible desde internet: un firewall o grupo de seguridad lo bloquea, el dominio no apunta a este servidor o hay otro proxy vinculado al puerto 80.",
+    "certCloudflareProxy": "El proxy de Cloudflare está respondiendo al desafío de certificado para {domain} en lugar de reenviarlo a este servidor: redirige a HTTPS y luego rechaza el TLS de origen. Corrígelo configurando SSL/TLS → Overview en \"Full\" (no \"Full (strict)\") hasta emitir el primer certificado, desactivando la nube naranja o subiendo un certificado Cloudflare Origin CA desde Dominios.",
+    "certRedirect404": "El desafío para {domain} se redirigió de HTTP a HTTPS y respondió con 404: lo que respondió no enruta este host. Si {domain} está detrás de Cloudflare, \"Always Use HTTPS\" genera la redirección: pon SSL/TLS → Overview en \"Full\" (no \"Full (strict)\") o desactiva la nube naranja. De lo contrario, verifica que el registro A apunte a este servidor.",
+    "certPort80NotAcme": "El puerto 80 respondió pero no con el desafío ACME: otro servidor web sigue sirviendo en el puerto 80. Vuelve a ejecutar y selecciona migrar/tomar el control.",
+    "certRateLimited": "Se alcanzó el límite de solicitudes de Let's Encrypt para {domain}: espera antes de volver a intentarlo.",
+    "certPortBindFailure": "No se pudo iniciar el escucha del desafío para {domain} en el puerto {port}: otro proceso ya lo ocupa. Reinténtalo o detenlo con .",
+    "certFailedGeneric": "certbot no pudo emitir un certificado para {domain}",
+    "requestTimeout": "Tiempo de espera agotado. El servidor tardó demasiado en responder.",
+    "requestCancelled": "Solicitud cancelada.",
+    "requestFailed": "La solicitud falló.",
+    "networkUnreachable": "No se puede conectar con Openship. Comprueba la conexión y la disponibilidad del servidor.",
+    "hostUnreachable": "Host no accesible",
+    "sshConnectionRefused": "Conexión SSH rechazada"
   },
   "monitoring": {
     "autoCard": {

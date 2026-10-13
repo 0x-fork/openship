@@ -141,7 +141,21 @@
     "dnsOtherServer": "DNS verweist auf einen anderen Server",
     "txtMissing": "TXT-Eintrag zur Inhaberschaft fehlt",
     "mailCertExpired": "Das Mail-Zertifikat ist abgelaufen.",
-    "certEdgeFailed": "Zertifikat konnte nicht bestätigt werden ({detail}). Stellen Sie sicher, dass die Domain auf diesen Server zeigt und Ports 80/443 erreichbar sind."
+    "certEdgeFailed": "Zertifikat konnte nicht bestätigt werden ({detail}). Stellen Sie sicher, dass die Domain auf diesen Server zeigt und Ports 80/443 erreichbar sind.",
+    "certDnsUnresolved": "{domain} verweist noch nicht auf diesen Server — der DNS-A-Eintrag fehlt oder wurde noch nicht propagiert. Warten Sie auf die Propagierung und versuchen Sie es dann im Tab „Domains“ erneut.",
+    "certPort80Unreachable": "Port 80 für {domain} ist aus dem Internet nicht erreichbar — eine Firewall oder Cloud-Sicherheitsgruppe blockiert ihn, die Domain zeigt nicht auf diesen Server oder ein anderer Proxy belegt Port :80.",
+    "certCloudflareProxy": "Der Proxy von Cloudflare beantwortet die Zertifikatsprüfung für {domain}, anstatt sie an diesen Server weiterzuleiten: Er leitet HTTP auf HTTPS um und lehnt dann das TLS des Ursprungs ab. Beheben Sie dies auf drei Wegen: Setzen Sie SSL/TLS → Overview auf „Full“ (nicht „Full (strict)“), bis das erste Zertifikat ausgestellt ist, deaktivieren Sie die orangefarbene Wolke für diesen Eintrag oder laden Sie ein Cloudflare Origin CA-Zertifikat im Tab „Domains“ hoch.",
+    "certRedirect404": "Die Prüfung für {domain} wurde von HTTP auf HTTPS umgeleitet und mit 404 beantwortet — der antwortende Server leitet diesen Hostnamen nicht weiter. Wenn {domain} hinter Cloudflare liegt, führt „Always Use HTTPS“ die Weiterleitung aus: Setzen Sie SSL/TLS → Overview auf „Full“ (nicht „Full (strict)“) oder schalten Sie die orangefarbene Wolke aus. Prüfen Sie andernfalls, ob der A-Eintrag auf diesen Server zeigt.",
+    "certPort80NotAcme": "Port 80 hat geantwortet, aber nicht mit unserer ACME-Prüfung — ein anderer Webserver bedient weiterhin :80, sodass die Übernahme nicht abgeschlossen wurde. Führen Sie den Vorgang erneut aus und wählen Sie Übernehmen / Migrieren.",
+    "certRateLimited": "Let's Encrypt-Ratenlimit für {domain} erreicht — bitte vor einem erneuten Versuch warten.",
+    "certPortBindFailure": "Der Listener für die Zertifikatsprüfung für {domain} konnte auf Port {port} nicht gestartet werden: Er ist bereits belegt. Dieser Port wird nur während der Ausstellung verwendet. Wiederholen Sie den Vorgang oder beenden Sie den Prozess mit .",
+    "certFailedGeneric": "certbot konnte kein Zertifikat für {domain} ausstellen",
+    "requestTimeout": "Zeitüberschreitung der Anforderung. Der Server hat zu lange für eine Antwort gebraucht.",
+    "requestCancelled": "Anforderung abgebrochen.",
+    "requestFailed": "Anforderung fehlgeschlagen.",
+    "networkUnreachable": "Openship kann nicht erreicht werden. Überprüfen Sie Verbindung und Serververfügbarkeit.",
+    "hostUnreachable": "Host nicht erreichbar",
+    "sshConnectionRefused": "SSH-Verbindung verweigert"
   },
   "monitoring": {
     "autoCard": {

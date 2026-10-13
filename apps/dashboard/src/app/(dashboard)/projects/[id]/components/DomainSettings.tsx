@@ -10,6 +10,7 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { RoutingConfigCard } from "./RoutingConfigCard";
 import { RouteRules } from "./RouteRules";
 import { RoutingUnsyncedCallout } from "./RoutingUnsyncedCallout";
+import { localizeDiagnosisMessage } from "@/lib/i18n/localize-issues";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { getApiErrorMessage, projectsApi, deployApi, domainsApi, servicesApi, type Service, type ServiceInput } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
@@ -3269,7 +3270,7 @@ function DomainOverviewCard({
           >
             <p className="text-[12px] font-semibold text-foreground">{d.diagnosis.title}</p>
             <p className="mt-1.5 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-muted-foreground">
-              {domain.diagnosis.message?.trim() || d.diagnosis.reasons[domain.diagnosis.reason]}
+              {localizeDiagnosisMessage(domain.diagnosis.message?.trim(), t.issues?.messages) || d.diagnosis.reasons[domain.diagnosis.reason]}
             </p>
             {domain.diagnosis.message && domain.diagnosis.reason !== "verification" ? (
               <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
