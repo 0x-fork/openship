@@ -3,6 +3,63 @@
 All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 
+## 0.9.1
+
+This patch adds a public app catalog and Russian dashboard support, fixes workflow
+saves and Cloud recovery flows, and improves routing preservation and image refresh
+during migrations and redeployments. These notes cover all changes since 0.9.0.
+
+### Apps, language and workflow setup
+
+- **Browse apps before installing** — the public website now has an Apps directory
+  with search, category filters and individual pages showing features, included
+  services and app overviews. Installation opens the existing Cloud setup flow;
+  self-hosted users can follow the installation guide. Returning to the directory
+  preserves search and category selections.
+- **Russian language support** — select Russian during onboarding or in dashboard
+  language settings. Dashboard translations cover workflow setup, Cloud reconnect
+  and webmail recovery, and a Russian README is available alongside the existing
+  localized introductions.
+- **Save custom Actions workflows** — new standalone workflows initialize their
+  name from validated YAML, so valid starter workflows can be saved after setup.
+  Missing names, runners, files, source validation or access settings now have
+  inline guidance that leads back to the relevant control or editor. Repository
+  setup also offers a direct custom-workflow option.
+
+### Cloud and webmail recovery
+
+- **Continue app installs and plan selection after sign-in** — app and plan links
+  retain their destination through login, registration, verification, password
+  reset and 2FA. App installation resumes its confirmed configuration, server and
+  existing draft after checkout; failed retries remain recoverable. Plan links
+  select an offer for review, with an explicit action still required to purchase.
+- **Reconnect saved Cloud server links** — disconnected links show a Cloud sign-in
+  action, with separate guidance for account mismatches and temporary failures.
+  Live controls wait for a verified connection, and reconnecting reuses the saved
+  server link. Controls missing from an older Cloud API show availability guidance;
+  refreshing retries reads without repeating a write.
+- **Recover an existing webmail app** — when a mail registration loses its webmail
+  link, select an accessible existing app on the same mail server and hostname and
+  choose **Reconnect and deploy**. Recovery reuses the project, credentials and
+  persistent volumes while preserving domain ownership and permission checks.
+
+### Migration and deployment safety
+
+- **Preserve domains that route only specific paths** — migrations now discover
+  and retain domains with exact or prefix routes and no catch-all service. OpenResty
+  and Cloud routing preserve those paths; unmatched requests return 404. Omitting
+  an existing source catch-all requires a decision before project creation or
+  source container changes. Routing retries keep the previous complete table when
+  a selected upstream is unavailable.
+- **Refresh deployment images before replacing services** — manual Docker
+  redeploys refresh mutable registry tags while preserving locally built images
+  and pinned rollback artifacts. Full redeploys keep otherwise unchanged external
+  services, including databases, running when their actual image content matches.
+  Docker validates every replacement image and freezes its reference before
+  activating any service; failed preparation leaves existing containers running.
+  Image preparation is all-or-nothing, while container replacement remains
+  sequential rather than a transaction across the whole stack.
+
 ## 0.9.0
 
 Openship Actions brings repository CI to your own Linux and macOS servers and
