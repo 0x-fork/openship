@@ -292,7 +292,8 @@
     "cancelNotice": "A renovação será interrompida no fim do período pago. Sua assinatura permanece em vigor até lá.",
     "confirmCancel": "Interromper renovação",
     "keepPlan": "Manter assinatura",
-    "error": "Não foi possível atualizar sua assinatura. Tente novamente."
+    "error": "Não foi possível atualizar sua assinatura. Tente novamente.",
+    "manage": "Gerenciar assinatura"
   },
   "checkout": {
     "checking": "Confirmando sua compra…",
@@ -583,7 +584,7 @@
     "save": "Salvar",
     "delete": "Excluir servidor",
     "confirmDelete": "Excluir este servidor vazio",
-    "deleteHint": "Primeiro remova todos os projetos e encerre a assinatura. Isso exclui permanentemente o servidor vazio e os dados restantes do disco.",
+    "deleteHint": "Excluir projetos não cancela a assinatura. Interrompa a renovação em Faturamento e aguarde o fim do período pago antes de excluir um servidor com assinatura. A exclusão remove permanentemente o servidor vazio e os dados restantes no disco.",
     "buildCapacityTitle": "Verifique a capacidade do servidor",
     "buildCapacityHint": "Os builds usam a capacidade livre deste servidor. Pare um serviço ocioso ou aumente a capacidade e tente novamente.",
     "openWorkspace": "Abrir servidor",

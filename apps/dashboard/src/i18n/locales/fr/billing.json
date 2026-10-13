@@ -292,7 +292,8 @@
     "cancelNotice": "Le renouvellement sera arrêté à la fin de la période payée. Votre abonnement reste en vigueur jusque-là.",
     "confirmCancel": "Arrêter le renouvellement",
     "keepPlan": "Conserver l’abonnement",
-    "error": "Impossible de modifier votre abonnement. Réessayez."
+    "error": "Impossible de modifier votre abonnement. Réessayez.",
+    "manage": "Gérer l’abonnement"
   },
   "checkout": {
     "checking": "Confirmation de votre commande…",
@@ -583,7 +584,7 @@
     "save": "Enregistrer",
     "delete": "Supprimer le serveur",
     "confirmDelete": "Supprimer cet espace vide",
-    "deleteHint": "Supprimez d’abord tous les projets et mettez fin à l’abonnement. Cette action supprime définitivement le serveur vide et les données restantes du disque.",
+    "deleteHint": "Supprimer les projets n’annule pas l’abonnement. Arrêtez le renouvellement dans Facturation et attendez la fin de la période payée avant de supprimer un serveur abonné. La suppression efface définitivement le serveur vide et les données restantes du disque.",
     "buildCapacityTitle": "Vérifiez la capacité de le serveur",
     "buildCapacityHint": "Les compilations utilisent la capacité libre de cet espace. Arrêtez un service inutilisé ou augmentez la capacité, puis réessayez.",
     "openWorkspace": "Ouvrir le serveur",
