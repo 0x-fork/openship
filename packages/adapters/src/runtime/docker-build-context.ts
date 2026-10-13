@@ -642,6 +642,9 @@ export async function resolveServiceDockerfile(
       )
     : await resolveDockerfileName(contextDir, resolvedRootDirectory, config.dockerfilePath);
   const hasRepositoryDockerfile = repositoryDockerfileName !== null;
+  if (hasRepositoryDockerfile && config.phpVersion != null) {
+    throw new Error("phpVersion cannot change a repository Dockerfile. Remove phpVersion or configure PHP in that Dockerfile.");
+  }
 
   // A generated recipe COPYs from the source root, so it cannot be satisfied by a
   // narrowed context — refuse regardless of `requireRepositoryDockerfile` rather

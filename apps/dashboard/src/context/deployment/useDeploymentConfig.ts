@@ -18,6 +18,7 @@ import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
 import {
   STACKS,
+  phpNeedsInstall,
   getBuildImage,
   detectTier,
   resolveTierResources,
@@ -177,6 +178,7 @@ interface PreparedRoutingState {
 }
 
 interface PreparedRuntimeConfig {
+  phpVersion?: import("@repo/core").PhpVersion | null;
   packageManager: string;
   buildImage: string;
   options: DeploymentConfig["options"];
@@ -308,7 +310,7 @@ function buildPreparedOptions(response: PrepareProjectResponse): DeploymentConfi
   // hasServer, so derive (null) rather than pin a redundant value.
   const workloadType: WorkloadType | undefined =
     declaredWorkload && declaredWorkload !== "web" ? declaredWorkload : undefined;
-  const hasBuild = !!response.buildCommand;
+  const hasBuild = !!response.buildCommand || phpNeedsInstall(response.phpVersion, response.installCommand);
 
   return {
     buildCommand: response.buildCommand ?? "",
@@ -422,6 +424,7 @@ function buildSavedProjectResponse(
     installCommand: opts.installCommand ?? "",
     startCommand: opts.startCommand ?? "",
     buildImage: project.buildImage || "node:22",
+    phpVersion: project.phpVersion ?? null,
     outputDirectory: opts.outputDirectory ?? "",
     rootDirectory: opts.rootDirectory ?? "./",
     productionPaths,
@@ -599,6 +602,7 @@ function resolvePreparedRuntimeConfig(
   return {
     packageManager: project?.packageManager || response.packageManager || "npm",
     buildImage: project?.buildImage || response.buildImage || "node:22",
+    phpVersion: project ? project.phpVersion ?? null : response.phpVersion ?? null,
     options: {
       buildCommand: project?.buildCommand ?? response.buildCommand ?? "",
       installCommand: project?.installCommand ?? response.installCommand ?? "",
@@ -917,6 +921,7 @@ export function useDeploymentConfig() {
           runtimeModeExplicit: !!projectId || !!response.runtimeMode,
           packageManager: runtimeConfig.packageManager,
           buildImage: runtimeConfig.buildImage,
+          phpVersion: project ? project.phpVersion ?? null : response.phpVersion ?? null,
           branch,
           branches,
           branchPage: branchPage ?? 0,
@@ -1378,6 +1383,7 @@ export function useDeploymentConfig() {
             startCommand: scan.startCommand,
             releaseCommands: scan.releaseCommands,
             buildImage: scan.buildImage,
+            phpVersion: scan.phpVersion ?? null,
             outputDirectory: scan.outputDirectory,
             rootDirectory: scan.rootDirectory,
             productionPaths: scan.productionPaths,

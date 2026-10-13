@@ -108,6 +108,11 @@
       "description": "Docker image used for the build (e.g. \"node:22\").",
       "type": "string"
     },
+    "phpVersion": {
+      "description": "PHP major/minor for generated Laravel/Symfony Docker builds. Both the builder and FrankenPHP runtime use this version. Omit to keep the legacy 8.4 default.",
+      "type": "string",
+      "enum": ["8.3", "8.4"]
+    },
     "productionPaths": {
       "description": "Paths shipped to the runtime as the production artifact.",
       "type": "array",

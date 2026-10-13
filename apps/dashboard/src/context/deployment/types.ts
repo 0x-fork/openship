@@ -426,6 +426,7 @@ export interface DeploymentConfig {
   detectedFramework: FrameworkId | null;
   packageManager: string;
   buildImage: string;
+  phpVersion?: import("@repo/core").PhpVersion | null;
   publicEndpoints: PublicEndpoint[];
   envVars: EnvironmentVariable[];
   /**

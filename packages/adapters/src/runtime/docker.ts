@@ -2035,6 +2035,9 @@ export class DockerRuntime implements RuntimeAdapter {
         .exec(`test -f ${sq(`${remoteBuildDir}/${candidate}`)} && echo yes || true`)
         .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/docker"); return ""; });
       if (out.trim() === "yes") {
+        if (config.phpVersion != null) {
+          throw new Error("phpVersion cannot change a repository Dockerfile. Remove phpVersion or configure PHP in that Dockerfile.");
+        }
         // Same non-silent fallback the local resolver makes: the context's plain
         // `Dockerfile` is the LAST candidate, so landing on it after an explicit
         // `dockerfile` was configured means we are building something other than what

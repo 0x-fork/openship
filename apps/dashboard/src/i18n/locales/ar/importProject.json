@@ -75,6 +75,9 @@
       "onFailureWarn": "إبقاء النشر مباشرًا ووسمه للمراجعة",
       "onFailureFail": "إفشال النشر مع إبقاء الإصدار السابق يعمل"
     },
+    "phpVersionLabel": "إصدار PHP",
+    "phpVersionDefault": "الافتراضي",
+    "phpVersionDesc": "يستخدم صور PHP متوافقة للبناء والتشغيل عبر FrankenPHP. يتطلب بناء Docker المُنشأ تلقائيًا.",
     "buildImageLabel": "صورة البناء",
     "buildImageDesc": "صورة حاوية البناء للبناء السحابي أو على الخادم. تجاوزها عندما تكون الصورة الأساسية المكتشفة خاطئة.",
     "productionPathsLabel": "مسارات الإنتاج",

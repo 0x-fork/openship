@@ -1,7 +1,7 @@
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { isServicesFramework } from "@repo/core";
+import { isPhpFramework, DEFAULT_PHP_VERSION, isServicesFramework } from "@repo/core";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { workloadOf } from "@/context/deployment/types";
 import { useI18n } from "@/components/i18n-provider";
@@ -196,6 +196,7 @@ export const BuildSettings = () => {
             value={buildData.hasBuild ? buildData.buildCommand : t.projectSettings.build.runtime.noBuildStep}
             mono={buildData.hasBuild}
           />
+          {isPhpFramework(projectData?.framework) && <Row label={t.importProject.buildSettings.phpVersionLabel} value={projectData?.phpVersion ?? DEFAULT_PHP_VERSION} mono />}
           <Row label={t.projectSettings.build.runtime.outputDirectory} value={buildData.outputDirectory} mono />
           <Row label={t.projectSettings.build.runtime.rootDirectory} value={buildData.rootDirectory || "."} mono />
           {/* Only when pinned — a blank row would be noise for the vast majority

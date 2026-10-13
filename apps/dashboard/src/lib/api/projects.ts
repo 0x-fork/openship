@@ -69,6 +69,7 @@ export interface ProjectOptionsBody {
   framework?: string;
   packageManager?: string;
   buildImage?: string;
+  phpVersion?: import("@repo/core").PhpVersion | null;
   installCommand?: string;
   buildCommand?: string;
   startCommand?: string;
@@ -154,6 +155,7 @@ export interface ScanProjectResponse {
   startCommand: PrepareProjectResponse["startCommand"];
   releaseCommands?: PrepareProjectResponse["releaseCommands"];
   buildImage: PrepareProjectResponse["buildImage"];
+  phpVersion?: import("@repo/core").PhpVersion | null;
   outputDirectory: PrepareProjectResponse["outputDirectory"];
   rootDirectory: PrepareProjectResponse["rootDirectory"];
   productionPaths: PrepareProjectResponse["productionPaths"];
@@ -275,6 +277,7 @@ export const projectsApi = {
     composePath?: string;
     startCommand?: string;
     buildImage?: string;
+    phpVersion?: import("@repo/core").PhpVersion | null;
     port?: number;
     publicEndpoints?: Array<{
       port?: number;

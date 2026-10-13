@@ -119,6 +119,8 @@ export interface BuildConfig {
   stack: string;
   /** Docker image for the build container (e.g. "node:22", "oven/bun:latest") */
   buildImage: string;
+  /** Frozen selected PHP version; generated recipe checks both stages. */
+  phpVersion?: import("@repo/core").PhpVersion;
   /** Package manager (npm | yarn | pnpm | bun) */
   packageManager: string;
   /** Shell command to install dependencies */

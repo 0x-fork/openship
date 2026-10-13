@@ -75,6 +75,9 @@
       "onFailureWarn": "Keep the deploy live and flag it for review",
       "onFailureFail": "Fail the deploy and keep the previous version serving"
     },
+    "phpVersionLabel": "PHP version",
+    "phpVersionDefault": "Default",
+    "phpVersionDesc": "Uses matching PHP build and FrankenPHP runtime images. Requires a generated Docker build.",
     "buildImageLabel": "Build Image",
     "buildImageDesc": "Builder container image for cloud or server builds. Override it when the detected base image is wrong.",
     "productionPathsLabel": "Production Paths",

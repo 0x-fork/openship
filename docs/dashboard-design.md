@@ -23,6 +23,9 @@ dim and dark lift the inner surface. Form dropdowns use a lighter surface than t
 the trigger override above is intentional because `filled` alone uses the input background.
 
 Keep visible keyboard focus, error indicators, meaningful selection outlines, and useful dividers.
+PHP version selection belongs in the existing deploy wizard's build settings, using the shared
+filled dropdown. Show the default and supported versions there, and report incompatible custom
+builders inline. The saved project Configuration card shows the selected version beside its build settings.
 Borderless cards do not remove those functional indicators. Menus should use the shared dropdown
 component's existing positioning, keyboard behavior, and menu surface.
 

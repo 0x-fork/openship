@@ -30,6 +30,7 @@ import {
   type ParseResult,
 } from "./schema";
 import { isValidEnvKey, normalizeProjectRootDirectory } from "../utils";
+import { PHP_VERSIONS } from "../php-version";
 import { isValidServiceName } from "../service-name";
 
 const TOP_LEVEL_KEYS = new Set([
@@ -44,6 +45,7 @@ const TOP_LEVEL_KEYS = new Set([
   "releaseCommands",
   "outputDirectory",
   "buildImage",
+  "phpVersion",
   "productionPaths",
   "volumes",
   "runtime",
@@ -486,6 +488,7 @@ export function parseOpenshipConfig(raw: unknown): ParseResult {
     releaseCommands: ctx.strArray(raw.releaseCommands, "releaseCommands"),
     outputDirectory: ctx.str(raw.outputDirectory, "outputDirectory"),
     buildImage: ctx.str(raw.buildImage, "buildImage"),
+    phpVersion: ctx.enumOf(raw.phpVersion, "phpVersion", PHP_VERSIONS),
     productionPaths: ctx.strArray(raw.productionPaths, "productionPaths"),
     volumes: ctx.strArray(raw.volumes, "volumes"),
     runtime: ctx.enumOf(raw.runtime, "runtime", OPENSHIP_RUNTIMES),

@@ -182,6 +182,8 @@ export interface OpenshipConfig {
   releaseCommands?: string[];
   outputDirectory?: string;
   buildImage?: string;
+  /** PHP major/minor for generated Docker recipes; omit for the legacy 8.4 default. */
+  phpVersion?: import("../php-version").PhpVersion;
   productionPaths?: string[];
   /**
    * Paths the app keeps across deploys. Either the short app form — a path

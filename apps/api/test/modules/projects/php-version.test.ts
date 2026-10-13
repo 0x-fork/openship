@@ -1,0 +1,139 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { repos } from "@repo/db";
+import { parseInput, EnsureProjectBody, SetOptionsBody } from "@repo/contracts";
+import { seedOrg, seedProject } from "../../helpers/seed";
+import {
+  updateOptions,
+  updateProject,
+  ensureProject,
+  createProject,
+} from "@repo/platform/engine/modules/projects/project-crud.service";
+import { buildConfigSnapshot } from "@repo/platform/engine/modules/deployments/build.service";
+import {
+  resolveProjectInfo,
+  projectInfoToScanResponse,
+} from "@repo/platform/engine/modules/deployments/prepare.service";
+
+describe("project PHP settings across configuration surfaces", () => {
+  const directories: string[] = [];
+  afterEach(async () => {
+    await Promise.all(
+      directories.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+    );
+  });
+  async function fixture() {
+    const owner = await seedOrg();
+    const project = await seedProject(owner.organizationId, {
+      framework: "laravel",
+      buildImage: "php:8.4-cli",
+      runtimeMode: "docker",
+      hasServer: true,
+    });
+    return { owner, project };
+  }
+
+  it.each(["options", "update", "ensure"])(
+    "persists %s and resolves the snapshot from the saved version",
+    async (entry) => {
+      const { owner, project } = await fixture();
+      if (entry === "options")
+        await updateOptions(
+          project.id,
+          parseInput(SetOptionsBody, { phpVersion: "8.3" }),
+          owner.organizationId,
+        );
+      if (entry === "update")
+        await updateProject(project.id, { phpVersion: "8.3" }, owner.organizationId);
+      if (entry === "ensure")
+        await ensureProject(
+          parseInput(EnsureProjectBody, {
+            projectId: project.id,
+            name: project.name,
+            phpVersion: "8.3",
+          }),
+          owner.organizationId,
+        );
+      const saved = (await repos.project.findById(project.id))!;
+      expect(saved).toMatchObject({ phpVersion: "8.3", buildImage: "php:8.3-cli-bookworm" });
+      const frozen = buildConfigSnapshot(saved);
+      expect(frozen).toMatchObject({
+        phpVersion: "8.3",
+        buildImage: "php:8.3-cli-bookworm",
+        runtimeImage: "dunglas/frankenphp:1-php8.3-bookworm",
+      });
+      await updateOptions(project.id, { phpVersion: "8.4" }, owner.organizationId);
+      expect(frozen.phpVersion).toBe("8.3");
+      expect(frozen.runtimeImage).toBe("dunglas/frankenphp:1-php8.3-bookworm");
+    },
+  );
+  it("leaves old projects unchanged and refuses invalid changes before writes", async () => {
+    const { owner, project } = await fixture();
+    expect(buildConfigSnapshot(project)).toMatchObject({
+      buildImage: "php:8.4-cli",
+      runtimeImage: "dunglas/frankenphp:1-php8.4-bookworm",
+    });
+    expect(buildConfigSnapshot(project)).not.toHaveProperty("phpVersion");
+    await expect(
+      updateOptions(
+        project.id,
+        { phpVersion: "8.5", buildCommand: "changed" },
+        owner.organizationId,
+      ),
+    ).rejects.toThrow(/Unsupported phpVersion/);
+    expect((await repos.project.findById(project.id))?.buildCommand).toBe(project.buildCommand);
+    await updateOptions(project.id, { phpVersion: "8.3" }, owner.organizationId);
+    await expect(
+      updateOptions(
+        project.id,
+        { runtimeMode: "bare", buildCommand: "changed" },
+        owner.organizationId,
+      ),
+    ).rejects.toThrow(/generated PHP Docker/);
+    await expect(
+      updateOptions(project.id, { buildImage: "php:8.4-cli" }, owner.organizationId),
+    ).rejects.toThrow(/uses PHP 8.4/);
+    expect(await repos.project.findById(project.id)).toMatchObject({
+      runtimeMode: "docker",
+      buildImage: "php:8.3-cli-bookworm",
+      buildCommand: project.buildCommand,
+    });
+  });
+  it("refuses an incompatible builder before creating a project group", async () => {
+    const owner = await seedOrg();
+    const before = await repos.projectGroup.listByOrganization(owner.organizationId);
+    await expect(
+      createProject(
+        { name: "invalid-php", framework: "laravel", phpVersion: "8.3", buildImage: "php:8.4-cli" },
+        owner.organizationId,
+      ),
+    ).rejects.toThrow(/uses PHP 8.4/);
+    expect(await repos.projectGroup.listByOrganization(owner.organizationId)).toEqual(before);
+  });
+  it("carries repository selection into public scans and rejects invalid declarations", async () => {
+    const path = await mkdtemp(join(tmpdir(), "openship-php-scan-"));
+    directories.push(path);
+    await writeFile(join(path, "artisan"), "<?php");
+    await writeFile(
+      join(path, "composer.json"),
+      JSON.stringify({ require: { "laravel/framework": "^12.0" } }),
+    );
+    await writeFile(join(path, "openship.json"), JSON.stringify({ phpVersion: "8.3" }));
+    const info = await resolveProjectInfo({ source: "local", path });
+    expect(projectInfoToScanResponse(info)).toMatchObject({
+      phpVersion: "8.3",
+      buildImage: "php:8.3-cli-bookworm",
+    });
+    await writeFile(join(path, "openship.json"), JSON.stringify({ phpVersion: "8.5" }));
+    await expect(resolveProjectInfo({ source: "local", path })).rejects.toThrow(/phpVersion/);
+    await writeFile(
+      join(path, "openship.json"),
+      JSON.stringify({ phpVersion: "8.3", runtime: "bare" }),
+    );
+    await expect(resolveProjectInfo({ source: "local", path })).rejects.toThrow(
+      /generated PHP Docker/,
+    );
+  });
+});

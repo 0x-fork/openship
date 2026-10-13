@@ -35,6 +35,19 @@ function phpConfig(over: Partial<BuildConfig> = {}): BuildConfig {
 }
 
 describe("generateDockerfile — PHP branch", () => {
+  it("checks both selected stages and the actual Composer platform", () => {
+    const selected = generateDockerfile(phpConfig({ phpVersion: "8.3", buildImage: "php:8.3-cli-bookworm", runtimeImage: "dunglas/frankenphp:1-php8.3-bookworm" }));
+    expect(selected.match(/RUN php -r/g)).toHaveLength(2);
+    expect(selected.match(/check-platform-reqs --no-dev/g)).toHaveLength(2);
+    expect(selected).toContain("env -u COMPOSER_IGNORE_PLATFORM_REQ -u COMPOSER_IGNORE_PLATFORM_REQS");
+    expect(selected).toContain("rm -f /tmp/openship-composer");
+    expect(generateDockerfile(phpConfig())).not.toContain("check-platform-reqs");
+  });
+  it("refuses a mismatched builder or a recipe that cannot honor the version", () => {
+    expect(() => generateDockerfile(phpConfig({ phpVersion: "8.3" }))).toThrow(/uses PHP 8.4/);
+    expect(() => generateDockerfile(phpConfig({ phpVersion: "8.4", dockerfilePath: "Dockerfile" }))).toThrow(/your own Dockerfile/);
+    expect(() => generateDockerfile(phpConfig({ phpVersion: "8.4", isStatic: true }))).toThrow(/generated PHP Docker/);
+  });
   const df = generateDockerfile(phpConfig());
 
   it("builds on php-cli with Composer pulled in", () => {

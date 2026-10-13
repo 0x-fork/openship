@@ -75,6 +75,9 @@
       "onFailureWarn": "Deployment live lassen und zur Prüfung markieren",
       "onFailureFail": "Deployment abbrechen und die vorherige Version weiter ausliefern"
     },
+    "phpVersionLabel": "PHP-Version",
+    "phpVersionDefault": "Standard",
+    "phpVersionDesc": "Verwendet passende PHP-Build- und FrankenPHP-Laufzeitimages. Erfordert einen generierten Docker-Build.",
     "buildImageLabel": "Build-Image",
     "buildImageDesc": "Builder-Container-Image für Cloud- oder Server-Builds. Überschreibe es, wenn das erkannte Basis-Image falsch ist.",
     "productionPathsLabel": "Produktionspfade",

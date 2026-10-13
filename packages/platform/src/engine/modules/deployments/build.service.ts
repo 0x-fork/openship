@@ -14,6 +14,7 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
+import { assertPhpVersionTarget, resolvePhpImages } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { assertNotControlPlane } from "@repo/platform/engine/lib/resource-access";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
@@ -188,6 +189,7 @@ export async function runDeploymentPreflight(
     appTemplateId?: string | null;
   },
 ): Promise<void> {
+  assertPhpVersionTarget({ phpVersion: snapshot.phpVersion, framework: snapshot.framework, runtimeMode: snapshot.runtimeMode, workloadType: snapshot.workload, buildKind: snapshot.build, sourceKind: snapshot.source, projectType: opts.multiService ? "compose" : null });
   const preflight = await runPreflightChecks(snapshot, {
     customDomain: routeState.primaryCustomDomain,
     slug:
@@ -222,6 +224,7 @@ export interface DeploymentConfigSnapshot {
   branch: string;
   framework: string;
   buildImage: string;
+  phpVersion?: import("@repo/core").PhpVersion;
   runtimeImage: string;
   packageManager: string;
   installCommand: string;
@@ -444,6 +447,8 @@ function toRuntimeMode(value: string | null | undefined): "bare" | "docker" | un
  *  All values must be set by prepare / ensureProject before this is called. */
 export function buildConfigSnapshot(project: Project, branch?: string): DeploymentConfigSnapshot {
   const deploymentClass = projectToClass(project);
+  assertPhpVersionTarget({ ...project, ...deploymentClass, buildKind: deploymentClass.build, sourceKind: deploymentClass.source, workloadType: deploymentClass.workload });
+  const php = project.phpVersion == null ? undefined : resolvePhpImages(project.phpVersion, project.buildImage);
 
   return {
     // Owning org — needed by every downstream that does an org-scoped
@@ -459,6 +464,7 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
     framework: project.framework!,
     buildImage: project.buildImage!,
     runtimeImage: resolveRuntimeImage(project),
+    ...(php && { phpVersion: php.phpVersion, buildImage: php.buildImage, runtimeImage: php.runtimeImage }),
     packageManager: project.packageManager!,
     installCommand: project.installCommand!,
     buildCommand: project.buildCommand!,

@@ -75,6 +75,9 @@
       "onFailureWarn": "Dağıtımı yayında tut ve incelenmek üzere işaretle",
       "onFailureFail": "Dağıtımı başarısız kıl ve önceki sürümü yayında tut"
     },
+    "phpVersionLabel": "PHP sürümü",
+    "phpVersionDefault": "Varsayılan",
+    "phpVersionDesc": "Uyumlu PHP derleme ve FrankenPHP çalışma görüntülerini kullanır. Oluşturulan Docker derlemesi gerektirir.",
     "buildImageLabel": "Derleme İmajı",
     "buildImageDesc": "Bulut veya sunucu derlemeleri için derleyici konteyner imajı. Tespit edilen taban imajı yanlışsa değiştirin.",
     "productionPathsLabel": "Canlı ortam yolları",

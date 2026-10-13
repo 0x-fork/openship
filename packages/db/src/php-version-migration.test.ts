@@ -1,0 +1,27 @@
+import { PGlite } from "@electric-sql/pglite";
+import { readFile } from "node:fs/promises";
+import { expect, it } from "vitest";
+
+it("adds an optional PHP selection without changing old builds or deployment history", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(
+      "CREATE TABLE project (id text PRIMARY KEY, build_image text, active_deployment_id text); INSERT INTO project VALUES ('old', 'php:8.4-cli', 'release');",
+    );
+    const sql = await readFile(
+      new URL("../drizzle/0188_project_php_version.sql", import.meta.url),
+      "utf8",
+    );
+    await db.exec(sql);
+    await db.exec(sql);
+    expect((await db.query("SELECT * FROM project")).rows).toEqual([
+      { id: "old", build_image: "php:8.4-cli", active_deployment_id: "release", php_version: null },
+    ]);
+    await db.exec("UPDATE project SET php_version = '8.3' WHERE id = 'old'");
+    expect((await db.query("SELECT php_version FROM project")).rows).toEqual([
+      { php_version: "8.3" },
+    ]);
+  } finally {
+    await db.close();
+  }
+});

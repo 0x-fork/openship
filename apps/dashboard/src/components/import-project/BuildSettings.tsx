@@ -10,7 +10,8 @@ import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { getPublicEndpointHosts, getRecommendedSingleAppBuildImage, workloadOf, type PublicEndpoint } from "@/context/deployment/types";
-import type { WorkloadType } from "@repo/core";
+import { PHP_VERSIONS, DEFAULT_PHP_VERSION, isPhpFramework, phpProjectUpdate, phpNeedsInstall, type WorkloadType } from "@repo/core";
+import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
 interface InputField {
@@ -60,6 +61,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
   const [tempValues, setTempValues] = useState<{ [key: string]: string }>({});
   const [expanded, setExpanded] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [phpError, setPhpError] = useState<string | null>(null);
 
   const buildData = mode === 'advanced' ? externalBuildData : config?.options;
   const needsBuild = config?.framework !== "node" && config?.framework !== "static";
@@ -472,7 +474,9 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
             <div>
               <p className="text-sm font-semibold text-foreground">{bs.deployConfig}</p>
               <p className="text-xs text-muted-foreground">
-                {config?.framework ? interpolate(bs.defaultsApplied, { framework: config.framework }) : bs.configureOptions}
+                {config?.framework
+                  ? interpolate(bs.defaultsApplied, { framework: config.framework })
+                  : bs.configureOptions}
               </p>
             </div>
           </div>
@@ -492,9 +496,61 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                   <UiIcon name="wrench" className="size-3.5 shrink-0 text-muted-foreground" />
                   <p className="text-sm font-medium text-foreground">{bs.build}</p>
                 </div>
-                <Toggle aria-label={bs.build} checked={hasBuild} onChange={(v: boolean) => updateOptions?.({ hasBuild: v })} />
+                <Toggle
+                  aria-label={bs.build}
+                  checked={hasBuild}
+                  onChange={(v: boolean) => updateOptions?.({ hasBuild: v })}
+                />
               </div>
               <div className="min-w-0 space-y-4 empty:hidden @min-[40rem]/build-settings:col-start-1 @min-[40rem]/build-settings:row-start-2">
+                {(isPhpFramework(config?.framework) || config?.phpVersion != null) && (
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor={`${fieldPrefix}-php-version`}
+                      className="block text-sm font-medium text-foreground"
+                    >
+                      {bs.phpVersionLabel}
+                    </label>
+                    <CustomSelect
+                      id={`${fieldPrefix}-php-version`}
+                      variant="filled"
+                      triggerClassName="bg-muted/60 hover:bg-muted"
+                      value={config.phpVersion ?? ""}
+                      options={[
+                        { value: "", label: `${bs.phpVersionDefault} (${DEFAULT_PHP_VERSION})` },
+                        ...PHP_VERSIONS.map((version) => ({
+                          value: version,
+                          label: `PHP ${version}`,
+                        })),
+                      ]}
+                      onChange={(value) => {
+                        const phpVersion = value || null;
+                        try {
+                          const php = !isPhpFramework(config?.framework) && phpVersion == null
+                            ? { phpVersion: null }
+                            : phpProjectUpdate(config, { phpVersion });
+                          // Keep Composer enabled on first selection, even if detection
+                          // found no separate JavaScript asset build.
+                          updateConfig?.({
+                            ...php,
+                            ...(!config.phpVersion && !hasBuild && phpNeedsInstall(phpVersion, config.options?.installCommand)
+                              ? { options: { ...config.options, hasBuild: true } }
+                              : {}),
+                          });
+                          setPhpError(null);
+                        } catch (error) {
+                          setPhpError(error instanceof Error ? error.message : bs.phpVersionDesc);
+                        }
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">{bs.phpVersionDesc}</p>
+                    {phpError && (
+                      <p role="alert" className="text-xs text-danger">
+                        {phpError}
+                      </p>
+                    )}
+                  </div>
+                )}
                 {visibleBuildFields.map(renderInput)}
                 {generalFields.map(renderInput)}
               </div>
@@ -539,10 +595,18 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                   className="w-full flex items-center justify-between gap-2 rounded-xl bg-card px-3 py-3 text-start hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 >
                   <div className="flex min-w-0 items-center gap-2">
-                    <UiIcon name="shield-check" className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="shrink-0 text-sm font-medium text-foreground">{bs.advanced}</span>
+                    <UiIcon
+                      name="shield-check"
+                      className="size-3.5 shrink-0 text-muted-foreground"
+                    />
+                    <span className="shrink-0 text-sm font-medium text-foreground">
+                      {bs.advanced}
+                    </span>
                     {(config?.releaseCommands?.length ?? 0) > 0 && (
-                      <span className="truncate rounded-md bg-background px-2 py-0.5 text-xs text-foreground" title={bs.releaseTitle}>
+                      <span
+                        className="truncate rounded-md bg-background px-2 py-0.5 text-xs text-foreground"
+                        title={bs.releaseTitle}
+                      >
                         {bs.releaseTitle} · {config.releaseCommands.length}
                       </span>
                     )}
@@ -565,25 +629,37 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                             <Textarea
                               dir="ltr"
                               variant="filled"
-                              aria-label={interpolate(bs.releaseCommand, { number: String(index + 1) })}
+                              aria-label={interpolate(bs.releaseCommand, {
+                                number: String(index + 1),
+                              })}
                               rows={1}
                               maxLength={1000}
                               value={command}
                               spellCheck={false}
-                              onChange={(event) => updateConfig({
-                                releaseCommands: config.releaseCommands.map((value: string, at: number) =>
-                                  at === index ? event.target.value : value),
-                              })}
+                              onChange={(event) =>
+                                updateConfig({
+                                  releaseCommands: config.releaseCommands.map(
+                                    (value: string, at: number) =>
+                                      at === index ? event.target.value : value,
+                                  ),
+                                })
+                              }
                               className="min-w-0 flex-1 font-mono"
                             />
                             <Button
                               variant="ghost"
                               size="icon"
                               type="button"
-                              aria-label={interpolate(bs.removeReleaseCommand, { number: String(index + 1) })}
-                              onClick={() => updateConfig({
-                                releaseCommands: config.releaseCommands.filter((_: string, at: number) => at !== index),
+                              aria-label={interpolate(bs.removeReleaseCommand, {
+                                number: String(index + 1),
                               })}
+                              onClick={() =>
+                                updateConfig({
+                                  releaseCommands: config.releaseCommands.filter(
+                                    (_: string, at: number) => at !== index,
+                                  ),
+                                })
+                              }
                               className="shrink-0"
                             >
                               <UiIcon name="close" className="size-4" />
@@ -594,7 +670,11 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                           type="button"
                           variant="secondary"
                           disabled={(config?.releaseCommands?.length ?? 0) >= 20}
-                          onClick={() => updateConfig({ releaseCommands: [...(config?.releaseCommands ?? []), ""] })}
+                          onClick={() =>
+                            updateConfig({
+                              releaseCommands: [...(config?.releaseCommands ?? []), ""],
+                            })
+                          }
                         >
                           <UiIcon name="plus" className="size-3.5" />
                           {bs.addReleaseCommand}
