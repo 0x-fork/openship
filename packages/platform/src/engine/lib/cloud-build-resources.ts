@@ -50,7 +50,8 @@ const finiteNonnegative = (value: number) => Number.isFinite(value) && value >= 
  * Samples may already include running builders: this deliberately double-counts
  * their memory until per-builder attribution exists, but also protects reservations
  * whose builders have not started yet. Memory headroom is 5%, clamped to 128–512 MB.
- * Automatic CPU uses sampled idle capacity, bounded by unreserved physical CPU.
+ * Automatic CPU subtracts full reservations from sampled idle capacity, just
+ * like memory. Running builders can therefore be counted twice until attributed.
  * Explicit CPU stays unchanged. Extreme pressure (>=95%) gates both modes.
  * A sample cannot guarantee protection against future growth of unrelated apps.
  */
@@ -122,18 +123,20 @@ export function decideCloudBuildResources(
   if (freeMemory < MIN_MEMORY_MB || memory > freeMemory)
     return { kind: "wait", reason: "memory-pressure" };
   const freeCpu = capacity.cpuCores - reservedCpu;
+  const automaticCpu = capacity.cpuCores * (1 - usage.cpuPercent / 100) - reservedCpu;
   // Fractional shares (e.g. 8 CPUs / 20 slots) accumulate floating-point noise.
   const cpuRoundingTolerance = Number.EPSILON * capacity.cpuCores * (reservations.length + 2);
   if (
     usage.cpuPercent >= 95 ||
     freeCpu + cpuRoundingTolerance < MIN_CPU_CORES ||
+    (!cpu && automaticCpu <= cpuRoundingTolerance) ||
     cpu - freeCpu > cpuRoundingTolerance
   )
     return { kind: "wait", reason: "cpu-pressure" };
   const resources: ResourceConfig = {
-    cpuCores:
-      cpu ||
-      Math.min(freeCpu, Math.max(MIN_CPU_CORES, capacity.cpuCores * (1 - usage.cpuPercent / 100))),
+    // Retain the minimum useful CPU ceiling on small/busy hosts. CPU quotas
+    // share scheduling time; never exceed the unreserved physical capacity.
+    cpuCores: cpu || Math.min(freeCpu, Math.max(MIN_CPU_CORES, automaticCpu)),
     memoryMb: memory || freeMemory,
     // No additional disk cap: this helper neither reserves nor measures disk.
     diskMb: 0,

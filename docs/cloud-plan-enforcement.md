@@ -66,8 +66,10 @@ code's peak memory usage from its repository alone.
 
 Automatic builds use the server's measured available capacity rather than a
 fixed 1-vCPU / 4-GB worker. Memory leaves 5% operating-system headroom (128–512 MB)
-and subtracts outstanding build reservations. CPU uses sampled idle capacity,
-bounded by unreserved server CPU. An explicit dimension is preserved; only missing
+and subtracts outstanding build reservations. Automatic CPU subtracts outstanding
+reservations from sampled idle capacity, bounded by unreserved server CPU. Running
+builders may be conservatively counted twice, as with memory. An explicit
+dimension is preserved; only missing
 or zero dimensions are automatic. Unknown samples or extreme CPU pressure wait
 instead of launching a worker. The plan concurrency allowance is a ceiling;
 automatic builds can consume the available budget and queue subsequent builds.

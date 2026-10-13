@@ -51,7 +51,7 @@ describe("Cloud build resource admission", () => {
         usage: { ...usage, memoryAvailableMb: 5000, cpuPercent: 25 },
         reservations: [{ cpuCores: 1.5, memoryMb: 1024 }],
       }),
-    ).toEqual({ kind: "admit", resources: { cpuCores: 2.5, memoryMb: 3566, diskMb: 0 } });
+    ).toEqual({ kind: "admit", resources: { cpuCores: 1.5, memoryMb: 3566, diskMb: 0 } });
     expect(decide({ usage: { ...usage, cpuPercent: 50 } })).toMatchObject({
       kind: "admit",
       resources: { cpuCores: 2 },
@@ -64,6 +64,26 @@ describe("Cloud build resource admission", () => {
       resources: { memoryMb: 7782 },
     });
   });
+
+  it("waits when background CPU and pending reservations leave no automatic build budget", () => {
+    expect(
+      decide({
+        usage: { ...usage, cpuPercent: 75 },
+        reservations: [{ cpuCores: 1, memoryMb: 128 }],
+      }),
+    ).toEqual({ kind: "wait", reason: "cpu-pressure" });
+  });
+  it.each([0.25, 1])(
+    "keeps the minimum CPU ceiling usable on a %s-vCPU server with background load",
+    (cpuCores) => {
+      expect(
+        decide({
+          capacity: { cpuCores, memoryMb: 8192 },
+          usage: { ...usage, cpuPercent: 80 },
+        }),
+      ).toEqual({ kind: "admit", resources: { cpuCores: 0.25, memoryMb: 7782, diskMb: 0 } });
+    },
+  );
 
   it.each([undefined, null, 1, 4, 8, 20])(
     "treats plan concurrency %s as a ceiling, not a resource partition",
