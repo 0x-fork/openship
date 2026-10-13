@@ -217,6 +217,10 @@ export const project = pgTable(
     releaseCommands: jsonb("release_commands").$type<string[] | null>(),
     /** Docker image for build environment (e.g. node:22, oven/bun:latest) */
     buildImage: text("build_image"),
+    /** Explicit runtime version, validated by the selected stack; null preserves its defaults. */
+    runtimeVersion: text("runtime_version"),
+    /** Optional custom production base image; null resolves the stack default. */
+    runtimeImage: text("runtime_image"),
     /** Production mode: host, static, standalone */
     productionMode: text("production_mode").default("host"),
     /** Port the app listens on (inside the container / the bare process). */

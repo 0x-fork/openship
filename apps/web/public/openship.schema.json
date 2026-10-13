@@ -108,6 +108,18 @@
       "description": "Docker image used for the build (e.g. \"node:22\").",
       "type": "string"
     },
+    "runtimeVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+(?:\\.[0-9]+){0,2}(?![\\s\\S])",
+      "maxLength": 32,
+      "description": "Runtime version. Supported versions and matching images depend on the selected stack; omission preserves detected defaults."
+    },
+    "runtimeImage": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "Optional production base image for generated Docker builds. It must satisfy the selected runtime and recipe; omit for the managed default."
+    },
     "productionPaths": {
       "description": "Paths shipped to the runtime as the production artifact.",
       "type": "array",

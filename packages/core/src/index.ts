@@ -28,6 +28,7 @@ export {
 export * from "./system";
 export * from "./domain-retry";
 export * from "./utils";
+export * from "./runtime-version";
 export * from "./errors";
 export * from "./service-routing";
 export * from "./volume-spec";

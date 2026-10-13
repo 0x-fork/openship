@@ -18,6 +18,7 @@ import { systemApi } from "@/lib/api";
 import type { BuildMode } from "@/lib/api/settings";
 import {
   STACKS,
+  runtimeNeedsInstall,
   getBuildImage,
   detectTier,
   resolveTierResources,
@@ -177,6 +178,8 @@ interface PreparedRoutingState {
 }
 
 interface PreparedRuntimeConfig {
+  runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   packageManager: string;
   buildImage: string;
   options: DeploymentConfig["options"];
@@ -308,7 +311,7 @@ function buildPreparedOptions(response: PrepareProjectResponse): DeploymentConfi
   // hasServer, so derive (null) rather than pin a redundant value.
   const workloadType: WorkloadType | undefined =
     declaredWorkload && declaredWorkload !== "web" ? declaredWorkload : undefined;
-  const hasBuild = !!response.buildCommand;
+  const hasBuild = !!response.buildCommand || runtimeNeedsInstall(response.stack, response.runtimeVersion, response.installCommand);
 
   return {
     buildCommand: response.buildCommand ?? "",
@@ -422,6 +425,8 @@ function buildSavedProjectResponse(
     installCommand: opts.installCommand ?? "",
     startCommand: opts.startCommand ?? "",
     buildImage: project.buildImage || "node:22",
+    runtimeVersion: project.runtimeVersion ?? null,
+    runtimeImage: project.runtimeImage ?? null,
     outputDirectory: opts.outputDirectory ?? "",
     rootDirectory: opts.rootDirectory ?? "./",
     productionPaths,
@@ -599,6 +604,8 @@ function resolvePreparedRuntimeConfig(
   return {
     packageManager: project?.packageManager || response.packageManager || "npm",
     buildImage: project?.buildImage || response.buildImage || "node:22",
+    runtimeVersion: project ? project.runtimeVersion ?? null : response.runtimeVersion ?? null,
+    runtimeImage: project ? project.runtimeImage ?? null : response.runtimeImage ?? null,
     options: {
       buildCommand: project?.buildCommand ?? response.buildCommand ?? "",
       installCommand: project?.installCommand ?? response.installCommand ?? "",
@@ -917,6 +924,8 @@ export function useDeploymentConfig() {
           runtimeModeExplicit: !!projectId || !!response.runtimeMode,
           packageManager: runtimeConfig.packageManager,
           buildImage: runtimeConfig.buildImage,
+          runtimeVersion: project ? project.runtimeVersion ?? null : response.runtimeVersion ?? null,
+          runtimeImage: project ? project.runtimeImage ?? null : response.runtimeImage ?? null,
           branch,
           branches,
           branchPage: branchPage ?? 0,
@@ -1378,6 +1387,8 @@ export function useDeploymentConfig() {
             startCommand: scan.startCommand,
             releaseCommands: scan.releaseCommands,
             buildImage: scan.buildImage,
+            runtimeVersion: scan.runtimeVersion ?? null,
+            runtimeImage: scan.runtimeImage ?? null,
             outputDirectory: scan.outputDirectory,
             rootDirectory: scan.rootDirectory,
             productionPaths: scan.productionPaths,

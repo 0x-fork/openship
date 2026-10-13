@@ -75,6 +75,9 @@
       "onFailureWarn": "Dağıtımı yayında tut ve incelenmek üzere işaretle",
       "onFailureFail": "Dağıtımı başarısız kıl ve önceki sürümü yayında tut"
     },
+    "runtimeVersionLabel": "Çalışma zamanı sürümü",
+    "runtimeVersionDefault": "Varsayılan",
+    "runtimeVersionDesc": "Seçilen sürüme uygun derleme ve çalışma imajlarını kullanır. Openship tarafından oluşturulan bir Docker derlemesi gerektirir.",
     "buildImageLabel": "Derleme İmajı",
     "buildImageDesc": "Bulut veya sunucu derlemeleri için derleyici konteyner imajı. Tespit edilen taban imajı yanlışsa değiştirin.",
     "productionPathsLabel": "Canlı ortam yolları",
@@ -111,7 +114,9 @@
     "releaseDescription": "Derleme sonrası isteğe bağlı komutlar. Hata dağıtımı durdurur. Yalnızca Docker ve Bare uygulamaları.",
     "releaseCommand": "Komut {number}",
     "addReleaseCommand": "Komut ekle",
-    "removeReleaseCommand": "{number}. komutu kaldır"
+    "removeReleaseCommand": "{number}. komutu kaldır",
+    "runtimeImageLabel": "Çalışma zamanı imajı",
+    "runtimeImageDesc": "Docker için isteğe bağlı üretim temel imajı. Çalışma zamanı ve oluşturulan tarifle uyumlu olmalıdır; varsayılan için boş bırakın."
   },
   "projectSettings": {
     "framework": "Framework",

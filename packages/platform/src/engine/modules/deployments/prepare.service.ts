@@ -5,6 +5,7 @@
  * No database writes, no deployment logic.
  */
 
+import { assertRuntimeVersionTarget, normalizeRuntimeImageOverride, runtimeProjectUpdate, resolveRuntimeImages, ValidationError } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import * as githubService from "../github/github.service";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
@@ -229,6 +230,8 @@ export interface ProjectInfo {
   installCommand: string;
   startCommand: string;
   buildImage: string;
+  runtimeVersion?: string;
+  runtimeImage?: string;
   outputDirectory: string;
   rootDirectory: string;
   /**
@@ -417,6 +420,8 @@ function extractOpenshipConfig(fileContents: Record<string, string>): ExtractedO
   }
 
   const { config, errors, warnings } = parseOpenshipConfig(raw);
+  const runtimeErrors = errors.filter((error) => error.startsWith("runtimeVersion:") || error.startsWith("runtimeImage:"));
+  if (runtimeErrors.length) throw new ValidationError(runtimeErrors.join(" · "));
   // Only a non-object root nulls the config — every field-level failure still
   // yields a partial config that overlays. So `!config` is the whole-file case,
   // and the flag says so without the message having to.
@@ -570,6 +575,17 @@ function applyOpenshipOverlay(info: ProjectInfo, config: OpenshipConfig | undefi
   if (config.packageManager) info.packageManager = config.packageManager;
   if (config.rootDirectory) info.rootDirectory = config.rootDirectory;
   if (config.buildImage) info.buildImage = config.buildImage;
+  if (config.runtimeImage !== undefined) {
+    assertRuntimeVersionTarget({ runtimeImage: config.runtimeImage, framework: info.stack, projectType: info.projectType, runtimeMode: config.runtime, composePath: info.composePath, workloadType: config.workload });
+    info.runtimeImage = normalizeRuntimeImageOverride(config.runtimeImage) ?? undefined;
+    runtimeProjectUpdate({ framework: info.stack, buildImage: info.buildImage }, { runtimeImage: config.runtimeImage, runtimeVersion: config.runtimeVersion });
+  }
+  if (config.runtimeVersion !== undefined) {
+    assertRuntimeVersionTarget({ runtimeVersion: config.runtimeVersion, framework: info.stack, projectType: info.projectType, runtimeMode: config.runtime, composePath: info.composePath, workloadType: config.workload });
+    const runtime = resolveRuntimeImages(info.stack, config.runtimeVersion, config.buildImage, config.runtimeImage);
+    info.runtimeVersion = runtime.runtimeVersion;
+    info.buildImage = runtime.buildImage;
+  }
   if (config.productionPaths) info.productionPaths = config.productionPaths;
   // Declared `[]` is meaningful (persistence off), so test for presence, not truth.
   if (config.volumes) info.volumes = config.volumes;
@@ -671,6 +687,8 @@ export function projectInfoToScanResponse(result: ProjectInfo, options: SourceSc
     buildCommand: publicInfo.buildCommand,
     startCommand: publicInfo.startCommand,
     buildImage: publicInfo.buildImage,
+    ...(publicInfo.runtimeVersion && { runtimeVersion: publicInfo.runtimeVersion }),
+    ...(publicInfo.runtimeImage && { runtimeImage: publicInfo.runtimeImage }),
     outputDirectory: publicInfo.outputDirectory,
     rootDirectory: publicInfo.rootDirectory,
     ...(publicInfo.composePath && { composePath: publicInfo.composePath }),

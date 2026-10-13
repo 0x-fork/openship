@@ -197,8 +197,8 @@ jobs:
   # With it, an unreachable daemon fails in `beforeAll` instead of reporting skipped.
   #
   # `fast` is the ordinary daemon-level and full-cycle cases; `heavy` is
-  # rollback-build-restore alone (~225s cold, and fileParallelism is off, so it holds
-  # the whole suite up). Scaling has its own reusable job above.
+  # retained-image rebuilds and PHP version build/rollback checks. These compile
+  # real images and extensions; scaling has its own reusable job above.
   # See E2E_SCOPE in apps/api/vitest.e2e.config.ts.
   e2e-docker:
     name: E2E (real Docker, ${{ matrix.scope }})

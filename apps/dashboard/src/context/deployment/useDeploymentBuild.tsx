@@ -766,6 +766,8 @@ export function useDeploymentBuild(
             framework: config.framework,
             packageManager: config.packageManager,
             buildImage: config.buildImage,
+            runtimeVersion: config.runtimeVersion,
+            runtimeImage: config.runtimeImage,
             installCommand: config.options.installCommand,
             buildCommand: config.options.buildCommand,
             startCommand: config.options.startCommand,
@@ -817,6 +819,8 @@ export function useDeploymentBuild(
         framework: config.framework,
         packageManager: config.packageManager,
         buildImage: config.buildImage,
+        runtimeVersion: config.runtimeVersion,
+        runtimeImage: config.runtimeImage,
         buildCommand: config.options.buildCommand,
         // Blank default must be OMITTED, not sent as "": the ensure schema's
         // outputDirectory pattern rejects an empty string → 400 before the
@@ -1297,6 +1301,8 @@ export function useDeploymentBuild(
             framework: apiConfig.framework || prev.framework,
             packageManager: apiConfig.packageManager || prev.packageManager,
             buildImage: apiConfig.buildImage || prev.buildImage,
+            runtimeVersion: apiConfig.runtimeVersion ?? null,
+            runtimeImage: apiConfig.runtimeImageOverride ? apiConfig.runtimeImage : null,
             branch: apiConfig.branch || prev.branch,
             // Actual build/deploy target of THIS deployment (from the snapshot),
             // so the detail UI reflects how it really ran, not the live default.

@@ -69,6 +69,8 @@ export interface ProjectOptionsBody {
   framework?: string;
   packageManager?: string;
   buildImage?: string;
+  runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   installCommand?: string;
   buildCommand?: string;
   startCommand?: string;
@@ -154,6 +156,8 @@ export interface ScanProjectResponse {
   startCommand: PrepareProjectResponse["startCommand"];
   releaseCommands?: PrepareProjectResponse["releaseCommands"];
   buildImage: PrepareProjectResponse["buildImage"];
+  runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   outputDirectory: PrepareProjectResponse["outputDirectory"];
   rootDirectory: PrepareProjectResponse["rootDirectory"];
   productionPaths: PrepareProjectResponse["productionPaths"];
@@ -275,6 +279,8 @@ export const projectsApi = {
     composePath?: string;
     startCommand?: string;
     buildImage?: string;
+    runtimeVersion?: string | null;
+    runtimeImage?: string | null;
     port?: number;
     publicEndpoints?: Array<{
       port?: number;

@@ -63,6 +63,8 @@ curl -X POST "$OPENSHIP_URL/api/projects" \
     rootDirectory: { type: 'string', description: 'Subdirectory to build from.' },
     startCommand: { type: 'string', description: 'Override the runtime start command.' },
     buildImage: { type: 'string', description: 'Build image override.' },
+    runtimeImage: { type: "string | null", description: "Optional production base for generated Docker builds; null clears the override. Known mismatches are rejected before writes, and recipes verify actual runtime compatibility before activation." },
+    runtimeVersion: { type: "string | null", description: 'Runtime version validated against the selected stack; null restores its default. PHP 8.3 and 8.4 are currently supported for generated Docker builds with matching builder and FrankenPHP runtime images.' },
     productionMode: { type: '"host" | "static" | "standalone"', description: 'How the app is served in production.' },
     port: { type: 'number', description: 'Listen port (1–65535).' },
     publicEndpoints: { type: 'PublicEndpoint[]', description: 'Public routes/domains to expose (1–20).' },

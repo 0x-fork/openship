@@ -642,6 +642,9 @@ export async function resolveServiceDockerfile(
       )
     : await resolveDockerfileName(contextDir, resolvedRootDirectory, config.dockerfilePath);
   const hasRepositoryDockerfile = repositoryDockerfileName !== null;
+  if (hasRepositoryDockerfile && (config.runtimeVersion != null || config.runtimeImageOverride)) {
+    throw new Error("runtimeVersion and runtimeImage cannot change a repository Dockerfile. Remove these settings or configure the runtime in that Dockerfile.");
+  }
 
   // A generated recipe COPYs from the source root, so it cannot be satisfied by a
   // narrowed context — refuse regardless of `requireRepositoryDockerfile` rather

@@ -24,6 +24,8 @@ export const ProjectSchema = Type.Object({
   gitRepo: Type.Optional(nullableString()),
   gitBranch: Type.Optional(nullableString()),
   framework: Type.Optional(nullableString()),
+  runtimeVersion: EnsureProjectBody.properties.runtimeVersion,
+  runtimeImage: EnsureProjectBody.properties.runtimeImage,
   packageManager: Type.Optional(nullableString()),
   localPath: Type.Optional(nullableString()),
   serverId: Type.Optional(nullableString()),

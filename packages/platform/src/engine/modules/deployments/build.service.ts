@@ -14,6 +14,7 @@
  * pipeline owns the deploy↔rollback cycle (a deliberate dynamic import).
  */
 
+import { assertRuntimeVersionTarget, getRuntimeVersionPolicy, resolveRuntimeImages } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { assertNotControlPlane } from "@repo/platform/engine/lib/resource-access";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
@@ -188,6 +189,7 @@ export async function runDeploymentPreflight(
     appTemplateId?: string | null;
   },
 ): Promise<void> {
+  assertRuntimeVersionTarget({ runtimeVersion: snapshot.runtimeVersion, runtimeImage: snapshot.runtimeImageOverride ? snapshot.runtimeImage : undefined, framework: snapshot.framework, runtimeMode: snapshot.runtimeMode, workloadType: snapshot.workload, buildKind: snapshot.build, sourceKind: snapshot.source, projectType: opts.multiService ? "compose" : null });
   const preflight = await runPreflightChecks(snapshot, {
     customDomain: routeState.primaryCustomDomain,
     slug:
@@ -222,6 +224,8 @@ export interface DeploymentConfigSnapshot {
   branch: string;
   framework: string;
   buildImage: string;
+  runtimeVersion?: string;
+  runtimeImageOverride?: boolean;
   runtimeImage: string;
   packageManager: string;
   installCommand: string;
@@ -444,6 +448,11 @@ function toRuntimeMode(value: string | null | undefined): "bare" | "docker" | un
  *  All values must be set by prepare / ensureProject before this is called. */
 export function buildConfigSnapshot(project: Project, branch?: string): DeploymentConfigSnapshot {
   const deploymentClass = projectToClass(project);
+  assertRuntimeVersionTarget({ ...project, ...deploymentClass, buildKind: deploymentClass.build, sourceKind: deploymentClass.source, workloadType: deploymentClass.workload });
+  const policy = getRuntimeVersionPolicy(project.framework);
+  const runtime = project.runtimeVersion == null && !(project.runtimeImage && policy)
+    ? undefined
+    : resolveRuntimeImages(project.framework, project.runtimeVersion ?? policy!.defaultVersion, project.buildImage, project.runtimeImage);
 
   return {
     // Owning org — needed by every downstream that does an org-scoped
@@ -458,7 +467,9 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
     branch: branch || project.gitBranch || (project.localPath ? "main" : ""),
     framework: project.framework!,
     buildImage: project.buildImage!,
-    runtimeImage: resolveRuntimeImage(project),
+    runtimeImage: project.runtimeImage ?? resolveRuntimeImage(project),
+    ...(project.runtimeImage && { runtimeImageOverride: true }),
+    ...(runtime && { runtimeVersion: runtime.runtimeVersion, buildImage: runtime.buildImage, runtimeImage: runtime.runtimeImage }),
     packageManager: project.packageManager!,
     installCommand: project.installCommand!,
     buildCommand: project.buildCommand!,

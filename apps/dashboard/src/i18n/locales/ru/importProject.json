@@ -75,6 +75,9 @@
       "onFailureWarn": "Сохранить деплой активным и пометить для проверки",
       "onFailureFail": "Завершить деплой ошибкой и сохранить предыдущую версию"
     },
+    "runtimeVersionLabel": "Версия среды выполнения",
+    "runtimeVersionDefault": "По умолчанию",
+    "runtimeVersionDesc": "Использует совместимые образы сборки и запуска для выбранной версии. Требуется сборка Docker, созданная Openship.",
     "buildImageLabel": "Образ для сборки",
     "buildImageDesc": "Образ контейнера сборщика для облачных или серверных сборок. Измените его, если обнаруженный базовый образ не подходит.",
     "productionPathsLabel": "Пути продакшена",
@@ -111,7 +114,9 @@
     "releaseDescription": "Необязательные команды после сборки. Сбой останавливает деплой. Только для Docker и Bare приложений.",
     "releaseCommand": "Команда {number}",
     "addReleaseCommand": "Добавить команду",
-    "removeReleaseCommand": "Удалить команду {number}"
+    "removeReleaseCommand": "Удалить команду {number}",
+    "runtimeImageLabel": "Образ среды выполнения",
+    "runtimeImageDesc": "Необязательный базовый образ для Docker. Должен соответствовать среде выполнения и рецепту сборки; оставьте пустым для значения по умолчанию."
   },
   "projectSettings": {
     "framework": "Фреймворк",

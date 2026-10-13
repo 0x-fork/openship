@@ -75,6 +75,9 @@
       "onFailureWarn": "Keep the deploy live and flag it for review",
       "onFailureFail": "Fail the deploy and keep the previous version serving"
     },
+    "runtimeVersionLabel": "Runtime version",
+    "runtimeVersionDefault": "Default",
+    "runtimeVersionDesc": "Uses matching build and runtime images for the selected version. Requires an Openship-generated Docker build.",
     "buildImageLabel": "Build Image",
     "buildImageDesc": "Builder container image for cloud or server builds. Override it when the detected base image is wrong.",
     "productionPathsLabel": "Production Paths",
@@ -111,7 +114,9 @@
     "releaseDescription": "Optional commands after build. Failure stops deployment. Docker and Bare apps only.",
     "releaseCommand": "Command {number}",
     "addReleaseCommand": "Add command",
-    "removeReleaseCommand": "Remove command {number}"
+    "removeReleaseCommand": "Remove command {number}",
+    "runtimeImageLabel": "Runtime image",
+    "runtimeImageDesc": "Optional production base image for Docker builds. It must match the selected runtime and generated recipe; leave blank for the managed default."
   },
   "projectSettings": {
     "framework": "Framework",

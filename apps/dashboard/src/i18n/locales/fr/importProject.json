@@ -75,6 +75,9 @@
       "onFailureWarn": "Garder le déploiement en ligne et le signaler pour vérification",
       "onFailureFail": "Faire échouer le déploiement et continuer à servir la version précédente"
     },
+    "runtimeVersionLabel": "Version du runtime",
+    "runtimeVersionDefault": "Par défaut",
+    "runtimeVersionDesc": "Utilise des images de compilation et d’exécution adaptées à la version sélectionnée. Nécessite une compilation Docker générée par Openship.",
     "buildImageLabel": "Image de compilation",
     "buildImageDesc": "Image de conteneur de compilation pour les builds cloud ou serveur. Remplacez-la lorsque l'image de base détectée est incorrecte.",
     "productionPathsLabel": "Chemins de production",
@@ -111,7 +114,9 @@
     "releaseDescription": "Commandes facultatives après le build. Un échec arrête le déploiement. Applications Docker et Bare uniquement.",
     "releaseCommand": "Commande {number}",
     "addReleaseCommand": "Ajouter une commande",
-    "removeReleaseCommand": "Supprimer la commande {number}"
+    "removeReleaseCommand": "Supprimer la commande {number}",
+    "runtimeImageLabel": "Image d’exécution",
+    "runtimeImageDesc": "Image de base de production facultative pour Docker. Doit être compatible avec le runtime et la recette générée ; laissez vide pour utiliser la valeur par défaut."
   },
   "projectSettings": {
     "framework": "Framework",
