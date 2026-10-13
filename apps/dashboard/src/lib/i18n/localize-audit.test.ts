@@ -23,6 +23,48 @@ describe("resolveAuditEventCopy", () => {
 		);
 	});
 
+	it("localizes deployment.failed and other taxonomy descriptions", () => {
+		const info = {
+			action: "failed to deploy",
+			label: "Deploy failed",
+			description: "A deployment errored out before reaching a healthy state.",
+		};
+
+		const ru = resolveAuditEventCopy(
+			"deployment.failed",
+			info,
+			undefined,
+			"ru",
+		);
+		expect(ru.label).toBe("Ошибка деплоя");
+		expect(ru.action).toBe("сбой при деплое");
+		expect(ru.description).toBe(
+			"Деплой завершился сбоем до перехода в рабочее состояние.",
+		);
+
+		const de = resolveAuditEventCopy(
+			"deployment.failed",
+			info,
+			undefined,
+			"de",
+		);
+		expect(de.label).toBe("Deployment fehlgeschlagen");
+		expect(de.description).toBe(
+			"Ein Deployment ist vor Erreichen eines fehlerfreien Zustands fehlgeschlagen.",
+		);
+
+		const es = resolveAuditEventCopy(
+			"deployment.failed",
+			info,
+			undefined,
+			"es",
+		);
+		expect(es.label).toBe("Despliegue fallido");
+		expect(es.description).toBe(
+			"Un despliegue falló antes de alcanzar un estado saludable.",
+		);
+	});
+
 	it("localizes project.updated into Russian", () => {
 		const info = {
 			action: "updated",
