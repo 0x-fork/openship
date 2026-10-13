@@ -5126,7 +5126,7 @@
     },
     {
       "$schema": "https://openship.io/app.schema.json",
-      "available": false,
+      "available": true,
       "verified": true,
       "minEngine": "0.9.0",
       "id": "authentik",
@@ -5448,7 +5448,7 @@
     },
     {
       "$schema": "https://openship.io/app.schema.json",
-      "available": false,
+      "available": true,
       "verified": false,
       "minEngine": "0.9.0",
       "id": "mariadb",
@@ -5662,7 +5662,7 @@
     },
     {
       "$schema": "https://openship.io/app.schema.json",
-      "available": false,
+      "available": true,
       "verified": true,
       "minEngine": "0.9.0",
       "id": "nextcloud",
@@ -5983,7 +5983,7 @@
     },
     {
       "$schema": "https://openship.io/app.schema.json",
-      "available": false,
+      "available": true,
       "verified": true,
       "minEngine": "0.9.0",
       "id": "odoo",
@@ -6247,7 +6247,7 @@
     },
     {
       "$schema": "https://openship.io/app.schema.json",
-      "available": false,
+      "available": true,
       "verified": false,
       "minEngine": "0.9.0",
       "id": "postgresql",
@@ -6498,7 +6498,7 @@
     },
     {
       "$schema": "https://openship.io/app.schema.json",
-      "available": false,
+      "available": true,
       "verified": true,
       "minEngine": "0.9.0",
       "id": "rabbitmq",
@@ -6666,7 +6666,7 @@
     },
     {
       "$schema": "https://openship.io/app.schema.json",
-      "available": false,
+      "available": true,
       "verified": true,
       "minEngine": "0.9.0",
       "id": "wordpress",

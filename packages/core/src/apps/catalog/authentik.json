@@ -1,6 +1,6 @@
 {
   "$schema": "https://openship.io/app.schema.json",
-  "available": false,
+  "available": true,
   "verified": true,
   "minEngine": "0.9.0",
   "id": "authentik",
