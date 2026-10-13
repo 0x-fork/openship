@@ -33,6 +33,8 @@ idleRoute.get('/idle', async (c) => {
     ? folderToMailbox(normalizeFolderSlug(view))
     : c.req.query('folder') || 'INBOX';
 
+  // Nginx/OpenResty must forward each notification as it arrives.
+  c.header('X-Accel-Buffering', 'no');
   return streamSSE(c, async (stream) => {
     const client = createImapClient({
       host: session.imapHost,

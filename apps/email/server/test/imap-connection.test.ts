@@ -131,6 +131,7 @@ describe("webmail over real local IMAP sockets", () => {
         headers: { Cookie: `${env.SESSION_COOKIE_NAME}=${session.id}` },
       });
       expect(response.status).toBe(200);
+      expect(response.headers.get('X-Accel-Buffering')).toBe('no');
       reader = response.body!.getReader();
       const ready = await reader.read();
       expect(new TextDecoder().decode(ready.value)).toContain('event: mailbox');
