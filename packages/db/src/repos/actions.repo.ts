@@ -362,6 +362,15 @@ export function createActionsRepo(db: Database) {
         .orderBy(desc(actionRun.createdAt), desc(actionRun.attempt))
         .limit(limit);
     },
+    /** Internal authority check only: never expose foreign-tenant records. A
+     * local ID must not be retried through a linked owner's Cloud credential. */
+    async resourceExists(
+      type: "actionWorkflow" | "actionRun" | "actionRunner" | "actionJob",
+      id: string,
+    ) {
+      const table = { actionWorkflow, actionRun, actionRunner, actionJob }[type];
+      return !!(await db.select({ id: table.id }).from(table).where(eq(table.id, id)).limit(1))[0];
+    },
     async listRunners(org: string) {
       return db
         .select()
