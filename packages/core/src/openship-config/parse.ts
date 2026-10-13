@@ -7,7 +7,13 @@
  * Every field is optional; unknown top-level keys are warnings, not errors.
  */
 
-import { STACK_IDS, ROLE_KINDS, ROLE_HEALTH_KINDS, type RoleHealth, type StackRole } from "../stacks";
+import {
+  STACK_IDS,
+  ROLE_KINDS,
+  ROLE_HEALTH_KINDS,
+  type RoleHealth,
+  type StackRole,
+} from "../stacks";
 import { ALL_PACKAGE_MANAGERS } from "../stacks";
 import type { RoutingConfig } from "../metadata/types";
 import {
@@ -360,7 +366,10 @@ function parseServices(ctx: Ctx, v: unknown, path: string): OpenshipService[] | 
       return;
     }
     if (!isValidServiceName(name)) {
-      ctx.err(p, "requires a service name starting with a letter or digit and containing only letters, digits, dots, underscores or hyphens");
+      ctx.err(
+        p,
+        "requires a service name starting with a letter or digit and containing only letters, digits, dots, underscores or hyphens",
+      );
       return;
     }
     out.push({
@@ -405,10 +414,15 @@ function parseRoleHealth(ctx: Ctx, v: unknown, path: string): RoleHealth | undef
     );
     return undefined;
   }
+  const command = ctx.str(v.command, `${path}.command`);
+  if (kind === "exec" && !command?.trim()) {
+    ctx.err(`${path}.command`, "requires a non-empty command for an exec health check");
+    return undefined;
+  }
   return {
     kind,
     path: ctx.str(v.path, `${path}.path`),
-    command: ctx.str(v.command, `${path}.command`),
+    command,
   };
 }
 
@@ -433,8 +447,8 @@ function parseRoles(ctx: Ctx, v: unknown, path: string): StackRole[] | undefined
       return;
     }
     const name = ctx.str(item.name, `${p}.name`);
-    if (!name) {
-      ctx.err(p, "requires a non-empty `name`");
+    if (!name?.trim()) {
+      ctx.err(`${p}.name`, "requires a non-empty `name`");
       return;
     }
     if (seen.has(name)) {
@@ -442,6 +456,10 @@ function parseRoles(ctx: Ctx, v: unknown, path: string): StackRole[] | undefined
       return;
     }
     seen.add(name);
+    if (item.kind === undefined) {
+      ctx.err(`${p}.kind`, "is required");
+      return;
+    }
     const kind = ctx.enumOf(item.kind, `${p}.kind`, ROLE_KINDS);
     if (kind === undefined) return;
     if (kind === "web") {
@@ -449,8 +467,8 @@ function parseRoles(ctx: Ctx, v: unknown, path: string): StackRole[] | undefined
       return;
     }
     const command = ctx.str(item.command, `${p}.command`);
-    if (!command) {
-      ctx.err(p, "requires a non-empty `command`");
+    if (!command?.trim()) {
+      ctx.err(`${p}.command`, "requires a non-empty `command`");
       return;
     }
     const replicas = parseReplicas(ctx, item.replicas, `${p}.replicas`);
@@ -509,8 +527,8 @@ function parseStopGracePeriod(ctx: Ctx, v: unknown, path: string): string | unde
 
 function parseReplicas(ctx: Ctx, v: unknown, path: string): number | undefined {
   if (v === undefined) return undefined;
-  if (typeof v !== "number" || !Number.isInteger(v) || v < 1) {
-    ctx.err(path, "must be an integer >= 1");
+  if (typeof v !== "number" || !Number.isSafeInteger(v) || v < 1) {
+    ctx.err(path, "must be a safe integer >= 1");
     return undefined;
   }
   return v;
