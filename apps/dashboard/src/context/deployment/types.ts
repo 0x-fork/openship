@@ -427,6 +427,7 @@ export interface DeploymentConfig {
   packageManager: string;
   buildImage: string;
   runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   publicEndpoints: PublicEndpoint[];
   envVars: EnvironmentVariable[];
   /**

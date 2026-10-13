@@ -54,6 +54,7 @@ export function createProjectLocalDependencies(create: (ctx: ExecutionContext, i
       releaseCommands: body.releaseCommands !== undefined ? body.releaseCommands : info.releaseCommands,
       buildImage: body.buildImage ?? (body.runtimeVersion !== undefined ? undefined : info.buildImage),
       runtimeVersion: body.runtimeVersion !== undefined ? body.runtimeVersion : info.runtimeVersion,
+      runtimeImage: body.runtimeImage !== undefined ? body.runtimeImage : info.runtimeImage,
       productionMode: body.productionMode ?? info.productionMode,
       workloadType: body.workloadType ?? info.workloadType,
       port: body.port ?? info.port,

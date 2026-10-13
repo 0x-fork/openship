@@ -114,7 +114,9 @@
     "releaseDescription": "Необязательные команды после сборки. Сбой останавливает деплой. Только для Docker и Bare приложений.",
     "releaseCommand": "Команда {number}",
     "addReleaseCommand": "Добавить команду",
-    "removeReleaseCommand": "Удалить команду {number}"
+    "removeReleaseCommand": "Удалить команду {number}",
+    "runtimeImageLabel": "Образ среды выполнения",
+    "runtimeImageDesc": "Необязательный базовый образ для Docker. Должен соответствовать среде выполнения и рецепту сборки; оставьте пустым для значения по умолчанию."
   },
   "projectSettings": {
     "framework": "Фреймворк",

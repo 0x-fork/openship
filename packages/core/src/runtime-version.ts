@@ -1,3 +1,4 @@
+import { validateImageReference } from "./project-source";
 import { ValidationError } from "./errors";
 import { LANGUAGES, STACKS, normalizeFramework, type StackId, type Language } from "./stacks";
 import {
@@ -32,7 +33,11 @@ interface RuntimeVersionPolicy {
   versions: readonly string[];
   legacyBuildImage: string;
   images(version: string): { buildImage: string; runtimeImage: string };
-  resolve(version: unknown, buildImage?: string | null): RuntimeImages;
+  resolve(
+    version: unknown,
+    buildImage?: string | null,
+    runtimeImage?: string | null,
+  ): RuntimeImages;
   needsInstall(version: unknown, installCommand?: string | null): boolean;
 }
 
@@ -71,11 +76,12 @@ export function resolveRuntimeImages(
   framework: string | null | undefined,
   version: unknown,
   buildImage?: string | null,
+  runtimeImage?: string | null,
 ): RuntimeImages {
   if (!isRuntimeVersion(version)) {
     throw new ValidationError("runtimeVersion must be a numeric version such as 8.3 or 8.3.1");
   }
-  return requirePolicy(framework).resolve(version, buildImage);
+  return requirePolicy(framework).resolve(version, buildImage, runtimeImage);
 }
 
 /** Config files can validate a declared stack immediately; scans validate after
@@ -103,6 +109,7 @@ export function runtimeNeedsInstall(
 /** No explicit selection is silently ignored on an unsupported execution path. */
 export function assertRuntimeVersionTarget(config: {
   runtimeVersion?: unknown;
+  runtimeImage?: unknown;
   framework?: string | null;
   runtimeMode?: string | null;
   projectType?: string | null;
@@ -111,9 +118,16 @@ export function assertRuntimeVersionTarget(config: {
   sourceKind?: string | null;
   workloadType?: string | null;
 }) {
-  if (config.runtimeVersion == null) return;
-  resolveRuntimeImages(config.framework, config.runtimeVersion);
-  const policy = requirePolicy(config.framework);
+  if (config.runtimeVersion == null && config.runtimeImage == null) return;
+  normalizeRuntimeImageOverride(config.runtimeImage);
+  if (config.runtimeVersion != null)
+    resolveRuntimeImages(
+      config.framework,
+      config.runtimeVersion,
+      undefined,
+      typeof config.runtimeImage === "string" ? config.runtimeImage : undefined,
+    );
+  const policy = getRuntimeVersionPolicy(config.framework);
   if (
     config.runtimeMode === "bare" ||
     ["monorepo", "compose", "services", "docker"].includes(config.projectType ?? "") ||
@@ -123,39 +137,71 @@ export function assertRuntimeVersionTarget(config: {
     config.workloadType === "static"
   ) {
     throw new ValidationError(
-      `runtimeVersion requires an Openship-generated ${policy.label} Docker build. Remove runtimeVersion for bare runtimes, static sites, Compose/monorepo services, prebuilt images or your own Dockerfile.`,
+      `${config.runtimeVersion != null ? "runtimeVersion" : "runtimeImage"} requires an Openship-generated ${policy?.label ? `${policy.label} ` : ""}Docker build. Remove runtimeVersion and runtimeImage for bare runtimes, static sites, Compose/monorepo services, prebuilt images or your own Dockerfile.`,
     );
   }
 }
 
 /** Omission preserves the selection; null clears it. Only managed image
  * defaults follow a version change, while custom overrides stay explicit. */
+export function normalizeRuntimeImageOverride(value: unknown): string | null | undefined {
+  if (value == null) return value;
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > 200 ||
+    validateImageReference(value.trim())
+  )
+    throw new ValidationError(
+      "runtimeImage must be a valid Docker image reference, or null to restore the default",
+    );
+  return value.trim();
+}
+
 export function runtimeProjectUpdate(
   previous: {
     framework?: string | null;
     runtimeVersion?: string | null;
     buildImage?: string | null;
+    runtimeImage?: string | null;
   } | null,
-  changes: { framework?: string | null; runtimeVersion?: unknown; buildImage?: unknown },
-): { runtimeVersion?: string | null; buildImage?: string } {
+  changes: {
+    framework?: string | null;
+    runtimeVersion?: unknown;
+    buildImage?: unknown;
+    runtimeImage?: unknown;
+  },
+): { runtimeVersion?: string | null; buildImage?: string; runtimeImage?: string | null } {
   const version =
     changes.runtimeVersion === undefined ? previous?.runtimeVersion : changes.runtimeVersion;
   const framework = changes.framework === undefined ? previous?.framework : changes.framework;
+  const policy = getRuntimeVersionPolicy(framework);
   const previousPolicy = getRuntimeVersionPolicy(previous?.framework ?? framework);
   const previousDefault = previousPolicy
     ? previous?.runtimeVersion && previousPolicy.versions.includes(previous.runtimeVersion)
       ? previousPolicy.images(previous.runtimeVersion).buildImage
       : previousPolicy.legacyBuildImage
     : undefined;
+  const runtimeImage = normalizeRuntimeImageOverride(
+    changes.runtimeImage === undefined ? previous?.runtimeImage : changes.runtimeImage,
+  );
+  const overrideUpdate =
+    changes.runtimeImage === undefined ? {} : { runtimeImage: runtimeImage ?? null };
   let image = typeof changes.buildImage === "string" ? changes.buildImage : previous?.buildImage;
   if (version == null) {
-    if (changes.runtimeVersion !== null) return {};
-    return {
-      runtimeVersion: null,
-      ...(previousPolicy && {
-        buildImage: !image || image === previousDefault ? previousPolicy.legacyBuildImage : image,
-      }),
-    };
+    const reset: { runtimeVersion?: null; buildImage?: string } =
+      changes.runtimeVersion === null
+        ? {
+            runtimeVersion: null,
+            ...(previousPolicy && {
+              buildImage:
+                !image || image === previousDefault ? previousPolicy.legacyBuildImage : image,
+            }),
+          }
+        : {};
+    if (runtimeImage && policy)
+      policy.resolve(policy.defaultVersion, reset.buildImage ?? image, runtimeImage);
+    return { ...reset, ...overrideUpdate };
   }
   if (
     changes.runtimeVersion !== undefined &&
@@ -164,6 +210,10 @@ export function runtimeProjectUpdate(
     (changes.buildImage === undefined || changes.buildImage === previous.buildImage)
   )
     image = undefined;
-  const resolved = resolveRuntimeImages(framework, version, image);
-  return { runtimeVersion: resolved.runtimeVersion, buildImage: resolved.buildImage };
+  const resolved = resolveRuntimeImages(framework, version, image, runtimeImage);
+  return {
+    runtimeVersion: resolved.runtimeVersion,
+    buildImage: resolved.buildImage,
+    ...overrideUpdate,
+  };
 }

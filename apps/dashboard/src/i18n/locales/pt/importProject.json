@@ -113,7 +113,9 @@
     "releaseDescription": "Comandos opcionais após o build. Uma falha interrompe a implantação. Apenas apps Docker e Bare.",
     "releaseCommand": "Comando {number}",
     "addReleaseCommand": "Adicionar comando",
-    "removeReleaseCommand": "Remover comando {number}"
+    "removeReleaseCommand": "Remover comando {number}",
+    "runtimeImageLabel": "Imagem de execução",
+    "runtimeImageDesc": "Imagem base de produção opcional para Docker. Deve ser compatível com o runtime e a receita gerada; deixe em branco para usar o padrão."
   },
   "projectSettings": {
     "framework": "Framework",

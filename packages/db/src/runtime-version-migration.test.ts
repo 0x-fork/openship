@@ -20,11 +20,14 @@ it("adds an optional runtime selection without changing old builds or deployment
         build_image: "php:8.4-cli",
         active_deployment_id: "release",
         runtime_version: null,
+        runtime_image: null,
       },
     ]);
-    await db.exec("UPDATE project SET runtime_version = '8.3' WHERE id = 'old'");
-    expect((await db.query("SELECT runtime_version FROM project")).rows).toEqual([
-      { runtime_version: "8.3" },
+    await db.exec(
+      "UPDATE project SET runtime_version = '8.3', runtime_image = 'custom/runtime:8.3' WHERE id = 'old'",
+    );
+    expect((await db.query("SELECT runtime_version, runtime_image FROM project")).rows).toEqual([
+      { runtime_version: "8.3", runtime_image: "custom/runtime:8.3" },
     ]);
   } finally {
     await db.close();

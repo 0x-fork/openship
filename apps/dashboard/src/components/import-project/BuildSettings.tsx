@@ -11,7 +11,7 @@ import { Toggle } from "@/components/project-settings/ServerSideSwitch";
 import { useOptionalDeployment } from "@/context/DeploymentContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { getPublicEndpointHosts, getRecommendedSingleAppBuildImage, workloadOf, type PublicEndpoint } from "@/context/deployment/types";
-import { getRuntimeVersionPolicy, runtimeProjectUpdate, runtimeNeedsInstall, type WorkloadType } from "@repo/core";
+import { getRuntimeVersionPolicy, runtimeProjectUpdate, runtimeNeedsInstall, getRuntimeImage, STACKS, type StackId, type WorkloadType } from "@repo/core";
 import { CustomSelect } from "@/components/ui/CustomSelect";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 
@@ -155,6 +155,18 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       icon: <UiIcon name="select" className="size-4" />,
       source: 'config',
     },
+    ...((config?.runtimeMode !== "bare" && workload !== "static" && !["compose", "monorepo", "services", "docker"].includes(config?.projectType)) || config?.runtimeImage != null ? [{
+      key: 'runtimeImage',
+      label: bs.runtimeImageLabel,
+      placeholder: runtimePolicy
+        ? runtimePolicy.images(runtimePolicy.versions.includes(config?.runtimeVersion) ? config.runtimeVersion : runtimePolicy.defaultVersion).runtimeImage
+        : getRuntimeImage((config?.framework && Object.hasOwn(STACKS, config.framework) ? config.framework : 'unknown') as StackId, config?.packageManager, config?.buildImage),
+      description: bs.runtimeImageDesc,
+      type: 'text' as const,
+      optional: true,
+      icon: <UiIcon name="select" className="size-4" />,
+      source: 'config' as const,
+    }] : []),
     ...(needsBuild ? [
       {
         key: 'productionPaths',
@@ -233,7 +245,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
       }
 
       if (field.source === 'config' && updateConfig) {
-        updateConfig({ [field.key]: value } as any);
+        updateConfig({ [field.key]: field.key === "runtimeImage" && !value.trim() ? null : value } as any);
         return;
       }
 
@@ -273,6 +285,15 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
             value={displayValue || ''}
             onChange={(e) => handleChange(field, e.target.value)}
             placeholder={field.placeholder}
+            onBlur={field.key === 'runtimeImage' ? () => {
+              try {
+                runtimeProjectUpdate(config, { runtimeImage: config.runtimeImage || null });
+                setRuntimeError(null);
+              } catch (error) {
+                observeCaughtError(error, "dashboard/components/import-project/BuildSettings/runtimeImage");
+                setRuntimeError(error instanceof Error ? error.message : bs.runtimeImageDesc);
+              }
+            } : undefined}
             className={field.type === 'text' ? "min-w-0 font-mono" : "min-w-0"}
           />
         </div>

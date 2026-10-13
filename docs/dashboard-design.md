@@ -25,7 +25,9 @@ the trigger override above is intentional because `filled` alone uses the input 
 Keep visible keyboard focus, error indicators, meaningful selection outlines, and useful dividers.
 Runtime version selection belongs in the existing deploy wizard's build settings, using the shared
 filled dropdown. Derive the default and supported versions from the selected stack's runtime policy, and report incompatible custom
-builders inline. The saved project Configuration card shows the selected version beside its build settings.
+builders inline. Docker builds offer an optional runtime base image in Advanced settings, with
+its managed default as the placeholder. Keep overrides explicit, validate compatibility, and
+show failures inline; blank resets the override. Bare and service-owned recipes do not offer it. The saved project Configuration card shows the selected version beside its build settings.
 Borderless cards do not remove those functional indicators. Menus should use the shared dropdown
 component's existing positioning, keyboard behavior, and menu surface.
 

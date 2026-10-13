@@ -86,3 +86,46 @@ it("keeps Composer enabled when a new version is selected without an asset build
     options: { ...h.config.options, hasBuild: true },
   });
 });
+
+it("offers the runtime base override only for Docker source builds, and clears it explicitly", async () => {
+  h.config.runtimeMode = "docker";
+  h.config.runtimeImage = "custom/runtime:83";
+  await act(async () => root.render(<BuildSettings />));
+  expect(
+    Array.from(host.querySelectorAll<HTMLInputElement>("input")).filter(
+      (input) => input.value === "custom/runtime:83",
+    ),
+  ).toHaveLength(0);
+  const advanced = Array.from(host.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes(baseDictionary.importProject.buildSettings.advanced),
+  );
+  if (advanced) await act(async () => advanced.click());
+  expect(
+    Array.from(host.querySelectorAll<HTMLInputElement>("input")).filter(
+      (input) => input.value === "custom/runtime:83",
+    ),
+  ).toHaveLength(1);
+  const input = Array.from(host.querySelectorAll<HTMLInputElement>("input")).find(
+    (input) => input.value === "custom/runtime:83",
+  );
+  expect(input).toBeDefined();
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  await act(async () => {
+    setter.call(input, "");
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(h.updateConfig).toHaveBeenCalledWith({ runtimeImage: null });
+});
+
+it("hides the runtime image field for a bare app without an override", async () => {
+  h.config.runtimeMode = "bare";
+  await act(async () => root.render(<BuildSettings />));
+  const advanced = Array.from(host.querySelectorAll("button")).find((button) =>
+    button.textContent?.includes(baseDictionary.importProject.buildSettings.advanced),
+  );
+  expect(advanced).toBeDefined();
+  await act(async () => advanced!.click());
+  expect(host.textContent).not.toContain(
+    baseDictionary.importProject.buildSettings.runtimeImageLabel,
+  );
+});

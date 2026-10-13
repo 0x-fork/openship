@@ -114,7 +114,9 @@
     "releaseDescription": "Commandes facultatives après le build. Un échec arrête le déploiement. Applications Docker et Bare uniquement.",
     "releaseCommand": "Commande {number}",
     "addReleaseCommand": "Ajouter une commande",
-    "removeReleaseCommand": "Supprimer la commande {number}"
+    "removeReleaseCommand": "Supprimer la commande {number}",
+    "runtimeImageLabel": "Image d’exécution",
+    "runtimeImageDesc": "Image de base de production facultative pour Docker. Doit être compatible avec le runtime et la recette générée ; laissez vide pour utiliser la valeur par défaut."
   },
   "projectSettings": {
     "framework": "Framework",

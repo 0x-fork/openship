@@ -29,8 +29,15 @@ describe("runtime version selection", () => {
     for (const runtimeVersion of ["22", "8.3", "3.13.1"]) {
       expect(parseOpenshipConfig({ runtimeVersion }).errors).toEqual([]);
     }
-    for (const runtimeVersion of ["", "8.3\nFROM evil",
-      "8.3\n", 8.3, "8.", "1.2.3.4", "1".repeat(33)]) {
+    for (const runtimeVersion of [
+      "",
+      "8.3\nFROM evil",
+      "8.3\n",
+      8.3,
+      "8.",
+      "1.2.3.4",
+      "1".repeat(33),
+    ]) {
       expect(parseOpenshipConfig({ runtimeVersion }).errors).not.toEqual([]);
     }
   });
@@ -168,4 +175,44 @@ describe("runtime version selection", () => {
     ).toThrow(/generated PHP Docker/);
     expect(() => assertRuntimeVersionTarget(override)).not.toThrow();
   });
+});
+
+it("preserves custom images, validates version changes, and resets the override explicitly", () => {
+  const previous = {
+    framework: "laravel",
+    runtimeVersion: "8.3",
+    buildImage: "php:8.3-cli-bookworm",
+    runtimeImage: "custom/frankenphp:83",
+  };
+  expect(runtimeProjectUpdate(previous, {})).not.toHaveProperty("runtimeImage");
+  expect(runtimeProjectUpdate(previous, { runtimeVersion: "8.4" })).toMatchObject({
+    runtimeVersion: "8.4",
+  });
+  expect(runtimeProjectUpdate(previous, { runtimeImage: null })).toMatchObject({
+    runtimeImage: null,
+  });
+  expect(() =>
+    runtimeProjectUpdate(previous, { runtimeImage: "dunglas/frankenphp:1-php8.4-bookworm" }),
+  ).toThrow(/uses PHP 8.4/);
+  expect(() => runtimeProjectUpdate(previous, { runtimeImage: "php:8.3-fpm" })).toThrow(
+    /must provide FrankenPHP/,
+  );
+  expect(() =>
+    runtimeProjectUpdate(previous, { runtimeImage: "custom/image:x\nFROM bad" }),
+  ).toThrow(/valid Docker image/);
+  expect(runtimeProjectUpdate(previous, { runtimeImage: " custom/image:83 " })).toMatchObject({
+    runtimeImage: "custom/image:83",
+  });
+  expect(() =>
+    runtimeProjectUpdate(
+      { ...previous, runtimeVersion: null, buildImage: "php:8.4-cli" },
+      { runtimeImage: "dunglas/frankenphp:1-php8.3-bookworm" },
+    ),
+  ).toThrow(/uses PHP 8.3/);
+  expect(parseOpenshipConfig({ runtimeImage: "foo\nFROM bad" }).errors).toEqual([
+    expect.stringMatching(/^runtimeImage:/),
+  ]);
+  expect(() =>
+    assertRuntimeVersionTarget({ runtimeImage: "custom/image:latest", runtimeMode: "bare" }),
+  ).toThrow(/generated.*Docker/);
 });

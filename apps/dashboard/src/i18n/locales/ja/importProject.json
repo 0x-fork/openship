@@ -113,7 +113,9 @@
     "releaseDescription": "ビルド後に実行する任意のコマンドです。失敗するとデプロイを停止します。Docker・Bareアプリのみ対応。",
     "releaseCommand": "コマンド {number}",
     "addReleaseCommand": "コマンドを追加",
-    "removeReleaseCommand": "コマンド {number} を削除"
+    "removeReleaseCommand": "コマンド {number} を削除",
+    "runtimeImageLabel": "実行イメージ",
+    "runtimeImageDesc": "Docker ビルド用の任意の本番ベースイメージです。ランタイムと生成レシピに対応する必要があります。空欄で既定値を使用します。"
   },
   "projectSettings": {
     "framework": "フレームワーク",

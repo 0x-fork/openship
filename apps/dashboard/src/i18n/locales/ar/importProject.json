@@ -114,7 +114,9 @@
     "releaseDescription": "أوامر اختيارية بعد البناء. فشلها يوقف النشر. لتطبيقات Docker وBare فقط.",
     "releaseCommand": "الأمر {number}",
     "addReleaseCommand": "إضافة أمر",
-    "removeReleaseCommand": "حذف الأمر {number}"
+    "removeReleaseCommand": "حذف الأمر {number}",
+    "runtimeImageLabel": "صورة التشغيل",
+    "runtimeImageDesc": "صورة أساسية اختيارية للتشغيل عبر Docker. يجب أن تتوافق مع بيئة التشغيل ووصفة البناء؛ اتركها فارغة لاستخدام الصورة الافتراضية."
   },
   "projectSettings": {
     "framework": "إطار العمل",

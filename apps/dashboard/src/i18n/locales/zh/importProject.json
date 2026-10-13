@@ -113,7 +113,9 @@
     "releaseDescription": "构建后执行的可选命令。失败会停止部署。仅适用于 Docker 和 Bare 应用。",
     "releaseCommand": "命令 {number}",
     "addReleaseCommand": "添加命令",
-    "removeReleaseCommand": "删除命令 {number}"
+    "removeReleaseCommand": "删除命令 {number}",
+    "runtimeImageLabel": "运行镜像",
+    "runtimeImageDesc": "可选的 Docker 生产基础镜像。必须与运行时和生成的构建方案兼容；留空以使用默认值。"
   },
   "projectSettings": {
     "framework": "框架",

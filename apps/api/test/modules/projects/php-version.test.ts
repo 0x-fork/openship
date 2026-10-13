@@ -177,4 +177,56 @@ describe("project PHP settings across configuration surfaces", () => {
       /generated PHP Docker/,
     );
   });
+  it.each(["options", "update", "ensure"])(
+    "atomically persists and clears a runtime override through %s",
+    async (entry) => {
+      const { owner, project } = await fixture();
+      async function apply(input: Record<string, unknown>) {
+        if (entry === "options") return updateOptions(project.id, input, owner.organizationId);
+        if (entry === "update") return updateProject(project.id, input, owner.organizationId);
+        return ensureProject(
+          parseInput(EnsureProjectBody, { projectId: project.id, name: project.name, ...input }),
+          owner.organizationId,
+        );
+      }
+      await apply({ runtimeVersion: "8.3", runtimeImage: "custom/runtime:83" });
+      const saved = (await repos.project.findById(project.id))!;
+      const frozen = buildConfigSnapshot(saved);
+      expect(frozen).toMatchObject({
+        runtimeImage: "custom/runtime:83",
+        runtimeImageOverride: true,
+        runtimeVersion: "8.3",
+      });
+      await expect(
+        apply({ runtimeImage: "dunglas/frankenphp:1-php8.4-bookworm", buildCommand: "changed" }),
+      ).rejects.toThrow(/uses PHP 8.4/);
+      expect(await repos.project.findById(project.id)).toEqual(saved);
+      await expect(
+        apply({ runtimeImage: "custom/runtime:83\nFROM bad", buildCommand: "changed" }),
+      ).rejects.toThrow(/valid Docker image/);
+      expect(await repos.project.findById(project.id)).toEqual(saved);
+      await apply({ runtimeVersion: "8.4", runtimeImage: null });
+      expect((await repos.project.findById(project.id))?.runtimeImage).toBeNull();
+      expect(frozen.runtimeImage).toBe("custom/runtime:83");
+      expect(buildConfigSnapshot((await repos.project.findById(project.id))!).runtimeImage).toBe(
+        "dunglas/frankenphp:1-php8.4-bookworm",
+      );
+    },
+  );
+  it("validates an override before creating a project group", async () => {
+    const owner = await seedOrg();
+    const before = await repos.projectGroup.listByOrganization(owner.organizationId);
+    await expect(
+      createProject(
+        {
+          name: "bad-runtime",
+          framework: "laravel",
+          runtimeVersion: "8.3",
+          runtimeImage: "php:8.3-fpm",
+        },
+        owner.organizationId,
+      ),
+    ).rejects.toThrow(/FrankenPHP/);
+    expect(await repos.projectGroup.listByOrganization(owner.organizationId)).toEqual(before);
+  });
 });

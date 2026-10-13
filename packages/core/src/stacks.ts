@@ -24,12 +24,17 @@ import { validateImageReference } from "./project-source";
 
 // ─── Language definitions ────────────────────────────────────────────────────
 
+export type DockerBuildRecipe = "generic" | "php" | "ruby" | "static";
+export type DockerRuntimeProbe = "node" | "bun" | "python" | "ruby" | "java" | "dotnet" | "elixir";
+
 export interface LanguageDefinition {
   name: string;
   /** Default build image - used when stack doesn't override */
   buildImage: string;
   /** Default runtime image */
   runtimeImage: string;
+  dockerRecipe?: DockerBuildRecipe;
+  dockerRuntimeProbe?: DockerRuntimeProbe;
   /** Package managers available for this language */
   packageManagers: readonly string[];
   /**
@@ -42,6 +47,7 @@ export interface LanguageDefinition {
 
 export const LANGUAGES = {
   javascript: {
+    dockerRuntimeProbe: "node",
     name: "JavaScript",
     buildImage: "node:22",
     runtimeImage: "node:22",
@@ -49,6 +55,7 @@ export const LANGUAGES = {
     requiredTools: ["node", "npm"],
   },
   typescript: {
+    dockerRuntimeProbe: "node",
     name: "TypeScript",
     buildImage: "node:22",
     runtimeImage: "node:22",
@@ -70,6 +77,7 @@ export const LANGUAGES = {
     requiredTools: ["rustc", "cargo"],
   },
   python: {
+    dockerRuntimeProbe: "python",
     name: "Python",
     buildImage: "python:3.12-slim",
     runtimeImage: "python:3.12-slim",
@@ -77,6 +85,8 @@ export const LANGUAGES = {
     requiredTools: ["python3", "pip"],
   },
   ruby: {
+    dockerRuntimeProbe: "ruby",
+    dockerRecipe: "ruby",
     name: "Ruby",
     buildImage: "ruby:3.3-slim",
     runtimeImage: "ruby:3.3-slim",
@@ -84,6 +94,7 @@ export const LANGUAGES = {
     requiredTools: ["ruby", "bundler"],
   },
   php: {
+    dockerRecipe: "php",
     name: "PHP",
     buildImage: "php:8.4-cli",
     // FrankenPHP, not php:*-fpm. An fpm image is a FastCGI backend, not a
@@ -98,6 +109,7 @@ export const LANGUAGES = {
     requiredTools: ["php", "composer"],
   },
   java: {
+    dockerRuntimeProbe: "java",
     name: "Java",
     // Maven image bundles both `mvn` and JDK 21, so the generated Dockerfile
     // builds Maven projects out of the box; Gradle/Kotlin projects build via
@@ -108,6 +120,7 @@ export const LANGUAGES = {
     requiredTools: ["java", "javac"],
   },
   csharp: {
+    dockerRuntimeProbe: "dotnet",
     name: "C#",
     buildImage: "mcr.microsoft.com/dotnet/sdk:8.0",
     runtimeImage: "mcr.microsoft.com/dotnet/aspnet:8.0",
@@ -115,6 +128,7 @@ export const LANGUAGES = {
     requiredTools: ["dotnet"],
   },
   elixir: {
+    dockerRuntimeProbe: "elixir",
     name: "Elixir",
     buildImage: "elixir:1.16-alpine",
     runtimeImage: "elixir:1.16-alpine",
@@ -223,6 +237,7 @@ export interface StackDefinition {
   buildImage?: string;
   /** Docker image for production runtime (overrides the language default) */
   runtimeImage?: string;
+  dockerRecipe?: DockerBuildRecipe;
   /** Default output directory after build */
   outputDirectory: string;
   /** Default port the application listens on */
@@ -1322,6 +1337,36 @@ export function getRuntimeImage(
   return stack.runtimeImage ?? LANGUAGES[stack.language].runtimeImage;
 }
 
+
+/** Recipe identity comes from the stack, never from an image's display name. */
+export function getDockerBuildRecipe(
+  framework?: string | null,
+  isStatic = false,
+): DockerBuildRecipe {
+  if (isStatic) return "static";
+  const normalized = normalizeFramework(framework);
+  const stack = Object.hasOwn(STACKS, normalized)
+    ? (STACKS[normalized as StackId] as StackDefinition)
+    : undefined;
+  return (
+    stack?.dockerRecipe ??
+    (stack ? (LANGUAGES[stack.language] as LanguageDefinition).dockerRecipe : undefined) ??
+    "generic"
+  );
+}
+
+export function getDockerRuntimeProbe(
+  framework: string,
+  packageManager?: string,
+): DockerRuntimeProbe | undefined {
+  const normalized = normalizeFramework(framework);
+  const stack = Object.hasOwn(STACKS, normalized)
+    ? (STACKS[normalized as StackId] as StackDefinition)
+    : undefined;
+  if (!stack) return undefined;
+  if (packageManager === "bun" && BUN_ELIGIBLE_LANGUAGES.has(stack.language)) return "bun";
+  return (LANGUAGES[stack.language] as LanguageDefinition).dockerRuntimeProbe;
+}
 
 /** Get the full stack definition with resolved images */
 export function getStackDefaults(stackId: StackId, packageManager?: string) {

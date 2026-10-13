@@ -197,6 +197,7 @@ export const BuildSettings = () => {
             mono={buildData.hasBuild}
           />
           {getRuntimeVersionPolicy(projectData?.framework) && <Row label={t.importProject.buildSettings.runtimeVersionLabel} value={projectData?.runtimeVersion ?? getRuntimeVersionPolicy(projectData?.framework)!.defaultVersion} mono />}
+          {projectData?.runtimeImage && <Row label={t.importProject.buildSettings.runtimeImageLabel} value={projectData.runtimeImage} mono />}
           <Row label={t.projectSettings.build.runtime.outputDirectory} value={buildData.outputDirectory} mono />
           <Row label={t.projectSettings.build.runtime.rootDirectory} value={buildData.rootDirectory || "."} mono />
           {/* Only when pinned — a blank row would be noise for the vast majority

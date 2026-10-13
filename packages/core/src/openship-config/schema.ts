@@ -184,6 +184,7 @@ export interface OpenshipConfig {
   buildImage?: string;
   /** Explicit runtime version; validated by the detected stack's image policy. */
   runtimeVersion?: string;
+  runtimeImage?: string;
   productionPaths?: string[];
   /**
    * Paths the app keeps across deploys. Either the short app form — a path

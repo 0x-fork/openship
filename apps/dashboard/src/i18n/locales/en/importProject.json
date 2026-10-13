@@ -114,7 +114,9 @@
     "releaseDescription": "Optional commands after build. Failure stops deployment. Docker and Bare apps only.",
     "releaseCommand": "Command {number}",
     "addReleaseCommand": "Add command",
-    "removeReleaseCommand": "Remove command {number}"
+    "removeReleaseCommand": "Remove command {number}",
+    "runtimeImageLabel": "Runtime image",
+    "runtimeImageDesc": "Optional production base image for Docker builds. It must match the selected runtime and generated recipe; leave blank for the managed default."
   },
   "projectSettings": {
     "framework": "Framework",

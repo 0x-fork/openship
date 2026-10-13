@@ -129,6 +129,7 @@ export interface PrepareAppConfig {
   startCommand: string;
   buildImage: string;
   runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   outputDirectory: string;
   rootDirectory: string;
   productionPaths: string[];

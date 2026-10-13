@@ -35,6 +35,7 @@ import {
   type OpenshipService,
   type ParseResult,
 } from "./schema";
+import { validateImageReference } from "../project-source";
 import { isValidEnvKey, normalizeProjectRootDirectory } from "../utils";
 import { isRuntimeVersion, runtimeVersionError } from "../runtime-version";
 import { isValidServiceName } from "../service-name";
@@ -52,6 +53,7 @@ const TOP_LEVEL_KEYS = new Set([
   "outputDirectory",
   "buildImage",
   "runtimeVersion",
+  "runtimeImage",
   "productionPaths",
   "volumes",
   "runtime",
@@ -615,6 +617,16 @@ function parsePackageManager(ctx: Ctx, v: unknown, path: string): string | undef
   return s;
 }
 
+function parseRuntimeImage(ctx: Ctx, raw: unknown): string | undefined {
+  const image = ctx.str(raw, "runtimeImage");
+  if (image === undefined) return undefined;
+  if (!image.trim() || image.length > 200 || validateImageReference(image.trim())) {
+    ctx.err("runtimeImage", "must be a valid Docker image reference");
+    return undefined;
+  }
+  return image.trim();
+}
+
 function parseRuntimeVersion(ctx: Ctx, raw: unknown): string | undefined {
   if (raw === undefined) return undefined;
   if (!isRuntimeVersion(raw)) {
@@ -647,6 +659,7 @@ export function parseOpenshipConfig(raw: unknown): ParseResult {
     outputDirectory: ctx.str(raw.outputDirectory, "outputDirectory"),
     buildImage: ctx.str(raw.buildImage, "buildImage"),
     runtimeVersion: parseRuntimeVersion(ctx, raw.runtimeVersion),
+    runtimeImage: parseRuntimeImage(ctx, raw.runtimeImage),
     productionPaths: ctx.strArray(raw.productionPaths, "productionPaths"),
     volumes: ctx.strArray(raw.volumes, "volumes"),
     runtime: ctx.enumOf(raw.runtime, "runtime", OPENSHIP_RUNTIMES),

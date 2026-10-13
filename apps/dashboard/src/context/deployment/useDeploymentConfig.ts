@@ -179,6 +179,7 @@ interface PreparedRoutingState {
 
 interface PreparedRuntimeConfig {
   runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   packageManager: string;
   buildImage: string;
   options: DeploymentConfig["options"];
@@ -425,6 +426,7 @@ function buildSavedProjectResponse(
     startCommand: opts.startCommand ?? "",
     buildImage: project.buildImage || "node:22",
     runtimeVersion: project.runtimeVersion ?? null,
+    runtimeImage: project.runtimeImage ?? null,
     outputDirectory: opts.outputDirectory ?? "",
     rootDirectory: opts.rootDirectory ?? "./",
     productionPaths,
@@ -603,6 +605,7 @@ function resolvePreparedRuntimeConfig(
     packageManager: project?.packageManager || response.packageManager || "npm",
     buildImage: project?.buildImage || response.buildImage || "node:22",
     runtimeVersion: project ? project.runtimeVersion ?? null : response.runtimeVersion ?? null,
+    runtimeImage: project ? project.runtimeImage ?? null : response.runtimeImage ?? null,
     options: {
       buildCommand: project?.buildCommand ?? response.buildCommand ?? "",
       installCommand: project?.installCommand ?? response.installCommand ?? "",
@@ -922,6 +925,7 @@ export function useDeploymentConfig() {
           packageManager: runtimeConfig.packageManager,
           buildImage: runtimeConfig.buildImage,
           runtimeVersion: project ? project.runtimeVersion ?? null : response.runtimeVersion ?? null,
+          runtimeImage: project ? project.runtimeImage ?? null : response.runtimeImage ?? null,
           branch,
           branches,
           branchPage: branchPage ?? 0,
@@ -1384,6 +1388,7 @@ export function useDeploymentConfig() {
             releaseCommands: scan.releaseCommands,
             buildImage: scan.buildImage,
             runtimeVersion: scan.runtimeVersion ?? null,
+            runtimeImage: scan.runtimeImage ?? null,
             outputDirectory: scan.outputDirectory,
             rootDirectory: scan.rootDirectory,
             productionPaths: scan.productionPaths,

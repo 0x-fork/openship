@@ -5,9 +5,10 @@ the in-app updater surfaces critical advisories from `release-advisories.json`.
 
 ## 0.9.1
 
-This patch adds a public app catalog and Russian dashboard support, fixes workflow
-saves and Cloud recovery flows, and improves routing preservation and image refresh
-during migrations and redeployments. These notes cover all changes since 0.9.0.
+This patch adds a public app catalog, Russian dashboard support and runtime image
+controls. It fixes workflow saves and Cloud recovery, updates webmail live, and
+improves routing, build capacity and image handling during redeployments. These
+notes cover all changes since 0.9.0.
 
 ### Apps, language and workflow setup
 
@@ -43,7 +44,32 @@ during migrations and redeployments. These notes cover all changes since 0.9.0.
   choose **Reconnect and deploy**. Recovery reuses the project, credentials and
   persistent volumes while preserving domain ownership and permission checks.
 
-### Migration and deployment safety
+### Runtime configuration and deployment safety
+
+- **Select matching runtime versions and custom production images** — generated
+  PHP builds support PHP 8.3 and 8.4 through the generic `runtimeVersion` setting.
+  Docker source builds offer an advanced `runtimeImage` override. Stack-selected
+  recipes validate actual runtime capabilities and compatibility before activation;
+  invalid settings do not partially update the project, and retained-image rollback
+  preserves the original version and image configuration.
+- **Recover Cloud Actions from connected instances** — Desktop and self-hosted
+  clients forward Cloud workflow and runner operations to their owning Cloud
+  instance, with the same scope and permission checks.
+- **Use the server's actual available build capacity** — automatic Cloud builds
+  account for running workloads and pending CPU reservations before choosing
+  their worker size. Build setup also reports the effective workspace capacity.
+- **Recheck deployment health** — project status and workload selection reuse
+  current startup-health verification while retaining earlier warnings for review.
+- **Track current container images during Compose redeploys** — cached Docker
+  inventory preserves immutable image identity, so port preflight and rollback
+  can verify running services safely.
+- **Receive live inbox changes** — webmail refreshes after IMAP IDLE events, with
+  event streams flushed through buffering proxies and correct folder routing.
+- **Simplify the project Backup page** — the existing project header supplies
+  its title, removing the duplicated backup heading and description.
+- **Validate declared runtime roles** — stack-role configuration rejects missing
+  kinds, empty commands, incomplete exec probes and invalid replica counts.
+  This is configuration/detection support for future role execution.
 
 - **Preserve domains that route only specific paths** — migrations now discover
   and retain domains with exact or prefix routes and no catch-all service. OpenResty

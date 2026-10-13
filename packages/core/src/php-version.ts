@@ -24,7 +24,11 @@ export function phpImagePair(version: PhpVersion) {
 
 /** A custom builder is preserved, and its actual PHP binary is checked in the
  * recipe. Known incompatible official PHP tags are rejected before a build. */
-export function resolvePhpImages(version: unknown, buildImage?: string | null) {
+export function resolvePhpImages(
+  version: unknown,
+  buildImage?: string | null,
+  runtimeImage?: string | null,
+) {
   if (!isPhpVersion(version)) {
     throw new ValidationError(
       `Unsupported runtimeVersion ${JSON.stringify(version)}. For PHP, choose ${PHP_VERSIONS.join(" or ")}.`,
@@ -34,7 +38,31 @@ export function resolvePhpImages(version: unknown, buildImage?: string | null) {
   const override = buildImage?.trim();
   if (override && validateImageReference(override))
     throw new ValidationError("buildImage must be a valid Docker image reference");
-  if (!override) return { runtimeVersion: version, ...pair };
+  const runtimeOverride = runtimeImage?.trim();
+  if (runtimeOverride && validateImageReference(runtimeOverride))
+    throw new ValidationError("runtimeImage must be a valid Docker image reference");
+  if (
+    runtimeOverride &&
+    /^(?:(?:docker\.io\/)?library\/)?(?:php|node|ruby|nginx)(?::|@|$)/.test(runtimeOverride)
+  ) {
+    throw new ValidationError(
+      "runtimeImage must provide FrankenPHP for the generated PHP recipe. Use a compatible custom image or your own Dockerfile.",
+    );
+  }
+  const declaredRuntimeVersion =
+    /^(?:docker\.io\/)?dunglas\/frankenphp:[^@]*-php(\d+\.\d+)(?:\.|-|@|$)/.exec(
+      runtimeOverride ?? "",
+    )?.[1];
+  if (declaredRuntimeVersion && declaredRuntimeVersion !== version)
+    throw new ValidationError(
+      `runtimeImage ${runtimeOverride} uses PHP ${declaredRuntimeVersion}, but runtimeVersion is ${version}.`,
+    );
+  if (!override)
+    return {
+      runtimeVersion: version,
+      ...pair,
+      ...(runtimeOverride && { runtimeImage: runtimeOverride }),
+    };
   const declaredVersion = /^(?:(?:docker\.io\/)?library\/)?php:(\d+\.\d+)(?:\.|-|@|$)/.exec(
     override,
   )?.[1];
@@ -43,5 +71,10 @@ export function resolvePhpImages(version: unknown, buildImage?: string | null) {
       `buildImage ${override} uses PHP ${declaredVersion}, but runtimeVersion is ${version}. Use ${pair.buildImage} or a compatible custom builder.`,
     );
   }
-  return { runtimeVersion: version, ...pair, buildImage: override };
+  return {
+    runtimeVersion: version,
+    ...pair,
+    buildImage: override,
+    ...(runtimeOverride && { runtimeImage: runtimeOverride }),
+  };
 }

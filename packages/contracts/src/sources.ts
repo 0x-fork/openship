@@ -28,6 +28,7 @@ export const SourceScanSchema = Type.Object({
   port: Type.Optional(Type.Number()), productionPaths: Type.Optional(Type.Array(Type.String())),
   productionMode: Type.Optional(Type.String()), workloadType: Type.Optional(Type.String()), runtimeMode: Type.Optional(Type.String()),
   runtimeVersion: EnsureProjectBody.properties.runtimeVersion,
+  runtimeImage: EnsureProjectBody.properties.runtimeImage,
   composePath: Type.Optional(Type.String()), volumes: EnsureProjectBody.properties.volumes,
   routing: EnsureProjectBody.properties.routingConfig,
   releaseCommands: EnsureProjectBody.properties.releaseCommands,

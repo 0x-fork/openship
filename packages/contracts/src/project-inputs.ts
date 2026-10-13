@@ -413,6 +413,7 @@ export const CreateProjectBody = Type.Object({
   ),
   buildImage: Type.Optional(Type.String({ maxLength: 200 })),
   runtimeVersion: OptionalRuntimeVersionSchema,
+  runtimeImage: Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: 200, description: "Custom production base image for generated Docker builds; null restores the stack default." }), Type.Null()])),
   productionMode: Type.Optional(
     Type.Union([Type.Literal("host"), Type.Literal("static"), Type.Literal("standalone")]),
   ),
@@ -698,6 +699,7 @@ export const SetOptionsBody = Type.Object(
     packageManager: Type.Optional(Type.String()),
     buildImage: Type.Optional(Type.String()),
     runtimeVersion: OptionalRuntimeVersionSchema,
+  runtimeImage: Type.Optional(Type.Union([Type.String({ minLength: 1, maxLength: 200, description: "Custom production base image for generated Docker builds; null restores the stack default." }), Type.Null()])),
     framework: Type.Optional(Type.String()),
     productionMode: Type.Optional(Type.String({ description: "host | static | standalone." })),
     hasServer: Type.Optional(Type.Boolean()),

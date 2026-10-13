@@ -113,7 +113,9 @@
     "releaseDescription": "Optionale Befehle nach dem Build. Ein Fehler stoppt das Deployment. Nur für Docker- und Bare-Apps.",
     "releaseCommand": "Befehl {number}",
     "addReleaseCommand": "Befehl hinzufügen",
-    "removeReleaseCommand": "Befehl {number} entfernen"
+    "removeReleaseCommand": "Befehl {number} entfernen",
+    "runtimeImageLabel": "Runtime-Image",
+    "runtimeImageDesc": "Optionales Produktions-Basisimage für Docker-Builds. Muss zur Runtime und zum generierten Rezept passen; leer lassen für den verwalteten Standard."
   },
   "projectSettings": {
     "framework": "Framework",
