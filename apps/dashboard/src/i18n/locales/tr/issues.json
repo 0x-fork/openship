@@ -239,5 +239,15 @@
       "coverageErrorsOne": "{n} kontrol başarısız oldu",
       "coverageErrorsOther": "{n} kontrol başarısız oldu"
     }
+  },
+  "history": {
+    "clear": "Geçmişi temizle",
+    "confirm": "Çözülen izleme olaylarının geçmişi temizlensin mi?",
+    "hint": "Bu çalışma alanındaki çözülen olaylar kalıcı olarak silinir. Etkin sorunlar, denetim kayıtları ve bildirimler korunur.",
+    "confirmClear": "Çözülen geçmişi temizle",
+    "clearing": "Temizleniyor…",
+    "cancel": "İptal",
+    "cleared": "İzleme geçmişi temizlendi.",
+    "failed": "Geçmiş temizlenemedi. Tekrar deneyin."
   }
 }

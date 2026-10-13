@@ -1230,6 +1230,11 @@
         "action": "başarısız olan görevi çalıştırdı",
         "actionWithoutResource": "başarısız olan görevi çalıştırdı",
         "label": "Görev başarısız oldu"
+      },
+      "issues.history.clear": {
+        "action": "çözülen izleme olaylarının geçmişini temizledi",
+        "actionWithoutResource": "çözülen izleme olaylarının geçmişini temizledi",
+        "label": "İzleme geçmişi temizlendi"
       }
     },
     "resourceLabels": {

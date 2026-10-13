@@ -239,5 +239,15 @@
       "coverageErrorsOne": "{n} vérification a échoué",
       "coverageErrorsOther": "{n} vérifications ont échoué"
     }
+  },
+  "history": {
+    "clear": "Effacer l’historique",
+    "confirm": "Effacer l’historique des incidents résolus ?",
+    "hint": "Les incidents résolus de cet espace de travail seront supprimés définitivement. Les problèmes actifs, les journaux d’audit et les notifications seront conservés.",
+    "confirmClear": "Effacer les incidents résolus",
+    "clearing": "Suppression…",
+    "cancel": "Annuler",
+    "cleared": "Historique de surveillance effacé.",
+    "failed": "Impossible d’effacer l’historique. Réessayez."
   }
 }

@@ -239,5 +239,15 @@
       "coverageErrorsOne": "{n} check failed",
       "coverageErrorsOther": "{n} checks failed"
     }
+  },
+  "history": {
+    "clear": "Clear history",
+    "confirm": "Clear resolved monitoring history?",
+    "hint": "This permanently removes resolved incidents in this workspace. Active issues, audit logs and notifications are kept.",
+    "confirmClear": "Clear resolved history",
+    "clearing": "Clearing…",
+    "cancel": "Cancel",
+    "cleared": "Monitoring history cleared.",
+    "failed": "Could not clear history. Try again."
   }
 }

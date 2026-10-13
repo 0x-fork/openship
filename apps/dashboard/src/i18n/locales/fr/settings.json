@@ -1191,6 +1191,11 @@
         "action": "a exécuté la tâche défaillante",
         "actionWithoutResource": "a exécuté la tâche défaillante",
         "label": "Échec de la tâche"
+      },
+      "issues.history.clear": {
+        "action": "a effacé l’historique des incidents résolus",
+        "actionWithoutResource": "a effacé l’historique des incidents résolus",
+        "label": "Historique de surveillance effacé"
       }
     },
     "resourceLabels": {

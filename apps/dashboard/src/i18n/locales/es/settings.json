@@ -1191,6 +1191,11 @@
         "action": "ejecutó la tarea fallida",
         "actionWithoutResource": "ejecutó la tarea fallida",
         "label": "Error en la tarea"
+      },
+      "issues.history.clear": {
+        "action": "borró el historial de incidentes resueltos",
+        "actionWithoutResource": "borró el historial de incidentes resueltos",
+        "label": "Historial de monitoreo borrado"
       }
     },
     "resourceLabels": {

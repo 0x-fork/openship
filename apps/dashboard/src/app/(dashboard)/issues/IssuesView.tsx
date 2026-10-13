@@ -6,9 +6,10 @@ import { Icon as UiIcon } from "@repo/ui/icons";
 import { useSearchParams } from "next/navigation";
 import { DeploymentsContent } from "../deployments/components";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
+  getApiBaseUrl,
   getApiErrorMessage,
   issuesApi,
   type IssueCounts,
@@ -17,6 +18,7 @@ import {
   type MonitoringScanSession,
 } from "@/lib/api";
 import { PageContainer } from "@/components/ui/PageContainer";
+import { Button } from "@/components/ui/button";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
 import { useToast } from "@/components/toast";
@@ -37,7 +39,7 @@ import { MonitoringHealth } from "@/components/issues/MonitoringHealth";
 import { MonitoringNavigation, type MonitoringTab } from "@/components/issues/MonitoringNavigation";
 import { useBrowserOnline } from "@/hooks/useBrowserOnline";
 import { monitoringScanIncomplete, useMonitoringScan } from "@/hooks/useMonitoringScan";
-import { getActiveOrganizationId } from "@/lib/api/client";
+import { getActiveOrganizationId, subscribeActiveOrganization } from "@/lib/api/client";
 import { NotificationSettings } from "@/components/notifications/NotificationSettings";
 
 type SeverityFilter = "all" | IssueSeverity;
@@ -63,6 +65,8 @@ export function IssuesView() {
   const { selfHosted, deployMode } = usePlatform();
   const online = useBrowserOnline();
   const { toast } = useToast();
+  const organizationId = useSyncExternalStore(subscribeActiveOrganization, getActiveOrganizationId, () => null);
+  const apiBaseUrl = getApiBaseUrl();
   const searchParams = useSearchParams();
   const requestedTab = searchParams?.get("tab");
   const tab: MonitoringTab = requestedTab === "health" || requestedTab === "resolved" || requestedTab === "deployments" || requestedTab === "notifications"
@@ -104,6 +108,13 @@ export function IssuesView() {
   const [counts, setCounts] = useState<IssueCounts | null>(null);
   const [loading, setLoading] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [canClearHistory, setCanClearHistory] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearingHistory, setClearingHistory] = useState(false);
+  const clearInFlight = useRef(false);
+  const feedScope = useRef<string | null>(null);
+  const feedBase = useRef<string | null>(null);
+  const [clearError, setClearError] = useState<string | null>(null);
   const [severity, setSeverity] = useState<SeverityFilter>("all");
   const [query, setQuery] = useState("");
   const [queryDraft, setQueryDraft] = useState("");
@@ -124,10 +135,11 @@ export function IssuesView() {
       // The Health tab has its own cached snapshot reader. Open-feed counts
       // continue refreshing in the sidebar; this hidden list needs no polling.
       const organizationId = getActiveOrganizationId();
+      const baseUrl = getApiBaseUrl();
       const inScope = () => mounted.current && activeTab.current === tab &&
-        organizationId === getActiveOrganizationId();
+        organizationId === getActiveOrganizationId() && baseUrl === getApiBaseUrl();
       if (tab === "health" || tab === "deployments" || tab === "notifications" || !inScope()) return Promise.resolve();
-      const key = `${organizationId}:${tab}`;
+      const key = `${baseUrl}:${organizationId}:${tab}`;
       const pending = pendingLoad.current;
       if (pending?.key === key) {
         if (!opts.fresh) return pending.promise;
@@ -151,6 +163,9 @@ export function IssuesView() {
           setIssues(res?.data ?? []);
           setCounts(res?.counts ?? null);
           setFeedError(null);
+          setCanClearHistory(res?.canClearHistory === true);
+          feedScope.current = organizationId;
+          feedBase.current = baseUrl;
         } catch (err) {
           if (current()) setFeedError(getApiErrorMessage(err, c.loadFailed));
         } finally {
@@ -163,10 +178,43 @@ export function IssuesView() {
       });
       return promise;
     },
-    [tab, c.loadFailed, c.toast.title, toast],
+    [tab, organizationId, apiBaseUrl, c.loadFailed, c.toast.title, toast],
   );
 
   const reloadAfterChange = useCallback(() => load({ silent: true, fresh: true }), [load]);
+
+  useEffect(() => {
+    setConfirmingClear(false);
+    setClearError(null);
+    setCanClearHistory(false);
+    setIssues([]);
+    setCounts(null);
+    setFeedError(null);
+  }, [organizationId, apiBaseUrl, tab]);
+
+  async function clearHistory() {
+    const scope = getActiveOrganizationId();
+    const baseUrl = getApiBaseUrl();
+    if (!scope || clearInFlight.current || !confirmingClear || !online || !canClearHistory ||
+      activeTab.current !== "resolved" || feedScope.current !== scope || feedBase.current !== baseUrl) return;
+    clearInFlight.current = true;
+    setClearingHistory(true);
+    setClearError(null);
+    const current = () => mounted.current && scope === getActiveOrganizationId() &&
+      baseUrl === getApiBaseUrl() && activeTab.current === "resolved";
+    try {
+      await issuesApi.clearHistory();
+      if (!current()) return;
+      setConfirmingClear(false);
+      toast("success", c.history.cleared, c.toast.title);
+      await reloadAfterChange();
+    } catch (error) {
+      if (current()) setClearError(getApiErrorMessage(error, c.history.failed));
+    } finally {
+      clearInFlight.current = false;
+      if (mounted.current) setClearingHistory(false);
+    }
+  }
   const { busyIds, resolve, infraFix, issues } = useIssueActions(reloadAfterChange, presentOperation, feedIssues);
   const monitoringScan = useMonitoringScan({
     enabled: selfHosted,
@@ -285,7 +333,7 @@ export function IssuesView() {
 
   return (
     <PageContainer>
-      <div className="mb-6 flex items-start justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1
             className="text-2xl font-medium text-foreground/80"
@@ -310,6 +358,13 @@ export function IssuesView() {
             )}
             {rescanning ? c.rescanning : c.rescan}
           </button>
+        )}
+        {tab === "resolved" && organizationId && selfHosted && canClearHistory && !loading && issues.length > 0 && (
+          <Button type="button" variant="secondary" size="sm" disabled={!online || clearingHistory}
+            onClick={() => { setClearError(null); setConfirmingClear(true); }}>
+            <UiIcon name="trash" className="size-4" aria-hidden />
+            {c.history.clear}
+          </Button>
         )}
       </div>
 
@@ -355,6 +410,22 @@ export function IssuesView() {
         <p className="mb-4 rounded-xl border border-border/50 bg-muted/25 px-4 py-3 text-[12px] leading-relaxed text-muted-foreground">
           {c.resolvedNote}
         </p>
+      )}
+      {tab === "resolved" && confirmingClear && canClearHistory && (
+        <section aria-label={c.history.clear} className="mb-5 space-y-3 rounded-2xl bg-card p-5">
+          <p className="text-sm text-foreground">{c.history.confirm}</p>
+          <p className="text-sm text-muted-foreground">{c.history.hint}</p>
+          {clearError && <p role="alert" className="text-sm text-danger">{clearError}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="destructive" size="sm" disabled={clearingHistory || !online}
+              onClick={() => void clearHistory()}>
+              {clearingHistory && <UiIcon name="spinner" className="size-4 animate-spin" aria-hidden />}
+              {clearingHistory ? c.history.clearing : c.history.confirmClear}
+            </Button>
+            <Button type="button" variant="secondary" size="sm" disabled={clearingHistory}
+              onClick={() => setConfirmingClear(false)}>{c.history.cancel}</Button>
+          </div>
+        </section>
       )}
 
       {tab === "deployments" ? (

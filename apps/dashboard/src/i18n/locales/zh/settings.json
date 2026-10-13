@@ -1191,6 +1191,11 @@
         "action": "运行了失败的任务",
         "actionWithoutResource": "运行了失败的任务",
         "label": "任务失败"
+      },
+      "issues.history.clear": {
+        "action": "清除了已解决的监控事件历史",
+        "actionWithoutResource": "清除了已解决的监控事件历史",
+        "label": "监控历史已清除"
       }
     },
     "resourceLabels": {

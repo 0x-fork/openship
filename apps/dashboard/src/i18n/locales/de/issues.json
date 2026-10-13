@@ -239,5 +239,15 @@
       "coverageErrorsOne": "{n} Prüfung fehlgeschlagen",
       "coverageErrorsOther": "{n} Prüfungen fehlgeschlagen"
     }
+  },
+  "history": {
+    "clear": "Verlauf löschen",
+    "confirm": "Verlauf behobener Überwachungsprobleme löschen?",
+    "hint": "Behobene Vorfälle in diesem Arbeitsbereich werden dauerhaft gelöscht. Aktive Probleme, Audit-Protokolle und Benachrichtigungen bleiben erhalten.",
+    "confirmClear": "Behobenen Verlauf löschen",
+    "clearing": "Wird gelöscht…",
+    "cancel": "Abbrechen",
+    "cleared": "Überwachungsverlauf gelöscht.",
+    "failed": "Verlauf konnte nicht gelöscht werden. Versuchen Sie es erneut."
   }
 }
