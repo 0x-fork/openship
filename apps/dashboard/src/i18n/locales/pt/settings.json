@@ -1124,6 +1124,73 @@
         "actionWithoutResource": "executou uma ação de administrador na implantação",
         "label": "Ação de administrador de implantação",
         "description": "Uma ação administrativa foi chamada em uma implantação."
+      },
+      "job:write": {
+        "action": "alterou a tarefa",
+        "actionWithoutResource": "alterou a tarefa",
+        "label": "Tarefa alterada",
+        "description": "Uma tarefa agendada ou personalizada foi criada, editada, executada ou removida."
+      },
+      "notification_default.updated": {
+        "action": "alterou os padrões de notificação para",
+        "actionWithoutResource": "alterou os padrões de notificação",
+        "label": "Padrões de notificação alterados",
+        "description": "O roteamento padrão de notificações para a organização foi atualizado."
+      },
+      "notification_channel.created": {
+        "action": "adicionou o canal de notificação",
+        "actionWithoutResource": "adicionou o canal de notificação",
+        "label": "Canal de notificação adicionado"
+      },
+      "notification_channel.updated": {
+        "action": "atualizou o canal de notificação",
+        "actionWithoutResource": "atualizou o canal de notificação",
+        "label": "Canal de notificação atualizado"
+      },
+      "notification_channel.deleted": {
+        "action": "removeu o canal de notificação",
+        "actionWithoutResource": "removeu o canal de notificação",
+        "label": "Canal de notificação removido"
+      },
+      "notification_subscription.updated": {
+        "action": "alterou o que é enviado para",
+        "actionWithoutResource": "alterou o roteamento de notificações",
+        "label": "Roteamento de notificações alterado"
+      },
+      "notification_subscription.deleted": {
+        "action": "interrompeu notificações para",
+        "actionWithoutResource": "interrompeu notificações",
+        "label": "Notificações interrompidas"
+      },
+      "notification_delivery.seen": {
+        "action": "marcou como visto",
+        "actionWithoutResource": "marcou como visto",
+        "label": "Alerta marcado como visto"
+      },
+      "notifications:write": {
+        "action": "alterou notificações",
+        "actionWithoutResource": "alterou notificações",
+        "label": "Notificações alteradas"
+      },
+      "notifications:admin": {
+        "action": "executou uma ação de administrador em notificações",
+        "actionWithoutResource": "executou uma ação de administrador em notificações",
+        "label": "Ação administrativa em notificações"
+      },
+      "job_run.started": {
+        "action": "iniciou a tarefa",
+        "actionWithoutResource": "iniciou a tarefa",
+        "label": "Tarefa iniciada"
+      },
+      "job_run.succeeded": {
+        "action": "executou a tarefa com sucesso",
+        "actionWithoutResource": "executou a tarefa com sucesso",
+        "label": "Tarefa concluída com sucesso"
+      },
+      "job_run.failed": {
+        "action": "executou a tarefa com falha",
+        "actionWithoutResource": "executou a tarefa com falha",
+        "label": "Falha na tarefa"
       }
     },
     "resourceLabels": {

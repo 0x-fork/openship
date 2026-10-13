@@ -1124,6 +1124,73 @@
         "actionWithoutResource": "führte eine Administratoraktion für die Bereitstellung aus",
         "label": "Bereitstellungs-Administratoraktion",
         "description": "Eine administrative Aktion für eine Bereitstellung wurde aufgerufen."
+      },
+      "job:write": {
+        "action": "hat den Job geändert",
+        "actionWithoutResource": "hat den Job geändert",
+        "label": "Job geändert",
+        "description": "Ein geplanter oder benutzerdefinierter Job wurde erstellt, bearbeitet, ausgeführt oder entfernt."
+      },
+      "notification_default.updated": {
+        "action": "hat die Benachrichtigungsstandards geändert für",
+        "actionWithoutResource": "hat die Benachrichtigungsstandards geändert",
+        "label": "Benachrichtigungsstandards geändert",
+        "description": "Das standardmäßige Benachrichtigungs-Routing für die Organisation wurde aktualisiert."
+      },
+      "notification_channel.created": {
+        "action": "hat den Benachrichtigungskanal hinzugefügt",
+        "actionWithoutResource": "hat den Benachrichtigungskanal hinzugefügt",
+        "label": "Benachrichtigungskanal hinzugefügt"
+      },
+      "notification_channel.updated": {
+        "action": "hat den Benachrichtigungskanal aktualisiert",
+        "actionWithoutResource": "hat den Benachrichtigungskanal aktualisiert",
+        "label": "Benachrichtigungskanal aktualisiert"
+      },
+      "notification_channel.deleted": {
+        "action": "hat den Benachrichtigungskanal entfernt",
+        "actionWithoutResource": "hat den Benachrichtigungskanal entfernt",
+        "label": "Benachrichtigungskanal entfernt"
+      },
+      "notification_subscription.updated": {
+        "action": "hat geändert, was gesendet wird an",
+        "actionWithoutResource": "hat Benachrichtigungsweiterleitung geändert",
+        "label": "Benachrichtigungsweiterleitung geändert"
+      },
+      "notification_subscription.deleted": {
+        "action": "hat Benachrichtigungen gestoppt für",
+        "actionWithoutResource": "hat Benachrichtigungen gestoppt",
+        "label": "Benachrichtigungen gestoppt"
+      },
+      "notification_delivery.seen": {
+        "action": "hat als gelesen markiert",
+        "actionWithoutResource": "hat als gelesen markiert",
+        "label": "Benachrichtigung als gelesen markiert"
+      },
+      "notifications:write": {
+        "action": "hat Benachrichtigungen geändert",
+        "actionWithoutResource": "hat Benachrichtigungen geändert",
+        "label": "Benachrichtigungen geändert"
+      },
+      "notifications:admin": {
+        "action": "hat eine Administratoraktion für Benachrichtigungen ausgeführt",
+        "actionWithoutResource": "hat eine Administratoraktion für Benachrichtigungen ausgeführt",
+        "label": "Administratoraktion für Benachrichtigungen"
+      },
+      "job_run.started": {
+        "action": "hat den Job gestartet",
+        "actionWithoutResource": "hat den Job gestartet",
+        "label": "Job gestartet"
+      },
+      "job_run.succeeded": {
+        "action": "hat den Job erfolgreich ausgeführt",
+        "actionWithoutResource": "hat den Job erfolgreich ausgeführt",
+        "label": "Job erfolgreich ausgeführt"
+      },
+      "job_run.failed": {
+        "action": "hat den fehlgeschlagenen Job ausgeführt",
+        "actionWithoutResource": "hat den fehlgeschlagenen Job ausgeführt",
+        "label": "Job fehlgeschlagen"
       }
     },
     "resourceLabels": {

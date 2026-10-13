@@ -253,7 +253,10 @@ function AuditDetailsBody({
   const { t, locale } = useI18n();
   const [showTechnical, setShowTechnical] = useState(false);
   const info = describeAuditEvent(event.eventType);
-  const eventLoc = (t.settings.audit as any)?.events?.[event.eventType];
+  const eventLoc =
+    (t.settings.audit as any)?.events?.[event.eventType] ||
+    (t.settings.audit as any)?.events?.[event.eventType.replace(".", ":")] ||
+    (t.settings.audit as any)?.events?.[event.eventType.replace(":", ".")];
   const rawAction = eventLoc?.action || info.action;
   const label = eventLoc?.label || info.label;
   const description = eventLoc?.description || info.description;
@@ -968,7 +971,10 @@ export function AuditLog() {
               <div className="divide-y divide-border/40">
                 {day.rows.map((e) => {
                   const info = describeAuditEvent(e.eventType);
-                  const eventLoc = (t.settings.audit as any)?.events?.[e.eventType];
+                  const eventLoc =
+                    (t.settings.audit as any)?.events?.[e.eventType] ||
+                    (t.settings.audit as any)?.events?.[e.eventType.replace(".", ":")] ||
+                    (t.settings.audit as any)?.events?.[e.eventType.replace(":", ".")];
                   const rawAction = eventLoc?.action || info.action;
                   const tone = info.tone ?? "neutral";
                   const actor = actorDisplay(e, {

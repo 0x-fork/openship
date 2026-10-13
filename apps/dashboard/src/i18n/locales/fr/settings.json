@@ -1124,6 +1124,73 @@
         "actionWithoutResource": "a exécuté une action d’administrateur sur le déploiement",
         "label": "Action d’administrateur de déploiement",
         "description": "Une action administrative a été appelée sur un déploiement."
+      },
+      "job:write": {
+        "action": "a modifié la tâche",
+        "actionWithoutResource": "a modifié la tâche",
+        "label": "Tâche modifiée",
+        "description": "Une tâche planifiée ou personnalisée a été créée, modifiée, exécutée ou supprimée."
+      },
+      "notification_default.updated": {
+        "action": "a modifié les valeurs par défaut de notification pour",
+        "actionWithoutResource": "a modifié les valeurs par défaut de notification",
+        "label": "Paramètres par défaut des notifications modifiés",
+        "description": "Le routage par défaut des notifications pour l'organisation a été mis à jour."
+      },
+      "notification_channel.created": {
+        "action": "a ajouté le canal de notification",
+        "actionWithoutResource": "a ajouté le canal de notification",
+        "label": "Canal de notification ajouté"
+      },
+      "notification_channel.updated": {
+        "action": "a mis à jour le canal de notification",
+        "actionWithoutResource": "a mis à jour le canal de notification",
+        "label": "Canal de notification mis à jour"
+      },
+      "notification_channel.deleted": {
+        "action": "a supprimé le canal de notification",
+        "actionWithoutResource": "a supprimé le canal de notification",
+        "label": "Canal de notification supprimé"
+      },
+      "notification_subscription.updated": {
+        "action": "a modifié les envois vers",
+        "actionWithoutResource": "a modifié le routage des notifications",
+        "label": "Routage des notifications modifié"
+      },
+      "notification_subscription.deleted": {
+        "action": "a arrêté les notifications pour",
+        "actionWithoutResource": "a arrêté les notifications",
+        "label": "Notifications arrêtées"
+      },
+      "notification_delivery.seen": {
+        "action": "a marqué comme vu",
+        "actionWithoutResource": "a marqué comme vu",
+        "label": "Alerte marquée comme vue"
+      },
+      "notifications:write": {
+        "action": "a modifié les notifications",
+        "actionWithoutResource": "a modifié les notifications",
+        "label": "Notifications modifiées"
+      },
+      "notifications:admin": {
+        "action": "a exécuté une action d'administrateur sur les notifications",
+        "actionWithoutResource": "a exécuté une action d'administrateur sur les notifications",
+        "label": "Action d'administrateur sur les notifications"
+      },
+      "job_run.started": {
+        "action": "a démarré la tâche",
+        "actionWithoutResource": "a démarré la tâche",
+        "label": "Tâche démarrée"
+      },
+      "job_run.succeeded": {
+        "action": "a exécuté la tâche avec succès",
+        "actionWithoutResource": "a exécuté la tâche avec succès",
+        "label": "Tâche réussie"
+      },
+      "job_run.failed": {
+        "action": "a exécuté la tâche défaillante",
+        "actionWithoutResource": "a exécuté la tâche défaillante",
+        "label": "Échec de la tâche"
       }
     },
     "resourceLabels": {

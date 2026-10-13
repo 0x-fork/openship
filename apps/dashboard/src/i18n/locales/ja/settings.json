@@ -1124,6 +1124,73 @@
         "actionWithoutResource": "デプロイで管理者アクションを実行しました",
         "label": "デプロイ管理者アクション",
         "description": "デプロイで管理者アクションが呼び出されました。"
+      },
+      "job:write": {
+        "action": "ジョブを変更しました",
+        "actionWithoutResource": "ジョブを変更しました",
+        "label": "ジョブ変更",
+        "description": "スケジュールまたはカスタムジョブが作成、編集、実行、または削除されました。"
+      },
+      "notification_default.updated": {
+        "action": "の通知デフォルトを変更しました",
+        "actionWithoutResource": "通知デフォルトを変更しました",
+        "label": "通知デフォルト変更",
+        "description": "組織のデフォルトの通知ルーティングが更新されました。"
+      },
+      "notification_channel.created": {
+        "action": "通知チャンネルを追加しました",
+        "actionWithoutResource": "通知チャンネルを追加しました",
+        "label": "通知チャンネル追加"
+      },
+      "notification_channel.updated": {
+        "action": "通知チャンネルを更新しました",
+        "actionWithoutResource": "通知チャンネルを更新しました",
+        "label": "通知チャンネル更新"
+      },
+      "notification_channel.deleted": {
+        "action": "通知チャンネルを削除しました",
+        "actionWithoutResource": "通知チャンネルを削除しました",
+        "label": "通知チャンネル削除"
+      },
+      "notification_subscription.updated": {
+        "action": "への通知先設定を変更しました",
+        "actionWithoutResource": "通知ルーティングを変更しました",
+        "label": "通知ルーティング変更"
+      },
+      "notification_subscription.deleted": {
+        "action": "への通知を停止しました",
+        "actionWithoutResource": "通知を停止しました",
+        "label": "通知停止"
+      },
+      "notification_delivery.seen": {
+        "action": "既読にしました",
+        "actionWithoutResource": "既読にしました",
+        "label": "アラートを既読に設定"
+      },
+      "notifications:write": {
+        "action": "通知を変更しました",
+        "actionWithoutResource": "通知を変更しました",
+        "label": "通知変更"
+      },
+      "notifications:admin": {
+        "action": "通知の管理者アクションを実行しました",
+        "actionWithoutResource": "通知の管理者アクションを実行しました",
+        "label": "通知管理者アクション"
+      },
+      "job_run.started": {
+        "action": "ジョブを開始しました",
+        "actionWithoutResource": "ジョブを開始しました",
+        "label": "ジョブ開始"
+      },
+      "job_run.succeeded": {
+        "action": "ジョブを正常に実行しました",
+        "actionWithoutResource": "ジョブを正常に実行しました",
+        "label": "ジョブ成功"
+      },
+      "job_run.failed": {
+        "action": "失敗したジョブを実行しました",
+        "actionWithoutResource": "失敗したジョブを実行しました",
+        "label": "ジョブ失敗"
       }
     },
     "resourceLabels": {

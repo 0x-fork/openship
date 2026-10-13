@@ -108,7 +108,7 @@ function ScopedDeliveryHistory() {
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 space-y-1">
                     <p className="text-sm font-medium text-foreground break-words">
-                      {labels.get(delivery.category) ?? copy.unknownCategory}
+                      {((t.settings.notifications as any)?.categories?.[delivery.category]?.label) ?? (labels.get(delivery.category) ?? copy.unknownCategory)}
                     </p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       {kind && <ChannelLogo kind={kind} className="size-4 shrink-0" />}

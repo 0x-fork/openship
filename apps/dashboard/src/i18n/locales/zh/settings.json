@@ -1124,6 +1124,73 @@
         "actionWithoutResource": "对部署执行了管理操作",
         "label": "部署管理操作",
         "description": "对部署调用了管理操作。"
+      },
+      "job:write": {
+        "action": "更改了任务",
+        "actionWithoutResource": "更改了任务",
+        "label": "任务已更改",
+        "description": "已创建、编辑、运行或删除定时或自定义任务。"
+      },
+      "notification_default.updated": {
+        "action": "更改了默认通知设置",
+        "actionWithoutResource": "更改了默认通知设置",
+        "label": "默认通知设置已更改",
+        "description": "组织的默认通知路由已更新。"
+      },
+      "notification_channel.created": {
+        "action": "添加了通知渠道",
+        "actionWithoutResource": "添加了通知渠道",
+        "label": "通知渠道已添加"
+      },
+      "notification_channel.updated": {
+        "action": "更新了通知渠道",
+        "actionWithoutResource": "更新了通知渠道",
+        "label": "通知渠道已更新"
+      },
+      "notification_channel.deleted": {
+        "action": "删除了通知渠道",
+        "actionWithoutResource": "删除了通知渠道",
+        "label": "通知渠道已删除"
+      },
+      "notification_subscription.updated": {
+        "action": "更改了发送至该目标的通知内容",
+        "actionWithoutResource": "更改了通知路由",
+        "label": "通知路由已更改"
+      },
+      "notification_subscription.deleted": {
+        "action": "停止发送通知至",
+        "actionWithoutResource": "停止了发送通知",
+        "label": "通知已停止"
+      },
+      "notification_delivery.seen": {
+        "action": "标记为已读",
+        "actionWithoutResource": "标记为已读",
+        "label": "提醒已标记为已读"
+      },
+      "notifications:write": {
+        "action": "更改了通知",
+        "actionWithoutResource": "更改了通知",
+        "label": "通知已更改"
+      },
+      "notifications:admin": {
+        "action": "执行了通知管理操作",
+        "actionWithoutResource": "执行了通知管理操作",
+        "label": "通知管理操作"
+      },
+      "job_run.started": {
+        "action": "启动了任务",
+        "actionWithoutResource": "启动了任务",
+        "label": "任务已启动"
+      },
+      "job_run.succeeded": {
+        "action": "成功运行了任务",
+        "actionWithoutResource": "成功运行了任务",
+        "label": "任务成功"
+      },
+      "job_run.failed": {
+        "action": "运行了失败的任务",
+        "actionWithoutResource": "运行了失败的任务",
+        "label": "任务失败"
       }
     },
     "resourceLabels": {

@@ -1124,6 +1124,73 @@
         "actionWithoutResource": "ejecutó una acción de administrador en el despliegue",
         "label": "Acción de administrador de despliegue",
         "description": "Se invocó una acción administrativa en un despliegue."
+      },
+      "job:write": {
+        "action": "cambió la tarea",
+        "actionWithoutResource": "cambió la tarea",
+        "label": "Tarea modificada",
+        "description": "Se creó, editó, ejecutó o eliminó una tarea programada o personalizada."
+      },
+      "notification_default.updated": {
+        "action": "cambió los valores predeterminados de notificación para",
+        "actionWithoutResource": "cambió los valores predeterminados de notificación",
+        "label": "Valores predeterminados de notificación modificados",
+        "description": "Se actualizó el enrutamiento de notificaciones predeterminado para la organización."
+      },
+      "notification_channel.created": {
+        "action": "agregó el canal de notificaciones",
+        "actionWithoutResource": "agregó el canal de notificaciones",
+        "label": "Canal de notificaciones agregado"
+      },
+      "notification_channel.updated": {
+        "action": "actualizó el canal de notificaciones",
+        "actionWithoutResource": "actualizó el canal de notificaciones",
+        "label": "Canal de notificaciones actualizado"
+      },
+      "notification_channel.deleted": {
+        "action": "eliminó el canal de notificaciones",
+        "actionWithoutResource": "eliminó el canal de notificaciones",
+        "label": "Canal de notificaciones eliminado"
+      },
+      "notification_subscription.updated": {
+        "action": "cambió lo que se envía a",
+        "actionWithoutResource": "cambió el enrutamiento de notificaciones",
+        "label": "Enrutamiento de notificaciones modificado"
+      },
+      "notification_subscription.deleted": {
+        "action": "detuvo las notificaciones para",
+        "actionWithoutResource": "detuvo las notificaciones",
+        "label": "Notificaciones detenidas"
+      },
+      "notification_delivery.seen": {
+        "action": "marcó como visto",
+        "actionWithoutResource": "marcó como visto",
+        "label": "Alerta marcada como vista"
+      },
+      "notifications:write": {
+        "action": "cambió las notificaciones",
+        "actionWithoutResource": "cambió las notificaciones",
+        "label": "Notificaciones modificadas"
+      },
+      "notifications:admin": {
+        "action": "ejecutó una acción administrativa en notificaciones",
+        "actionWithoutResource": "ejecutó una acción administrativa en notificaciones",
+        "label": "Acción administrativa en notificaciones"
+      },
+      "job_run.started": {
+        "action": "inició la tarea",
+        "actionWithoutResource": "inició la tarea",
+        "label": "Tarea iniciada"
+      },
+      "job_run.succeeded": {
+        "action": "ejecutó la tarea con éxito",
+        "actionWithoutResource": "ejecutó la tarea con éxito",
+        "label": "Tarea exitosa"
+      },
+      "job_run.failed": {
+        "action": "ejecutó la tarea fallida",
+        "actionWithoutResource": "ejecutó la tarea fallida",
+        "label": "Error en la tarea"
       }
     },
     "resourceLabels": {

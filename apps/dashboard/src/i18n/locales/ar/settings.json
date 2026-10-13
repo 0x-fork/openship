@@ -1124,6 +1124,73 @@
         "actionWithoutResource": "نفّذ إجراء مسؤول على النشر",
         "label": "إجراء مسؤول النشر",
         "description": "تم استدعاء إجراء إداري على عملية نشر."
+      },
+      "job:write": {
+        "action": "غيّر المهمة",
+        "actionWithoutResource": "غيّر المهمة",
+        "label": "تم تغيير المهمة",
+        "description": "تم إنشاء مهمة مجدولة أو مخصصة أو تعديلها أو تشغيلها أو حذفها."
+      },
+      "notification_default.updated": {
+        "action": "غيّر الإعدادات الافتراضية للإشعارات لـ",
+        "actionWithoutResource": "غيّر الإعدادات الافتراضية للإشعارات",
+        "label": "تم تغيير الإعدادات الافتراضية للإشعارات",
+        "description": "تم تحديث توجيه الإشعارات الافتراضي للمؤسسة."
+      },
+      "notification_channel.created": {
+        "action": "أضاف قناة الإشعارات",
+        "actionWithoutResource": "أضاف قناة الإشعارات",
+        "label": "تمت إضافة قناة الإشعارات"
+      },
+      "notification_channel.updated": {
+        "action": "حدّث قناة الإشعارات",
+        "actionWithoutResource": "حدّث قناة الإشعارات",
+        "label": "تم تحديث قناة الإشعارات"
+      },
+      "notification_channel.deleted": {
+        "action": "أزال قناة الإشعارات",
+        "actionWithoutResource": "أزال قناة الإشعارات",
+        "label": "تمت إزالة قناة الإشعارات"
+      },
+      "notification_subscription.updated": {
+        "action": "غيّر ما يتم إرساله إلى",
+        "actionWithoutResource": "غيّر توجيه الإشعارات",
+        "label": "تم تغيير توجيه الإشعارات"
+      },
+      "notification_subscription.deleted": {
+        "action": "أوقف الإشعارات لـ",
+        "actionWithoutResource": "أوقف الإشعارات",
+        "label": "تم إيقاف الإشعارات"
+      },
+      "notification_delivery.seen": {
+        "action": "حدد كمقروء",
+        "actionWithoutResource": "حدد كمقروء",
+        "label": "تم تحديد التنبيه كمقروء"
+      },
+      "notifications:write": {
+        "action": "غيّر الإشعارات",
+        "actionWithoutResource": "غيّر الإشعارات",
+        "label": "تم تغيير الإشعارات"
+      },
+      "notifications:admin": {
+        "action": "نفّذ إجراء مسؤول على الإشعارات",
+        "actionWithoutResource": "نفّذ إجراء مسؤول على الإشعارات",
+        "label": "إجراء مسؤول على الإشعارات"
+      },
+      "job_run.started": {
+        "action": "بدأ المهمة",
+        "actionWithoutResource": "بدأ المهمة",
+        "label": "بدأت المهمة"
+      },
+      "job_run.succeeded": {
+        "action": "شغّل المهمة بنجاح",
+        "actionWithoutResource": "شغّل المهمة بنجاح",
+        "label": "نجحت المهمة"
+      },
+      "job_run.failed": {
+        "action": "شغّل المهمة الفاشلة",
+        "actionWithoutResource": "شغّل المهمة الفاشلة",
+        "label": "فشلت المهمة"
       }
     },
     "resourceLabels": {

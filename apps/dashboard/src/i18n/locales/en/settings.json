@@ -1184,6 +1184,73 @@
         "actionWithoutResource": "ran an admin action on the deploy",
         "label": "Deploy admin action",
         "description": "An administrative action was invoked on a deployment."
+      },
+      "job:write": {
+        "action": "changed the job",
+        "actionWithoutResource": "changed the job",
+        "label": "Job changed",
+        "description": "A scheduled or custom job was created, edited, run, or removed."
+      },
+      "notification_default.updated": {
+        "action": "changed the notification defaults of",
+        "actionWithoutResource": "changed the notification defaults",
+        "label": "Notification defaults changed",
+        "description": "The default notification routing for the organization was updated."
+      },
+      "notification_channel.created": {
+        "action": "added the notification channel",
+        "actionWithoutResource": "added the notification channel",
+        "label": "Notification channel added"
+      },
+      "notification_channel.updated": {
+        "action": "updated the notification channel",
+        "actionWithoutResource": "updated the notification channel",
+        "label": "Notification channel updated"
+      },
+      "notification_channel.deleted": {
+        "action": "removed the notification channel",
+        "actionWithoutResource": "removed the notification channel",
+        "label": "Notification channel removed"
+      },
+      "notification_subscription.updated": {
+        "action": "changed what is sent to",
+        "actionWithoutResource": "changed notification routing",
+        "label": "Notification routing changed"
+      },
+      "notification_subscription.deleted": {
+        "action": "stopped notifications to",
+        "actionWithoutResource": "stopped notifications",
+        "label": "Notifications stopped"
+      },
+      "notification_delivery.seen": {
+        "action": "marked as seen",
+        "actionWithoutResource": "marked as seen",
+        "label": "Alert marked as seen"
+      },
+      "notifications:write": {
+        "action": "changed notifications",
+        "actionWithoutResource": "changed notifications",
+        "label": "Notifications changed"
+      },
+      "notifications:admin": {
+        "action": "ran a notifications admin action",
+        "actionWithoutResource": "ran a notifications admin action",
+        "label": "Notifications admin action"
+      },
+      "job_run.started": {
+        "action": "started the job",
+        "actionWithoutResource": "started the job",
+        "label": "Job started"
+      },
+      "job_run.succeeded": {
+        "action": "ran the job successfully",
+        "actionWithoutResource": "ran the job successfully",
+        "label": "Job succeeded"
+      },
+      "job_run.failed": {
+        "action": "ran the failing job",
+        "actionWithoutResource": "ran the failing job",
+        "label": "Job failed"
       }
     },
     "resourceLabels": {

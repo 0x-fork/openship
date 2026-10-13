@@ -1184,6 +1184,73 @@
         "actionWithoutResource": "выполнил действие администратора над деплоем",
         "label": "Действие администратора над деплоем",
         "description": "Над деплоем было выполнено административное действие."
+      },
+      "job:write": {
+        "action": "изменил задачу",
+        "actionWithoutResource": "изменил задачу",
+        "label": "Задача изменена",
+        "description": "Запланированная или пользовательская задача была создана, изменена, запущена или удалена."
+      },
+      "notification_default.updated": {
+        "action": "изменил настройки уведомлений по умолчанию для",
+        "actionWithoutResource": "изменил настройки уведомлений по умолчанию",
+        "label": "Настройки уведомлений по умолчанию изменены",
+        "description": "Маршрутизация уведомлений по умолчанию для организации была обновлена."
+      },
+      "notification_channel.created": {
+        "action": "добавил канал уведомлений",
+        "actionWithoutResource": "добавил канал уведомлений",
+        "label": "Канал уведомлений добавлен"
+      },
+      "notification_channel.updated": {
+        "action": "обновил канал уведомлений",
+        "actionWithoutResource": "обновил канал уведомлений",
+        "label": "Канал уведомлений обновлен"
+      },
+      "notification_channel.deleted": {
+        "action": "удалил канал уведомлений",
+        "actionWithoutResource": "удалил канал уведомлений",
+        "label": "Канал уведомлений удален"
+      },
+      "notification_subscription.updated": {
+        "action": "изменил отправку уведомлений для",
+        "actionWithoutResource": "изменил маршрутизацию уведомлений",
+        "label": "Маршрутизация уведомлений изменена"
+      },
+      "notification_subscription.deleted": {
+        "action": "остановил отправку уведомлений для",
+        "actionWithoutResource": "остановил отправку уведомлений",
+        "label": "Отправка уведомлений остановлена"
+      },
+      "notification_delivery.seen": {
+        "action": "отметил как прочитанное",
+        "actionWithoutResource": "отметил как прочитанное",
+        "label": "Оповещение отмечено как прочитанное"
+      },
+      "notifications:write": {
+        "action": "изменил уведомления",
+        "actionWithoutResource": "изменил уведомления",
+        "label": "Уведомления изменены"
+      },
+      "notifications:admin": {
+        "action": "выполнил действие администратора над уведомлениями",
+        "actionWithoutResource": "выполнил действие администратора над уведомлениями",
+        "label": "Действие администратора над уведомлениями"
+      },
+      "job_run.started": {
+        "action": "запустил задачу",
+        "actionWithoutResource": "запустил задачу",
+        "label": "Задача запущена"
+      },
+      "job_run.succeeded": {
+        "action": "успешно выполнил задачу",
+        "actionWithoutResource": "успешно выполнил задачу",
+        "label": "Задача успешно выполнена"
+      },
+      "job_run.failed": {
+        "action": "выполнил завершившуюся сбоем задачу",
+        "actionWithoutResource": "выполнил завершившуюся сбоем задачу",
+        "label": "Сбой задачи"
       }
     },
     "resourceLabels": {

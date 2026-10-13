@@ -1163,6 +1163,73 @@
         "actionWithoutResource": "dağıtımda bir yönetici eylemi gerçekleştirdi",
         "label": "Dağıtım yönetici eylemi",
         "description": "Bir dağıtım üzerinde yönetici eylemi çağrıldı."
+      },
+      "job:write": {
+        "action": "görevi değiştirdi",
+        "actionWithoutResource": "görevi değiştirdi",
+        "label": "Görev değiştirildi",
+        "description": "Zamanlanmış veya özel bir görev oluşturuldu, düzenlendi, çalıştırıldı veya kaldırıldı."
+      },
+      "notification_default.updated": {
+        "action": "için varsayılan bildirim ayarlarını değiştirdi",
+        "actionWithoutResource": "varsayılan bildirim ayarlarını değiştirdi",
+        "label": "Varsayılan bildirim ayarları değiştirildi",
+        "description": "Kuruluş için varsayılan bildirim yönlendirmesi güncellendi."
+      },
+      "notification_channel.created": {
+        "action": "bildirim kanalını ekledi",
+        "actionWithoutResource": "bildirim kanalını ekledi",
+        "label": "Bildirim kanalı eklendi"
+      },
+      "notification_channel.updated": {
+        "action": "bildirim kanalını güncelledi",
+        "actionWithoutResource": "bildirim kanalını güncelledi",
+        "label": "Bildirim kanalı güncellendi"
+      },
+      "notification_channel.deleted": {
+        "action": "bildirim kanalını kaldırdı",
+        "actionWithoutResource": "bildirim kanalını kaldırdı",
+        "label": "Bildirim kanalı kaldırıldı"
+      },
+      "notification_subscription.updated": {
+        "action": "adresine gönderilen bildirimleri değiştirdi",
+        "actionWithoutResource": "bildirim yönlendirmesini değiştirdi",
+        "label": "Bildirim yönlendirmesi değiştirildi"
+      },
+      "notification_subscription.deleted": {
+        "action": "için bildirimleri durdurdu",
+        "actionWithoutResource": "bildirimleri durdurdu",
+        "label": "Bildirimler durduruldu"
+      },
+      "notification_delivery.seen": {
+        "action": "görüldü olarak işaretledi",
+        "actionWithoutResource": "görüldü olarak işaretledi",
+        "label": "Uyarı görüldü olarak işaretlendi"
+      },
+      "notifications:write": {
+        "action": "bildirimleri değiştirdi",
+        "actionWithoutResource": "bildirimleri değiştirdi",
+        "label": "Bildirimler değiştirildi"
+      },
+      "notifications:admin": {
+        "action": "bildirimler üzerinde bir yönetici işlemi gerçekleştirdi",
+        "actionWithoutResource": "bildirimler üzerinde bir yönetici işlemi gerçekleştirdi",
+        "label": "Bildirimler yönetici işlemi"
+      },
+      "job_run.started": {
+        "action": "görevi başlattı",
+        "actionWithoutResource": "görevi başlattı",
+        "label": "Görev başlatıldı"
+      },
+      "job_run.succeeded": {
+        "action": "görevi başarıyla çalıştırdı",
+        "actionWithoutResource": "görevi başarıyla çalıştırdı",
+        "label": "Görev başarılı oldu"
+      },
+      "job_run.failed": {
+        "action": "başarısız olan görevi çalıştırdı",
+        "actionWithoutResource": "başarısız olan görevi çalıştırdı",
+        "label": "Görev başarısız oldu"
       }
     },
     "resourceLabels": {
