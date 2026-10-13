@@ -196,5 +196,18 @@
     "title": "Git URL からインポート",
     "description": "インポートするには公開リポジトリの URL を貼り付けてください。GitHub 接続は不要です。",
     "importButton": "リポジトリをインポート"
+  },
+  "customAppModal": {
+    "title": "カスタムアプリを追加",
+    "description": "アプリ定義（JSON）をアップロードします。カタログに追加され、未検証としてマークされます。",
+    "howToWrite": "作成方法",
+    "dropPrefix": "ここに",
+    "dropSuffix": "をドロップするか、",
+    "browse": "参照",
+    "validDefinition": "有効なアプリ定義 —",
+    "unverifiedTitle": "未検証。",
+    "unverifiedBody": "公式のレビュー済みアプリではなく、指定したイメージがデプロイされます。定義を確認し、信頼できるアプリのみを追加してください。",
+    "cancel": "キャンセル",
+    "addApp": "アプリを追加"
   }
 }

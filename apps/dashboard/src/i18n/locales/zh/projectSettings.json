@@ -1143,6 +1143,12 @@
       "submit": "安装证书",
       "submitting": "正在安装…",
       "close": "取消"
+    },
+    "removeRoute": {
+      "title": "删除路由",
+      "description": "应用将继续运行 — 仅删除此路由及其边缘注册。您可以随时重新添加它。",
+      "confirm": "删除路由",
+      "removing": "正在删除…"
     }
   },
   "serviceEnvironment": {

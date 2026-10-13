@@ -376,7 +376,9 @@
         "healthHint": "稼働確認とデプロイ時のレディネスゲート。"
       },
       "orBuildFromSource": "またはソースからビルド",
-      "imageHint": "下の Dockerfile からビルドする場合は空のままにします。"
+      "imageHint": "下の Dockerfile からビルドする場合は空のままにします。",
+      "monitoring": "このサービスの停止を監視",
+      "monitoringHint": "共有サーバーイベントストリームと調整スイープを使用します。意図的に管理外とするサービスや使い捨てサービスの場合のみオフにしてください。"
     },
     "connection": {
       "terminal": "ターミナル",

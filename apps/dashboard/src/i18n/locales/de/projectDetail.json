@@ -376,7 +376,9 @@
         "healthHint": "Liveness-Prüfung und Bereitschaftsprüfung zur Bereitstellungszeit."
       },
       "orBuildFromSource": "oder aus Quellcode bauen",
-      "imageHint": "Leer lassen, um aus einem Dockerfile unten zu bauen."
+      "imageHint": "Leer lassen, um aus einem Dockerfile unten zu bauen.",
+      "monitoring": "Dienst auf Ausfälle überwachen",
+      "monitoringHint": "Verwendet den gemeinsamen Server-Ereignis-Stream und den Abgleich. Nur für absichtlich unmanaged oder temporäre Dienste deaktivieren."
     },
     "connection": {
       "terminal": "Terminal",

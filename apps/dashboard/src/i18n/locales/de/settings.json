@@ -666,6 +666,12 @@
       "invitationDescription": "Verbinde dich mit {instance} und prüfe vor dem Beitritt Arbeitsbereich und Rolle.",
       "reviewInvitation": "Einladung prüfen",
       "invitationHint": "Deine lokale Instanz pausiert während der Verbindung. Es werden keine Daten verschoben."
+    },
+    "recovery": {
+      "title": "Ihre Openship-Instanz",
+      "subtitle": "Schließen Sie den Umzug ab oder verbinden Sie sich erneut, um Ihre Projekte weiter zu verwalten.",
+      "checkConnection": "Verbindung prüfen",
+      "signInRemote": "An Remote-Instanz anmelden"
     }
   },
   "upgradeAuth": {
@@ -984,6 +990,84 @@
       "security": "Sicherheit",
       "billing": "Abrechnung",
       "system": "System"
+    },
+    "events": {
+      "server:write": {
+        "action": "hat den Server geändert",
+        "label": "Server geändert"
+      },
+      "server:admin": {
+        "action": "hat eine Administratoraktion auf dem Server ausgeführt",
+        "label": "Server-Administratoraktion"
+      },
+      "server:add": {
+        "action": "hat den Server hinzugefügt",
+        "label": "Server hinzugefügt"
+      },
+      "server:remove": {
+        "action": "hat den Server entfernt",
+        "label": "Server entfernt"
+      },
+      "settings:write": {
+        "action": "hat die Einstellungen geändert",
+        "label": "Einstellungen geändert"
+      },
+      "settings:admin": {
+        "action": "hat eine Administratoraktion in den Einstellungen ausgeführt",
+        "label": "Einstellungs-Administratoraktion"
+      },
+      "project:create": {
+        "action": "hat erstellt",
+        "label": "Projekt erstellt"
+      },
+      "project:write": {
+        "action": "hat geändert",
+        "label": "Projekt geändert"
+      },
+      "project:delete": {
+        "action": "hat gelöscht",
+        "label": "Projekt gelöscht"
+      },
+      "deployment:start": {
+        "action": "hat ein Deployment gestartet für",
+        "label": "Deployment gestartet"
+      },
+      "deployment:success": {
+        "action": "hat bereitgestellt",
+        "label": "Deployment erfolgreich"
+      },
+      "deployment:failed": {
+        "action": "Fehler beim Bereitstellen von",
+        "label": "Deployment fehlgeschlagen"
+      },
+      "deployment:cancelled": {
+        "action": "hat das Deployment abgebrochen für",
+        "label": "Deployment abgebrochen"
+      },
+      "domain:add": {
+        "action": "hat die Domain hinzugefügt",
+        "label": "Domain hinzugefügt"
+      },
+      "domain:remove": {
+        "action": "hat die Domain entfernt",
+        "label": "Domain entfernt"
+      },
+      "domain:verify": {
+        "action": "hat die Domain verifiziert",
+        "label": "Domain verifiziert"
+      },
+      "member:add": {
+        "action": "hat hinzugefügt",
+        "label": "Mitglied hinzugefügt"
+      },
+      "member:remove": {
+        "action": "hat entfernt",
+        "label": "Mitglied entfernt"
+      },
+      "terminal:write": {
+        "action": "hat ein Terminal geöffnet auf",
+        "label": "Terminalsitzung geöffnet"
+      }
     }
   },
   "updates": {
@@ -1294,6 +1378,35 @@
       "deleteFailed": "Zugangsdaten konnten nicht gelöscht werden",
       "verifyOk": "Der Anbieter hat die Zugangsdaten akzeptiert",
       "verifyFailed": "Der Anbieter hat die Zugangsdaten abgelehnt"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "Container-Registry",
+        "summary": "Private Images während des Deployments aus einer Registry laden.",
+        "selector": {
+          "label": "Registry-Host",
+          "help": "Der Host, wie er in Ihrer Image-Referenz erscheint — ghcr.io, registry.example.com:5000 oder docker.io für Docker Hub."
+        },
+        "fields": {
+          "username": {
+            "label": "Benutzername"
+          },
+          "secret": {
+            "label": "Passwort oder Zugriffstoken",
+            "help": "Verwenden Sie bevorzugt ein schreibgeschütztes Token anstelle eines Kontopassworts."
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "Openship die benötigten DNS-Einträge für benutzerdefinierte Domains automatisch schreiben lassen.",
+        "fields": {
+          "apiToken": {
+            "label": "API-Token",
+            "help": "Ein Token mit Zone:Read und DNS:Edit für die Zonen, die Openship verwalten soll."
+          }
+        }
+      }
     }
   },
   "accountSecurity": {

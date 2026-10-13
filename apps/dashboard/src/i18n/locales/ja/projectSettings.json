@@ -1143,6 +1143,12 @@
       "submit": "証明書をインストール",
       "submitting": "インストール中…",
       "close": "キャンセル"
+    },
+    "removeRoute": {
+      "title": "ルートを削除",
+      "description": "アプリは実行を継続します — このルートとエッジ登録のみが削除されます。いつでも再度追加できます。",
+      "confirm": "ルートを削除",
+      "removing": "削除中…"
     }
   },
   "serviceEnvironment": {

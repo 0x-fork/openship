@@ -2870,12 +2870,12 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                 <UiIcon name="trash" className="size-4" />
               </span>
               <div className="min-w-0">
-                <h3 className="text-[14px] font-semibold text-foreground">Remove route</h3>
+                <h3 className="text-[14px] font-semibold text-foreground">{t.projectSettings.domains.removeRoute.title}</h3>
                 <p className="mt-0.5 break-all text-[12px] text-muted-foreground">{removeTarget.hostname}</p>
               </div>
             </div>
             <p className="px-5 pt-3 text-[12px] leading-relaxed text-muted-foreground">
-              The app keeps running — only this route and its edge registration are removed. You can add it back at any time.
+              {t.projectSettings.domains.removeRoute.description}
             </p>
             <div className="mt-5 flex justify-end gap-2 border-t border-border/40 px-5 py-4">
               <button
@@ -2893,7 +2893,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                 className="inline-flex min-h-9 items-center gap-2 rounded-xl bg-danger-solid px-4 text-[12px] font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-50"
               >
                 {removing && <UiIcon name="spinner" className="size-4 animate-spin" />}
-                {removing ? "Removing…" : "Remove route"}
+                {removing ? t.projectSettings.domains.removeRoute.removing : t.projectSettings.domains.removeRoute.confirm}
               </button>
             </div>
           </div>

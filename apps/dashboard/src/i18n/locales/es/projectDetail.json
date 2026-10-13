@@ -376,7 +376,9 @@
         "healthHint": "Comprobación de vida y control de disponibilidad durante el despliegue."
       },
       "orBuildFromSource": "o compilar desde el código",
-      "imageHint": "Déjalo vacío para compilar desde un Dockerfile de abajo."
+      "imageHint": "Déjalo vacío para compilar desde un Dockerfile de abajo.",
+      "monitoring": "Supervisar este servicio para detectar caídas",
+      "monitoringHint": "Utiliza el flujo de eventos compartido del servidor y el ciclo de reconciliación. Desactívalo solo para servicios no administrados o desechables."
     },
     "connection": {
       "terminal": "Terminal",

@@ -666,6 +666,12 @@
       "invitationDescription": "Conéctate a {instance} y revisa el espacio de trabajo y el rol antes de unirte.",
       "reviewInvitation": "Revisar invitación",
       "invitationHint": "Tu instancia local se pausa mientras estás conectado. No se mueve ningún dato."
+    },
+    "recovery": {
+      "title": "Tu instancia de Openship",
+      "subtitle": "Termina la migración o reconéctate para continuar administrando tus proyectos.",
+      "checkConnection": "Comprobar conexión",
+      "signInRemote": "Iniciar sesión en la instancia remota"
     }
   },
   "upgradeAuth": {
@@ -984,6 +990,84 @@
       "security": "Seguridad",
       "billing": "Facturación",
       "system": "Sistema"
+    },
+    "events": {
+      "server:write": {
+        "action": "modificó el servidor",
+        "label": "Servidor modificado"
+      },
+      "server:admin": {
+        "action": "ejecutó una acción de administración en el servidor",
+        "label": "Acción de administración del servidor"
+      },
+      "server:add": {
+        "action": "agregó el servidor",
+        "label": "Servidor agregado"
+      },
+      "server:remove": {
+        "action": "eliminó el servidor",
+        "label": "Servidor eliminado"
+      },
+      "settings:write": {
+        "action": "modificó los ajustes",
+        "label": "Ajustes modificados"
+      },
+      "settings:admin": {
+        "action": "ejecutó una acción de administración en ajustes",
+        "label": "Acción de administración en ajustes"
+      },
+      "project:create": {
+        "action": "creó",
+        "label": "Proyecto creado"
+      },
+      "project:write": {
+        "action": "modificó",
+        "label": "Proyecto modificado"
+      },
+      "project:delete": {
+        "action": "eliminó",
+        "label": "Proyecto eliminado"
+      },
+      "deployment:start": {
+        "action": "inició un despliegue para",
+        "label": "Despliegue iniciado"
+      },
+      "deployment:success": {
+        "action": "desplegó",
+        "label": "Despliegue exitoso"
+      },
+      "deployment:failed": {
+        "action": "falló al desplegar",
+        "label": "Despliegue fallido"
+      },
+      "deployment:cancelled": {
+        "action": "canceló el despliegue de",
+        "label": "Despliegue cancelado"
+      },
+      "domain:add": {
+        "action": "agregó el dominio",
+        "label": "Dominio agregado"
+      },
+      "domain:remove": {
+        "action": "eliminó el dominio",
+        "label": "Dominio eliminado"
+      },
+      "domain:verify": {
+        "action": "verificó el dominio",
+        "label": "Dominio verificado"
+      },
+      "member:add": {
+        "action": "agregó",
+        "label": "Miembro agregado"
+      },
+      "member:remove": {
+        "action": "eliminó",
+        "label": "Miembro eliminado"
+      },
+      "terminal:write": {
+        "action": "abrió un terminal en",
+        "label": "Sesión de terminal abierta"
+      }
     }
   },
   "updates": {
@@ -1294,6 +1378,35 @@
       "deleteFailed": "No se pudo eliminar la credencial",
       "verifyOk": "El proveedor aceptó la credencial",
       "verifyFailed": "El proveedor rechazó la credencial"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "Registro de contenedores",
+        "summary": "Descarga imágenes privadas de un registro durante el despliegue.",
+        "selector": {
+          "label": "Host del registro",
+          "help": "El host tal como aparece en la referencia de imagen: ghcr.io, registry.example.com:5000 o docker.io para Docker Hub."
+        },
+        "fields": {
+          "username": {
+            "label": "Nombre de usuario"
+          },
+          "secret": {
+            "label": "Contraseña o token de acceso",
+            "help": "Prefiera un token con permisos de solo lectura sobre la contraseña de la cuenta."
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "Permite que Openship escriba los registros DNS necesarios en lugar de copiarlos manualmente.",
+        "fields": {
+          "apiToken": {
+            "label": "Token de API",
+            "help": "Un token con Zone:Read y DNS:Edit en las zonas que desea que Openship administre."
+          }
+        }
+      }
     }
   },
   "accountSecurity": {

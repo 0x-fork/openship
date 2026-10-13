@@ -196,5 +196,18 @@
     "title": "从 Git URL 导入",
     "description": "粘贴一个公开仓库的 URL 以导入。无需连接 GitHub。",
     "importButton": "导入仓库"
+  },
+  "customAppModal": {
+    "title": "添加自定义应用",
+    "description": "上传应用定义 (JSON)。它将添加到您的目录中并标记为未验证。",
+    "howToWrite": "如何编写",
+    "dropPrefix": "将",
+    "dropSuffix": "拖到此处，或",
+    "browse": "浏览",
+    "validDefinition": "有效的应用定义 —",
+    "unverifiedTitle": "未验证。",
+    "unverifiedBody": "这将部署您提供的镜像 — 而非官方审核的应用。请检查定义并仅添加您信任的应用。",
+    "cancel": "取消",
+    "addApp": "添加应用"
   }
 }

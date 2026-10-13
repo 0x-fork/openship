@@ -196,5 +196,18 @@
     "title": "Importar de uma URL do Git",
     "description": "Cole a URL de um repositório público para importar. Nenhuma conexão com o GitHub é necessária.",
     "importButton": "Importar Repositório"
+  },
+  "customAppModal": {
+    "title": "Adicionar aplicativo personalizado",
+    "description": "Carregue uma definição de aplicativo (JSON). Ela será adicionada ao catálogo e marcada como não verificada.",
+    "howToWrite": "Como criar uma",
+    "dropPrefix": "Solte",
+    "dropSuffix": "aqui, ou",
+    "browse": "procurar",
+    "validDefinition": "Definição de aplicativo válida —",
+    "unverifiedTitle": "Não verificado.",
+    "unverifiedBody": "Isso implanta imagens fornecidas por você — não um aplicativo oficial revisado. Revise a definição e adicione apenas aplicativos confiáveis.",
+    "cancel": "Cancelar",
+    "addApp": "Adicionar aplicativo"
   }
 }

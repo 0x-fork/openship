@@ -1143,6 +1143,12 @@
       "submit": "Instalar certificado",
       "submitting": "Instalando...",
       "close": "Cancelar"
+    },
+    "removeRoute": {
+      "title": "Eliminar ruta",
+      "description": "La aplicación seguirá ejecutándose; solo se eliminan esta ruta y su registro en el edge. Puedes volver a agregarla en cualquier momento.",
+      "confirm": "Eliminar ruta",
+      "removing": "Eliminando…"
     }
   },
   "serviceEnvironment": {

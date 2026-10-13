@@ -705,6 +705,12 @@
       "invitationDescription": "{instance} bağlantısını kurun, ardından katılmadan önce çalışma alanını ve rolü inceleyin.",
       "reviewInvitation": "Daveti incele",
       "invitationHint": "Bağlantı sırasında yerel örneğiniz duraklatılır. Hiçbir veri taşınmaz."
+    },
+    "recovery": {
+      "title": "Openship örneğiniz",
+      "subtitle": "Projelerinizi yönetmeye devam etmek için taşımayı tamamlayın veya yeniden bağlanın.",
+      "checkConnection": "Bağlantıyı kontrol et",
+      "signInRemote": "Uzak örneğe giriş yap"
     }
   },
   "upgradeAuth": {
@@ -1023,6 +1029,84 @@
       "security": "Güvenlik",
       "billing": "Faturalandırma",
       "system": "Sistem"
+    },
+    "events": {
+      "server:write": {
+        "action": "sunucuyu değiştirdi",
+        "label": "Sunucu değiştirildi"
+      },
+      "server:admin": {
+        "action": "sunucuda yönetici işlemi gerçekleştirdi",
+        "label": "Sunucu yönetici eylemi"
+      },
+      "server:add": {
+        "action": "sunucuyu ekledi",
+        "label": "Sunucu eklendi"
+      },
+      "server:remove": {
+        "action": "sunucuyu kaldırdı",
+        "label": "Sunucu kaldırıldı"
+      },
+      "settings:write": {
+        "action": "ayarları değiştirdi",
+        "label": "Ayarlar değiştirildi"
+      },
+      "settings:admin": {
+        "action": "ayarlarda yönetici işlemi gerçekleştirdi",
+        "label": "Ayarlar yönetici eylemi"
+      },
+      "project:create": {
+        "action": "oluşturdu",
+        "label": "Proje oluşturuldu"
+      },
+      "project:write": {
+        "action": "değiştirdi",
+        "label": "Proje değiştirildi"
+      },
+      "project:delete": {
+        "action": "sildi",
+        "label": "Proje silindi"
+      },
+      "deployment:start": {
+        "action": "dağıtım başlattı:",
+        "label": "Dağıtım başlatıldı"
+      },
+      "deployment:success": {
+        "action": "dağıttı",
+        "label": "Dağıtım başarılı"
+      },
+      "deployment:failed": {
+        "action": "dağıtılamadı:",
+        "label": "Dağıtım başarısız"
+      },
+      "deployment:cancelled": {
+        "action": "dağıtımını iptal etti:",
+        "label": "Dağıtım iptal edildi"
+      },
+      "domain:add": {
+        "action": "alan adını ekledi",
+        "label": "Alan adı eklendi"
+      },
+      "domain:remove": {
+        "action": "alan adını kaldırdı",
+        "label": "Alan adı kaldırıldı"
+      },
+      "domain:verify": {
+        "action": "alan adını doğruladı",
+        "label": "Alan adı doğrulandı"
+      },
+      "member:add": {
+        "action": "ekledi",
+        "label": "Üye eklendi"
+      },
+      "member:remove": {
+        "action": "kaldırdı",
+        "label": "Üye kaldırıldı"
+      },
+      "terminal:write": {
+        "action": "uçbirim açtı:",
+        "label": "Uçbirim oturumu açıldı"
+      }
     }
   },
   "updates": {
@@ -1333,6 +1417,35 @@
       "deleteFailed": "Kimlik bilgisi silinemedi",
       "verifyOk": "Sağlayıcı kimlik bilgisini kabul etti",
       "verifyFailed": "Sağlayıcı kimlik bilgisini reddetti"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "Konteyner kayıt defteri",
+        "summary": "Dağıtımlar sırasında kayıt defterinden özel görüntüleri çekin.",
+        "selector": {
+          "label": "Kayıt defteri sunucusu",
+          "help": "Görüntü referansınızda göründüğü şekliyle ana bilgisayar — ghcr.io, registry.example.com:5000 veya Docker Hub için docker.io."
+        },
+        "fields": {
+          "username": {
+            "label": "Kullanıcı adı"
+          },
+          "secret": {
+            "label": "Şifre veya erişim belirteci",
+            "help": "Hesap şifresi yerine salt okunur kayıt defteri erişimine sahip bir belirteç tercih edin."
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "Openship'in özel bir alan adının ihtiyaç duyduğu DNS kayıtlarını otomatik oluşturmasına izin verin.",
+        "fields": {
+          "apiToken": {
+            "label": "API belirteci",
+            "help": "Openship tarafından yönetilmesini istediğiniz bölgelerde Zone:Read ve DNS:Edit izinlerine sahip bir belirteç."
+          }
+        }
+      }
     }
   },
   "accountSecurity": {

@@ -666,6 +666,12 @@
       "invitationDescription": "连接到 {instance}，然后在加入前查看工作区和角色。",
       "reviewInvitation": "查看邀请",
       "invitationHint": "连接期间，本地实例将暂停。不会移动任何数据。"
+    },
+    "recovery": {
+      "title": "您的 Openship 实例",
+      "subtitle": "完成迁移或重新连接以继续管理您的项目。",
+      "checkConnection": "检查连接",
+      "signInRemote": "登录到远程实例"
     }
   },
   "upgradeAuth": {
@@ -984,6 +990,84 @@
       "security": "安全",
       "billing": "账单",
       "system": "系统"
+    },
+    "events": {
+      "server:write": {
+        "action": "更改了服务器",
+        "label": "服务器已更改"
+      },
+      "server:admin": {
+        "action": "对服务器执行了管理操作",
+        "label": "服务器管理操作"
+      },
+      "server:add": {
+        "action": "添加了服务器",
+        "label": "已添加服务器"
+      },
+      "server:remove": {
+        "action": "移除了服务器",
+        "label": "已移除服务器"
+      },
+      "settings:write": {
+        "action": "更改了设置",
+        "label": "设置已更改"
+      },
+      "settings:admin": {
+        "action": "对设置执行了管理操作",
+        "label": "设置管理操作"
+      },
+      "project:create": {
+        "action": "创建了",
+        "label": "项目已创建"
+      },
+      "project:write": {
+        "action": "更改了",
+        "label": "项目已更改"
+      },
+      "project:delete": {
+        "action": "删除了",
+        "label": "项目已删除"
+      },
+      "deployment:start": {
+        "action": "启动了部署",
+        "label": "部署已启动"
+      },
+      "deployment:success": {
+        "action": "成功部署了",
+        "label": "部署成功"
+      },
+      "deployment:failed": {
+        "action": "部署失败",
+        "label": "部署失败"
+      },
+      "deployment:cancelled": {
+        "action": "取消了部署",
+        "label": "部署已取消"
+      },
+      "domain:add": {
+        "action": "添加了域名",
+        "label": "已添加域名"
+      },
+      "domain:remove": {
+        "action": "移除了域名",
+        "label": "已移除域名"
+      },
+      "domain:verify": {
+        "action": "验证了域名",
+        "label": "域名已验证"
+      },
+      "member:add": {
+        "action": "添加了",
+        "label": "成员已添加"
+      },
+      "member:remove": {
+        "action": "移除了",
+        "label": "成员已移除"
+      },
+      "terminal:write": {
+        "action": "打开了终端：",
+        "label": "终端会话已打开"
+      }
     }
   },
   "updates": {
@@ -1294,6 +1378,35 @@
       "deleteFailed": "无法删除凭据",
       "verifyOk": "提供方已接受该凭据",
       "verifyFailed": "提供方拒绝了该凭据"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "容器镜像仓库",
+        "summary": "在部署期间从镜像仓库拉取私有镜像。",
+        "selector": {
+          "label": "镜像仓库主机",
+          "help": "在镜像引用中显示的主机 — ghcr.io、registry.example.com:5000 或 Docker Hub 的 docker.io。"
+        },
+        "fields": {
+          "username": {
+            "label": "用户名"
+          },
+          "secret": {
+            "label": "密码或访问令牌",
+            "help": "建议使用具有只读仓库权限的令牌，而非账户密码。"
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "让 Openship 自动写入自定义域名所需的 DNS 记录，无需手动粘贴。",
+        "fields": {
+          "apiToken": {
+            "label": "API 令牌",
+            "help": "对您希望 Openship 管理的区域拥有 Zone:Read 和 DNS:Edit 权限的令牌。"
+          }
+        }
+      }
     }
   },
   "accountSecurity": {

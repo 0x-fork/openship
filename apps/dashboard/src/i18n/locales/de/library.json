@@ -196,5 +196,18 @@
     "title": "Aus Git-URL importieren",
     "description": "Füge eine öffentliche Repository-URL ein, um sie zu importieren. Keine GitHub-Verbindung erforderlich.",
     "importButton": "Repository importieren"
+  },
+  "customAppModal": {
+    "title": "Benutzerdefinierte App hinzufügen",
+    "description": "Laden Sie eine App-Definition (JSON) hoch. Sie wird Ihrem Katalog hinzugefügt und als nicht verifiziert markiert.",
+    "howToWrite": "Anleitung zur Erstellung",
+    "dropPrefix": "Ziehen Sie",
+    "dropSuffix": "hierher oder",
+    "browse": "durchsuchen",
+    "validDefinition": "Gültige App-Definition —",
+    "unverifiedTitle": "Nicht verifiziert.",
+    "unverifiedBody": "Dies stellt von Ihnen bereitgestellte Images bereit – keine offizielle geprüfte App. Überprüfen Sie die Definition und fügen Sie nur vertrauenswürdige Apps hinzu.",
+    "cancel": "Abbrechen",
+    "addApp": "App hinzufügen"
   }
 }

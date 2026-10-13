@@ -196,5 +196,18 @@
     "pointDesktopOnly": "Yalnızca masaüstü uygulamasında yerel gh kimlik doğrulamanızı kullanarak çalışır.",
     "pointReadOnly": "Salt okunur: dağıtmak için birini seçebilmeniz amacıyla depoları listeler.",
     "allow": "İzin ver"
+  },
+  "customAppModal": {
+    "title": "Özel uygulama ekle",
+    "description": "Bir uygulama tanımı (JSON) yükleyin. Kataloğunuza eklenir ve doğrulanmamış olarak işaretlenir.",
+    "howToWrite": "Nasıl yazılır",
+    "dropPrefix": "Buraya",
+    "dropSuffix": "bırakın veya",
+    "browse": "göz atın",
+    "validDefinition": "Geçerli uygulama tanımı —",
+    "unverifiedTitle": "Doğrulanmadı.",
+    "unverifiedBody": "Bu, resmi ve incelenmiş bir uygulama yerine sağladığınız imajları dağıtır. Tanımı inceleyin ve yalnızca güvendiğiniz uygulamaları ekleyin.",
+    "cancel": "İptal",
+    "addApp": "Uygulama ekle"
   }
 }

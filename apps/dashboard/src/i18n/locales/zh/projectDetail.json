@@ -376,7 +376,9 @@
         "healthHint": "存活检查和部署时的就绪门控。"
       },
       "orBuildFromSource": "或从源码构建",
-      "imageHint": "留空则从下方的 Dockerfile 构建。"
+      "imageHint": "留空则从下方的 Dockerfile 构建。",
+      "monitoring": "监控此服务的服务中断",
+      "monitoringHint": "使用共享服务器事件流和对账扫描。仅对故意不托管或临时服务关闭。"
     },
     "connection": {
       "terminal": "终端",

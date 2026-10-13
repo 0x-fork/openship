@@ -666,6 +666,12 @@
       "invitationDescription": "{instance} に接続し、参加する前にワークスペースとロールを確認します。",
       "reviewInvitation": "招待を確認",
       "invitationHint": "接続中はローカルインスタンスが一時停止します。データは移動しません。"
+    },
+    "recovery": {
+      "title": "あなたのOpenshipインスタンス",
+      "subtitle": "プロジェクトの管理を続けるには、移行を完了するか再接続してください。",
+      "checkConnection": "接続を確認",
+      "signInRemote": "リモートインスタンスにサインイン"
     }
   },
   "upgradeAuth": {
@@ -984,6 +990,84 @@
       "security": "セキュリティ",
       "billing": "請求",
       "system": "システム"
+    },
+    "events": {
+      "server:write": {
+        "action": "サーバーを変更しました",
+        "label": "サーバー変更"
+      },
+      "server:admin": {
+        "action": "サーバーで管理者アクションを実行しました",
+        "label": "サーバー管理者操作"
+      },
+      "server:add": {
+        "action": "サーバーを追加しました",
+        "label": "サーバー追加"
+      },
+      "server:remove": {
+        "action": "サーバーを削除しました",
+        "label": "サーバー削除"
+      },
+      "settings:write": {
+        "action": "設定を変更しました",
+        "label": "設定変更"
+      },
+      "settings:admin": {
+        "action": "設定で管理者アクションを実行しました",
+        "label": "設定管理者操作"
+      },
+      "project:create": {
+        "action": "作成しました",
+        "label": "プロジェクト作成"
+      },
+      "project:write": {
+        "action": "変更しました",
+        "label": "プロジェクト変更"
+      },
+      "project:delete": {
+        "action": "削除しました",
+        "label": "プロジェクト削除"
+      },
+      "deployment:start": {
+        "action": "デプロイを開始しました",
+        "label": "デプロイ開始"
+      },
+      "deployment:success": {
+        "action": "デプロイしました",
+        "label": "デプロイ成功"
+      },
+      "deployment:failed": {
+        "action": "デプロイに失敗しました",
+        "label": "デプロイ失敗"
+      },
+      "deployment:cancelled": {
+        "action": "デプロイをキャンセルしました",
+        "label": "デプロイキャンセル"
+      },
+      "domain:add": {
+        "action": "ドメインを追加しました",
+        "label": "ドメイン追加"
+      },
+      "domain:remove": {
+        "action": "ドメインを削除しました",
+        "label": "ドメイン削除"
+      },
+      "domain:verify": {
+        "action": "ドメインを検証しました",
+        "label": "ドメイン検証"
+      },
+      "member:add": {
+        "action": "追加しました",
+        "label": "メンバー追加"
+      },
+      "member:remove": {
+        "action": "削除しました",
+        "label": "メンバー削除"
+      },
+      "terminal:write": {
+        "action": "ターミナルを開きました：",
+        "label": "ターミナルセッション開始"
+      }
     }
   },
   "updates": {
@@ -1294,6 +1378,35 @@
       "deleteFailed": "認証情報を削除できませんでした",
       "verifyOk": "プロバイダーが認証情報を受け入れました",
       "verifyFailed": "プロバイダーが認証情報を拒否しました"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "コンテナレジストリ",
+        "summary": "デプロイ時にレジストリからプライベートイメージを取得します。",
+        "selector": {
+          "label": "レジストリホスト",
+          "help": "イメージ参照に表示されるホスト — ghcr.io、registry.example.com:5000、またはDocker Hubのdocker.io。"
+        },
+        "fields": {
+          "username": {
+            "label": "ユーザー名"
+          },
+          "secret": {
+            "label": "パスワードまたはアクセストークン",
+            "help": "アカウントのパスワードよりも、読み取り専用スコープのトークンを推奨します。"
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "カスタムドメインに必要なDNSレコードを手動で貼り付ける代わりに、Openshipが自動登録します。",
+        "fields": {
+          "apiToken": {
+            "label": "APIトークン",
+            "help": "Openshipに管理させたいゾーンのZone:ReadおよびDNS:Edit権限を持つトークン。"
+          }
+        }
+      }
     }
   },
   "accountSecurity": {

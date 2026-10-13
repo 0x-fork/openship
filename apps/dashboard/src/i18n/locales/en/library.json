@@ -196,5 +196,18 @@
     "title": "Import from Git URL",
     "description": "Paste a public repository URL to import. No GitHub connection required.",
     "importButton": "Import Repository"
+  },
+  "customAppModal": {
+    "title": "Add a custom app",
+    "description": "Upload an app definition (JSON). It's added to your catalog and marked unverified.",
+    "howToWrite": "How to write one",
+    "dropPrefix": "Drop",
+    "dropSuffix": "here, or",
+    "browse": "browse",
+    "validDefinition": "Valid app definition —",
+    "unverifiedTitle": "Unverified.",
+    "unverifiedBody": "This deploys images you provided — not an official, reviewed app. Review the definition and only add apps you trust.",
+    "cancel": "Cancel",
+    "addApp": "Add app"
   }
 }

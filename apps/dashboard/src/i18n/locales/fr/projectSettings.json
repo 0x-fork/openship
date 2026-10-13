@@ -1143,6 +1143,12 @@
         "cancelled": "Vérification annulée",
         "expired": "La vérification TXT a expiré"
       }
+    },
+    "removeRoute": {
+      "title": "Supprimer la route",
+      "description": "L'application continue de fonctionner — seules cette route et son enregistrement edge sont supprimés. Vous pouvez la réajouter à tout moment.",
+      "confirm": "Supprimer la route",
+      "removing": "Suppression…"
     }
   },
   "routeRules": {

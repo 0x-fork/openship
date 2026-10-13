@@ -376,7 +376,9 @@
         "healthHint": "Verificação de atividade e portão de prontidão no momento da implantação."
       },
       "orBuildFromSource": "ou compilar a partir do código",
-      "imageHint": "Deixe vazio para compilar a partir de um Dockerfile abaixo."
+      "imageHint": "Deixe vazio para compilar a partir de um Dockerfile abaixo.",
+      "monitoring": "Monitorar interrupções deste serviço",
+      "monitoringHint": "Usa o fluxo de eventos compartilhado do servidor e a varredura de reconciliação. Desative apenas para serviços intencionalmente não gerenciados ou descartáveis."
     },
     "connection": {
       "terminal": "Terminal",

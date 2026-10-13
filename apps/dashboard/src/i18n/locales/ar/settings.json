@@ -666,6 +666,12 @@
       "invitationDescription": "اتصل بـ {instance}، ثم راجع مساحة العمل والدور قبل الانضمام.",
       "reviewInvitation": "مراجعة الدعوة",
       "invitationHint": "تتوقف نسختك المحلية مؤقتًا أثناء الاتصال. لا يتم نقل أي بيانات."
+    },
+    "recovery": {
+      "title": "نسخة Openship الخاصة بك",
+      "subtitle": "أكمل النقل أو أعد الاتصال لمواصلة إدارة مشاريعك.",
+      "checkConnection": "التحقق من الاتصال",
+      "signInRemote": "تسجيل الدخول إلى النسخة البعيدة"
     }
   },
   "upgradeAuth": {
@@ -984,6 +990,84 @@
       "security": "الأمان",
       "billing": "الفواتير",
       "system": "النظام"
+    },
+    "events": {
+      "server:write": {
+        "action": "قام بتغيير الخادم",
+        "label": "تم تغيير الخادم"
+      },
+      "server:admin": {
+        "action": "نفّذ إجراء مسؤول على الخادم",
+        "label": "إجراء مسؤول الخادم"
+      },
+      "server:add": {
+        "action": "أضاف الخادم",
+        "label": "تمت إضافة الخادم"
+      },
+      "server:remove": {
+        "action": "أزال الخادم",
+        "label": "تمت إزالة الخادم"
+      },
+      "settings:write": {
+        "action": "قام بتغيير الإعدادات",
+        "label": "تم تغيير الإعدادات"
+      },
+      "settings:admin": {
+        "action": "نفّذ إجراء مسؤول على الإعدادات",
+        "label": "إجراء مسؤول الإعدادات"
+      },
+      "project:create": {
+        "action": "أنشأ",
+        "label": "تم إنشاء المشروع"
+      },
+      "project:write": {
+        "action": "قام بتعديل",
+        "label": "تم تعديل المشروع"
+      },
+      "project:delete": {
+        "action": "حذف",
+        "label": "تم حذف المشروع"
+      },
+      "deployment:start": {
+        "action": "بدأ نشر",
+        "label": "بدء النشر"
+      },
+      "deployment:success": {
+        "action": "قام بنشر",
+        "label": "تم النشر بنجاح"
+      },
+      "deployment:failed": {
+        "action": "فشل في نشر",
+        "label": "فشل النشر"
+      },
+      "deployment:cancelled": {
+        "action": "ألغى نشر",
+        "label": "تم إلغاء النشر"
+      },
+      "domain:add": {
+        "action": "أضاف النطاق",
+        "label": "تمت إضافة النطاق"
+      },
+      "domain:remove": {
+        "action": "أزال النطاق",
+        "label": "تمت إزالة النطاق"
+      },
+      "domain:verify": {
+        "action": "تحقق من النطاق",
+        "label": "تم التحقق من النطاق"
+      },
+      "member:add": {
+        "action": "أضاف",
+        "label": "تمت إضافة عضو"
+      },
+      "member:remove": {
+        "action": "أزال",
+        "label": "تمت إزالة عضو"
+      },
+      "terminal:write": {
+        "action": "فتح جلسة طرفية على",
+        "label": "تم فتح جلسة طرفية"
+      }
     }
   },
   "updates": {
@@ -1294,6 +1378,35 @@
       "deleteFailed": "تعذّر حذف بيانات الاعتماد",
       "verifyOk": "قَبِل المزوّد بيانات الاعتماد",
       "verifyFailed": "رفض المزوّد بيانات الاعتماد"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "سجل الحاويات",
+        "summary": "سحب الصور الخاصة من السجل أثناء عمليات النشر.",
+        "selector": {
+          "label": "مضيف السجل",
+          "help": "المضيف كما يظهر في مرجع الصورة — ghcr.io، registry.example.com:5000، أو docker.io لـ Docker Hub."
+        },
+        "fields": {
+          "username": {
+            "label": "اسم المستخدم"
+          },
+          "secret": {
+            "label": "كلمة المرور أو رمز الوصول",
+            "help": "يفضل استخدام رمز وصول للقراءة فقط بدلاً من كلمة مرور الحساب."
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "دع Openship يكتب سجلات DNS التي يحتاجها النطاق المخصص بدلاً من لصقها يدوياً.",
+        "fields": {
+          "apiToken": {
+            "label": "رمز API",
+            "help": "رمز وصول مع صلاحيات Zone:Read و DNS:Edit على النطاقات التي تريد إدارتها بواسطة Openship."
+          }
+        }
+      }
     }
   },
   "accountSecurity": {

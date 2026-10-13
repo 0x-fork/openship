@@ -666,6 +666,12 @@
       "invitationDescription": "Connectez-vous à {instance}, puis vérifiez l’espace de travail et le rôle avant de rejoindre.",
       "reviewInvitation": "Vérifier l’invitation",
       "invitationHint": "Votre instance locale est en pause pendant la connexion. Aucune donnée n’est déplacée."
+    },
+    "recovery": {
+      "title": "Votre instance Openship",
+      "subtitle": "Terminez le déplacement ou reconnectez-vous pour continuer à gérer vos projets.",
+      "checkConnection": "Vérifier la connexion",
+      "signInRemote": "Se connecter à l'instance distante"
     }
   },
   "upgradeAuth": {
@@ -984,6 +990,84 @@
       "security": "Sécurité",
       "billing": "Facturation",
       "system": "Système"
+    },
+    "events": {
+      "server:write": {
+        "action": "a modifié le serveur",
+        "label": "Serveur modifié"
+      },
+      "server:admin": {
+        "action": "a exécuté une action d'administration sur le serveur",
+        "label": "Action d'administration sur le serveur"
+      },
+      "server:add": {
+        "action": "a ajouté le serveur",
+        "label": "Serveur ajouté"
+      },
+      "server:remove": {
+        "action": "a supprimé le serveur",
+        "label": "Serveur supprimé"
+      },
+      "settings:write": {
+        "action": "a modifié les paramètres",
+        "label": "Paramètres modifiés"
+      },
+      "settings:admin": {
+        "action": "a exécuté une action d'administration sur les paramètres",
+        "label": "Action d'administration sur les paramètres"
+      },
+      "project:create": {
+        "action": "a créé",
+        "label": "Projet créé"
+      },
+      "project:write": {
+        "action": "a modifié",
+        "label": "Projet modifié"
+      },
+      "project:delete": {
+        "action": "a supprimé",
+        "label": "Projet supprimé"
+      },
+      "deployment:start": {
+        "action": "a démarré un déploiement pour",
+        "label": "Déploiement démarré"
+      },
+      "deployment:success": {
+        "action": "a déployé",
+        "label": "Déploiement réussi"
+      },
+      "deployment:failed": {
+        "action": "échec du déploiement de",
+        "label": "Échec du déploiement"
+      },
+      "deployment:cancelled": {
+        "action": "a annulé le déploiement de",
+        "label": "Déploiement annulé"
+      },
+      "domain:add": {
+        "action": "a ajouté le domaine",
+        "label": "Domaine ajouté"
+      },
+      "domain:remove": {
+        "action": "a supprimé le domaine",
+        "label": "Domaine supprimé"
+      },
+      "domain:verify": {
+        "action": "a vérifié le domaine",
+        "label": "Domaine vérifié"
+      },
+      "member:add": {
+        "action": "a ajouté",
+        "label": "Membre ajouté"
+      },
+      "member:remove": {
+        "action": "a supprimé",
+        "label": "Membre supprimé"
+      },
+      "terminal:write": {
+        "action": "a ouvert un terminal sur",
+        "label": "Session de terminal ouverte"
+      }
     }
   },
   "updates": {
@@ -1294,6 +1378,35 @@
       "deleteFailed": "Impossible de supprimer l'identifiant",
       "verifyOk": "Le fournisseur a accepté l'identifiant",
       "verifyFailed": "Le fournisseur a refusé l'identifiant"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "Registre de conteneurs",
+        "summary": "Télécharger des images privées depuis un registre lors des déploiements.",
+        "selector": {
+          "label": "Hôte du registre",
+          "help": "L'hôte tel qu'il apparaît dans votre référence d'image — ghcr.io, registry.example.com:5000 ou docker.io pour Docker Hub."
+        },
+        "fields": {
+          "username": {
+            "label": "Nom d'utilisateur"
+          },
+          "secret": {
+            "label": "Mot de passe ou jeton d'accès",
+            "help": "Privilégiez un jeton limité à la lecture seule plutôt qu'un mot de passe de compte."
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "Permettre à Openship d'écrire les enregistrements DNS nécessaires au lieu de les coller manuellement.",
+        "fields": {
+          "apiToken": {
+            "label": "Jeton d'API",
+            "help": "Un jeton avec Zone:Read et DNS:Edit sur les zones que vous souhaitez gérer avec Openship."
+          }
+        }
+      }
     }
   },
   "accountSecurity": {

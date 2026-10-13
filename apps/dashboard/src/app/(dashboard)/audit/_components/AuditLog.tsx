@@ -44,6 +44,7 @@ import {
 import { useModal } from "@/context/ModalContext";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
+import type { Dictionary } from "@/i18n";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { Switch } from "@/components/ui/Switch";
 import { CustomSelect } from "@/components/ui/CustomSelect";
@@ -105,25 +106,25 @@ function periodStart(period: PeriodKey): string | undefined {
   return start.toISOString();
 }
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: Dictionary): string {
   const date = new Date(iso);
   const diff = Date.now() - date.getTime();
   const min = Math.floor(diff / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
+  if (min < 1) return t.projects.time.justNow;
+  if (min < 60) return interpolate(t.projects.time.minutesAgo, { count: String(min) });
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
+  if (hr < 24) return interpolate(t.projects.time.hoursAgo, { count: String(hr) });
   const days = Math.floor(hr / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return interpolate(t.projects.time.daysAgo, { count: String(days) });
   return date.toLocaleDateString();
 }
 
-function absoluteTime(iso: string): string {
-  return new Date(iso).toLocaleString();
+function absoluteTime(iso: string, locale?: string): string {
+  return new Date(iso).toLocaleString(locale || undefined);
 }
 
-function clockTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function clockTime(iso: string, locale?: string): string {
+  return new Date(iso).toLocaleTimeString(locale || undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 /** Local `YYYY-MM-DD` — the day-group key. `toISOString` would group by UTC. */
@@ -150,18 +151,18 @@ function actorDisplay(e: AuditEventRow, labels: { system: string; actorPrefix: s
  * membership id and keep the human identity in the payload — so those fall back
  * to the email/name recorded at the time, and only then to a generic noun.
  */
-function resourceDisplay(e: AuditEventRow): string {
-  if (e.resourceName) return e.resourceName;
+function resourceDisplay(e: AuditEventRow): { label: string; isSpecific: boolean } {
+  if (e.resourceName) return { label: e.resourceName, isSpecific: true };
   const payload = (e.after ?? e.before) as Record<string, unknown> | null | undefined;
   if (payload && typeof payload === "object") {
     // `tool` is what a tool-call row is about — "ran the MCP tool get_projects"
     // beats "ran the MCP tool a connected AI agent".
     for (const field of ["email", "hostname", "name", "slug", "tool"]) {
       const value = payload[field];
-      if (typeof value === "string" && value.trim()) return value;
+      if (typeof value === "string" && value.trim()) return { label: value, isSpecific: true };
     }
   }
-  return auditResourceLabel(e.resourceType);
+  return { label: auditResourceLabel(e.resourceType), isSpecific: false };
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
@@ -248,9 +249,12 @@ function AuditDetailsBody({
   onClose: () => void;
   sourceLabel: (source: AuditSource | null) => string;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [showTechnical, setShowTechnical] = useState(false);
   const info = describeAuditEvent(event.eventType);
+  const eventLoc = (t.settings.audit as any)?.events?.[event.eventType];
+  const action = eventLoc?.action || info.action;
+  const label = eventLoc?.label || info.label;
   const tone = info.tone ?? "neutral";
   const hasBefore = event.before !== null && event.before !== undefined;
   const hasAfter = event.after !== null && event.after !== undefined;
@@ -266,14 +270,14 @@ function AuditDetailsBody({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className={`size-2 shrink-0 rounded-full ${TONE_DOT[tone]}`} />
-            <h2 className="text-lg font-semibold text-foreground">{info.label}</h2>
+            <h2 className="text-lg font-semibold text-foreground">{label}</h2>
           </div>
           <p className="mt-1.5 text-sm text-foreground/80">
-            <span className="font-medium">{actor}</span> {info.action}
-            {resource && <span className="font-medium"> {resource}</span>}
+            <span className="font-medium">{actor}</span> {action}
+            {resource.isSpecific && <span className="font-medium"> {resource.label}</span>}
           </p>
-          <p className="mt-0.5 text-xs text-muted-foreground" title={absoluteTime(event.createdAt)}>
-            {relativeTime(event.createdAt)} · {absoluteTime(event.createdAt)}
+          <p className="mt-0.5 text-xs text-muted-foreground" title={absoluteTime(event.createdAt, locale)}>
+            {relativeTime(event.createdAt, t)} · {absoluteTime(event.createdAt, locale)}
           </p>
           {info.description && (
             <p className="mt-2 text-sm text-muted-foreground">{info.description}</p>
@@ -305,10 +309,10 @@ function AuditDetailsBody({
             value={event.sourceClientName || event.sourceClientId}
           />
         )}
-        <DetailRow label={t.settings.audit.details.when} value={absoluteTime(event.createdAt)} />
+        <DetailRow label={t.settings.audit.details.when} value={absoluteTime(event.createdAt, locale)} />
         <DetailRow label={t.settings.audit.ip} value={event.ipAddress || "—"} copyable={!!event.ipAddress} mono />
         {(event.resourceType || event.resourceId) && (
-          <DetailRow label={t.settings.audit.resource} value={resource || "—"} />
+          <DetailRow label={t.settings.audit.resource} value={resource.label || "—"} />
         )}
       </section>
 
@@ -454,7 +458,7 @@ function FeedSkeleton() {
 /* ──────────────────────────────────────────────────────────────────── */
 
 export function AuditLog() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { showToast } = useToast();
   const { showModal, hideModal } = useModal();
   const router = useRouter();
@@ -824,7 +828,7 @@ export function AuditLog() {
           ? t.settings.audit.day.today
           : key === yesterdayKey
             ? t.settings.audit.day.yesterday
-            : new Date(row.createdAt).toLocaleDateString(undefined, {
+            : new Date(row.createdAt).toLocaleDateString(locale || undefined, {
                 weekday: "short",
                 month: "short",
                 day: "numeric",
@@ -959,6 +963,8 @@ export function AuditLog() {
               <div className="divide-y divide-border/40">
                 {day.rows.map((e) => {
                   const info = describeAuditEvent(e.eventType);
+                  const eventLoc = (t.settings.audit as any)?.events?.[e.eventType];
+                  const action = eventLoc?.action || info.action;
                   const tone = info.tone ?? "neutral";
                   const actor = actorDisplay(e, {
                     system: t.settings.audit.system,
@@ -980,11 +986,11 @@ export function AuditLog() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-foreground">
-                          <span className="font-medium">{actor}</span> {info.action}
-                          {resource && <span className="font-medium"> {resource}</span>}
+                          <span className="font-medium">{actor}</span> {action}
+                          {resource.isSpecific && <span className="font-medium"> {resource.label}</span>}
                         </p>
                         <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                          <span>{clockTime(e.createdAt)}</span>
+                          <span>{clockTime(e.createdAt, locale)}</span>
                           {e.source === "mcp" && (
                             // The client's own name when we have it: at a glance
                             // "Claude Desktop" tells the reader which of their
@@ -1006,9 +1012,9 @@ export function AuditLog() {
                       </div>
                       <time
                         className="shrink-0 text-xs text-muted-foreground"
-                        title={absoluteTime(e.createdAt)}
+                        title={absoluteTime(e.createdAt, locale)}
                       >
-                        {relativeTime(e.createdAt)}
+                        {relativeTime(e.createdAt, t)}
                       </time>
                     </button>
                   );

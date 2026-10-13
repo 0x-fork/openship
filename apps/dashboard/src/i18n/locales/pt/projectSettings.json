@@ -1143,6 +1143,12 @@
       "submit": "Instalar certificado",
       "submitting": "Instalando...",
       "close": "Cancelar"
+    },
+    "removeRoute": {
+      "title": "Remover rota",
+      "description": "O aplicativo continuará funcionando — apenas esta rota e seu registro no edge são removidos. Você pode adicioná-la novamente a qualquer momento.",
+      "confirm": "Remover rota",
+      "removing": "Removendo…"
     }
   },
   "serviceEnvironment": {

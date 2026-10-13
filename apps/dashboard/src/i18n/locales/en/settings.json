@@ -726,6 +726,12 @@
       "invitationDescription": "Connect to {instance}, then review the workspace and role before joining.",
       "reviewInvitation": "Review invitation",
       "invitationHint": "Your local instance pauses while connected. Nothing is moved."
+    },
+    "recovery": {
+      "title": "Your Openship instance",
+      "subtitle": "Finish the move or reconnect to continue managing your projects.",
+      "checkConnection": "Check connection",
+      "signInRemote": "Sign in to remote instance"
     }
   },
   "upgradeAuth": {
@@ -1044,6 +1050,84 @@
       "security": "Security",
       "billing": "Billing",
       "system": "System"
+    },
+    "events": {
+      "server:write": {
+        "action": "changed the server",
+        "label": "Server changed"
+      },
+      "server:admin": {
+        "action": "ran an admin action on the server",
+        "label": "Server admin action"
+      },
+      "server:add": {
+        "action": "added the server",
+        "label": "Server added"
+      },
+      "server:remove": {
+        "action": "removed the server",
+        "label": "Server removed"
+      },
+      "settings:write": {
+        "action": "changed settings",
+        "label": "Settings changed"
+      },
+      "settings:admin": {
+        "action": "ran an admin action on settings",
+        "label": "Settings admin action"
+      },
+      "project:create": {
+        "action": "created",
+        "label": "Project created"
+      },
+      "project:write": {
+        "action": "changed",
+        "label": "Project changed"
+      },
+      "project:delete": {
+        "action": "deleted",
+        "label": "Project deleted"
+      },
+      "deployment:start": {
+        "action": "started a deploy for",
+        "label": "Deploy started"
+      },
+      "deployment:success": {
+        "action": "deployed",
+        "label": "Deploy succeeded"
+      },
+      "deployment:failed": {
+        "action": "failed to deploy",
+        "label": "Deploy failed"
+      },
+      "deployment:cancelled": {
+        "action": "cancelled the deploy of",
+        "label": "Deploy cancelled"
+      },
+      "domain:add": {
+        "action": "added the domain",
+        "label": "Domain added"
+      },
+      "domain:remove": {
+        "action": "removed the domain",
+        "label": "Domain removed"
+      },
+      "domain:verify": {
+        "action": "verified the domain",
+        "label": "Domain verified"
+      },
+      "member:add": {
+        "action": "added",
+        "label": "Member added"
+      },
+      "member:remove": {
+        "action": "removed",
+        "label": "Member removed"
+      },
+      "terminal:write": {
+        "action": "opened a terminal on",
+        "label": "Terminal session opened"
+      }
     }
   },
   "updates": {
@@ -1380,6 +1464,35 @@
       "deleteFailed": "Could not delete the credential",
       "verifyOk": "The provider accepted this credential",
       "verifyFailed": "The provider rejected this credential"
+    },
+    "providers": {
+      "docker-registry": {
+        "label": "Container registry",
+        "summary": "Pull private images from a registry during deploys.",
+        "selector": {
+          "label": "Registry host",
+          "help": "The host as it appears in your image reference — ghcr.io, registry.example.com:5000, or docker.io for Docker Hub."
+        },
+        "fields": {
+          "username": {
+            "label": "Username"
+          },
+          "secret": {
+            "label": "Password or access token",
+            "help": "Prefer a token scoped to read-only registry access over an account password."
+          }
+        }
+      },
+      "cloudflare": {
+        "label": "Cloudflare",
+        "summary": "Let Openship write the DNS records a custom domain needs, instead of printing them to paste.",
+        "fields": {
+          "apiToken": {
+            "label": "API token",
+            "help": "A token with Zone:Read and DNS:Edit on the zones you want Openship to manage."
+          }
+        }
+      }
     }
   },
   "accountSecurity": {
