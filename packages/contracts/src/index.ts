@@ -100,3 +100,5 @@ export * from "./mail";
 export * from "./cloud-analytics";
 export * from "./terminal";
 export * from "./instance";
+
+export * from "./action-routes";

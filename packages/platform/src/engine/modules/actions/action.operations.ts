@@ -35,6 +35,7 @@ import {
 import { readActionRepositorySource, updateActionRepositorySource } from "./repository-source";
 import { refreshActionRunAdmission } from "./run-access";
 import { authorization } from "../../lib/authorization";
+import { withCloudActions } from "./cloud-operations";
 import { actionRepositoryChecks } from "./repository-checks";
 
 function record(ctx: ExecutionContext, id: string, operation: string) {
@@ -82,7 +83,7 @@ async function presentWorkflow(
   return { ...actionWorkflowView(row), projectIds: await visibleWorkflowProjectIds(ctx, row.id) };
 }
 
-export const actionDependencies: ActionDependencies = {
+export const actionDependencies: ActionDependencies = withCloudActions({
   collection: {
     updateDeploymentRequest: async (ctx, input) => {
       const result = await (
@@ -279,4 +280,4 @@ export const actionDependencies: ActionDependencies = {
       };
     },
   },
-};
+});
