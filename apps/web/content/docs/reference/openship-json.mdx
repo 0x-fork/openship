@@ -211,6 +211,10 @@ Warming runs before the server through `&&`. A failing `php artisan optimize`
 short-circuits the chain, so the web role never boots. Opt in only when the
 command succeeds reliably in your runtime environment.
 
+`optimize: true` always prepends `php artisan optimize && `. Do not also put
+`php artisan optimize` in a custom `startCommand`, or it runs twice. The repeat
+is harmless but wasteful.
+
 ### Override the web command directly
 
 You can warm the web role without the flag. Override `startCommand` and keep the
@@ -223,6 +227,15 @@ You can warm the web role without the flag. Override `startCommand` and keep the
   "startCommand": "php artisan optimize && SERVER_NAME=\":$PORT\" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile"
 }
 ```
+
+<Callout title="Monorepo caveat" type="warn">
+Neither the `optimize` prefix nor a manual `startCommand` override is applied to
+a Laravel sub-app selected inside a JavaScript-workspace monorepo — a repo root
+that declares a `pnpm`, `npm`, `yarn`, or Bun workspace. In that layout the
+sub-app's web command is re-derived from the bare preset. This is pre-existing
+behavior and not specific to `optimize`. Standalone Laravel repos, and Laravel
+repos without a JavaScript workspace at the root, are unaffected.
+</Callout>
 
 ### Warm a worker or scheduler
 
