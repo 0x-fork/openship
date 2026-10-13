@@ -790,6 +790,119 @@
       "ready": "{total} 个渠道中有 {count} 个就绪",
       "preferences": "提醒偏好",
       "retry": "重试"
+    },
+    "groups": {
+      "deployment": "部署",
+      "app_health": "应用健康",
+      "backups": "备份",
+      "jobs": "任务",
+      "actions": "操作",
+      "domains": "域名与 SSL",
+      "members": "成员",
+      "mail": "邮件",
+      "billing": "账单"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "部署失败",
+        "description": "构建或部署出错。我们发送错误消息和失败日志片段。"
+      },
+      "deploy.succeeded": {
+        "label": "部署成功",
+        "description": "每次成功的生产部署。默认关闭。"
+      },
+      "deploy.cancelled": {
+        "label": "部署已取消",
+        "description": "正在进行的部署被您或其他成员取消。"
+      },
+      "service.down": {
+        "label": "应用停止运行",
+        "description": "应运行的容器已退出或因内存不足 (OOM) 终止。不针对手动停止的服务发送。"
+      },
+      "service.crash_loop": {
+        "label": "应用崩溃循环",
+        "description": "容器不断重启 (crash loop)。"
+      },
+      "service.unhealthy": {
+        "label": "应用状态异常",
+        "description": "容器正在运行，但其健康检查失败。"
+      },
+      "service.recovered": {
+        "label": "应用已恢复",
+        "description": "故障结束，容器已恢复健康。"
+      },
+      "server.unreachable": {
+        "label": "服务器不可达",
+        "description": "无法连接到服务器的 Docker 守护程序。"
+      },
+      "backup.failed": {
+        "label": "备份失败",
+        "description": "计划或手动备份执行出错。"
+      },
+      "backup.succeeded": {
+        "label": "备份成功",
+        "description": "每次成功的备份。"
+      },
+      "backup.restore_completed": {
+        "label": "恢复已完成",
+        "description": "恢复已完成（或失败）。"
+      },
+      "job.run.failed": {
+        "label": "任务执行失败",
+        "description": "计划或手动任务执行出错。"
+      },
+      "job.run.succeeded": {
+        "label": "任务执行成功",
+        "description": "每次任务成功运行。"
+      },
+      "job.run.started": {
+        "label": "任务已开始",
+        "description": "任务开始运行。"
+      },
+      "action.run.failed": {
+        "label": "操作失败",
+        "description": "GitHub Actions 工作流运行出错或被取消。"
+      },
+      "action.run.succeeded": {
+        "label": "操作成功",
+        "description": "每次成功的 GitHub Actions 工作流运行。"
+      },
+      "domain.ssl_expiring": {
+        "label": "SSL 证书即将过期",
+        "description": "域名证书无法续订且即将到期。"
+      },
+      "member.invited": {
+        "label": "已邀请成员",
+        "description": "已邀请新成员加入您的组织。"
+      },
+      "member.joined": {
+        "label": "成员已加入",
+        "description": "成员接受了邀请并加入了组织。"
+      },
+      "member.removed": {
+        "label": "成员已移除",
+        "description": "成员离开了组织或被移除。"
+      },
+      "mail.dns_unverified": {
+        "label": "邮件域名未验证",
+        "description": "邮件域名缺少 DNS 记录或记录有误。"
+      },
+      "mail.queue_backed_up": {
+        "label": "邮件队列积压",
+        "description": "外发邮件发送队列异常高或正在重试。"
+      },
+      "billing.quota_warning": {
+        "label": "配额警告",
+        "description": "接近资源使用上限或支出上限。"
+      },
+      "billing.invoice_paid": {
+        "label": "发票已支付",
+        "description": "订阅账单已成功支付。"
+      },
+      "billing.payment_failed": {
+        "label": "支付失败",
+        "description": "订阅付款失败，需要处理。"
+      }
     }
   },
   "audit": {
@@ -860,6 +973,17 @@
       "technical": "技术详情",
       "eventType": "事件类型",
       "viaAgent": "Agent"
+    },
+    "categories": {
+      "deployments": "部署",
+      "apps": "应用与服务",
+      "domains": "域名与 SSL",
+      "servers": "服务器",
+      "members": "成员与权限",
+      "agent": "AI 代理",
+      "security": "安全",
+      "billing": "账单",
+      "system": "系统"
     }
   },
   "updates": {
@@ -1322,6 +1446,7 @@
     "confirmTitle": "停止为 {hostname} 提供服务？",
     "confirmBody": "这仅会移除该主机名的边缘配置。构建的文件仍保留在磁盘上，服务器上的其他内容不受影响。如果稍后有项目部署到该主机名，它将创建自己的路由。",
     "confirmCta": "停止服务",
-    "cancel": "取消"
+    "cancel": "取消",
+    "noReverseProxy": "在此机器上未检测到反向代理。"
   }
 }

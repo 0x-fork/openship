@@ -790,6 +790,119 @@
       "ready": "{count} von {total} Kanälen bereit",
       "preferences": "Benachrichtigungseinstellungen",
       "retry": "Erneut versuchen"
+    },
+    "groups": {
+      "deployment": "Deployment",
+      "app_health": "App-Status",
+      "backups": "Backups",
+      "jobs": "Jobs",
+      "actions": "Aktionen",
+      "domains": "Domains und SSL",
+      "members": "Mitglieder",
+      "mail": "Mail",
+      "billing": "Abrechnung"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "Deployment fehlgeschlagen",
+        "description": "Ein Build oder Deployment ist fehlgeschlagen. Wir senden die Fehlermeldung und einen Auszug aus den Protokollen."
+      },
+      "deploy.succeeded": {
+        "label": "Deployment erfolgreich",
+        "description": "Jedes erfolgreiche Produktions-Deployment. Standardmäßig deaktiviert."
+      },
+      "deploy.cancelled": {
+        "label": "Deployment abgebrochen",
+        "description": "Ein laufendes Deployment wurde von Ihnen oder einem anderen Mitglied abgebrochen."
+      },
+      "service.down": {
+        "label": "App ausgefallen",
+        "description": "Ein Container, der laufen sollte, wurde beendet oder durch OOM gestoppt."
+      },
+      "service.crash_loop": {
+        "label": "App in Crash-Schleife",
+        "description": "Ein Container startet fortlaufend neu (Crash Loop)."
+      },
+      "service.unhealthy": {
+        "label": "App fehlerhaft",
+        "description": "Ein Container läuft, aber seine eigene Zustandsprüfung schlägt fehl."
+      },
+      "service.recovered": {
+        "label": "App wiederhergestellt",
+        "description": "Ein Ausfall wurde beendet und der Container ist wieder funktionsfähig."
+      },
+      "server.unreachable": {
+        "label": "Server nicht erreichbar",
+        "description": "Der Docker-Daemon des Servers kann nicht erreicht werden."
+      },
+      "backup.failed": {
+        "label": "Backup fehlgeschlagen",
+        "description": "Ein geplantes oder manuelles Backup ist fehlgeschlagen."
+      },
+      "backup.succeeded": {
+        "label": "Backup erfolgreich",
+        "description": "Jedes erfolgreich durchgeführte Backup."
+      },
+      "backup.restore_completed": {
+        "label": "Wiederherstellung abgeschlossen",
+        "description": "Eine Wiederherstellung wurde abgeschlossen (oder ist fehlgeschlagen)."
+      },
+      "job.run.failed": {
+        "label": "Job fehlgeschlagen",
+        "description": "Ein geplanter oder manueller Job-Lauf ist fehlgeschlagen."
+      },
+      "job.run.succeeded": {
+        "label": "Job erfolgreich",
+        "description": "Jeder erfolgreiche Job-Lauf."
+      },
+      "job.run.started": {
+        "label": "Job gestartet",
+        "description": "Ein Job hat mit der Ausführung begonnen."
+      },
+      "action.run.failed": {
+        "label": "Aktion fehlgeschlagen",
+        "description": "Ein GitHub Actions Workflow ist fehlgeschlagen oder wurde abgebrochen."
+      },
+      "action.run.succeeded": {
+        "label": "Aktion erfolgreich",
+        "description": "Jeder erfolgreiche Durchlauf eines GitHub Actions Workflows."
+      },
+      "domain.ssl_expiring": {
+        "label": "SSL-Zertifikat läuft ab",
+        "description": "Das Zertifikat einer Domain konnte nicht erneuert werden und läuft bald ab."
+      },
+      "member.invited": {
+        "label": "Mitglied eingeladen",
+        "description": "Ein neues Mitglied wurde zu Ihrer Organisation eingeladen."
+      },
+      "member.joined": {
+        "label": "Mitglied beigetreten",
+        "description": "Ein Mitglied hat die Einladung angenommen und ist beigetreten."
+      },
+      "member.removed": {
+        "label": "Mitglied entfernt",
+        "description": "Ein Mitglied hat die Organisation verlassen oder wurde entfernt."
+      },
+      "mail.dns_unverified": {
+        "label": "Mail-Domain nicht verifiziert",
+        "description": "DNS-Einträge der Mail-Domain fehlen oder sind fehlerhaft (SPF, DKIM, MX)."
+      },
+      "mail.queue_backed_up": {
+        "label": "Mail-Warteschlange überlastet",
+        "description": "Die Warteschlange ausgehender E-Mails ist ungewöhnlich voll."
+      },
+      "billing.quota_warning": {
+        "label": "Kontingent-Warnung",
+        "description": "Ressourcengrenzen oder Ausgabenlimits werden bald erreicht."
+      },
+      "billing.invoice_paid": {
+        "label": "Rechnung bezahlt",
+        "description": "Eine Abonnement-Rechnung wurde erfolgreich bezahlt."
+      },
+      "billing.payment_failed": {
+        "label": "Zahlung fehlgeschlagen",
+        "description": "Eine Abonnement-Zahlung ist fehlgeschlagen."
+      }
     }
   },
   "audit": {
@@ -860,6 +973,17 @@
       "technical": "Technische Details",
       "eventType": "Ereignistyp",
       "viaAgent": "Agent"
+    },
+    "categories": {
+      "deployments": "Deployments",
+      "apps": "Apps & Dienste",
+      "domains": "Domains und SSL",
+      "servers": "Server",
+      "members": "Mitglieder & Zugriff",
+      "agent": "KI-Agenten",
+      "security": "Sicherheit",
+      "billing": "Abrechnung",
+      "system": "System"
     }
   },
   "updates": {
@@ -1322,6 +1446,7 @@
     "confirmTitle": "Bereitstellung für {hostname} stoppen?",
     "confirmBody": "Dies entfernt die Edge-Konfiguration nur für diesen Hostnamen. Erstellte Dateien bleiben auf der Festplatte und alles andere auf dem Server bleibt unberührt. Wenn später ein Projekt auf diesen Hostnamen bereitgestellt wird, erstellt es eine eigene Route.",
     "confirmCta": "Bereitstellung stoppen",
-    "cancel": "Abbrechen"
+    "cancel": "Abbrechen",
+    "noReverseProxy": "Auf dieser Maschine wurde kein Reverse-Proxy erkannt."
   }
 }

@@ -790,6 +790,119 @@
       "ready": "{count} de {total} canales listos",
       "preferences": "Preferencias de alertas",
       "retry": "Reintentar"
+    },
+    "groups": {
+      "deployment": "Despliegue",
+      "app_health": "Estado de la aplicación",
+      "backups": "Copias de seguridad",
+      "jobs": "Tareas",
+      "actions": "Acciones",
+      "domains": "Dominios y SSL",
+      "members": "Miembros",
+      "mail": "Correo",
+      "billing": "Facturación"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "Despliegue fallido",
+        "description": "Una compilación o despliegue tuvo errores. Enviamos el mensaje de error y un fragmento de los registros."
+      },
+      "deploy.succeeded": {
+        "label": "Despliegue exitoso",
+        "description": "Cada despliegue a producción exitoso. Desactivado por defecto."
+      },
+      "deploy.cancelled": {
+        "label": "Despliegue cancelado",
+        "description": "Un despliegue en curso fue cancelado por usted o por otro miembro."
+      },
+      "service.down": {
+        "label": "Aplicación caída",
+        "description": "Un contenedor que debería estar funcionando se ha detenido o ha finalizado por falta de memoria (OOM)."
+      },
+      "service.crash_loop": {
+        "label": "Bucle de reinicio de la aplicación",
+        "description": "Un contenedor no deja de reiniciarse continuamente."
+      },
+      "service.unhealthy": {
+        "label": "Aplicación no saludable",
+        "description": "Un contenedor está activo pero su comprobación de estado falla."
+      },
+      "service.recovered": {
+        "label": "Aplicación recuperada",
+        "description": "La interrupción finalizó y el contenedor vuelve a estar en buen estado."
+      },
+      "server.unreachable": {
+        "label": "Servidor inaccesible",
+        "description": "No se puede contactar con el daemon de Docker del servidor."
+      },
+      "backup.failed": {
+        "label": "Copia de seguridad fallida",
+        "description": "Una copia de seguridad programada o manual tuvo un error."
+      },
+      "backup.succeeded": {
+        "label": "Copia de seguridad correcta",
+        "description": "Cada copia de seguridad completada con éxito."
+      },
+      "backup.restore_completed": {
+        "label": "Restauración completada",
+        "description": "Una restauración finalizó (o falló)."
+      },
+      "job.run.failed": {
+        "label": "Tarea fallida",
+        "description": "La ejecución de una tarea programada o manual tuvo un error."
+      },
+      "job.run.succeeded": {
+        "label": "Tarea exitosa",
+        "description": "Cada ejecución exitosa de una tarea."
+      },
+      "job.run.started": {
+        "label": "Tarea iniciada",
+        "description": "Una tarea comenzó a ejecutarse."
+      },
+      "action.run.failed": {
+        "label": "Acción fallida",
+        "description": "Un flujo de trabajo de GitHub Actions tuvo errores o fue cancelado."
+      },
+      "action.run.succeeded": {
+        "label": "Acción exitosa",
+        "description": "Cada ejecución exitosa de GitHub Actions."
+      },
+      "domain.ssl_expiring": {
+        "label": "Certificado SSL a punto de caducar",
+        "description": "No se pudo renovar el certificado del dominio y está próximo a caducar."
+      },
+      "member.invited": {
+        "label": "Miembro invitado",
+        "description": "Se invitó a un nuevo miembro a su organización."
+      },
+      "member.joined": {
+        "label": "Miembro unido",
+        "description": "Un miembro aceptó la invitación y se unió."
+      },
+      "member.removed": {
+        "label": "Miembro eliminado",
+        "description": "Un miembro abandonó la organización o fue eliminado."
+      },
+      "mail.dns_unverified": {
+        "label": "Dominio de correo no verificado",
+        "description": "El dominio de correo tiene registros DNS faltantes o incorrectos."
+      },
+      "mail.queue_backed_up": {
+        "label": "Cola de correo congestionada",
+        "description": "La cola de entrega de correo saliente está inusualmente llena."
+      },
+      "billing.quota_warning": {
+        "label": "Advertencia de cuota",
+        "description": "Acercándose a los límites de recursos o tope de gasto."
+      },
+      "billing.invoice_paid": {
+        "label": "Factura pagada",
+        "description": "Una factura de suscripción fue pagada con éxito."
+      },
+      "billing.payment_failed": {
+        "label": "Pago fallido",
+        "description": "Un pago de suscripción falló y requiere atención."
+      }
     }
   },
   "audit": {
@@ -860,6 +973,17 @@
       "technical": "Detalles técnicos",
       "eventType": "Tipo de evento",
       "viaAgent": "Agente"
+    },
+    "categories": {
+      "deployments": "Despliegues",
+      "apps": "Aplicaciones y servicios",
+      "domains": "Dominios y SSL",
+      "servers": "Servidores",
+      "members": "Miembros y acceso",
+      "agent": "Agentes de IA",
+      "security": "Seguridad",
+      "billing": "Facturación",
+      "system": "Sistema"
     }
   },
   "updates": {
@@ -1322,6 +1446,7 @@
     "confirmTitle": "¿Dejar de servir {hostname}?",
     "confirmBody": "Esto elimina la configuración edge únicamente para este hostname. Los archivos compilados permanecen en disco y no se modifica nada más en el servidor. Si más adelante se despliega un proyecto en este hostname, creará su propia ruta.",
     "confirmCta": "Dejar de servir",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "noReverseProxy": "No se detectó ningún proxy inverso en esta máquina."
   }
 }

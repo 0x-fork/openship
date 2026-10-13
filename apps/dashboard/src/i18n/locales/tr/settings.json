@@ -829,6 +829,119 @@
       "ready": "{total} kanaldan {count} tanesi hazır",
       "preferences": "Uyarı tercihleri",
       "retry": "Yeniden dene"
+    },
+    "groups": {
+      "deployment": "Dağıtım",
+      "app_health": "Uygulama sağlığı",
+      "backups": "Yedekler",
+      "jobs": "Görevler",
+      "actions": "Eylemler",
+      "domains": "Alan Adları ve SSL",
+      "members": "Üyeler",
+      "mail": "E-posta",
+      "billing": "Faturalandırma"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "Dağıtım başarısız",
+        "description": "Bir derleme veya dağıtım hatayla sonuçlandı. Hata mesajını ve günlükleri gönderiyoruz."
+      },
+      "deploy.succeeded": {
+        "label": "Dağıtım başarılı",
+        "description": "Her başarılı üretim dağıtımı. Varsayılan olarak kapalıdır."
+      },
+      "deploy.cancelled": {
+        "label": "Dağıtım iptal edildi",
+        "description": "Süren bir dağıtım siz veya başka bir üye tarafından iptal edildi."
+      },
+      "service.down": {
+        "label": "Uygulama çöktü",
+        "description": "Çalışması gereken bir konteyner durdu veya bellek yetersizliği nedeniyle sonlandırıldı."
+      },
+      "service.crash_loop": {
+        "label": "Uygulama çökme döngüsünde",
+        "description": "Bir konteyner sürekli yeniden başlatılıyor."
+      },
+      "service.unhealthy": {
+        "label": "Uygulama sağlıksız",
+        "description": "Bir konteyner çalışıyor ancak sağlık kontrolü başarısız oluyor."
+      },
+      "service.recovered": {
+        "label": "Uygulama kurtarıldı",
+        "description": "Kesinti sona erdi ve konteyner tekrar sağlıklı."
+      },
+      "server.unreachable": {
+        "label": "Sunucu erişilemez",
+        "description": "Sunucunun Docker daemon servisine ulaşılamıyor."
+      },
+      "backup.failed": {
+        "label": "Yedekleme başarısız",
+        "description": "Zamanlanmış veya manuel bir yedekleme hatayla sonuçlandı."
+      },
+      "backup.succeeded": {
+        "label": "Yedekleme başarılı",
+        "description": "Her başarılı yedekleme."
+      },
+      "backup.restore_completed": {
+        "label": "Geri yükleme tamamlandı",
+        "description": "Bir geri yükleme tamamlandı (veya başarısız oldu)."
+      },
+      "job.run.failed": {
+        "label": "Görev başarısız",
+        "description": "Zamanlanmış veya manuel bir görev çalıştırması hatayla sonuçlandı."
+      },
+      "job.run.succeeded": {
+        "label": "Görev başarılı",
+        "description": "Her başarılı görev çalıştırması."
+      },
+      "job.run.started": {
+        "label": "Görev başladı",
+        "description": "Bir görev çalışmaya başladı."
+      },
+      "action.run.failed": {
+        "label": "Eylem başarısız",
+        "description": "GitHub Actions iş akışı hatayla sonuçlandı veya iptal edildi."
+      },
+      "action.run.succeeded": {
+        "label": "Eylem başarılı",
+        "description": "Her başarılı GitHub Actions iş akışı çalıştırması."
+      },
+      "domain.ssl_expiring": {
+        "label": "SSL sertifikasının süresi doluyor",
+        "description": "Bir alan adının sertifikası yenilenemedi ve süresi dolmak üzere."
+      },
+      "member.invited": {
+        "label": "Üye davet edildi",
+        "description": "Kuruluşunuza yeni bir üye davet edildi."
+      },
+      "member.joined": {
+        "label": "Üye katıldı",
+        "description": "Bir üye daveti kabul etti ve katıldı."
+      },
+      "member.removed": {
+        "label": "Üye çıkarıldı",
+        "description": "Bir üye kuruluştan ayrıldı veya çıkarıldı."
+      },
+      "mail.dns_unverified": {
+        "label": "Posta alan adı doğrulanmadı",
+        "description": "Posta alan adının eksik veya hatalı DNS kayıtları var."
+      },
+      "mail.queue_backed_up": {
+        "label": "Posta kuyruğu birikti",
+        "description": "Giden posta kuyruğu anormal şekilde yüksek."
+      },
+      "billing.quota_warning": {
+        "label": "Kota uyarısı",
+        "description": "Kaynak kullanım sınırlarına veya harcama limitine yaklaşılıyor."
+      },
+      "billing.invoice_paid": {
+        "label": "Fatura ödendi",
+        "description": "Bir abonelik faturası başarıyla ödendi."
+      },
+      "billing.payment_failed": {
+        "label": "Ödeme başarısız",
+        "description": "Bir abonelik ödemesi başarısız oldu."
+      }
     }
   },
   "audit": {
@@ -899,6 +1012,17 @@
       "technical": "Teknik detaylar",
       "eventType": "Olay türü",
       "viaAgent": "Aracı"
+    },
+    "categories": {
+      "deployments": "Dağıtımlar",
+      "apps": "Uygulamalar ve hizmetler",
+      "domains": "Alan Adları ve SSL",
+      "servers": "Sunucular",
+      "members": "Üyeler ve erişim",
+      "agent": "Yapay Zeka Ajanları",
+      "security": "Güvenlik",
+      "billing": "Faturalandırma",
+      "system": "Sistem"
     }
   },
   "updates": {
@@ -1322,6 +1446,7 @@
     "confirmTitle": "{hostname} sunumu durdurulsun mu?",
     "confirmBody": "Bu işlem yalnızca bu ana makine adı için edge yapılandırmasını kaldırır. Derlenen dosyalar diskte kalır ve sunucudaki başka hiçbir şeye dokunulmaz. Daha sonra bu ana makine adına bir proje dağıtılırsa kendi rotasını oluşturacaktır.",
     "confirmCta": "Sunmayı durdur",
-    "cancel": "İptal"
+    "cancel": "İptal",
+    "noReverseProxy": "Bu makinede ters proxy algılanmadı."
   }
 }

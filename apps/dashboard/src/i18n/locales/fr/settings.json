@@ -790,6 +790,119 @@
       "ready": "{count} canaux prêts sur {total}",
       "preferences": "Préférences des alertes",
       "retry": "Réessayer"
+    },
+    "groups": {
+      "deployment": "Déploiement",
+      "app_health": "Santé des applications",
+      "backups": "Sauvegardes",
+      "jobs": "Tâches",
+      "actions": "Actions",
+      "domains": "Domaines & SSL",
+      "members": "Membres",
+      "mail": "E-mail",
+      "billing": "Facturation"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "Déploiement échoué",
+        "description": "Une compilation ou un déploiement a échoué. Nous envoyons le message d'erreur et un extrait des journaux."
+      },
+      "deploy.succeeded": {
+        "label": "Déploiement réussi",
+        "description": "Chaque déploiement de production réussi. Désactivé par défaut."
+      },
+      "deploy.cancelled": {
+        "label": "Déploiement annulé",
+        "description": "Un déploiement en cours a été annulé par vous ou un autre membre."
+      },
+      "service.down": {
+        "label": "Application arrêtée",
+        "description": "Un conteneur qui devrait tourner est arrêté ou a été tué par manque de mémoire (OOM)."
+      },
+      "service.crash_loop": {
+        "label": "Boucle de plantage de l'application",
+        "description": "Un conteneur redémarre continuellement (crash loop)."
+      },
+      "service.unhealthy": {
+        "label": "Application défaillante",
+        "description": "Un conteneur est en cours d'exécution mais son bilan de santé échoue."
+      },
+      "service.recovered": {
+        "label": "Application rétablie",
+        "description": "L'incident est terminé et le conteneur est de nouveau sain."
+      },
+      "server.unreachable": {
+        "label": "Serveur inaccessible",
+        "description": "Impossible de joindre le démon Docker du serveur."
+      },
+      "backup.failed": {
+        "label": "Sauvegarde échouée",
+        "description": "Une sauvegarde planifiée ou manuelle a échoué."
+      },
+      "backup.succeeded": {
+        "label": "Sauvegarde réussie",
+        "description": "Chaque sauvegarde réussie."
+      },
+      "backup.restore_completed": {
+        "label": "Restauration terminée",
+        "description": "Une restauration s'est terminée (ou a échoué)."
+      },
+      "job.run.failed": {
+        "label": "Tâche échouée",
+        "description": "L'exécution d'une tâche planifiée ou manuelle a échoué."
+      },
+      "job.run.succeeded": {
+        "label": "Tâche réussie",
+        "description": "Chaque exécution de tâche réussie."
+      },
+      "job.run.started": {
+        "label": "Tâche démarrée",
+        "description": "Une tâche a commencé son exécution."
+      },
+      "action.run.failed": {
+        "label": "Action échouée",
+        "description": "L'exécution d'un flux GitHub Actions a échoué ou a été annulée."
+      },
+      "action.run.succeeded": {
+        "label": "Action réussie",
+        "description": "Chaque exécution réussie d'un flux GitHub Actions."
+      },
+      "domain.ssl_expiring": {
+        "label": "Certificat SSL expirant",
+        "description": "Le certificat du domaine n'a pas pu être renouvelé et approche de son expiration."
+      },
+      "member.invited": {
+        "label": "Membre invité",
+        "description": "Un nouveau membre a été invité dans votre organisation."
+      },
+      "member.joined": {
+        "label": "Membre rejoint",
+        "description": "Un membre a accepté son invitation et a rejoint l'organisation."
+      },
+      "member.removed": {
+        "label": "Membre supprimé",
+        "description": "Un membre a quitté l'organisation ou a été supprimé."
+      },
+      "mail.dns_unverified": {
+        "label": "Domaine de messagerie non vérifié",
+        "description": "Le domaine de messagerie a des enregistrements DNS manquants ou incorrects."
+      },
+      "mail.queue_backed_up": {
+        "label": "File d'attente d'e-mails saturée",
+        "description": "La file d'attente des e-mails sortants est anormalement élevée."
+      },
+      "billing.quota_warning": {
+        "label": "Avertissement de quota",
+        "description": "Approche des limites d'utilisation ou du plafond de dépenses."
+      },
+      "billing.invoice_paid": {
+        "label": "Facture payée",
+        "description": "Une facture d'abonnement a été payée avec succès."
+      },
+      "billing.payment_failed": {
+        "label": "Paiement échoué",
+        "description": "Un paiement d'abonnement a échoué et nécessite une attention."
+      }
     }
   },
   "audit": {
@@ -860,6 +973,17 @@
       "technical": "Détails techniques",
       "eventType": "Type d'événement",
       "viaAgent": "Agent"
+    },
+    "categories": {
+      "deployments": "Déploiements",
+      "apps": "Applications & services",
+      "domains": "Domaines & SSL",
+      "servers": "Serveurs",
+      "members": "Membres & accès",
+      "agent": "Agents IA",
+      "security": "Sécurité",
+      "billing": "Facturation",
+      "system": "Système"
     }
   },
   "updates": {
@@ -1322,6 +1446,7 @@
     "confirmTitle": "Cesser de servir {hostname} ?",
     "confirmBody": "Cela supprime la configuration du point d'entrée pour ce nom d'hôte uniquement. Les fichiers construits restent sur le disque et rien d'autre sur le serveur n'est modifié. Si un projet est déployé plus tard sur ce nom d'hôte, il créera sa propre route.",
     "confirmCta": "Cesser de servir",
-    "cancel": "Annuler"
+    "cancel": "Annuler",
+    "noReverseProxy": "Aucun proxy inverse détecté sur cette machine."
   }
 }

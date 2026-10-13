@@ -850,6 +850,119 @@
       "ready": "{count} of {total} channels ready",
       "preferences": "Alert preferences",
       "retry": "Retry"
+    },
+    "groups": {
+      "deployment": "Deployment",
+      "app_health": "App health",
+      "backups": "Backups",
+      "jobs": "Jobs",
+      "actions": "Actions",
+      "domains": "Domains & SSL",
+      "members": "Members",
+      "mail": "Mail",
+      "billing": "Billing"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "Deploy failed",
+        "description": "A build or deploy errored out. We send the error message + a snippet of the failing logs."
+      },
+      "deploy.succeeded": {
+        "label": "Deploy succeeded",
+        "description": "Every successful production deploy. Off by default — most teams find it noisy."
+      },
+      "deploy.cancelled": {
+        "label": "Deploy cancelled",
+        "description": "An in-flight deploy was cancelled by you or another member."
+      },
+      "service.down": {
+        "label": "App down",
+        "description": "A container that should be running isn't — exited, dead, or OOM-killed. Includes the exit code and its last log lines. Never fires for a service you stopped yourself."
+      },
+      "service.crash_loop": {
+        "label": "App crash looping",
+        "description": "A container keeps restarting. Point-in-time status always reads healthy for these, so this is the only way you'd know."
+      },
+      "service.unhealthy": {
+        "label": "App unhealthy",
+        "description": "A container is up but its own healthcheck is failing."
+      },
+      "service.recovered": {
+        "label": "App recovered",
+        "description": "An outage ended and the container is healthy again."
+      },
+      "server.unreachable": {
+        "label": "Server unreachable",
+        "description": "We can't reach a server's Docker daemon. One alert per server — never one per service on it."
+      },
+      "backup.failed": {
+        "label": "Backup failed",
+        "description": "A scheduled or manual backup run errored out. Includes the destination + policy that failed."
+      },
+      "backup.succeeded": {
+        "label": "Backup succeeded",
+        "description": "Each successful backup. Off by default — high volume."
+      },
+      "backup.restore_completed": {
+        "label": "Restore completed",
+        "description": "A restore finished (or failed). Always worth notifying on."
+      },
+      "job.run.failed": {
+        "label": "Job failed",
+        "description": "A scheduled or manual job run errored out. Includes the job + exit code."
+      },
+      "job.run.succeeded": {
+        "label": "Job succeeded",
+        "description": "Each successful job run. Off by default — can be high volume."
+      },
+      "job.run.started": {
+        "label": "Job started",
+        "description": "A job began running. Off by default — mostly useful per-job."
+      },
+      "action.run.failed": {
+        "label": "Action failed",
+        "description": "A GitHub Actions workflow run errored out or was cancelled."
+      },
+      "action.run.succeeded": {
+        "label": "Action succeeded",
+        "description": "Every successful GitHub Actions workflow run."
+      },
+      "domain.ssl_expiring": {
+        "label": "SSL certificate expiring",
+        "description": "A domain's certificate could not be renewed and is nearing expiry."
+      },
+      "member.invited": {
+        "label": "Member invited",
+        "description": "A new member was invited to your organization."
+      },
+      "member.joined": {
+        "label": "Member joined",
+        "description": "A member accepted their invite and joined."
+      },
+      "member.removed": {
+        "label": "Member removed",
+        "description": "A member left or was removed from the organization."
+      },
+      "mail.dns_unverified": {
+        "label": "Mail domain unverified",
+        "description": "A mail domain has missing or incorrect DNS records (SPF, DKIM, MX)."
+      },
+      "mail.queue_backed_up": {
+        "label": "Mail queue backed up",
+        "description": "Outbound mail delivery queue is unusually high or retrying."
+      },
+      "billing.quota_warning": {
+        "label": "Quota warning",
+        "description": "Approaching resource usage limits or spending caps."
+      },
+      "billing.invoice_paid": {
+        "label": "Invoice paid",
+        "description": "A subscription invoice was successfully paid."
+      },
+      "billing.payment_failed": {
+        "label": "Payment failed",
+        "description": "A subscription payment failed and needs attention."
+      }
     }
   },
   "audit": {
@@ -920,6 +1033,17 @@
       "viaAgent": "Agent",
       "technical": "Technical details",
       "eventType": "Event type"
+    },
+    "categories": {
+      "deployments": "Deployments",
+      "apps": "Apps & services",
+      "domains": "Domains & SSL",
+      "servers": "Servers",
+      "members": "Members & access",
+      "agent": "AI agents",
+      "security": "Security",
+      "billing": "Billing",
+      "system": "System"
     }
   },
   "updates": {
@@ -1225,7 +1349,8 @@
     "confirmTitle": "Stop serving {hostname}?",
     "confirmBody": "This removes the edge configuration for this hostname only. Built files stay on disk, and nothing else on the server is touched. If a project is later deployed to this hostname it will create its own route.",
     "confirmCta": "Stop serving",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "noReverseProxy": "No reverse proxy detected on this machine."
   },
   "credentials": {
     "title": "Credentials",

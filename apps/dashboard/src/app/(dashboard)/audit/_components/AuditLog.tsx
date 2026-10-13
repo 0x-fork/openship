@@ -713,7 +713,7 @@ export function AuditLog() {
       },
       ...AUDIT_CATEGORIES.map((cat) => ({
         key: cat.id as CategoryKey,
-        label: cat.label,
+        label: ((t.settings.audit as any)?.categories as Record<string, string>)?.[cat.id] ?? cat.label,
         icon: CATEGORY_ICONS[cat.id],
         count: counts.get(cat.id),
         href: hrefWith({ category: cat.id }),

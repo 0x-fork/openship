@@ -790,6 +790,119 @@
       "ready": "{count} من {total} قنوات جاهزة",
       "preferences": "تفضيلات التنبيهات",
       "retry": "إعادة المحاولة"
+    },
+    "groups": {
+      "deployment": "النشر",
+      "app_health": "صحة التطبيق",
+      "backups": "النسخ الاحتياطية",
+      "jobs": "المهام",
+      "actions": "الإجراءات",
+      "domains": "النطاقات وSSL",
+      "members": "الأعضاء",
+      "mail": "البريد",
+      "billing": "الفواتير"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "فشل النشر",
+        "description": "حدث خطأ أثناء البناء أو النشر. نرسل رسالة الخطأ ومقتطفاً من السجلات."
+      },
+      "deploy.succeeded": {
+        "label": "نجح النشر",
+        "description": "كل عملية نشر ناجحة للإنتاج. معطل افتراضياً."
+      },
+      "deploy.cancelled": {
+        "label": "تم إلغاء النشر",
+        "description": "تم إلغاء عملية نشر قيد التشغيل بواسطتك أو بواسطة عضو آخر."
+      },
+      "service.down": {
+        "label": "توقف التطبيق",
+        "description": "حاوية يجب أن تعمل توقفت أو تم إنهاؤها بسبب نفاد الذاكرة (OOM)."
+      },
+      "service.crash_loop": {
+        "label": "حلقة تعطل التطبيق",
+        "description": "الحاوية تستمر في إعادة التشغيل المتكرر."
+      },
+      "service.unhealthy": {
+        "label": "التطبيق غير سليم",
+        "description": "الحاوية تعمل ولكن فحص الصحة الخاص بها يفشل."
+      },
+      "service.recovered": {
+        "label": "تعافى التطبيق",
+        "description": "انتهى الانقطاع وأصبحت الحاوية سليمة مرة أخرى."
+      },
+      "server.unreachable": {
+        "label": "الخادم غير قابل للوصول",
+        "description": "تعذر الوصول إلى برنامج Docker على الخادم."
+      },
+      "backup.failed": {
+        "label": "فشل النسخ الاحتياطي",
+        "description": "حدث خطأ في تشغيل النسخ الاحتياطي المجدول أو اليدوي."
+      },
+      "backup.succeeded": {
+        "label": "نجح النسخ الاحتياطي",
+        "description": "كل عملية نسخ احتياطي ناجحة."
+      },
+      "backup.restore_completed": {
+        "label": "اكتملت الاستعادة",
+        "description": "انتهت عملية الاستعادة (أو فشلت)."
+      },
+      "job.run.failed": {
+        "label": "فشلت المهمة",
+        "description": "حدث خطأ في تشغيل مهمة مجدولة أو يدوية."
+      },
+      "job.run.succeeded": {
+        "label": "نجحت المهمة",
+        "description": "كل تشغيل ناجح للمهمة."
+      },
+      "job.run.started": {
+        "label": "بدأت المهمة",
+        "description": "بدأت المهمة في العمل."
+      },
+      "action.run.failed": {
+        "label": "فشل الإجراء",
+        "description": "حدث خطأ أثناء تشغيل سير عمل GitHub Actions أو تم إلغاؤه."
+      },
+      "action.run.succeeded": {
+        "label": "نجح الإجراء",
+        "description": "كل تشغيل ناجح لسير عمل GitHub Actions."
+      },
+      "domain.ssl_expiring": {
+        "label": "شهادة SSL توشك على الانتهاء",
+        "description": "تعذر تجديد شهادة النطاق وتوشك صلاحيتها على الانتهاء."
+      },
+      "member.invited": {
+        "label": "تمت دعوة عضو",
+        "description": "تمت دعوة عضو جديد إلى مؤسستك."
+      },
+      "member.joined": {
+        "label": "انضم عضو",
+        "description": "قبل عضو الدعوة وانضم إلى المؤسسة."
+      },
+      "member.removed": {
+        "label": "تمت إزالة عضو",
+        "description": "غادر عضو المؤسسة أو تمت إزالته."
+      },
+      "mail.dns_unverified": {
+        "label": "نطاق البريد غير موثق",
+        "description": "يحتوي نطاق البريد على سجلات DNS مفقودة أو غير صحيحة."
+      },
+      "mail.queue_backed_up": {
+        "label": "تراكم في قائمة انتظار البريد",
+        "description": "قائمة انتظار تسليم البريد الصادر مرتفعة بشكل غير معتاد."
+      },
+      "billing.quota_warning": {
+        "label": "تحذير الحصة",
+        "description": "الاقتراب من حدود استخدام الموارد أو حد الإنفاق."
+      },
+      "billing.invoice_paid": {
+        "label": "تم دفع الفاتورة",
+        "description": "تم دفع فاتورة الاشتراك بنجاح."
+      },
+      "billing.payment_failed": {
+        "label": "فشلت عملية الدفع",
+        "description": "فشلت عملية دفع الاشتراك وتحتاج إلى اهتمام."
+      }
     }
   },
   "audit": {
@@ -860,6 +973,17 @@
       "technical": "التفاصيل التقنية",
       "eventType": "نوع الحدث",
       "viaAgent": "وكيل"
+    },
+    "categories": {
+      "deployments": "عمليات النشر",
+      "apps": "التطبيقات والخدمات",
+      "domains": "النطاقات وSSL",
+      "servers": "الخوادم",
+      "members": "الأعضاء والوصول",
+      "agent": "وكلاء الذكاء الاصطناعي",
+      "security": "الأمان",
+      "billing": "الفواتير",
+      "system": "النظام"
     }
   },
   "updates": {
@@ -1322,6 +1446,7 @@
     "confirmTitle": "إيقاف خدمة {hostname}؟",
     "confirmBody": "يؤدي هذا إلى إزالة تكوين الـ edge لاسم المضيف هذا فقط. تظل الملفات المبنية على القرص، ولا يتم المساس بأي شيء آخر على الخادم. إذا تم نشر مشروع لاحقاً على اسم المضيف هذا، فسيقوم بإنشاء مساره الخاص.",
     "confirmCta": "إيقاف الخدمة",
-    "cancel": "إلغاء"
+    "cancel": "إلغاء",
+    "noReverseProxy": "لم يتم اكتشاف وكيل عكسي على هذا الجهاز."
   }
 }

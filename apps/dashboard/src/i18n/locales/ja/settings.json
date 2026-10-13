@@ -790,6 +790,119 @@
       "ready": "{total} チャネル中 {count} 件が利用可能",
       "preferences": "アラート設定",
       "retry": "再試行"
+    },
+    "groups": {
+      "deployment": "デプロイ",
+      "app_health": "アプリの健全性",
+      "backups": "バックアップ",
+      "jobs": "ジョブ",
+      "actions": "アクション",
+      "domains": "ドメインと SSL",
+      "members": "メンバー",
+      "mail": "メール",
+      "billing": "請求"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "デプロイ失敗",
+        "description": "ビルドまたはデプロイでエラーが発生しました。エラーメッセージとログを送信します。"
+      },
+      "deploy.succeeded": {
+        "label": "デプロイ成功",
+        "description": "本番環境へのデプロイが成功するたびに通知します。既定ではオフです。"
+      },
+      "deploy.cancelled": {
+        "label": "デプロイキャンセル",
+        "description": "実行中のデプロイがあなたまたは他のメンバーによってキャンセルされました。"
+      },
+      "service.down": {
+        "label": "アプリ停止",
+        "description": "実行中であるべきコンテナが停止またはメモリ不足 (OOM) で終了しました。"
+      },
+      "service.crash_loop": {
+        "label": "アプリクラッシュループ",
+        "description": "コンテナが再起動を繰り返しています。"
+      },
+      "service.unhealthy": {
+        "label": "アプリ異常",
+        "description": "コンテナは起動していますがヘルスチェックに失敗しています。"
+      },
+      "service.recovered": {
+        "label": "アプリ復旧",
+        "description": "障害が解消され、コンテナが再び健全な状態に戻りました。"
+      },
+      "server.unreachable": {
+        "label": "サーバー到達不能",
+        "description": "サーバーの Docker デーモンに接続できません。"
+      },
+      "backup.failed": {
+        "label": "バックアップ失敗",
+        "description": "定期または手動バックアップの実行でエラーが発生しました。"
+      },
+      "backup.succeeded": {
+        "label": "バックアップ成功",
+        "description": "各バックアップが成功したとき。"
+      },
+      "backup.restore_completed": {
+        "label": "復元完了",
+        "description": "復元が完了（または失敗）しました。"
+      },
+      "job.run.failed": {
+        "label": "ジョブ失敗",
+        "description": "定期または手動ジョブの実行でエラーが発生しました。"
+      },
+      "job.run.succeeded": {
+        "label": "ジョブ成功",
+        "description": "各ジョブの実行が成功したとき。"
+      },
+      "job.run.started": {
+        "label": "ジョブ開始",
+        "description": "ジョブの実行が開始されました。"
+      },
+      "action.run.failed": {
+        "label": "アクション失敗",
+        "description": "GitHub Actions ワークフローの実行が失敗またはキャンセルされました。"
+      },
+      "action.run.succeeded": {
+        "label": "アクション成功",
+        "description": "GitHub Actions ワークフローの各実行が成功したとき。"
+      },
+      "domain.ssl_expiring": {
+        "label": "SSL 証明書の期限切れ間近",
+        "description": "ドメインの証明書を更新できず、有効期限が近づいています。"
+      },
+      "member.invited": {
+        "label": "メンバー招待",
+        "description": "組織に新しいメンバーが招待されました。"
+      },
+      "member.joined": {
+        "label": "メンバー参加",
+        "description": "メンバーが招待を承認して参加しました。"
+      },
+      "member.removed": {
+        "label": "メンバー削除",
+        "description": "メンバーが組織を退出したか削除されました。"
+      },
+      "mail.dns_unverified": {
+        "label": "メールの DNS 未確認",
+        "description": "メールドメインの DNS レコードが不足または正しくありません。"
+      },
+      "mail.queue_backed_up": {
+        "label": "メールキュー滞留",
+        "description": "送信メールキューが異常に増加しているか再試行しています。"
+      },
+      "billing.quota_warning": {
+        "label": "クォータ警告",
+        "description": "リソース制限または利用上限に近づいています。"
+      },
+      "billing.invoice_paid": {
+        "label": "請求書支払い完了",
+        "description": "サブスクリプションの請求書が正常に支払われました。"
+      },
+      "billing.payment_failed": {
+        "label": "支払い失敗",
+        "description": "サブスクリプションの支払いに失敗しました。"
+      }
     }
   },
   "audit": {
@@ -860,6 +973,17 @@
       "technical": "技術的な詳細",
       "eventType": "イベントタイプ",
       "viaAgent": "エージェント"
+    },
+    "categories": {
+      "deployments": "デプロイ",
+      "apps": "アプリとサービス",
+      "domains": "ドメインと SSL",
+      "servers": "サーバー",
+      "members": "メンバーとアクセス",
+      "agent": "AI エージェント",
+      "security": "セキュリティ",
+      "billing": "請求",
+      "system": "システム"
     }
   },
   "updates": {
@@ -1322,6 +1446,7 @@
     "confirmTitle": "{hostname} の配信を停止しますか？",
     "confirmBody": "これにより、このホスト名のエッジ設定のみが削除されます。ビルドされたファイルはディスク上に残り、サーバー上の他のものには影響しません。後でプロジェクトがこのホスト名にデプロイされた場合、独自のルートが作成されます。",
     "confirmCta": "配信を停止",
-    "cancel": "キャンセル"
+    "cancel": "キャンセル",
+    "noReverseProxy": "このマシンでリバースプロキシが検出されませんでした。"
   }
 }

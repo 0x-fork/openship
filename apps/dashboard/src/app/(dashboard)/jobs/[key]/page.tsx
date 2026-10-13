@@ -56,12 +56,12 @@ export default function JobDetailPage() {
     setBusy(true);
     try {
       const res = await jobsApi.run(job.key);
-      showToast(interpolate(j.toast.ran, { label: job.label }), "success", j.toast.title);
+      showToast(interpolate(j.toast.ran, { label: jobLabel }), "success", j.toast.title);
       if (res?.data?.runId) setLogRunId(res.data.runId);
       await load();
     } catch (err) {
       if (showCloudPricing(err)) return;
-      showToast(getApiErrorMessage(err, interpolate(j.toast.ranFailed, { label: job.label })), "error", j.toast.title);
+      showToast(getApiErrorMessage(err, interpolate(j.toast.ranFailed, { label: jobLabel })), "error", j.toast.title);
     } finally {
       setBusy(false);
     }
@@ -100,9 +100,14 @@ export default function JobDetailPage() {
     return <PageContainer><p className="py-20 text-center text-sm text-muted-foreground">{j.loadFailed}</p></PageContainer>;
   }
 
-  const jobLabel = !isCustom && j.systemJobLabels && (j.systemJobLabels as Record<string, string>)[job.key]
-    ? (j.systemJobLabels as Record<string, string>)[job.key]!
-    : job.label;
+  const jobLabel = (() => {
+    if (!isCustom && j.systemJobLabels) {
+      const labels = j.systemJobLabels as Record<string, string>;
+      if (labels[job.key]) return labels[job.key]!;
+      if (labels[job.label]) return labels[job.label]!;
+    }
+    return job.label;
+  })();
   const cfg = job.actionConfig ?? {};
   const scheduleText =
     job.scheduleType === "recurring" ? job.cronExpression ?? "—"

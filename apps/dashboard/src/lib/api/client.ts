@@ -286,11 +286,15 @@ export function setActiveOrganizationId(orgId: string | null) {
   _currentOrgId = orgId;
   if (changed) organizationListeners.forEach(listener => listener());
   if (typeof window !== "undefined") {
-    if (orgId) {
-      window.localStorage.setItem("openship.activeOrgId", orgId);
-    } else {
-      window.localStorage.removeItem("openship.activeOrgId");
-    }
+    try {
+      if (window.localStorage) {
+        if (orgId) {
+          window.localStorage.setItem("openship.activeOrgId", orgId);
+        } else {
+          window.localStorage.removeItem("openship.activeOrgId");
+        }
+      }
+    } catch {}
   }
 }
 

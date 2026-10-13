@@ -75,7 +75,7 @@ function ChannelMultiSelect({
   disabled?: boolean;
   onChange: (kinds: ChannelKind[]) => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -230,7 +230,7 @@ function ScopedNotificationSettings({
   section = "all",
 }: NotificationSettingsProps) {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const active = useActiveView();
   const generation = useRef(0);
   const [error, setError] = useState<string | null>(null);
@@ -387,7 +387,7 @@ function ChannelsCard({
   onChange: () => Promise<void>;
 }) {
   const { showToast } = useToast();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<NotificationChannel | undefined>();
   const [testing, setTesting] = useState<string | null>(null);
@@ -622,7 +622,7 @@ function EventNotificationsCard({
   onChange: () => Promise<void>;
 }) {
   const { showToast } = useToast();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const active = useActiveView();
   const [busyCat, setBusyCat] = useState<string | null>(null);
   const [tab, setTab] = useState<string>(ALL_TAB);
@@ -643,12 +643,12 @@ function EventNotificationsCard({
       },
       ...groups.map((g) => ({
         key: g.id,
-        label: g.label,
+        label: locale !== "en" ? ((t.settings.notifications as any)?.groups?.[g.id] ?? g.label) : g.label,
         count: byGroup.get(g.id) ?? 0,
         hidden: !byGroup.has(g.id),
       })),
     ];
-  }, [categories, groups, t]);
+  }, [categories, groups, t, locale]);
 
   /**
    * The rows, in the order they render, cut into sections.
@@ -671,7 +671,7 @@ function EventNotificationsCard({
     const out = groups
       .map((g) => ({
         id: g.id,
-        label: g.label as string | null,
+        label: (locale !== "en" ? ((t.settings.notifications as any)?.groups?.[g.id] ?? g.label) : g.label) as string | null,
         cats: categories.filter((cat) => cat.group === g.id),
       }))
       .filter((s) => s.cats.length > 0);
@@ -679,7 +679,7 @@ function EventNotificationsCard({
     const rest = categories.filter((cat) => !known.has(cat.group));
     if (rest.length > 0) out.push({ id: "__ungrouped__", label: null, cats: rest });
     return out;
-  }, [categories, groups, tab]);
+  }, [categories, groups, tab, t, locale]);
 
   const defIndex = useMemo(() => {
     const m = new Map<string, NotificationDefault>();
@@ -762,6 +762,9 @@ function EventNotificationsCard({
               <h3 className="text-sm font-medium text-foreground">{section.label}</h3>
             )}
             {section.cats.map((cat) => {
+              const catLoc = (t.settings.notifications as any)?.categories?.[cat.id];
+              const catLabel = locale !== "en" ? (catLoc?.label ?? cat.label) : cat.label;
+              const catDesc = locale !== "en" ? (catLoc?.description ?? cat.description) : cat.description;
               const def = defIndex.get(cat.id);
               const enabled = def?.defaultEnabled ?? cat.defaultEnabled;
               const kinds = (
@@ -772,8 +775,8 @@ function EventNotificationsCard({
               return (
                 <div key={cat.id} className="rounded-xl bg-card p-4 space-y-4">
                   <div>
-                    <p className="text-sm font-medium text-foreground">{cat.label}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{cat.description}</p>
+                    <p className="text-sm font-medium text-foreground">{catLabel}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{catDesc}</p>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
                     <div className="flex items-center gap-3">
@@ -784,7 +787,7 @@ function EventNotificationsCard({
                         checked={notifyMe}
                         disabled={disabled || isBusy || noChannels}
                         onChange={(value) => setNotifyMe(cat.id, value)}
-                        ariaLabel={`${t.settings.notifications.subscriptions.notifyMe}: ${cat.label}`}
+                        ariaLabel={`${t.settings.notifications.subscriptions.notifyMe}: ${catLabel}`}
                       />
                     </div>
                     <div className="flex items-center gap-3">
@@ -796,7 +799,7 @@ function EventNotificationsCard({
                         disabled={disabled || isBusy || !isAdmin}
                         onChange={(value) => setDefault(cat.id, value, kinds)}
                         ariaLabel={interpolate(t.settings.notifications.orgDefaults.notifyAria, {
-                          category: cat.label,
+                          category: catLabel,
                         })}
                       />
                     </div>

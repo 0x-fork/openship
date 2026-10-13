@@ -790,6 +790,119 @@
       "ready": "{count} de {total} canais prontos",
       "preferences": "Preferências de alertas",
       "retry": "Tentar novamente"
+    },
+    "groups": {
+      "deployment": "Deploy",
+      "app_health": "Saúde do aplicativo",
+      "backups": "Backups",
+      "jobs": "Tarefas",
+      "actions": "Ações",
+      "domains": "Domínios e SSL",
+      "members": "Membros",
+      "mail": "E-mail",
+      "billing": "Faturamento"
+    },
+    "categories": {
+      "deploy.failed": {
+        "label": "Deploy falhou",
+        "description": "Uma compilação ou deploy apresentou erro. Enviamos a mensagem de erro e o log."
+      },
+      "deploy.succeeded": {
+        "label": "Deploy bem-sucedido",
+        "description": "Cada deploy em produção com sucesso. Desativado por padrão."
+      },
+      "deploy.cancelled": {
+        "label": "Deploy cancelado",
+        "description": "Um deploy em andamento foi cancelado por você ou outro membro."
+      },
+      "service.down": {
+        "label": "Aplicativo inativo",
+        "description": "Um contêiner que deveria estar rodando foi encerrado ou finalizado por falta de memória."
+      },
+      "service.crash_loop": {
+        "label": "Aplicativo em loop de falhas",
+        "description": "Um contêiner continua reiniciando continuamente."
+      },
+      "service.unhealthy": {
+        "label": "Aplicativo não saudável",
+        "description": "Um contêiner está ativo mas seu teste de integridade está falhando."
+      },
+      "service.recovered": {
+        "label": "Aplicativo recuperado",
+        "description": "A instabilidade terminou e o contêiner está saudável novamente."
+      },
+      "server.unreachable": {
+        "label": "Servidor inacessível",
+        "description": "Não conseguimos alcançar o daemon do Docker do servidor."
+      },
+      "backup.failed": {
+        "label": "Backup falhou",
+        "description": "Uma execução de backup agendada ou manual apresentou erro."
+      },
+      "backup.succeeded": {
+        "label": "Backup concluído",
+        "description": "Cada backup concluído com sucesso."
+      },
+      "backup.restore_completed": {
+        "label": "Restauração concluída",
+        "description": "Uma restauração foi finalizada (ou falhou)."
+      },
+      "job.run.failed": {
+        "label": "Tarefa falhou",
+        "description": "A execução de uma tarefa agendada ou manual apresentou erro."
+      },
+      "job.run.succeeded": {
+        "label": "Tarefa bem-sucedida",
+        "description": "Cada execução de tarefa com sucesso."
+      },
+      "job.run.started": {
+        "label": "Tarefa iniciada",
+        "description": "Uma tarefa começou a ser executada."
+      },
+      "action.run.failed": {
+        "label": "Ação falhou",
+        "description": "Uma execução do GitHub Actions falhou ou foi cancelada."
+      },
+      "action.run.succeeded": {
+        "label": "Ação bem-sucedida",
+        "description": "Cada execução bem-sucedida do GitHub Actions."
+      },
+      "domain.ssl_expiring": {
+        "label": "Certificado SSL expirando",
+        "description": "O certificado de um domínio não pôde ser renovado e está perto de expirar."
+      },
+      "member.invited": {
+        "label": "Membro convidado",
+        "description": "Um novo membro foi convidado para sua organização."
+      },
+      "member.joined": {
+        "label": "Membro ingressou",
+        "description": "Um membro aceitou o convite e ingressou."
+      },
+      "member.removed": {
+        "label": "Membro removido",
+        "description": "Um membro saiu ou foi removido da organização."
+      },
+      "mail.dns_unverified": {
+        "label": "Domínio de e-mail não verificado",
+        "description": "O domínio de e-mail possui registros DNS ausentes ou incorretos."
+      },
+      "mail.queue_backed_up": {
+        "label": "Fila de e-mails acumulada",
+        "description": "A fila de entrega de e-mails de saída está alta ou em repetição."
+      },
+      "billing.quota_warning": {
+        "label": "Aviso de cota",
+        "description": "Aproximando-se dos limites de uso de recursos ou teto de gastos."
+      },
+      "billing.invoice_paid": {
+        "label": "Fatura paga",
+        "description": "Uma fatura de assinatura foi paga com sucesso."
+      },
+      "billing.payment_failed": {
+        "label": "Pagamento falhou",
+        "description": "Um pagamento de assinatura falhou e requer atenção."
+      }
     }
   },
   "audit": {
@@ -860,6 +973,17 @@
       "technical": "Detalhes técnicos",
       "eventType": "Tipo de evento",
       "viaAgent": "Agente"
+    },
+    "categories": {
+      "deployments": "Deploys",
+      "apps": "Aplicativos e serviços",
+      "domains": "Domínios e SSL",
+      "servers": "Servidores",
+      "members": "Membros e acesso",
+      "agent": "Agentes de IA",
+      "security": "Segurança",
+      "billing": "Faturamento",
+      "system": "Sistema"
     }
   },
   "updates": {
@@ -1322,6 +1446,7 @@
     "confirmTitle": "Parar de servir {hostname}?",
     "confirmBody": "Isso remove a configuração edge apenas para este hostname. Os arquivos compilados continuam em disco e nada mais no servidor é alterado. Se um projeto for implantado posteriormente neste hostname, ele criará sua própria rota.",
     "confirmCta": "Parar de servir",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "noReverseProxy": "Nenhum proxy reverso detectado nesta máquina."
   }
 }

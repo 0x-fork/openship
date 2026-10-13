@@ -136,8 +136,10 @@ export default function JobsPage() {
   };
 
   const getJobLabel = (job: JobView) => {
-    if (job.kind !== "custom" && j.systemJobLabels && (j.systemJobLabels as Record<string, string>)[job.key]) {
-      return (j.systemJobLabels as Record<string, string>)[job.key]!;
+    if (job.kind !== "custom" && j.systemJobLabels) {
+      const labels = j.systemJobLabels as Record<string, string>;
+      if (labels[job.key]) return labels[job.key]!;
+      if (labels[job.label]) return labels[job.label]!;
     }
     return job.label;
   };
