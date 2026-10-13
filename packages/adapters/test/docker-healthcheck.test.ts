@@ -69,6 +69,15 @@ describe("toDockerHealthcheck", () => {
     });
   });
 
+  it("omits a timing that is not a whole duration instead of half-reading it", () => {
+    const hc = toDockerHealthcheck({
+      test: ["CMD", "pg_isready"],
+      interval: "1m30",
+      timeout: "3s",
+    });
+    expect(hc).toEqual({ Test: ["CMD", "pg_isready"], Timeout: 3_000_000_000 });
+  });
+
   it("returns undefined when there is no usable test", () => {
     expect(toDockerHealthcheck({})).toBeUndefined();
     expect(toDockerHealthcheck({ test: "" })).toBeUndefined();

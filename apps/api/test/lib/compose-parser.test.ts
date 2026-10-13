@@ -1203,6 +1203,32 @@ describe("parseComposeFile — shutdown behavior (stop_signal / stop_grace_perio
     expect(parsed.services[0]?.advanced?.stopGracePeriod).toBe("30");
   });
 
+  // The runtime treats an unreadable duration as unset, so Docker's 10s default
+  // replaces the grace period the author meant. The warning is how they find out.
+  it("warns, without blocking, when stop_grace_period is not a whole duration", () => {
+    const parsed = parseComposeFile(svc("    stop_grace_period: 1m30\n"));
+    const warning = parsed.unsupported.find((u) => u.field === "stop_grace_period");
+    expect(warning?.reason).toContain("is not a duration");
+    expect(warning?.blocking).toBeFalsy();
+    expect(parsed.services).toHaveLength(1);
+  });
+
+  it("warns about a healthcheck timing that is not a whole duration", () => {
+    const parsed = parseComposeFile(
+      svc(
+        '    healthcheck:\n      test: ["CMD", "true"]\n      interval: 1m30\n      timeout: 5s\n',
+      ),
+    );
+    const fields = parsed.unsupported.map((u) => u.field);
+    expect(fields).toContain("healthcheck.interval");
+    expect(fields).not.toContain("healthcheck.timeout");
+  });
+
+  it("does not warn about a bare-number grace period", () => {
+    const parsed = parseComposeFile(svc("    stop_grace_period: 30\n"));
+    expect(parsed.unsupported.map((u) => u.field)).not.toContain("stop_grace_period");
+  });
+
   it("interpolates stop_signal from the env file", () => {
     const parsed = parseComposeFile(svc("    stop_signal: ${SIG}\n"), {
       envFileContent: "SIG=SIGQUIT\n",
