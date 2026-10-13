@@ -1,6 +1,30 @@
 // Pure: detection (reading the Gemfile, walking the tree) is the caller's job.
 
-import type { StackRole } from "./stacks";
+import type { StackId, StackRole } from "./stacks";
+
+/**
+ * Opt-in Laravel cache-warming prefix (issue #19). `php artisan optimize` warms
+ * Laravel's config/route/event/view caches. The `&&` chains the original web
+ * command so the server process still becomes PID 1 and receives SIGTERM.
+ */
+const LARAVEL_WARMUP_PREFIX = "php artisan optimize && ";
+
+/**
+ * Apply the opt-in Laravel cache-warming prefix to a resolved WEB command.
+ *
+ * Returns the command unchanged unless the stack is `laravel` AND `optimize` is
+ * `true`. A project that does not opt in keeps a byte-identical web command, so
+ * the shared stack presets in `stacks.ts` stay untouched. This resolver prefixes
+ * the web command only. Workers and schedulers are never warmed here.
+ */
+export function resolveWebCommand(input: {
+  stack: StackId;
+  command: string;
+  optimize?: boolean;
+}): string {
+  if (input.stack !== "laravel" || input.optimize !== true) return input.command;
+  return `${LARAVEL_WARMUP_PREFIX}${input.command}`;
+}
 
 export interface ResolveStackRolesInput {
   /** Non-web preset roles registered on the stack (STACKS[id].defaultRoles). */

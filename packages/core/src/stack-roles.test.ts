@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { phpLanguageDetector } from "./languages/php";
 import { parseOpenshipConfig } from "./openship-config/parse";
-import { resolveStackRoles } from "./stack-roles";
+import { resolveStackRoles, resolveWebCommand } from "./stack-roles";
 import { STACKS, type StackRole } from "./stacks";
 
 const jobs: StackRole = {
@@ -271,5 +271,36 @@ describe("STACKS.laravel.defaultRoles", () => {
         configRoles: [horizonWorker, queueWorker],
       }),
     ).toEqual([horizonWorker, queueWorker]);
+  });
+});
+
+describe("resolveWebCommand", () => {
+  const laravelWeb = STACKS.laravel.defaultStartCommand;
+
+  it("leaves the command byte-identical when optimize is absent", () => {
+    expect(resolveWebCommand({ stack: "laravel", command: laravelWeb })).toBe(laravelWeb);
+  });
+
+  it("leaves the command byte-identical when optimize is false", () => {
+    expect(resolveWebCommand({ stack: "laravel", command: laravelWeb, optimize: false })).toBe(
+      laravelWeb,
+    );
+  });
+
+  it("prefixes the Laravel web command when optimize is true", () => {
+    const resolved = resolveWebCommand({ stack: "laravel", command: laravelWeb, optimize: true });
+    expect(resolved).toBe(`php artisan optimize && ${laravelWeb}`);
+  });
+
+  it("keeps the exec/PID-1 frankenphp invocation at the end when warmed", () => {
+    const resolved = resolveWebCommand({ stack: "laravel", command: laravelWeb, optimize: true });
+    expect(resolved.startsWith("php artisan optimize && ")).toBe(true);
+    expect(resolved.endsWith(laravelWeb)).toBe(true);
+    expect(resolved).toContain("exec frankenphp run");
+  });
+
+  it("does not warm a non-Laravel stack even when optimize is true", () => {
+    const nextWeb = STACKS.nextjs.defaultStartCommand;
+    expect(resolveWebCommand({ stack: "nextjs", command: nextWeb, optimize: true })).toBe(nextWeb);
   });
 });
