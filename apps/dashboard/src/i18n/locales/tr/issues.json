@@ -4,7 +4,8 @@
   "tabs": {
     "open": "Genel bakış",
     "health": "Sağlık",
-    "resolved": "Geçmiş"
+    "resolved": "Geçmiş",
+    "notifications": "Bildirimler"
   },
   "monitoringHint": {
     "description": "Servis durumunu görün ve arka plan izlemeyi yönetin.",
@@ -109,7 +110,7 @@
     "details": "Teknik ayrıntılar",
     "mailTitle": "Posta durumu alınamıyor",
     "mailHint": "Openship bu posta sunucusunu kontrol edemedi. Sunucu hâlâ çalışıyor olabilir. Bağlantıyı kontrol edip yeniden deneyin.",
-    "apiTitle": "Openship bağlantısı kesildi",
-    "apiHint": "Görüntülenen durum güncel olmayabilir. Bağlantınızı kontrol edin; uygulamalarınız hâlâ çalışıyor olabilir."
+    "apiTitle": "Openship’e ulaşılamıyor",
+    "apiHint": "Durum güncellemeleri gecikebilir."
   }
 }

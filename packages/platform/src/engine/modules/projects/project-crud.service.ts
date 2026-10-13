@@ -36,6 +36,7 @@ import {
   normalizeFramework,
   isServicesFramework,
   resolveWorkload,
+  resolveGitHubDeploymentChecks,
   toWorkloadType,
   type ReleaseSource,
   type UpdatableIdentity,
@@ -95,6 +96,7 @@ import type {
 } from "@repo/contracts";
 import { UpdateProjectBody } from "@repo/contracts";
 import { readDeployMeta, resolveProjectDeployTarget } from "./project-deploy-target";
+import { assertCloudRoutingCapabilities, assertProjectRoutingCapabilities } from "./project-routing-capabilities";
 import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { requireOrgServer } from "../../lib/server-target";
 import { resolveCloudProjectServer, requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
@@ -710,6 +712,7 @@ function buildProductionProjectInput(
     releaseSource: source.releaseSource,
     installationId: data.installationId,
     autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
+    githubChecks: data.githubChecks,
     framework: normalizeFramework(data.framework),
     packageManager: data.packageManager ?? "npm",
     installCommand: data.installCommand,
@@ -906,6 +909,7 @@ async function createProductionProject(
   // and do it before ensureProjectApp writes anything so a rejected binding is
   // atomic (no orphan project-group row).
   const selectedServer = data.serverId ? await requireOrgServer(data.serverId, organizationId) : null;
+  assertCloudRoutingCapabilities(data.routingConfig, !!selectedServer?.workspaceId);
   if (selectedServer && !env.CLOUD_MODE) {
     if (selectedServer.workspaceId) {
       const { requireLinkedCloudServer } = await import("../../lib/cloud/server-link");
@@ -924,6 +928,8 @@ async function createProductionProject(
       data = { ...data, workspaceId: workspace.id, serverId: server!.id };
     }
   }
+
+  assertCloudRoutingCapabilities(data.routingConfig, !!data.workspaceId);
 
   // Multi-tenant SaaS: never trust a client-supplied installationId. It binds the
   // project to a GitHub App installation, and the push-webhook fan-out deploys by
@@ -1456,6 +1462,7 @@ export async function assertProjectQuota(organizationId: string, workspaceId?: s
         : `Your plan includes ${cap} projects and you're using ${total}. Upgrade to add more.`,
       "project-limit",
       await currentPlanTier(organizationId, workspaceId),
+      workspaceId,
     );
   }
 }
@@ -1501,6 +1508,8 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     );
   }
   let created = false;
+
+  if (project) await assertProjectRoutingCapabilities(project, data.routingConfig);
 
   if (!project) {
     // No existing match → this ensure will create. Enforce the cap here too
@@ -1743,6 +1752,7 @@ export async function updateProject(
 
   // Shared route validation covers custom hostnames and scoped free-domain
   // allowances before any accompanying project fields are written.
+  await assertProjectRoutingCapabilities(p, data.routingConfig);
   const nextRoutes = data.publicEndpoints !== undefined
     ? await prepareProjectRouteState(p, { nextPublicEndpoints: data.publicEndpoints })
     : null;
@@ -2074,6 +2084,7 @@ export async function createProjectEnvironment(
     gitBranch,
     gitUrl: app?.gitUrl ?? base.gitUrl,
     installationId: app?.installationId ?? base.installationId,
+    githubChecks: base.githubChecks,
     releaseSource: base.releaseSource,
     framework: base.framework,
     packageManager: base.packageManager,
@@ -2566,6 +2577,8 @@ export async function getGitInfo(projectId: string, organizationId: string) {
     webhookDomain: p.webhookDomain,
     autoDeploy: p.autoDeploy,
     defaultRollbackStrategy: p.defaultRollbackStrategy,
+    githubChecks: resolveGitHubDeploymentChecks(p.githubChecks),
+    githubChecksDelivery: await repos.deploymentCheck.latestForProject(projectId, organizationId),
     deployTarget,
   };
 }
@@ -2655,6 +2668,7 @@ export async function updateOptions(
     }
     update.gitBranch = options.gitBranch.trim();
   }
+  if (options.githubChecks !== undefined) update.githubChecks = options.githubChecks;
   if (options.buildCommand !== undefined) update.buildCommand = options.buildCommand;
   if (options.installCommand !== undefined) update.installCommand = options.installCommand;
   if (options.outputDirectory !== undefined) update.outputDirectory = options.outputDirectory;

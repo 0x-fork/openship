@@ -329,7 +329,14 @@
       "changePort": "Portu değiştir",
       "skip": "Atla",
       "applied": "Yönlendirme port {port} olarak güncellendi.",
-      "changeError": "Port güncellenemedi. Lütfen tekrar deneyin."
+      "changeError": "Port güncellenemedi. Lütfen tekrar deneyin.",
+      "loopbackTitle": "Uygulama yönlendirilen trafiği alamıyor",
+      "loopbackNote": "Dağıtım çalışıyor ancak yönlendirilen bir bağlantı noktası ilgilenmenizi gerektiriyor.",
+      "loopbackBody": "{port} bağlantı noktası yalnızca konteyner içinden gelen bağlantıları dinliyor.",
+      "loopbackBodyService": "\"{service}\" servisi {port} bağlantı noktasında yalnızca konteyner içinden gelen bağlantıları dinliyor.",
+      "loopbackHelp": "Yönlendirilen trafik alan bir uygulama için 0.0.0.0 üzerinde dinleyip yeniden dağıtın veya trafiği amaçlanan proxy’ye yönlendirin.",
+      "openSettings": "Ayarları aç",
+      "skipError": "Bu uyarı kapatılamadı. Lütfen tekrar deneyin."
     },
     "title": {
       "cancelled": "Dağıtım İptal Edildi",
@@ -366,6 +373,17 @@
     "detailBranch": "Dal",
     "detailDomains": "Alan Adları",
     "detailDomain": "Alan Adı"
+  },
+  "deploymentHealth": {
+    "recheck": "Sağlığı yeniden denetle",
+    "checking": "Denetleniyor…",
+    "healthy": "Servisler sağlıklı",
+    "atDeployment": "Dağıtım sırasında kaydedilen uyarı",
+    "currentHealth": "Güncel servis durumu",
+    "startupHint": "Uygulama başlıyorsa bekleyip yeniden denetleyin. Yeniden başlıyorsa veya hata bildiriyorsa nedenini bulmak için günlükleri açın.",
+    "viewLogs": "Günlükleri görüntüle",
+    "unavailable": "Sağlık doğrulanamadı. Sunucuya erişilebildiğinde yeniden deneyin.",
+    "historical": "Bu dağıtım artık etkin değil. Güncel servisler için projeyi açın."
   },
   "composeDeployment": {
     "title": {

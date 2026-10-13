@@ -1,4 +1,10 @@
 {
+  "cloudComingSoon": {
+    "title": "Correo gestionado",
+    "badge": "Próximamente",
+    "description": "El correo gestionado en Openship Cloud llegará próximamente. Los planes de servidores Cloud alojan aplicaciones y no crean un servidor de correo.",
+    "selfHosted": "Puedes alojar correo en tu propio servidor con una instalación autohospedada de Openship."
+  },
   "page": {
     "title": "Servidor de correo",
     "subtitle": "Configura un servidor de correo autoalojado con unos pocos clics",

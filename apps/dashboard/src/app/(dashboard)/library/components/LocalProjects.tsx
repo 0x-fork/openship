@@ -365,7 +365,7 @@ function ImportForm({ onClose, onImported }: ImportFormProps) {
     setImporting(true);
 
     try {
-      const hasServer = !!scanResult.startCommand;
+      const hasServer = scanResult.stack === "docker" || !!scanResult.startCommand;
       const hasBuild = !!scanResult.buildCommand;
 
       await projectsApi.importLocal({

@@ -4,7 +4,8 @@
   "tabs": {
     "open": "Vue générale",
     "health": "Santé",
-    "resolved": "Historique"
+    "resolved": "Historique",
+    "notifications": "Notifications"
   },
   "monitoringHint": {
     "description": "Consultez les services et gérez la surveillance en arrière-plan.",
@@ -109,7 +110,7 @@
     "details": "Détails techniques",
     "mailTitle": "État du serveur mail indisponible",
     "mailHint": "Openship n’a pas pu vérifier ce serveur mail. Il fonctionne peut-être encore. Vérifiez la connexion et réessayez.",
-    "apiTitle": "Connexion à Openship interrompue",
-    "apiHint": "L’état affiché est peut-être obsolète. Vérifiez votre connexion ; vos applications fonctionnent peut-être encore."
+    "apiTitle": "Openship est injoignable",
+    "apiHint": "Les mises à jour de l’état peuvent être retardées."
   }
 }

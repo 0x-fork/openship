@@ -4,7 +4,8 @@
   "tabs": {
     "open": "Overview",
     "health": "Health",
-    "resolved": "History"
+    "resolved": "History",
+    "notifications": "Notifications"
   },
   "monitoringHint": {
     "description": "See service status and manage background monitoring.",
@@ -109,7 +110,7 @@
     "details": "Technical details",
     "mailTitle": "Mail status unavailable",
     "mailHint": "Openship could not verify this mail server. It may still be running. Check the connection and retry.",
-    "apiTitle": "Connection to Openship interrupted",
-    "apiHint": "Displayed status may be out of date. Check your connection; your apps may still be running."
+    "apiTitle": "Can’t reach Openship",
+    "apiHint": "Status updates may be delayed."
   }
 }

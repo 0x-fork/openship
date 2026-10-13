@@ -343,6 +343,7 @@
     }
   },
   "resourcesGuide": {
+    "concurrentBuilds": "Gleichzeitige Builds",
     "title": "So funktioniert die Cloud-Nutzung",
     "credits": "Cloud-Credits",
     "creditsHint": "Builds und laufende Apps verbrauchen Credits für CPU, Arbeitsspeicher, Festplattenzugriffe und Datentransfer. Größere Arbeitslasten verbrauchen Credits schneller.",

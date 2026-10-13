@@ -1,4 +1,10 @@
 {
+  "cloudComingSoon": {
+    "title": "Verwaltete E-Mail",
+    "badge": "Demnächst",
+    "description": "Verwaltete E-Mail auf Openship Cloud kommt demnächst. Cloud-Server-Tarife dienen dem Hosting von Anwendungen und stellen keinen Mailserver bereit.",
+    "selfHosted": "E-Mail auf Ihrem eigenen Server ist mit einer selbst gehosteten Openship-Installation verfügbar."
+  },
   "page": {
     "title": "E-Mail-Server",
     "subtitle": "Richte mit wenigen Klicks einen selbst gehosteten Mailserver ein",

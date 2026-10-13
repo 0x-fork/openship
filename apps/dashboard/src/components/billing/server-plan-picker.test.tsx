@@ -443,6 +443,26 @@ describe("buying another managed server", () => {
     expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: copy.workspaces.defaultName });
   });
 
+  it("keeps the landing-page plan using the live offer without creating anything on arrival", async () => {
+    await render(<ManagedServerPurchase preserveProject requestedPlanId="starter" />);
+    expect(planNames()).toEqual(["Starter"]);
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+    await click("Choose Starter");
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.post).toHaveBeenCalledWith("billing/subscription", expect.objectContaining({ planTierId: "starter", workspaceId: server.id }));
+  });
+
+  it("lets the visitor compare other plans and safely ignores a removed or invalid requested plan", async () => {
+    await render(<ManagedServerPurchase requestedPlanId="starter" />);
+    await click(copy.plansRoute.otherPlans);
+    expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
+    await render(<ManagedServerPurchase requestedPlanId="not-a-live-plan" />);
+    expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])("keeps checkout and the selected destination through the status handoff (popup blocked: %s)", async (blocked) => {
     if (blocked) vi.mocked(window.open).mockReturnValueOnce(null);
     let billing: BillingState = { tier: "free", status: "credit_exhausted", overQuota: true, subscription: null,

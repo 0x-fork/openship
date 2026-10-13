@@ -31,6 +31,15 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "marketplace": {
+      "description": "Optional public features and Markdown article. Editorial only; does not change deployment.",
+      "type": "object",
+      "properties": {
+        "features": { "type": "array", "items": { "type": "object", "required": ["title"], "properties": { "title": { "type": "string", "minLength": 1 }, "description": { "type": "string" } } } },
+        "article": { "type": "string", "maxLength": 200000, "description": "Inline Markdown. Raw HTML is displayed as text." },
+        "articleFile": { "type": "string", "pattern": "^articles/[a-z0-9][a-z0-9-]*\\.md$", "description": "Authoring only: Markdown file compiled into catalog.json by gen-catalog." }
+      }
+    },
     "framework": {
       "description": "Stack slug for the created project. Usually \"docker-compose\" for template apps.",
       "type": "string"

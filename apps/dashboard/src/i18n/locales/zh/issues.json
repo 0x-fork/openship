@@ -4,7 +4,8 @@
   "tabs": {
     "open": "概览",
     "health": "健康",
-    "resolved": "历史"
+    "resolved": "历史",
+    "notifications": "通知"
   },
   "monitoringHint": {
     "description": "查看服务状态并管理后台监控。",
@@ -109,7 +110,7 @@
     "details": "技术详情",
     "mailTitle": "邮件状态不可用",
     "mailHint": "Openship 无法检查此邮件服务器。它可能仍在运行。请检查连接后重试。",
-    "apiTitle": "与 Openship 的连接已中断",
-    "apiHint": "显示的状态可能已过时。请检查连接；您的应用可能仍在运行。"
+    "apiTitle": "无法连接到 Openship",
+    "apiHint": "状态更新可能会延迟。"
   }
 }

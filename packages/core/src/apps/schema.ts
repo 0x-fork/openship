@@ -65,6 +65,8 @@ const serviceSpec = z.object({
   name: z.string(),
   /** Prebuilt image to pull. Exactly one of `image`/`build` must be set per service. */
   image: z.string().optional(),
+  /** Exact retired defaults eligible for an explicit operator repair. Never auto-upgrade. */
+  replacesImages: z.array(z.string().min(1)).optional(),
   resources: z
     .object({
       cpuCores: z.number().min(MIN_CPU_CORES),
@@ -291,6 +293,11 @@ export const appTemplateSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string(),
+  marketplace: z.object({
+    features: z.array(z.object({ title: z.string().min(1), description: z.string().optional() })).optional(),
+    article: z.string().max(200_000).optional(),
+    articleFile: z.string().regex(/^articles\/[a-z0-9][a-z0-9-]*\.md$/).optional(),
+  }).optional(),
   kind: z.enum(["template", "flow"]),
   logo: z.string(),
   category: z.enum(["backend", "database", "cms", "mail", "analytics", "automation", "other"]),

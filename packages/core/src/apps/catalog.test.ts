@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { buildCatalog } from "../../scripts/gen-catalog";
+import { buildCatalog, compileAppArticle } from "../../scripts/gen-catalog";
 import { appTemplateSchema, isValidAppTemplate, parseAppTemplate, templateEngineOk } from "./schema";
 import { APP_TEMPLATES, getAppTemplate } from "../app-templates";
 
@@ -18,6 +18,38 @@ describe("app catalog (JSON)", () => {
     for (const app of APP_TEMPLATES) {
       expect(isValidAppTemplate(app), `${app.id} failed schema`).toBe(true);
     }
+  });
+
+  it("embeds authored Markdown in the same published artifact as the template", () => {
+    const app = getAppTemplate("convex")!;
+    const compiled = compileAppArticle({
+      ...app, marketplace: { features: app.marketplace?.features, articleFile: "articles/convex.md" },
+    });
+    expect(compiled.marketplace?.article).toBe(readFileSync(
+      fileURLToPath(new URL("./catalog/articles/convex.md", import.meta.url)), "utf8",
+    ).trim());
+    expect(compiled.marketplace).not.toHaveProperty("articleFile");
+    const { marketplace: _, ...before } = app;
+    const { marketplace: __, ...after } = compiled;
+    expect(after).toEqual(before);
+  });
+
+  it("rejects unsafe, missing, or ambiguous article sources", () => {
+    const app = getAppTemplate("convex")!;
+    for (const articleFile of ["../secret.md", "articles/../../secret.md", "/tmp/secret.md", "articles/missing-article.md"]) {
+      expect(() => compileAppArticle({ ...app, marketplace: { articleFile } })).toThrow();
+    }
+    expect(() => compileAppArticle({ ...app, marketplace: { article: "inline", articleFile: "articles/convex.md" } })).toThrow("choose article or articleFile");
+  });
+
+  it("keeps marketplace content optional and validates new fields", () => {
+    const { marketplace: _, ...legacy } = getAppTemplate("convex")!;
+    expect(isValidAppTemplate(legacy)).toBe(true);
+    expect(isValidAppTemplate({ ...legacy, marketplace: { features: [{ title: "Reactive data" }], article: "## Overview" } })).toBe(true);
+    for (const marketplace of [
+      { features: [{ title: "" }] }, { features: [{ title: "Valid", description: 1 }] },
+      { article: "x".repeat(200_001) }, { articleFile: "../outside.md" },
+    ]) expect(isValidAppTemplate({ ...legacy, marketplace })).toBe(false);
   });
 
   it("keeps Supabase's advertised SAML endpoints on its public Kong routes", () => {
@@ -57,7 +89,7 @@ describe("app catalog (JSON)", () => {
           `${app.id}/${service.name} uses a post-0.6.6 serviceSpec field but entry has no minEngine — engine gate cannot refuse pre-0.6.6 installs`,
         ).toBeDefined();
         expect(
-          templateEngineOk(app.minEngine, MIN_ENGINE),
+          templateEngineOk(MIN_ENGINE, app.minEngine),
           `${app.id}/${service.name} declares minEngine=${app.minEngine}, must be >= ${MIN_ENGINE}`,
         ).toBe(true);
       }

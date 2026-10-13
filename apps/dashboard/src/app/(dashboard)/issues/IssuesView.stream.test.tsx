@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from "react";
+import { act, useSyncExternalStore } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@/components/i18n-provider";
@@ -7,6 +7,21 @@ import { NetworkErrorHandler } from "@/components/network-error-handler";
 import { setActiveOrganizationId } from "@/lib/api/client";
 import type { IssueFeed } from "@/lib/api/issues";
 import { IssuesView } from "./IssuesView";
+
+const navigationListeners = new Set<() => void>();
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(useSyncExternalStore(
+    listener => { navigationListeners.add(listener); return () => { navigationListeners.delete(listener); }; },
+    () => window.location.search,
+    () => "",
+  )),
+}));
+vi.mock("../deployments/components", () => ({
+  DeploymentsContent: () => <div>Deployment history content</div>,
+}));
+vi.mock("@/components/notifications/NotificationSettings", () => ({
+  NotificationSettings: () => <div>Notification channels and alert preferences</div>,
+}));
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -113,6 +128,12 @@ async function render() {
 const panel = () => container.querySelector('[aria-label="Operation log"]');
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/monitoring");
+  const push = window.history.pushState.bind(window.history);
+  vi.spyOn(window.history, "pushState").mockImplementation((data, unused, url) => {
+    push(data, unused, url);
+    for (const listener of navigationListeners) listener();
+  });
   vi.clearAllMocks();
   fetcher.mockReset();
   mocks.serverIds = ["one", "two"];
@@ -149,6 +170,32 @@ beforeEach(() => {
 });
 
 describe("Monitoring health navigation", () => {
+  it("opens notification settings directly without loading the issue feed", async () => {
+    window.history.replaceState(null, "", "/monitoring?tab=notifications");
+    await render();
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Notifications");
+    expect(container.textContent).toContain("Notification channels and alert preferences");
+    expect(container.querySelector('[role="tabpanel"]')?.getAttribute("aria-labelledby")).toBe("monitoring-tab-notifications");
+    expect(mocks.list).not.toHaveBeenCalled();
+    expect([...container.querySelectorAll('[role="tab"]')].at(-1)?.textContent).toBe("Deployments");
+    await click("Overview");
+    expect(mocks.list).toHaveBeenCalledOnce();
+    await click("Notifications");
+    expect(mocks.list).toHaveBeenCalledOnce();
+    expect(window.location.search).toContain("tab=notifications");
+  });
+  it("opens deployment history as the last tab and restores it from the URL", async () => {
+    window.history.replaceState(null, "", "/monitoring?tab=deployments&status=failed");
+    await render();
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Deployments");
+    expect(container.textContent).toContain("Deployment history content");
+    expect(mocks.list).not.toHaveBeenCalled();
+    await click("Overview");
+    await click("Deployments");
+    expect(window.location.search).toContain("tab=deployments");
+    expect(window.location.search).toContain("status=failed");
+  });
+
   it("opens Health from the Overview hint without duplicating scan controls or feed reads", async () => {
     await render();
     const reads = mocks.list.mock.calls.length;
@@ -184,11 +231,11 @@ describe("Monitoring health navigation", () => {
       "monitoring-tab-health",
     );
     await press("End");
-    expect(document.activeElement?.textContent).toBe("History");
+    expect(document.activeElement?.textContent).toBe("Deployments");
     await press("Home");
     expect(document.activeElement?.textContent).toBe("Overview");
     await press(direction === "rtl" ? "ArrowRight" : "ArrowLeft");
-    expect(document.activeElement?.textContent).toBe("History");
+    expect(document.activeElement?.textContent).toBe("Deployments");
     expect(container.querySelectorAll('[role="tab"][tabindex="0"]')).toHaveLength(1);
   });
 

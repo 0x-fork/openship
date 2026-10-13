@@ -1,0 +1,262 @@
+{
+  "$schema": "https://openship.io/app.schema.json",
+  "available": true,
+  "verified": true,
+  "minEngine": "0.9.0",
+  "id": "wordpress",
+  "name": "WordPress",
+  "description": "Publish websites, blogs, and stores with WordPress Admin, a private MariaDB database, and persistent uploads.",
+  "kind": "template",
+  "logo": "wordpress",
+  "category": "cms",
+  "framework": "docker-compose",
+  "services": [
+    {
+      "name": "wordpress-db",
+      "restart": "unless-stopped",
+      "image": "mariadb:11.4.13",
+      "environment": {
+        "MARIADB_USER": "wordpress",
+        "MARIADB_DATABASE": "wordpress"
+      },
+      "volumes": ["wordpress_db_data:/var/lib/mysql"],
+      "secretEnv": ["MARIADB_ROOT_PASSWORD", "MARIADB_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"],
+        "interval": "10s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "30s"
+      },
+      "resources": {
+        "cpuCores": 0.25,
+        "memoryMb": 512,
+        "diskMb": 4096
+      }
+    },
+    {
+      "name": "wordpress",
+      "restart": "unless-stopped",
+      "environment": {
+        "WORDPRESS_DB_HOST": "wordpress-db",
+        "WORDPRESS_DB_USER": "wordpress",
+        "WORDPRESS_DB_NAME": "wordpress",
+        "OPENSHIP_PUBLIC_URL": "{{publicUrl:wordpress}}",
+        "WORDPRESS_CONFIG_EXTRA": "define('WP_HOME', getenv('OPENSHIP_PUBLIC_URL'));\ndefine('WP_SITEURL', getenv('OPENSHIP_PUBLIC_URL'));\ndefine('DISALLOW_FILE_EDIT', true);\nif (parse_url(getenv('OPENSHIP_PUBLIC_URL'), PHP_URL_SCHEME) === 'https') {\n    $_SERVER['HTTPS'] = 'on';\n    define('FORCE_SSL_ADMIN', true);\n}\n"
+      },
+      "volumes": ["wordpress_data:/var/www/html"],
+      "exposedPort": 80,
+      "exposed": true,
+      "routes": [
+        {
+          "port": 80
+        }
+      ],
+      "dependsOn": ["wordpress-db"],
+      "build": {
+        "dockerfile": "FROM wordpress:7.1.3-php8.3-apache\nCOPY --from=wordpress:cli-2.12.0-php8.3 /usr/local/bin/wp /usr/local/bin/wp\nCOPY wordpress/openship-entrypoint.sh /usr/local/bin/openship-entrypoint.sh\nRUN chmod 755 /usr/local/bin/openship-entrypoint.sh\nENTRYPOINT [\"openship-entrypoint.sh\"]\nCMD [\"apache2-foreground\"]\n",
+        "files": [
+          {
+            "path": "openship-entrypoint.sh",
+            "content": "#!/bin/sh\nset -eu\n# The official image's init-only entry point installs files and wp-config.php.\n# Apache starts only after the generated owner account exists.\ndocker-ensure-installed.sh\nattempt=0\nuntil php -r 'mysqli_report(MYSQLI_REPORT_OFF); $db = @new mysqli(getenv(\"WORDPRESS_DB_HOST\"), getenv(\"WORDPRESS_DB_USER\"), getenv(\"WORDPRESS_DB_PASSWORD\"), getenv(\"WORDPRESS_DB_NAME\")); exit($db->connect_errno ? 1 : 0);'; do\n  attempt=$((attempt + 1))\n  [ \"$attempt\" -lt 60 ] || exit 1\n  sleep 2\ndone\nsu -s /bin/sh www-data -c 'wp core is-installed' || su -s /bin/sh www-data -c 'wp core install --url=\"$OPENSHIP_PUBLIC_URL\" --title=\"$OPENSHIP_SITE_TITLE\" --admin_user=\"$OPENSHIP_ADMIN_USER\" --admin_password=\"$OPENSHIP_ADMIN_PASSWORD\" --admin_email=\"$OPENSHIP_ADMIN_EMAIL\" --skip-email'\nexec docker-entrypoint.sh \"$@\"\n"
+          }
+        ]
+      },
+      "secretEnv": ["WORDPRESS_DB_PASSWORD", "OPENSHIP_ADMIN_PASSWORD"],
+      "healthcheck": {
+        "test": ["CMD-SHELL", "curl -fsS http://127.0.0.1/ >/dev/null"],
+        "interval": "15s",
+        "timeout": "5s",
+        "retries": 12,
+        "startPeriod": "120s"
+      },
+      "resources": {
+        "cpuCores": 0.75,
+        "memoryMb": 768,
+        "diskMb": 8192
+      }
+    }
+  ],
+  "configFields": [
+    {
+      "service": "wordpress-db",
+      "key": "MARIADB_ROOT_PASSWORD",
+      "label": "Database root password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "service": "wordpress-db",
+      "key": "MARIADB_PASSWORD",
+      "label": "Database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "wordpress-db"
+    },
+    {
+      "service": "wordpress",
+      "key": "WORDPRESS_DB_PASSWORD",
+      "label": "WordPress database password",
+      "generate": "secret",
+      "secret": true,
+      "generateGroup": "wordpress-db"
+    },
+    {
+      "service": "wordpress",
+      "key": "OPENSHIP_ADMIN_PASSWORD",
+      "label": "Admin password",
+      "generate": "secret",
+      "secret": true
+    },
+    {
+      "key": "OPENSHIP_SITE_TITLE",
+      "service": "wordpress",
+      "label": "Site title",
+      "default": "My website",
+      "required": true
+    },
+    {
+      "key": "OPENSHIP_ADMIN_EMAIL",
+      "service": "wordpress",
+      "label": "Admin email",
+      "default": "admin@example.com",
+      "required": true
+    },
+    {
+      "key": "OPENSHIP_ADMIN_USER",
+      "service": "wordpress",
+      "label": "Admin username",
+      "default": "admin",
+      "required": true
+    }
+  ],
+  "management": {
+    "kind": "schema"
+  },
+  "connection": {
+    "title": "Connect to WordPress",
+    "outputs": [
+      {
+        "id": "site",
+        "label": "Website",
+        "source": "publicUrl:wordpress",
+        "kind": "url"
+      },
+      {
+        "id": "admin",
+        "label": "WordPress Admin",
+        "source": "template:{{publicUrl:wordpress}}/wp-admin/",
+        "kind": "url",
+        "recommended": true
+      },
+      {
+        "id": "username",
+        "label": "Admin username",
+        "source": "env:wordpress:OPENSHIP_ADMIN_USER",
+        "width": "half"
+      },
+      {
+        "id": "password",
+        "label": "Admin password",
+        "source": "env:wordpress:OPENSHIP_ADMIN_PASSWORD",
+        "secret": true,
+        "width": "half"
+      }
+    ],
+    "guide": {
+      "defaultMode": "public"
+    },
+    "firstLogin": {
+      "note": "Generated credentials initialize an empty installation. Account changes made in the app are preserved on redeployment; the values shown here are the initial credentials."
+    }
+  },
+  "endpoints": [
+    {
+      "service": "wordpress",
+      "port": 80,
+      "label": "Website and WordPress Admin",
+      "kind": "http",
+      "defaultMode": "domain",
+      "allowedModes": ["domain", "publish", "internal"]
+    },
+    {
+      "service": "wordpress-db",
+      "port": 3306,
+      "label": "Database",
+      "kind": "tcp",
+      "scope": "internal",
+      "defaultMode": "internal",
+      "allowedModes": ["internal"]
+    }
+  ],
+  "marketplace": {
+    "features": [
+      {
+        "title": "WordPress Admin",
+        "description": "Manage pages, posts, themes, and plugins in the native control panel."
+      },
+      {
+        "title": "Private database",
+        "description": "A dedicated MariaDB database stays on the project network."
+      },
+      {
+        "title": "Persistent content",
+        "description": "Keep uploads, themes, plugins, and database contents across deployments."
+      }
+    ],
+    "articleFile": "articles/wordpress.md"
+  },
+  "installLayout": {
+    "settings": "single",
+    "columns": 2
+  },
+  "settings": [
+    {
+      "id": "general",
+      "label": "Setup",
+      "columns": 2,
+      "fields": [
+        {
+          "service": "wordpress",
+          "key": "OPENSHIP_SITE_TITLE",
+          "label": "Initial site title",
+          "type": "text",
+          "default": "My website",
+          "installStep": true,
+          "required": true,
+          "help": "Used when creating the site. Edit the site title later in WordPress Admin.",
+          "fullWidth": true
+        },
+        {
+          "service": "wordpress",
+          "key": "OPENSHIP_ADMIN_EMAIL",
+          "label": "Admin email",
+          "type": "text",
+          "default": "admin@example.com",
+          "installStep": true,
+          "required": true,
+          "pattern": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+          "patternError": "Enter an email address.",
+          "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+        },
+        {
+          "service": "wordpress",
+          "key": "OPENSHIP_ADMIN_USER",
+          "label": "Admin username",
+          "type": "text",
+          "default": "admin",
+          "installStep": true,
+          "required": true,
+          "pattern": "^[a-zA-Z0-9_.-]+$",
+          "help": "Used for the initial administrator. Manage existing accounts in the app control panel."
+        }
+      ]
+    }
+  ],
+  "repository": "https://github.com/WordPress/WordPress",
+  "minResources": {
+    "cpuCores": 1.0,
+    "memoryMb": 1280
+  },
+  "tags": ["cms", "blog", "website", "ecommerce"]
+}

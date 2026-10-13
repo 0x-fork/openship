@@ -175,16 +175,17 @@ describe("builds inside the subscribed host", () => {
     memoryAvailableMb: 6144,
     cpuPercent: 25,
   };
-  it("honors a smaller explicit build cap and bounds stale available memory to the host", () => {
+  it("preserves explicit build allocations and refuses those that cannot fit", () => {
     expect(workspaceBuildResources(capacity, usage, { cpuCores: 0.25, memoryMb: 256 })).toEqual({
       cpuCores: 0.25,
       memoryMb: 256,
       diskMb: capacity.diskMb,
     });
-    expect(
-      workspaceBuildResources(capacity, { ...usage, memoryAvailableMb: 99999 }, { memoryMb: 99999 })
-        .memoryMb,
-    ).toBe(7782);
+    expect(() => workspaceBuildResources(capacity, { ...usage, memoryAvailableMb: 99999 }, { memoryMb: 99999 }))
+      .toThrow("requested build allocation cannot fit");
+    expect(workspaceBuildResources(capacity, { ...usage, memoryAvailableMb: 99999 }).memoryMb).toBe(7782);
+    expect(() => workspaceBuildResources(capacity, { ...usage, cpuPercent: 99 }, { cpuCores: 2, memoryMb: 1024 }))
+      .toThrow("requested build allocation cannot fit");
   });
   it("blocks unknown or insufficient free memory before starting a build", () => {
     expect(() => workspaceBuildResources(capacity, { ...usage, available: false })).toThrow(

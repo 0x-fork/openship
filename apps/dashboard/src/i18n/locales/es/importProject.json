@@ -349,7 +349,27 @@
     "detailFramework": "Framework",
     "detailBranch": "Rama",
     "detailDomains": "Dominios",
-    "detailDomain": "Dominio"
+    "detailDomain": "Dominio",
+    "portAdvisory": {
+      "loopbackTitle": "La app no puede recibir tráfico enrutado",
+      "loopbackNote": "El despliegue está en ejecución, pero un puerto enrutado requiere atención.",
+      "loopbackBody": "El puerto {port} solo escucha dentro del contenedor.",
+      "loopbackBodyService": "El servicio \"{service}\" solo escucha dentro del contenedor en el puerto {port}.",
+      "loopbackHelp": "Para una app que recibe tráfico enrutado, escucha en 0.0.0.0 y vuelve a desplegar, o dirige el tráfico a su proxy previsto.",
+      "openSettings": "Abrir ajustes",
+      "skipError": "No se pudo descartar este aviso. Inténtalo de nuevo."
+    }
+  },
+  "deploymentHealth": {
+    "recheck": "Comprobar salud",
+    "checking": "Comprobando…",
+    "healthy": "Los servicios están sanos",
+    "atDeployment": "Aviso registrado al desplegar",
+    "currentHealth": "Estado actual de los servicios",
+    "startupHint": "Si la app sigue iniciándose, espera y vuelve a comprobar. Si se reinicia o muestra un error, consulta los registros para encontrar la causa.",
+    "viewLogs": "Ver registros",
+    "unavailable": "No se pudo verificar la salud. Reintenta cuando el servidor sea accesible.",
+    "historical": "Este despliegue ya no está activo. Abre el proyecto para ver sus servicios actuales."
   },
   "composeDeployment": {
     "title": {

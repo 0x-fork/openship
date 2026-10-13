@@ -243,6 +243,30 @@ afterEach(async () => {
 });
 
 describe("deploy branch detection", () => {
+  it.each([true, false])("preserves saved GitHub reporting through hydration, branch scan, save and deploy (self-hosted: %s)", async selfHosted => {
+    api.selfHosted = selfHosted;
+    const githubChecks = { enabled: false, deployment: true, services: ["web"], includeErrors: false };
+    const response = await api.getInfo();
+    api.getInfo.mockResolvedValue({ data: { project: { ...response.data.project, githubChecks } } });
+    await act(async () => { await current.initializeFromProject("project-1"); });
+    expect(current.config.githubChecks).toEqual(githubChecks);
+    await act(async () => current.updateConfig({ branches: ["main", "openship"] }));
+    await selectBranch("openship");
+    expect(current.config.githubChecks).toEqual(githubChecks);
+    await act(async () => button(baseDictionary.deploy.sidebar.saveChanges).click());
+    expect(api.setOptions).toHaveBeenCalledWith("project-1", expect.objectContaining({ githubChecks }));
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure).toHaveBeenCalledWith(expect.objectContaining({ githubChecks }));
+  });
+
+  it("keeps a new project's reporting opt-out while scanning a different Compose file", async () => {
+    await act(async () => { await current.initializeFromRepo("example", "fresh"); });
+    const githubChecks = { enabled: false, deployment: true, services: "all" as const, includeErrors: false };
+    await act(async () => current.updateConfig({ githubChecks }));
+    await act(async () => { await current.rescanWithComposePath("infra/compose.yml"); });
+    expect(current.config.githubChecks).toEqual(githubChecks);
+  });
+
   it.each([{ commands: ["migrate"] }, { commands: [] }])(
     "preserves explicit release settings through rescan, save and deploy: $commands",
     async ({ commands }) => {
@@ -483,6 +507,45 @@ describe("deploy branch detection", () => {
     expect(current.config.detectedFramework).toBe("node");
     expect(current.config.composePath).toBeUndefined();
     expect(api.prepare.mock.lastCall?.[0].composePath).toBeUndefined();
+  });
+
+  it("keeps Dockerfile defaults as a running service when rescanning single and monorepo apps", async () => {
+    const docker = scan("openship", {
+      stack: "docker",
+      projectType: "docker",
+      category: "docker",
+      startCommand: "",
+      buildCommand: "",
+      installCommand: "",
+      port: 20128,
+    });
+    api.prepare.mockResolvedValueOnce(docker);
+    await selectBranch("openship");
+    expect(current.config).toMatchObject({
+      framework: "docker",
+      projectType: "docker",
+      runtimeMode: "docker",
+      options: { startCommand: "", hasServer: true, productionPort: "20128" },
+    });
+
+    api.prepare.mockResolvedValueOnce({
+      ...docker,
+      projectType: "monorepo",
+      monorepoApps: [
+        { ...docker, id: "web", name: "web", rootDirectory: "apps/web" },
+      ],
+      monorepoWorkspace: {
+        packageManager: "pnpm",
+        prepareCommand: "pnpm install",
+      },
+    });
+    await selectBranch("main");
+    expect(current.config.monorepoApps?.[0]).toMatchObject({
+      framework: "docker",
+      startCommand: "",
+      hasServer: true,
+      port: "20128",
+    });
   });
 
   it("replaces monorepo apps, workspace defaults, and mode snapshots when returning to a plain branch", async () => {

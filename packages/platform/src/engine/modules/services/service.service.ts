@@ -1624,6 +1624,7 @@ export interface LiveServiceContainer {
    *  out-of-band recreate. */
   containerId: string | null;
   status: ServiceContainerState;
+  health?: "healthy" | "starting" | "unhealthy" | null;
   ip: string | null;
   hostPort: number | null;
   imageRef: string | null;
@@ -1738,6 +1739,7 @@ export async function getActiveServiceContainers(
                   serviceName: svc.name,
                   containerId: m?.containerId ?? null,
                   status: m?.status ?? "stopped",
+                  health: m?.health ?? null,
                   ip: m?.ip ?? null,
                   hostPort: m?.hostPort ?? hint?.hostPort ?? null,
                   imageRef: m?.image ?? hint?.imageRef ?? null,
@@ -2285,6 +2287,10 @@ async function prepareServiceStart(ctx: RequestContext, projectId: string, servi
         });
       }
       if (!service.enabled) await repos.service.update(serviceId, { enabled: true });
+      // Reserve a stopped container's slot before releasing the organization lock.
+      // A failed/ambiguous start retains the reservation until a confirmed stop.
+      if (existing?.row?.status === "stopped")
+        await repos.service.updateServiceDeployment(existing.row.id, { status: "starting" });
       return existing;
     } catch (error) {
       disposeRuntime(existing?.runtime);

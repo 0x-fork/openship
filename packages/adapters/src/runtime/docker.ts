@@ -31,8 +31,10 @@
 /// <reference path="./tar-fs.d.ts" />
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import Dockerode from "dockerode";
+import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
+import { projectBuildKitWorker } from "./docker-buildkit-worker";
 import { createGzip } from "node:zlib";
 import { StringDecoder } from "node:string_decoder";
 
@@ -404,10 +406,9 @@ const SIGTERM_EXIT_CODE = 143;
  *    "can't access tty", and bash makes it work but prints job-status noise onto
  *    the command's stderr.
  *
- * `sleep && kill` (not `;`) so an image with no `sleep` simply has no watchdog
- * instead of killing the command instantly. Same reason `setsid` is probed rather
- * than assumed: no `setsid` degrades to the old single-child kill, never to a
- * command that won't start.
+ * Only a successful timer wait can trigger a timeout. If `sleep` is missing,
+ * the command still runs. Probe `setsid` so images without it retain the
+ * single-child timeout behavior.
  */
 const IN_CONTAINER_EXEC_WATCHDOG = [
   "if command -v setsid >/dev/null 2>&1; then",
@@ -422,7 +423,21 @@ const IN_CONTAINER_EXEC_WATCHDOG = [
   // wrapper and the exec itself.
   "  __ost=$__osc",
   "fi",
-  '{ sleep "$2" && { kill -TERM "$__ost" 2>/dev/null || kill -TERM "$__osc" 2>/dev/null; }; } >/dev/null 2>&1 &',
+  "{",
+  "  __oss=; __os_cancelled=0",
+  // Record early cancellation so a signal before sleep's PID assignment is safe.
+  // Only the owned timer gets KILL: rapid cancellation with TERM is unreliable on
+  // BusyBox, leaving wait blocked until the deadline after the command has exited.
+  '  trap \'__os_cancelled=1; if [ -n "$__oss" ]; then kill -KILL "$__oss" 2>/dev/null; fi\' TERM',
+  '  sleep "$2" &',
+  "  __oss=$!",
+  '  if [ "$__os_cancelled" = 1 ]; then kill -KILL "$__oss" 2>/dev/null; fi',
+  '  if wait "$__oss" 2>/dev/null; then',
+  '    if [ "$__os_cancelled" = 0 ]; then kill -TERM "$__ost" 2>/dev/null || kill -TERM "$__osc" 2>/dev/null; fi',
+  "  fi",
+  // A signal can interrupt wait before sleep exits; reap it before this shell exits.
+  '  wait "$__oss" 2>/dev/null',
+  "} >/dev/null 2>&1 &",
   "__osw=$!",
   "wait $__osc 2>/dev/null",
   "__osr=$?",
@@ -654,8 +669,8 @@ export function parsePortBindings(portSpecs: string[]): {
  * build request so it can't hang on a truncated body, and fail only the deploy.
  *
  * Passing the resulting STREAM (not `{ context }`) to buildImage routes through
- * dockerode's pass-through branch, so the bytes on the wire are identical to
- * what it would have produced.
+ * dockerode's pass-through branch. A leading context-directory header avoids
+ * a pre-response transport stall observed with Bun 1.3.3 and BuildKit.
  */
 export function packBuildContext(
   contextDir: string,
@@ -680,7 +695,17 @@ export function packBuildContext(
     ? (absolutePath: string) =>
         ignoreContextPath(relative(contextDir, absolutePath).split(sep).join("/"))
     : undefined;
-  const pack = tarFs.pack(contextDir, { entries, ignore });
+  // Emit only the root metadata first, then walk the original explicit entries.
+  // Recursively packing "." would expand the allowlist and hide missing-entry
+  // errors, so share the pack without walking any root children here.
+  const pack = tarFs.pack(contextDir, {
+    entries: ["."],
+    ignore: () => true,
+    finalize: false,
+    finish: (rootPack) => {
+      tarFs.pack(contextDir, { entries, ignore, pack: rootPack });
+    },
+  });
   const body = pack.pipe(createGzip());
   let contextError: Error | null = null;
   const capture = (err: unknown) => {
@@ -1608,8 +1633,8 @@ export class DockerRuntime implements RuntimeAdapter {
     // BuildKit driver ignores --memory/--cpu-quota, so bound its worker instead.
     const cloudLimits = this.connectionOptions?.transport === "cloud" ? dockerBuildResourceLimits(config.resources) : undefined;
     const boundedBuildKit = buildKit && cloudLimits && Object.keys(cloudLimits).length > 0;
-    const builderName = boundedBuildKit
-      ? `openship-${createHash("sha256").update(config.projectId).digest("hex").slice(0, 24)}` : undefined;
+    const buildWorker = boundedBuildKit ? projectBuildKitWorker(config.projectId) : undefined;
+    const builderName = buildWorker?.builderName;
     const removeBuilder = builderName ? `docker buildx rm --force ${sq(builderName)}` : undefined;
     const builderEnv = buildKit ? "DOCKER_BUILDKIT=1 " : "";
     const ownershipHost = buildKit ? null : newBuildOwnershipHost();
@@ -1666,7 +1691,7 @@ export class DockerRuntime implements RuntimeAdapter {
         "set -e",
         `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
         `${removeBuilder} >/dev/null 2>&1 || true`,
-        `docker buildx create --name ${sq(builderName!)} --driver docker-container ${driverOptions} --bootstrap`,
+        `docker buildx create --name ${sq(builderName!)} --node ${sq(buildWorker!.nodeName)} --driver docker-container ${driverOptions} --bootstrap`,
         `cd ${sq(remoteBuildDir)}`,
         `docker buildx build --builder ${sq(builderName!)} --load --progress=plain -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
       ].join("\n");
@@ -2655,14 +2680,17 @@ export class DockerRuntime implements RuntimeAdapter {
         observeCaughtError(featureErr, "adapters/runtime/docker");
         throw new Error(this.formatDockerConnectivityError(featureErr));
       }
-      await this.pullImage(requestedRef, { force: config.forcePull });
+      const preparedImage = await this.prepareDeploymentImage(requestedRef, {
+        force: config.forcePull,
+        refreshMutableTag: config.refreshMutableTag,
+        signal: abort.signal,
+      });
 
       // A pull cannot currently be interrupted through every Docker transport,
       // but cancellation must still prevent the acquired image from deploying.
       if (abort.signal.aborted) return cancelled();
 
-      const deployRef =
-        (await this.resolveImageDigest(requestedRef).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/docker"); return undefined; })) ?? requestedRef;
+      const deployRef = preparedImage.deploymentRef;
       log.log(
         deployRef === requestedRef
           ? `Image ${requestedRef} is ready.\n`
@@ -4470,6 +4498,18 @@ export class DockerRuntime implements RuntimeAdapter {
     }
   }
 
+  protected async inspectDeploymentImage(ref: string) {
+    return this.docker.getImage(ref).inspect();
+  }
+
+  /** Strict preparation for a deployment cohort; activation uses the frozen ref. */
+  async prepareDeploymentImage(ref: string, options: DockerImagePreparationOptions = {}) {
+    return prepareDockerImage(ref, options, {
+      inspect: image => this.inspectDeploymentImage(image),
+      pull: (image, intent) => this.pullImage(image, intent),
+    });
+  }
+
   /** Is this image tag present on THIS daemon? Distinguishes a locally-built
    *  image (must be transferred cross-server) from a registry tag (the target
    *  just pulls it). */
@@ -4709,6 +4749,7 @@ export class DockerRuntime implements RuntimeAdapter {
     return {
       containerId,
       status,
+      imageId: data.Image,
       ip,
       hostPort,
       ...(hostPortByContainerPort ? { hostPortByContainerPort } : {}),
@@ -5682,6 +5723,11 @@ export class DockerRuntime implements RuntimeAdapter {
         });
         throw err;
       }
+    } else if (/(?:^|@)sha256:[a-f0-9]{64}$/.test(config.image)) {
+      // A prepared ref may have been pruned after cohort preflight. Validate
+      // availability again before stopping the old container, without pulling
+      // a mutable substitute or contacting the registry during cutover.
+      await this.inspectDeploymentImage(config.image);
     }
 
     // Flush the existing service before removing it, using Docker's normal

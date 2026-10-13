@@ -343,6 +343,7 @@
     }
   },
   "resourcesGuide": {
+    "concurrentBuilds": "Compilaciones simultáneas",
     "title": "Cómo funciona el uso de Cloud",
     "credits": "Créditos Cloud",
     "creditsHint": "Las compilaciones y las aplicaciones activas consumen créditos por CPU, memoria, actividad de disco y transferencia de datos. Las cargas mayores consumen créditos más rápido.",

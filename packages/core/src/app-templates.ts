@@ -72,6 +72,8 @@ export interface TemplateServiceSpec {
   name: string;
   /** Upstream image to pull. Exactly one of `image`/`build` per service. */
   image?: string;
+  /** Exact retired defaults eligible for an explicit image-only repair. */
+  replacesImages?: readonly string[];
   /** Initial Cloud container limits, summed into the project's VM allocation.
    * Self-hosted defaults stay uncapped; explicit Cloud overrides are retained. */
   resources?: Readonly<ResourceValues>;
@@ -368,6 +370,18 @@ export interface AppRequires {
   optional?: boolean;
 }
 
+/** Public editorial content. Article files are compiled into catalog.json. */
+export interface AppMarketplaceContent {
+  features?: readonly { title: string; description?: string }[];
+  article?: string;
+  /** Authoring only: articles/<slug>.md relative to apps/catalog/. */
+  articleFile?: string;
+}
+
+/** Shared upstream artifact used by the engine and public app directory. */
+export const APP_CATALOG_URL =
+  "https://raw.githubusercontent.com/oblien/openship/main/packages/core/src/apps/catalog.json";
+
 export interface AppTemplate {
   id: string;
   /** Installable now (true) vs a dimmed "coming soon" placeholder (false/omitted). Drives AVAILABLE_APP_IDS. */
@@ -412,6 +426,8 @@ export interface AppTemplate {
   repository?: string;
   name: string;
   description: string;
+  /** Optional features and Markdown for the public app detail page. */
+  marketplace?: AppMarketplaceContent;
   /** "template" = instantiate the services below; "flow" = defer to `flowHref`. */
   kind: "template" | "flow";
   /** Catalog logo id (resolved to an icon in the dashboard). */

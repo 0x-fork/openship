@@ -206,8 +206,8 @@ describe("billing page failure recovery", () => {
 
   it("opens a new-server purchase without selecting or fetching an existing subscription", async () => {
     const page = await BillingTabPage({ params: Promise.resolve({ tab: "plans" }),
-      searchParams: Promise.resolve({ newServer: "1", workspaceId: "cws-existing", organizationId: "org-a" }) });
-    expect(findElement(page, ManagedServerPurchase)).toBeDefined();
+      searchParams: Promise.resolve({ newServer: "1", workspaceId: "cws-existing", organizationId: "org-a", plan: "starter" }) });
+    expect(findElement<{ requestedPlanId: string }>(page, ManagedServerPurchase)?.props.requestedPlanId).toBe("starter");
     expect(findElement(page, BillingPlanSummary)).toBeUndefined();
     expect(findElement<{ view: BillingView }>(page, BillingPageView)?.props.view).toMatchObject({ newServer: true, plansOnly: true });
     expect(findElement<{ layout: string }>(page, BillingContent)?.props.layout).toBe("purchase");

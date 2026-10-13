@@ -22,6 +22,7 @@ import { getNamespaceClient } from "./openship-cloud";
 import { readCloudWorkspaceAllocation } from "./cloud-capacity";
 import { createProvisionLock } from "./provision-lock";
 import { cacheStore } from "./cache-store/index";
+import { decideCloudBuildResources } from "./cloud-build-resources";
 import { sampleServerUsage, unavailableServerUsage } from "./server-usage";
 import { registryAuthResolver } from "../modules/credentials/registry-auth";
 export { unavailableServerUsage as unavailableWorkspaceUsage } from "./server-usage";
@@ -200,29 +201,32 @@ export function workspaceBuildResources(
   usage: CloudWorkspaceUsage,
   requested?: Partial<ResourceConfig>,
 ): ResourceConfig {
-  if (!usage.available || usage.memoryAvailableMb === null || usage.cpuPercent === null)
+  const decision = decideCloudBuildResources({ capacity, usage, requested, reservations: [] });
+  if (decision.kind === "admit") return { ...decision.resources, diskMb: capacity.diskMb };
+  if (decision.kind === "impossible" && decision.reason === "invalid-request")
+    throw new AppError(
+      "Choose automatic build resources or specify at least 0.25 vCPU and 128 MB of memory.",
+      400,
+      "CLOUD_BUILD_RESOURCES_INVALID",
+    );
+  if (
+    decision.kind === "wait" &&
+    ["usage-unavailable", "capacity-unavailable"].includes(decision.reason)
+  )
     throw new AppError(
       "Couldn't measure the server's available build capacity. Retry after the server is reachable.",
       503,
       "CLOUD_WORKSPACE_USAGE_UNAVAILABLE",
     );
-  const headroomMb = Math.min(512, Math.max(128, capacity.memoryMb * 0.05));
-  const availableMb = Math.floor(Math.min(capacity.memoryMb, usage.memoryAvailableMb) - headroomMb);
-  if (availableMb < 128)
+  if (decision.kind === "wait" && decision.reason === "memory-pressure")
     throw new AppError(
-      "The server has too little free memory to build safely. Stop an idle app or increase the server's capacity, then retry.",
+      "The server has too little free memory to build safely. Stop an idle app, lower the build allocation, or increase the server's capacity, then retry.",
       409,
       "CLOUD_WORKSPACE_BUILD_CAPACITY",
     );
-  return {
-    cpuCores: Math.min(
-      requested?.cpuCores || capacity.cpuCores,
-      Math.max(
-        0.25,
-        Math.floor(capacity.cpuCores * (1 - Math.min(100, usage.cpuPercent) / 100) * 4) / 4,
-      ),
-    ),
-    memoryMb: Math.min(requested?.memoryMb || availableMb, availableMb),
-    diskMb: capacity.diskMb,
-  };
+  throw new AppError(
+    "The requested build allocation cannot fit the server's available capacity. Stop an idle app, lower the build allocation, or increase the server's capacity, then retry.",
+    409,
+    "CLOUD_WORKSPACE_BUILD_CAPACITY",
+  );
 }

@@ -576,9 +576,28 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "发送记录",
+      "description": "所有渠道最近的50条发送记录。",
+      "refresh": "刷新",
+      "loading": "正在加载发送记录…",
+      "error": "无法加载发送记录，请刷新重试。",
+      "empty": "暂无最近的发送记录。",
+      "attempts": "尝试次数：{count}",
+      "errorDetails": "错误详情",
+      "unknownCategory": "未知事件",
+      "unknownChannel": "未知渠道",
+      "status": {
+        "sent": "已发送",
+        "queued": "排队中",
+        "sending": "发送中",
+        "failed": "失败",
+        "seen": "已查看"
+      }
+    },
     "channels": {
       "title": "投递渠道",
-      "description": "你的通知发送到哪里。已验证的渠道可以送达；未验证的渠道会被跳过。",
+      "description": "已启用且已验证的渠道可以接收提醒。发送测试以检查是否送达。",
       "empty": "尚无渠道。添加一个以开始接收通知。",
       "verified": "已验证",
       "unverified": "未验证",
@@ -588,7 +607,11 @@
       "addChannel": "添加渠道",
       "confirmDelete": "删除此渠道？使用它的订阅将停止。",
       "channelRemoved": "渠道已移除",
-      "channelAdded": "渠道已添加"
+      "channelAdded": "渠道已添加",
+      "enabled": "已启用",
+      "disabled": "已禁用",
+      "edit": "编辑",
+      "updated": "渠道已更新"
     },
     "describe": {
       "slackWebhook": "Slack webhook",
@@ -617,7 +640,19 @@
       "telegramHint": "先用 @BotFather 创建机器人，然后向它发送一条消息（或把它加入群组），它才能回复。",
       "adding": "正在添加…",
       "addChannel": "添加渠道",
-      "labelRequired": "标签为必填项"
+      "labelRequired": "标签为必填项",
+      "channelType": "渠道类型",
+      "labels": {
+        "name": "名称",
+        "address": "电子邮件地址",
+        "url": "Webhook 地址",
+        "botToken": "机器人令牌",
+        "chatId": "聊天 ID"
+      },
+      "saving": "正在保存…",
+      "editHint": "凭据字段留空可保留已存储的密钥。更改目标后需要重新测试以验证发送。",
+      "signingSecret": "签名密钥",
+      "secretHint": "请立即复制此密钥以验证 Webhook 签名。密钥仅显示一次。"
     },
     "subscriptions": {
       "title": "要接收哪些通知",
@@ -630,9 +665,16 @@
     },
     "orgDefaults": {
       "title": "组织默认设置",
-      "description": "当新成员加入此组织时应用的默认设置。成员可按渠道进行覆盖。",
+      "description": "成员尚未明确选择某项提醒的偏好时，将使用组织默认设置。成员可以通过个人偏好覆盖默认设置。",
       "notifyAria": "在 {category} 时通知",
       "nChannels": "{n} 个渠道"
+    },
+    "overview": {
+      "title": "通知",
+      "description": "渠道属于你的账户，可跨组织使用。提醒偏好和默认设置仅适用于当前组织。",
+      "ready": "{total} 个渠道中有 {count} 个就绪",
+      "preferences": "提醒偏好",
+      "retry": "重试"
     }
   },
   "audit": {

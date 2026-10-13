@@ -748,9 +748,28 @@
     }
   },
   "notifications": {
+    "deliveryHistory": {
+      "title": "Delivery history",
+      "description": "Last 50 deliveries across all channels.",
+      "refresh": "Refresh",
+      "loading": "Loading deliveries…",
+      "error": "Could not load delivery history. Refresh to try again.",
+      "empty": "No recent deliveries.",
+      "attempts": "Attempts: {count}",
+      "errorDetails": "Error details",
+      "unknownCategory": "Unknown event",
+      "unknownChannel": "Unknown channel",
+      "status": {
+        "sent": "Sent",
+        "queued": "Queued",
+        "sending": "Sending",
+        "failed": "Failed",
+        "seen": "Seen"
+      }
+    },
     "channels": {
       "title": "Delivery channels",
-      "description": "Where your notifications go. Verified channels are reachable; unverified ones are skipped.",
+      "description": "Enabled, verified channels can receive alerts. Send a test to check delivery.",
       "empty": "No channels yet. Add one to start receiving notifications.",
       "verified": "Verified",
       "unverified": "Unverified",
@@ -760,7 +779,11 @@
       "addChannel": "Add channel",
       "confirmDelete": "Delete this channel? Subscriptions using it will stop.",
       "channelRemoved": "Channel removed",
-      "channelAdded": "Channel added"
+      "channelAdded": "Channel added",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "edit": "Edit",
+      "updated": "Channel updated"
     },
     "describe": {
       "slackWebhook": "Slack webhook",
@@ -792,7 +815,19 @@
       "labelRequired": "Label is required",
       "noEmailTransport": "No email server is set up on this instance, so email notifications won't be delivered.",
       "setUpSmtp": "Set up SMTP →",
-      "otherAddress": "Other address…"
+      "otherAddress": "Other address…",
+      "channelType": "Channel type",
+      "labels": {
+        "name": "Name",
+        "address": "Email address",
+        "url": "Webhook URL",
+        "botToken": "Bot token",
+        "chatId": "Chat ID"
+      },
+      "saving": "Saving…",
+      "editHint": "Leave credential fields blank to keep stored secrets. Destination changes require a new test to verify delivery.",
+      "signingSecret": "Signing secret",
+      "secretHint": "Copy this secret now to verify webhook signatures. It is shown only once."
     },
     "subscriptions": {
       "title": "What to be notified about",
@@ -805,9 +840,16 @@
     },
     "orgDefaults": {
       "title": "Organization defaults",
-      "description": "Defaults applied when a new member joins this organization. Members can override per-channel.",
+      "description": "Organization defaults apply when a member has not made an explicit choice for an alert. Members can override them with their own preferences.",
       "notifyAria": "Notify on {category}",
       "nChannels": "{n} channels"
+    },
+    "overview": {
+      "title": "Notifications",
+      "description": "Channels belong to your account and are shared across organizations. Alert preferences and defaults apply to the active organization.",
+      "ready": "{count} of {total} channels ready",
+      "preferences": "Alert preferences",
+      "retry": "Retry"
     }
   },
   "audit": {
