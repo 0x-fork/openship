@@ -13,17 +13,19 @@ export function DeploymentHeader({
   serviceCount,
   decisionPending = false,
   isCompose = false,
+  warningResolved = false,
 }: {
   onRedeploy: () => void | Promise<string | null>;
   serviceCount?: number;
   decisionPending?: boolean;
   isCompose?: boolean;
+  warningResolved?: boolean;
 }) {
   const { config, state, deploymentStatus } = useDeployment();
   const { t } = useI18n();
   const copy = t.importProject.deploymentProcessing;
   const projectId = state.projectId || config.projectId;
-  const hasWarning = deploymentStatus === "ready" && !!state.warningMessage;
+  const hasWarning = deploymentStatus === "ready" && !!state.warningMessage && !warningResolved;
   const requiresPortReview =
     deploymentStatus === "ready" &&
     state.portCheck.some(

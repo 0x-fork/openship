@@ -374,6 +374,17 @@
       "skipError": "Impossible de masquer cet avertissement. Veuillez réessayer."
     }
   },
+  "deploymentHealth": {
+    "recheck": "Revérifier la santé",
+    "checking": "Vérification…",
+    "healthy": "Les services sont sains",
+    "atDeployment": "Avertissement au déploiement",
+    "currentHealth": "État actuel des services",
+    "startupHint": "Si l’app démarre encore, attendez puis revérifiez. Si elle redémarre ou signale une erreur, consultez ses journaux pour trouver la cause.",
+    "viewLogs": "Voir les journaux",
+    "unavailable": "La santé n’a pas pu être vérifiée. Réessayez quand le serveur est accessible.",
+    "historical": "Ce déploiement n’est plus actif. Ouvrez le projet pour voir les services actuels."
+  },
   "composeDeployment": {
     "title": {
       "cancelled": "Déploiement annulé",

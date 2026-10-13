@@ -9,7 +9,7 @@ import ComposeDeploymentProcessing from "./compose/ComposeDeploymentProcessing";
 import DeploymentProcessing from "./DeploymentProcessing";
 
 const mocks = vi.hoisted(() => ({
-  info: vi.fn(), push: vi.fn(), stop: vi.fn(), ready: vi.fn(), respond: vi.fn(),
+  info: vi.fn(), containers: vi.fn(), push: vi.fn(), stop: vi.fn(), ready: vi.fn(), respond: vi.fn(),
   showModal: vi.fn(), hideModal: vi.fn(), showToast: vi.fn(), pricing: vi.fn(),
   portReview: vi.fn((_props: unknown) => null),
 }));
@@ -22,7 +22,10 @@ vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: mocks.s
 vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => mocks.pricing }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
-vi.mock("@/lib/api", () => ({ projectsApi: { getInfo: mocks.info }, deployApi: {} }));
+vi.mock("@/lib/api", () => ({ projectsApi: { getInfo: mocks.info }, deployApi: {},
+  servicesApi: { containers: mocks.containers },
+  getApiErrorMessage: (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback,
+}));
 vi.mock("./PortAdvisoryModal", () => ({
   PortAdvisoryModal: (props: unknown) => mocks.portReview(props),
 }));
@@ -113,6 +116,16 @@ function panel() { return host.querySelector<HTMLElement>('[role="tabpanel"][ari
 async function select(label: string) { await act(async () => tab(label).click()); }
 
 describe("build pages", () => {
+  it("updates the deployment header after a startup health warning is verified as recovered", async () => {
+    deployment.state.warningMessage = "api: healthcheck has not reported healthy yet";
+    mocks.info.mockResolvedValue({ data: { project: { activeDeploymentId: deployment.state.deploymentId } } });
+    mocks.containers.mockResolvedValue({ containers: [{ serviceId: "svc-api", serviceName: "api", containerId: "api-container", status: "running", health: "healthy" }] });
+    await render();
+    expect(host.querySelector("header [role=status]")?.textContent).toBe(copy.status.ready);
+    expect(host.querySelector("details")?.textContent).toContain(deployment.state.warningMessage);
+    expect(redeploy).not.toHaveBeenCalled();
+    expect(mocks.stop).not.toHaveBeenCalled();
+  });
   it("defers port review until the partial deployment decision has been resolved", async () => {
     deployment.state.decisionPending = true;
     deployment.state.portCheck = [

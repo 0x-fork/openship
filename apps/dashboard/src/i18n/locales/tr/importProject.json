@@ -374,6 +374,17 @@
     "detailDomains": "Alan Adları",
     "detailDomain": "Alan Adı"
   },
+  "deploymentHealth": {
+    "recheck": "Sağlığı yeniden denetle",
+    "checking": "Denetleniyor…",
+    "healthy": "Servisler sağlıklı",
+    "atDeployment": "Dağıtım sırasında kaydedilen uyarı",
+    "currentHealth": "Güncel servis durumu",
+    "startupHint": "Uygulama başlıyorsa bekleyip yeniden denetleyin. Yeniden başlıyorsa veya hata bildiriyorsa nedenini bulmak için günlükleri açın.",
+    "viewLogs": "Günlükleri görüntüle",
+    "unavailable": "Sağlık doğrulanamadı. Sunucuya erişilebildiğinde yeniden deneyin.",
+    "historical": "Bu dağıtım artık etkin değil. Güncel servisler için projeyi açın."
+  },
   "composeDeployment": {
     "title": {
       "cancelled": "Dağıtım İptal Edildi",

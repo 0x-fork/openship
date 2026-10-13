@@ -360,6 +360,17 @@
       "skipError": "Não foi possível dispensar este aviso. Tente novamente."
     }
   },
+  "deploymentHealth": {
+    "recheck": "Verificar saúde",
+    "checking": "Verificando…",
+    "healthy": "Os serviços estão saudáveis",
+    "atDeployment": "Aviso na implantação",
+    "currentHealth": "Estado atual dos serviços",
+    "startupHint": "Se o app ainda estiver iniciando, aguarde e verifique novamente. Se reiniciar ou apresentar um erro, abra os logs para encontrar a causa.",
+    "viewLogs": "Ver logs",
+    "unavailable": "Não foi possível verificar a saúde. Tente novamente quando o servidor estiver acessível.",
+    "historical": "Esta implantação não está mais ativa. Abra o projeto para ver os serviços atuais."
+  },
   "composeDeployment": {
     "title": {
       "cancelled": "Implantação Cancelada",

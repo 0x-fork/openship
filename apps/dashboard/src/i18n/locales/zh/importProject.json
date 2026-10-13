@@ -360,6 +360,17 @@
       "skipError": "无法忽略此警告，请重试。"
     }
   },
+  "deploymentHealth": {
+    "recheck": "重新检查健康状态",
+    "checking": "正在检查…",
+    "healthy": "服务运行正常",
+    "atDeployment": "部署时的警告",
+    "currentHealth": "当前服务状态",
+    "startupHint": "如果应用仍在启动，请稍等后重新检查。如果不断重启或报告错误，请打开日志查找原因。",
+    "viewLogs": "查看日志",
+    "unavailable": "无法验证健康状态。服务器恢复连接后请重试。",
+    "historical": "此部署已不再活动。请打开项目检查当前服务。"
+  },
   "composeDeployment": {
     "title": {
       "cancelled": "部署已取消",
