@@ -138,7 +138,17 @@
     "hide": "Ocultar",
     "reveal": "Mostrar",
     "generateTitle": "Generar una contraseña aleatoria segura",
-    "generate": "Generar"
+    "generate": "Generar",
+    "relay": {
+      "toggle": "Retransmitir el correo saliente a través de un proveedor de correo electrónico",
+      "hint": "Recomendado. Enviar a través de las IP de confianza de un proveedor: las IP de servidores nuevos suelen estar en listas de bloqueo y muchos proveedores bloquean el puerto 25 saliente. La recepción permanece en este servidor.",
+      "region": "Región",
+      "username": "Nombre de usuario SMTP",
+      "password": "Contraseña SMTP",
+      "perDomainNote": "Se aplica a todos los dominios. El enrutamiento por dominio y los registros DKIM / MAIL FROM del proveedor de cada dominio se configuran tras la instalación en la pestaña Envío."
+    },
+    "startFailed": "No se pudo iniciar la configuración del motor de correo.",
+    "startFailedFallback": "No se pudo conectar para iniciar la configuración. Verifica el acceso SSH e inténtalo de nuevo."
   },
   "sidebar": {
     "portConflict": {

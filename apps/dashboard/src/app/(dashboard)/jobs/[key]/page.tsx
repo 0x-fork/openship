@@ -56,12 +56,12 @@ export default function JobDetailPage() {
     setBusy(true);
     try {
       const res = await jobsApi.run(job.key);
-      showToast(interpolate(j.toast.ran, { label: job.label }), "success", j.toast.title);
+      showToast(interpolate(j.toast.ran, { label: jobLabel }), "success", j.toast.title);
       if (res?.data?.runId) setLogRunId(res.data.runId);
       await load();
     } catch (err) {
       if (showCloudPricing(err)) return;
-      showToast(getApiErrorMessage(err, interpolate(j.toast.ranFailed, { label: job.label })), "error", j.toast.title);
+      showToast(getApiErrorMessage(err, interpolate(j.toast.ranFailed, { label: jobLabel })), "error", j.toast.title);
     } finally {
       setBusy(false);
     }
@@ -100,6 +100,14 @@ export default function JobDetailPage() {
     return <PageContainer><p className="py-20 text-center text-sm text-muted-foreground">{j.loadFailed}</p></PageContainer>;
   }
 
+  const jobLabel = (() => {
+    if (!isCustom && j.systemJobLabels) {
+      const labels = j.systemJobLabels as Record<string, string>;
+      if (labels[job.key]) return labels[job.key]!;
+      if (labels[job.label]) return labels[job.label]!;
+    }
+    return job.label;
+  })();
   const cfg = job.actionConfig ?? {};
   const scheduleText =
     job.scheduleType === "recurring" ? job.cronExpression ?? "—"
@@ -115,7 +123,7 @@ export default function JobDetailPage() {
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>{job.label}</h1>
+            <h1 className="truncate text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>{jobLabel}</h1>
             <span className="shrink-0 rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               {isCustom ? j.kind.custom : j.kind.system}
             </span>
@@ -176,7 +184,7 @@ export default function JobDetailPage() {
               {cfg.secrets && Object.keys(cfg.secrets).length > 0 && <InfoRow icon={"git-branch"} label={j.create.secrets} value={Object.keys(cfg.secrets).map((k) => `${k}=••••`).join(", ")} />}
               </>}
               {job.dependsOn && job.dependsOn.length > 0 && <InfoRow icon={"git-branch"} label={j.create.dependencies} value={job.dependsOn.join(", ")} />}
-              {job.triggerEvents && job.triggerEvents.length > 0 && <InfoRow icon={"bolt"} label={j.create.triggers} value={job.triggerEvents.join(", ")} />}
+              {job.triggerEvents && job.triggerEvents.length > 0 && <InfoRow icon={"bolt"} label={j.create.triggers} value={job.triggerEvents.map((id) => (j as any)?.eventTriggers?.[id]?.label || id).join(", ")} />}
               {job.notifyConfig && job.notifyConfig.channels.length > 0 && (
                 <InfoRow icon={"bell"} label={j.create.notifications} value={interpolate(j.detail.notifyValue, { c: String(job.notifyConfig.channels.length), s: job.notifyConfig.states.join(", ") })} />
               )}

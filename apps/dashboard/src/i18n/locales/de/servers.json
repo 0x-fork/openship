@@ -43,8 +43,6 @@
     "emptyDescription": "Verbinden Sie einen Server per SSH und Openship übernimmt den Rest – Docker, OpenResty, SSL und Deployments werden alle automatisch eingerichtet.",
     "addFirstServer": "Ersten Server hinzufügen",
     "whatGetsConfigured": "Was konfiguriert wird",
-    "dockerDesc": "Container-Laufzeitumgebung",
-    "openRestyDesc": "Reverse-Proxy & SSL",
     "monitoring": "Überwachung",
     "monitoringDesc": "Zustandsprüfungen",
     "gitDesc": "Quell-Deployments",
@@ -109,7 +107,12 @@
       "skippedMany": "{n} benötigen Aufmerksamkeit auf ihrer eigenen Seite",
       "nothingToDo": "Nichts anzuwenden",
       "applyFailed": "Updates konnten nicht gestartet werden"
-    }
+    },
+    "featContainer": "Container-Laufzeitumgebung",
+    "featContainerDesc": "Führt jede App isoliert aus",
+    "featProxy": "Reverse-Proxy",
+    "featProxyDesc": "Routing und SSL",
+    "seeDocs": "Dokumentation anzeigen"
   },
   "containers": {
     "subtitle": "Edge- und Mail-Container auf diesem Server",
@@ -191,7 +194,18 @@
     "toastKeyPathTestRequired": "Schlüsselpfad ist erforderlich, um die Verbindung zu testen",
     "toastConnectionSuccess": "Verbindung erfolgreich",
     "toastConnectionFailed": "Verbindung fehlgeschlagen",
-    "toastConnectionTestFailed": "Verbindungstest fehlgeschlagen"
+    "toastConnectionTestFailed": "Verbindungstest fehlgeschlagen",
+    "keyModePaste": "Einfügen / Hochladen",
+    "keyModePath": "Host-Pfad",
+    "keyPathBrowse": "Durchsuchen…",
+    "keyPathHelp": "Absoluter Pfad zum privaten Schlüssel auf dem Rechner, auf dem Openship läuft.",
+    "keyPaste": "Privater Schlüssel",
+    "keyPastePlaceholder": "-----BEGIN OPENSSH PRIVATE KEY-----\n…",
+    "keyPasteHelp": "Eingefügte Schlüssel werden verschlüsselt gespeichert und verlassen niemals den Server.",
+    "keyStoredKeep": "Ein Schlüssel ist gespeichert — fügen Sie einen neuen ein, um ihn zu ersetzen, oder lassen Sie das Feld leer, um ihn beizubehalten.",
+    "keyUploadFile": "Schlüsseldatei hochladen",
+    "keyPasteInvalid": "Diese Datei scheint kein gültiger privater Schlüssel zu sein.",
+    "toastKeyRequired": "Ein privater Schlüssel ist erforderlich"
   },
   "detail": {
     "tabs": {
@@ -280,7 +294,11 @@
       "toastRemovedKeptOther": "Server entfernt. {count} Workloads wurden aus Openship entfernt und laufen weiter.",
       "toastRemovedDestroyedOne": "Server entfernt. 1 Workload wurde von der Maschine gelöscht.",
       "toastRemovedDestroyedOther": "Server entfernt. {count} Workloads wurden von der Maschine gelöscht."
-    }
+    },
+    "sshPort": "SSH-Port: {port}",
+    "port": "Port",
+    "reinstallDockerTitle": "Docker auf diesem Server neu installieren?",
+    "reinstallDockerMessage": "Dies führt das offizielle Installationsprogramm von Docker aus, das die aktuelle Engine abruft — auf einem aktuellen Server ist dies ein größeres Upgrade. Durch die Installation oder Aktualisierung von Docker wird der Daemon neu gestartet, wodurch jeder Container auf diesem Server neu gestartet wird, einschließlich allem, was Openship hier ausführt. Nichts anderes installiert Docker für Sie: Andere Schritte überspringen es, solange es funktioniert."
   },
   "banner": {
     "unreachableTitle": "{host} nicht erreichbar",
@@ -298,7 +316,18 @@
     "retry": "Erneut versuchen",
     "editCredentials": "Anmeldedaten bearbeiten",
     "editServer": "Server bearbeiten",
-    "showRawError": "Rohen Fehler anzeigen"
+    "showRawError": "Rohen Fehler anzeigen",
+    "hostChannelTitle": "Openship kann den Host dieses Rechners nicht erreichen",
+    "hostChannelBody": "Openship läuft hier in einem Container und kommuniziert mit dem Host über SSH unter {target}. Dort hat niemand geantwortet, sodass Vorgänge auf Host-Ebene auf diesem System nicht ausgeführt werden können.",
+    "hostChannelImpact": "Gewöhnliche Deployments auf dieses System funktionieren weiterhin — sie laufen über den Docker-Socket. Bis der Kanal funktioniert, ist Folgendes blockiert: das Host-Terminal, Host-Systeminformationen und Host-Portscans; die Übernahme von :80/:443 von einem Proxy, den Openship nicht gestartet hat; die Installation oder Aktualisierung der Mail-Engine; das Bereitstellen einer Katalog-App, die eine generierte Konfigurationsdatei auf dem Host benötigt (z. B. kong.yml von Supabase). Dieser Rechner wird in der Serverliste des Dashboards außerdem als „Offline“ angezeigt, solange der Kanal nicht verfügbar ist.",
+    "hostChannelFix": "Führen Sie dies auf dem Host aus und versuchen Sie es dann erneut:",
+    "hostChannelMissingTitle": "Openship hat keinen Kanal zum Host dieses Rechners",
+    "hostChannelMissingBody": "Openship läuft hier in einem Container, und der SSH-Kanal zum Erreichen des Hosts wurde nie eingerichtet. Es gab keine Adresse zur Kontaktaufnahme, sodass hier nichts ausgefallen ist — Operationen auf Host-Ebene auf diesem Rechner können schlicht nirgendwo ausgeführt werden.",
+    "hostChannelWouldUse": "Nach der Einrichtung erreicht der Kanal den Host unter {target}. Bisher wurde diese Adresse noch nicht kontaktiert.",
+    "hostChannelProvisionFix": "Führen Sie dies auf dem Host aus, um den Kanal einzurichten, und versuchen Sie es dann erneut:",
+    "hostChannelAuthTitle": "Der Host hat den Schlüssel von Openship abgelehnt",
+    "hostChannelAuthBody": "Openship läuft hier in einem Container und erreicht den Host über SSH unter {target}. Der Host hat geantwortet und dann den Schlüssel abgelehnt, sodass Operationen auf Host-Ebene nicht ausgeführt werden können. Entweder ist der Schlüssel für dieses Konto nicht mehr autorisiert, oder sshd erlaubt diesem Konto überhaupt keine Anmeldung. Die auf diesem Server gespeicherten SSH-Zugangsdaten werden für diese Verbindung nicht verwendet — der Kanal verfügt über einen eigenen Schlüssel.",
+    "hostChannelReauthorizeFix": "Führen Sie dies auf dem Host aus, um den Kanalschlüssel erneut zu autorisieren, und versuchen Sie es dann erneut:"
   },
   "overview": {
     "cpu": "CPU",
@@ -347,7 +376,12 @@
     "statusInstalled": "Installiert",
     "statusRemoved": "Entfernt",
     "statusFailed": "Fehlgeschlagen",
-    "statusWaiting": "Wartet"
+    "statusWaiting": "Wartet",
+    "roleDocker": "Container-Laufzeitumgebung",
+    "roleGit": "Versionskontrolle",
+    "roleOpenresty": "Reverse-Proxy",
+    "roleCertbot": "SSL-Zertifikate",
+    "roleRsync": "Dateiübertragung"
   },
   "ports": {
     "title": "Port-Weiterleitung",

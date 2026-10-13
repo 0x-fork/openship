@@ -138,7 +138,17 @@
     "hide": "Verbergen",
     "reveal": "Anzeigen",
     "generateTitle": "Ein starkes, zufälliges Passwort generieren",
-    "generate": "Generieren"
+    "generate": "Generieren",
+    "relay": {
+      "toggle": "Ausgehende E-Mails über einen E-Mail-Anbieter weiterleiten (Relay)",
+      "hint": "Empfohlen. Versand über vertrauenswürdige IPs eines Anbieters — IPs neuer Server stehen oft auf Blocklisten und viele Hoster blockieren den ausgehenden Port 25. Der Empfang verbleibt auf diesem Server.",
+      "region": "Region",
+      "username": "SMTP-Benutzername",
+      "password": "SMTP-Passwort",
+      "perDomainNote": "Gilt für alle Domains. Das Routing pro Domain und die DKIM- / MAIL FROM-Einträge des Anbieters für jede Domain werden nach der Installation im Reiter „Versand“ konfiguriert."
+    },
+    "startFailed": "Die Einrichtung der E-Mail-Engine konnte nicht gestartet werden.",
+    "startFailedFallback": "Verbindung zum Starten der Einrichtung fehlgeschlagen. Überprüfen Sie den SSH-Zugriff und versuchen Sie es erneut."
   },
   "sidebar": {
     "portConflict": {

@@ -187,16 +187,24 @@ export function ServiceDetailPanel({
   // the parked session rather than spawning a fresh shell.
   const [terminalResumeToken, setTerminalResumeToken] = useState<string | null>(null);
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const key = `openship.serviceterm.resume.${service.id}`;
-    setTerminalResumeToken(window.localStorage.getItem(key));
+    try {
+      if (typeof window === "undefined" || !window.localStorage) return;
+      const key = `openship.serviceterm.resume.${service.id}`;
+      setTerminalResumeToken(window.localStorage.getItem(key));
+    } catch {
+      // diagnostics-ignore: localStorage access may fail in restricted/private browsing mode.
+    }
   }, [service.id]);
   const persistResumeToken = (token: string | null) => {
     setTerminalResumeToken(token);
-    if (typeof window === "undefined") return;
-    const key = `openship.serviceterm.resume.${service.id}`;
-    if (token) window.localStorage.setItem(key, token);
-    else window.localStorage.removeItem(key);
+    try {
+      if (typeof window === "undefined" || !window.localStorage) return;
+      const key = `openship.serviceterm.resume.${service.id}`;
+      if (token) window.localStorage.setItem(key, token);
+      else window.localStorage.removeItem(key);
+    } catch {
+      // diagnostics-ignore: localStorage write may fail in restricted/private browsing mode.
+    }
   };
 
   // ── Backup section state ────────────────────────────────────────────

@@ -286,10 +286,16 @@ export function setActiveOrganizationId(orgId: string | null) {
   _currentOrgId = orgId;
   if (changed) organizationListeners.forEach(listener => listener());
   if (typeof window !== "undefined") {
-    if (orgId) {
-      window.localStorage.setItem("openship.activeOrgId", orgId);
-    } else {
-      window.localStorage.removeItem("openship.activeOrgId");
+    try {
+      if (window.localStorage) {
+        if (orgId) {
+          window.localStorage.setItem("openship.activeOrgId", orgId);
+        } else {
+          window.localStorage.removeItem("openship.activeOrgId");
+        }
+      }
+    } catch {
+      // diagnostics-ignore: localStorage write may fail in restricted/private browsing mode.
     }
   }
 }
@@ -301,7 +307,7 @@ export function getActiveOrganizationId(): string | null {
 
 // Restore from localStorage on module load so a page refresh keeps the
 // previously-active org in context until the auth hook sets a fresh one.
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && window.localStorage) {
   const stored = window.localStorage.getItem("openship.activeOrgId");
   if (stored) _currentOrgId = stored;
 }

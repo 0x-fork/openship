@@ -396,6 +396,10 @@
         "failed": "Couldn't update the internal hostname",
         "invalid": "Enter at least one letter or digit"
       }
+    },
+    "export": {
+      "title": "Export project",
+      "description": "Download all project settings, environment values, and credentials as plain JSON."
     }
   },
   "routeRules": {
@@ -1188,6 +1192,12 @@
         "cancelled": "Challenge cancelled",
         "expired": "TXT challenge expired"
       }
+    },
+    "removeRoute": {
+      "title": "Remove route",
+      "description": "The app keeps running — only this route and its edge registration are removed. You can add it back at any time.",
+      "confirm": "Remove route",
+      "removing": "Removing…"
     }
   },
   "serviceEnvironment": {

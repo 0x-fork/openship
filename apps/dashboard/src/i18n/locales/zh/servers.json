@@ -43,8 +43,6 @@
     "emptyDescription": "通过 SSH 连接一台服务器，其余的交给 Openship 处理——Docker、OpenResty、SSL 和部署都会自动配置好。",
     "addFirstServer": "添加你的第一台服务器",
     "whatGetsConfigured": "将会配置的内容",
-    "dockerDesc": "容器运行时",
-    "openRestyDesc": "反向代理与 SSL",
     "monitoring": "监控",
     "monitoringDesc": "健康检查",
     "gitDesc": "源码部署",
@@ -109,7 +107,12 @@
       "skippedMany": "{n} 个需要在其服务器页面处理",
       "nothingToDo": "没有可应用的内容",
       "applyFailed": "无法开始更新"
-    }
+    },
+    "featContainer": "容器运行时",
+    "featContainerDesc": "隔离运行每个应用",
+    "featProxy": "反向代理",
+    "featProxyDesc": "路由与SSL",
+    "seeDocs": "查看文档"
   },
   "containers": {
     "subtitle": "此服务器上的边缘与邮件容器",
@@ -191,7 +194,18 @@
     "toastKeyPathTestRequired": "测试连接需要填写密钥路径",
     "toastConnectionSuccess": "连接成功",
     "toastConnectionFailed": "连接失败",
-    "toastConnectionTestFailed": "连接测试失败"
+    "toastConnectionTestFailed": "连接测试失败",
+    "keyModePaste": "粘贴 / 上传",
+    "keyModePath": "主机路径",
+    "keyPathBrowse": "浏览…",
+    "keyPathHelp": "运行 Openship 的机器上私钥的绝对路径。",
+    "keyPaste": "私钥",
+    "keyPastePlaceholder": "-----BEGIN OPENSSH PRIVATE KEY-----\n…",
+    "keyPasteHelp": "粘贴的密钥在静态存储时进行加密，且绝不会离开服务器。",
+    "keyStoredKeep": "密钥已存储 — 粘贴新密钥以替换，或留空以保留现有密钥。",
+    "keyUploadFile": "上传密钥文件",
+    "keyPasteInvalid": "该文件似乎不是有效的私钥。",
+    "toastKeyRequired": "需要提供私钥"
   },
   "detail": {
     "tabs": {
@@ -280,7 +294,11 @@
       "toastRemovedKeptOther": "服务器已移除。{count} 个工作负载已从 Openship 移除并继续运行。",
       "toastRemovedDestroyedOne": "服务器已移除。1 个工作负载已从机器上删除。",
       "toastRemovedDestroyedOther": "服务器已移除。{count} 个工作负载已从机器上删除。"
-    }
+    },
+    "sshPort": "SSH 端口 · {port}",
+    "port": "端口",
+    "reinstallDockerTitle": "在此服务器上重新安装 Docker？",
+    "reinstallDockerMessage": "这将运行 Docker 官方安装程序并拉取当前引擎 — 在最新服务器上，这是一次重大升级。安装或升级 Docker 会重启守护进程，从而重启该服务器上的所有容器，包括 Openship 在此处运行的所有内容。没有其他操作会为您安装 Docker：只要它正常工作，其他步骤都会跳过它。"
   },
   "banner": {
     "unreachableTitle": "无法连接到 {host}",
@@ -298,7 +316,18 @@
     "retry": "重试",
     "editCredentials": "编辑凭据",
     "editServer": "编辑服务器",
-    "showRawError": "显示原始错误"
+    "showRawError": "显示原始错误",
+    "hostChannelTitle": "Openship 无法访问此机器的主机",
+    "hostChannelBody": "Openship 在此处的容器中运行，并通过 SSH 在 {target} 与主机通信。该地址未响应，因此无法在此机器上运行主机级操作。",
+    "hostChannelImpact": "对该机器的普通部署仍可正常进行 — 它们通过 Docker 套接字进行。在通道恢复前受阻的操作包括：主机终端、主机系统信息及端口扫描；从非 Openship 启动的代理中接管 :80/:443；安装或更新邮件引擎；部署需要在主机上生成配置文件的目录应用（例如 Supabase 的 kong.yml）。此外，在通道断开期间，仪表板的服务器列表中该机器将显示为“离线”。",
+    "hostChannelFix": "在主机上运行此命令，然后重试：",
+    "hostChannelMissingTitle": "Openship 没有通往此机器主机的通道",
+    "hostChannelMissingBody": "Openship 在此处的容器中运行，且用于连接主机的 SSH 通道从未配置。由于没有可连接的地址，因此并非发生故障 — 只是此机器上的主机级操作无处运行。",
+    "hostChannelWouldUse": "配置完成后，通道将通过 {target} 连接到主机。目前尚未有任何连接访问该地址。",
+    "hostChannelProvisionFix": "在主机上运行此命令以配置通道，然后重试：",
+    "hostChannelAuthTitle": "主机拒绝了 Openship 的密钥",
+    "hostChannelAuthBody": "Openship 在此处的容器中运行，并通过 SSH 在 {target} 连接主机。主机响应后拒绝了密钥，因此主机级操作无法运行。这可能是因为密钥不再获得该账户的授权，或者 sshd 完全不允许该账户登录。此服务器上存储的 SSH 凭据不用于此连接 — 该通道拥有自己的独立密钥。",
+    "hostChannelReauthorizeFix": "在主机上运行此命令以重新授权通道密钥，然后重试："
   },
   "overview": {
     "cpu": "CPU",
@@ -347,7 +376,12 @@
     "statusInstalled": "已安装",
     "statusRemoved": "已移除",
     "statusFailed": "失败",
-    "statusWaiting": "等待中"
+    "statusWaiting": "等待中",
+    "roleDocker": "容器运行时",
+    "roleGit": "版本控制",
+    "roleOpenresty": "反向代理",
+    "roleCertbot": "SSL 证书",
+    "roleRsync": "文件传输"
   },
   "ports": {
     "title": "端口转发",

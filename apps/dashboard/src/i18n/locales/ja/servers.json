@@ -43,8 +43,6 @@
     "emptyDescription": "SSH でサーバーを接続すれば、あとは Openship が対応します。Docker、OpenResty、SSL、デプロイのすべてを自動でセットアップします。",
     "addFirstServer": "最初のサーバーを追加",
     "whatGetsConfigured": "設定される内容",
-    "dockerDesc": "コンテナランタイム",
-    "openRestyDesc": "リバースプロキシと SSL",
     "monitoring": "モニタリング",
     "monitoringDesc": "ヘルスチェック",
     "gitDesc": "ソースデプロイ",
@@ -109,7 +107,12 @@
       "skippedMany": "{n} 件はサーバーのページで対応が必要です",
       "nothingToDo": "適用する項目はありません",
       "applyFailed": "更新を開始できませんでした"
-    }
+    },
+    "featContainer": "コンテナランタイム",
+    "featContainerDesc": "各アプリを分離して実行",
+    "featProxy": "リバースプロキシ",
+    "featProxyDesc": "ルーティングとSSL",
+    "seeDocs": "ドキュメントを見る"
   },
   "containers": {
     "subtitle": "このサーバーのエッジ／メールコンテナ",
@@ -191,7 +194,18 @@
     "toastKeyPathTestRequired": "接続をテストするにはキーのパスが必要です",
     "toastConnectionSuccess": "接続に成功しました",
     "toastConnectionFailed": "接続に失敗しました",
-    "toastConnectionTestFailed": "接続テストに失敗しました"
+    "toastConnectionTestFailed": "接続テストに失敗しました",
+    "keyModePaste": "貼り付け / アップロード",
+    "keyModePath": "ホストパス",
+    "keyPathBrowse": "参照…",
+    "keyPathHelp": "Openship を実行しているマシン上の秘密鍵への絶対パス。",
+    "keyPaste": "秘密鍵",
+    "keyPastePlaceholder": "-----BEGIN OPENSSH PRIVATE KEY-----\n…",
+    "keyPasteHelp": "貼り付けられた鍵は保存時に暗号化され、サーバーの外部に出ることはありません。",
+    "keyStoredKeep": "鍵が保存されています — 新しい鍵を貼り付けて置き換えるか、空欄のままにして保持します。",
+    "keyUploadFile": "鍵ファイルをアップロード",
+    "keyPasteInvalid": "そのファイルは有効な秘密鍵ではないようです。",
+    "toastKeyRequired": "秘密鍵が必要です"
   },
   "detail": {
     "tabs": {
@@ -280,7 +294,11 @@
       "toastRemovedKeptOther": "サーバーを削除しました。{count} 件のワークロードを Openship から削除し、稼働は継続しています。",
       "toastRemovedDestroyedOne": "サーバーを削除しました。1 件のワークロードをマシンから削除しました。",
       "toastRemovedDestroyedOther": "サーバーを削除しました。{count} 件のワークロードをマシンから削除しました。"
-    }
+    },
+    "sshPort": "SSHポート · {port}",
+    "port": "ポート",
+    "reinstallDockerTitle": "このサーバーに Docker を再インストールしますか？",
+    "reinstallDockerMessage": "これにより Docker の公式インストーラーが実行され、最新のエンジンが取得されます。最新のサーバーではこれがメジャーアップグレードとなります。Docker のインストールまたはアップグレードによりデーモンが再起動され、Openship がここで実行しているすべてのコンテナを含む、このサーバー上のすべてのコンテナが再起動されます。他に Docker をインストールする手段はありません。正常に動作している間、他のステップはスキップされます。"
   },
   "banner": {
     "unreachableTitle": "{host} に到達できません",
@@ -298,7 +316,18 @@
     "retry": "再試行",
     "editCredentials": "認証情報を編集",
     "editServer": "サーバーを編集",
-    "showRawError": "生のエラーを表示"
+    "showRawError": "生のエラーを表示",
+    "hostChannelTitle": "Openship はこのマシンのホストにアクセスできません",
+    "hostChannelBody": "Openship はここでコンテナ内で動作し、{target} の SSH 経由でホストと通信します。応答がないため、このマシン上でホストレベルの操作を実行できません。",
+    "hostChannelImpact": "このマシンへの通常のデプロイは引き続き機能します（Docker ソケット経由で行われます）。チャネルが機能するまでブロックされる項目：ホストターミナル、ホストのシステム情報とポートスキャン、Openship 以外が起動したプロキシからの :80/:443 の引き継ぎ、メールエンジンのインストールまたは更新、ホスト上に生成された設定ファイルを必要とするカタログアプリのデプロイ（Supabase の kong.yml など）。また、チャネルが停止している間、ダッシュボードのサーバー一覧でこのマシンは「オフライン」と表示されます。",
+    "hostChannelFix": "ホスト上でこれを実行してから再試行してください:",
+    "hostChannelMissingTitle": "Openship にはこのマシンのホストへのチャネルがありません",
+    "hostChannelMissingBody": "Openship はここでコンテナ内で動作しており、ホストへの接続に使用する SSH チャネルがプロビジョニングされていませんでした。接続先のアドレスが存在しなかったため、何かがダウンしているわけではありませんが、このマシンでのホストレベルの操作を実行する場所がありません。",
+    "hostChannelWouldUse": "プロビジョニングされると、チャネルは {target} でホストに接続します。まだそのアドレスには接続されていません。",
+    "hostChannelProvisionFix": "ホスト上でこれを実行してチャネルをプロビジョニングし、再試行してください:",
+    "hostChannelAuthTitle": "ホストが Openship の鍵を拒否しました",
+    "hostChannelAuthBody": "Openship はここでコンテナ内で動作し、{target} の SSH 経由でホストに接続します。ホストは応答した後に鍵を拒否したため、ホストレベルの操作を実行できません。そのアカウントに対して鍵の権限がなくなったか、sshd がそのアカウントのログインを一切許可していない可能性があります。このサーバーに保存されている SSH 認証情報はこの接続には使用されず、チャネル専用の鍵が使用されます。",
+    "hostChannelReauthorizeFix": "ホスト上でこれを実行してチャネルキーを再承認し、再試行してください:"
   },
   "overview": {
     "cpu": "CPU",
@@ -347,7 +376,12 @@
     "statusInstalled": "インストール済み",
     "statusRemoved": "削除済み",
     "statusFailed": "失敗",
-    "statusWaiting": "待機中"
+    "statusWaiting": "待機中",
+    "roleDocker": "コンテナランタイム",
+    "roleGit": "バージョン管理",
+    "roleOpenresty": "リバースプロキシ",
+    "roleCertbot": "SSL 証明書",
+    "roleRsync": "ファイル転送"
   },
   "ports": {
     "title": "ポート転送",

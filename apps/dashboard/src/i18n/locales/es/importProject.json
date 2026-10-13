@@ -115,7 +115,8 @@
     "addReleaseCommand": "Añadir comando",
     "removeReleaseCommand": "Eliminar comando {number}",
     "runtimeImageLabel": "Imagen de ejecución",
-    "runtimeImageDesc": "Imagen base de producción opcional para Docker. Debe ser compatible con el entorno y la receta generada; deja el campo vacío para usar el valor predeterminado."
+    "runtimeImageDesc": "Imagen base de producción opcional para Docker. Debe ser compatible con el entorno y la receta generada; deja el campo vacío para usar el valor predeterminado.",
+    "staticPathHint": "Servido como archivos estáticos desde el borde: no se ejecuta ningún proceso."
   },
   "projectSettings": {
     "framework": "Framework",
@@ -185,7 +186,9 @@
       "domainLabel": "Dominio",
       "free": "Gratuito",
       "custom": "Personalizado",
-      "routingTrafficPrefix": "Enrutando el tráfico al puerto"
+      "routingTrafficPrefix": "Enrutando el tráfico al puerto",
+      "duplicateTitle": "Dominio duplicado",
+      "duplicateDescription": "Dos rutas apuntan al mismo dominio: cambie una para que cada ruta tenga el suyo propio:"
     },
     "shared": {
       "title": "Entorno compartido",
@@ -362,7 +365,18 @@
       "loopbackBodyService": "El servicio \"{service}\" solo escucha dentro del contenedor en el puerto {port}.",
       "loopbackHelp": "Para una app que recibe tráfico enrutado, escucha en 0.0.0.0 y vuelve a desplegar, o dirige el tráfico a su proxy previsto.",
       "openSettings": "Abrir ajustes",
-      "skipError": "No se pudo descartar este aviso. Inténtalo de nuevo."
+      "skipError": "No se pudo descartar este aviso. Inténtalo de nuevo.",
+      "title": "Aviso de discrepancia de puertos",
+      "bannerTitle": "Discrepancia de puerto de contenedor detectada",
+      "review": "Revisar puerto",
+      "note": "El enrutador perimetral apunta al puerto {port}, pero su aplicación no respondió allí.",
+      "body": "Nada respondió en el puerto {port}. Si su aplicación escucha en un puerto diferente, actualícelo a continuación.",
+      "bodyService": "Servicio \"{service}\": nada respondió en el puerto {port}. Si escucha en otro puerto, configure el correcto aquí.",
+      "newPortLabel": "Puerto correcto",
+      "changePort": "Cambiar puerto",
+      "skip": "Omitir",
+      "applied": "Enrutamiento actualizado al puerto {port}.",
+      "changeError": "No se pudo actualizar el puerto. Inténtalo de nuevo."
     }
   },
   "deploymentHealth": {

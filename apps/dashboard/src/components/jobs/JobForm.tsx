@@ -364,14 +364,19 @@ function JobFormContent({
           {triggerCatalog.length > 0 && (
             <Field label={c.triggers}>
               <div className="space-y-1">
-                {triggerCatalog.map((tg) => (
-                  <button key={tg.id} type="button" onClick={() => toggle(triggerIds, tg.id, setTriggerIds)}
-                    aria-pressed={triggerIds.includes(tg.id)}
-                    className="flex w-full cursor-pointer items-start gap-2 rounded-lg px-1 py-1 text-start text-sm hover:bg-muted/40">
-                    <Checkbox checked={triggerIds.includes(tg.id)} asButton={false} size="sm" className="pointer-events-none mt-0.5" />
-                    <span><span className="text-foreground">{tg.label}</span> <span className="text-muted-foreground/60">— {tg.description}</span></span>
-                  </button>
-                ))}
+                {triggerCatalog.map((tg) => {
+                  const trgLoc = (j as any)?.eventTriggers?.[tg.id];
+                  const label = trgLoc?.label || tg.label;
+                  const desc = trgLoc?.description || tg.description;
+                  return (
+                    <button key={tg.id} type="button" onClick={() => toggle(triggerIds, tg.id, setTriggerIds)}
+                      aria-pressed={triggerIds.includes(tg.id)}
+                      className="flex w-full cursor-pointer items-start gap-2 rounded-lg px-1 py-1 text-start text-sm hover:bg-muted/40">
+                      <Checkbox checked={triggerIds.includes(tg.id)} asButton={false} size="sm" className="pointer-events-none mt-0.5" />
+                      <span><span className="text-foreground">{label}</span> <span className="text-muted-foreground/60">— {desc}</span></span>
+                    </button>
+                  );
+                })}
               </div>
             </Field>
           )}
