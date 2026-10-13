@@ -183,6 +183,7 @@ import { transferLocalDirectory } from "./transfer";
 import { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime-env";
 import {
   ownsNetworkEndpoint,
+  parseContainerHosts,
   safeErrorMessage,
   withTimeout,
   SYSTEM,
@@ -5689,8 +5690,14 @@ export class DockerRuntime implements RuntimeAdapter {
     ];
     const cmd = resolveComposeCmd(config);
     const entrypoint = resolveComposeEntrypoint(config.advanced);
+    const hostMappings = parseContainerHosts(config.advanced?.extraHosts);
+    const extraHosts = hostMappings &&
+      Object.entries(hostMappings).map(([host, address]) => `${host}:${address}`);
     const sharedNetwork = config.namespaces?.network;
     const sharesNetns = !!sharedNetwork && sharedNetwork !== "none";
+    if (sharesNetns && extraHosts?.length) {
+      throw new Error("extra_hosts cannot be used with a shared container network namespace");
+    }
     const ownsProjectEndpoint = ownsNetworkEndpoint(sharedNetwork);
     const sharedPid = config.namespaces?.pid;
     const { exposedPorts, portBindings } = parsePortBindings(config.ports);
@@ -5820,6 +5827,7 @@ export class DockerRuntime implements RuntimeAdapter {
         Binds: binds,
         // The project network is the default; a compose `network_mode` replaces it.
         NetworkMode: sharedNetwork ?? group.id,
+        ...(extraHosts?.length ? { ExtraHosts: extraHosts } : {}),
         ...(sharedPid ? { PidMode: sharedPid } : {}),
       },
       // A declared network mode means there is no endpoint to name — omit the

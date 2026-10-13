@@ -20,6 +20,7 @@ import {
   MAX_GENERATED_CONFIG_FILES,
   MAX_GENERATED_CONFIG_FILE_BYTES,
   MAX_GENERATED_CONFIG_PATH_BYTES,
+  CONTAINER_HOST_PATTERN,
 } from "@repo/core";
 import { MonorepoSubAppFieldsSchema } from "./project-inputs";
 
@@ -154,6 +155,10 @@ const AdvancedSchema = Type.Object(
      */
     networkMode: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
     pidMode: Type.Optional(Type.Union([Type.String({ maxLength: 200 }), Type.Null()])),
+    extraHosts: Type.Optional(Type.Union([
+      Type.Record(Type.String({ pattern: CONTAINER_HOST_PATTERN }), Type.String({ minLength: 1, maxLength: 64 }), { maxProperties: 100 }),
+      Type.Null(),
+    ])),
     /**
      * Container ENTRYPOINT as argv (compose `entrypoint`). Same round-trip-only
      * reasoning as the two above: the compose file owns it, so this exists so a

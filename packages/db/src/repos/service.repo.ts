@@ -388,6 +388,7 @@ export function composeWritePatch(
 const COMPOSE_OWNED_ADVANCED_KEYS = [
   "networkMode",
   "pidMode",
+  "extraHosts",
   "entrypoint",
   "imageTemplate",
   "environmentTemplateKeys",

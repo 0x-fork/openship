@@ -29,6 +29,7 @@ import {
   composeNamespaceDependencies,
   composeNamespaceRef,
   ownsNetworkEndpoint,
+  parseContainerHosts,
   UNLIMITED_RESOURCES,
   DeployError,
   safeErrorMessage,
@@ -1005,6 +1006,13 @@ async function deployComposeServicesUnlocked(
     assertExactServiceTargets(services, [...opts.targetServiceIds]);
   }
   const enabled = services.filter((s) => s.enabled);
+  // Validate the cohort before pulling images or replacing any service. Stored
+  // aliases also arrive through retained snapshots, not only validated writes.
+  for (const service of enabled) {
+    if (!opts?.strictScope || !opts.targetServiceIds || opts.targetServiceIds.has(service.id)) {
+      parseContainerHosts(service.advanced?.extraHosts);
+    }
+  }
   await assertCloudDeploymentLimits(project.organizationId, {
     projectId: project.id,
     resources: opts?.resources,
