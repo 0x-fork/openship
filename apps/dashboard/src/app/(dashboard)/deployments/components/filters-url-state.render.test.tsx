@@ -12,7 +12,6 @@ vi.mock("@/lib/api", () => ({
 }));
 vi.mock("./DeploymentMenu", () => ({ DeploymentMenu: () => null }));
 vi.mock("./CommitDetailsModal", () => ({ CommitDetailsModal: () => null }));
-vi.mock("@/components/import-project/Frameworks", () => ({ getFrameworkConfig: () => ({}) }));
 
 // Next integrates history.replaceState with useSearchParams. Reproduce that
 // notification at the router boundary while rendering the real history UI.

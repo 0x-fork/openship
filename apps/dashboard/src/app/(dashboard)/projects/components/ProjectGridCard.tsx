@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import DropdownMenu from "@/components/ui/DropdownMenu";
 import { type Project } from "@/constants/mock";
 import { AppLogo } from "@/components/AppLogo";
-import { getFrameworkConfig } from "@/components/import-project/Frameworks";
+import { ProjectStackIcon } from "@/components/shared/ProjectStackIcon";
 import { getProjectStatus, projectCardHref, projectDisplayDomain } from "@/utils/project-status";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { ServiceStatusIndicator } from "@/components/services/ServiceStatusBadge";
@@ -27,7 +27,6 @@ const ProjectGridCard: React.FC<{
 }> = ({ project, preferAppLogo, updateAvailable }) => {
   const { t } = useI18n();
   const router = useRouter();
-  const fw = getFrameworkConfig(project.framework);
   const favicon = useImageFallback(project.favicon);
 
   const domain = projectDisplayDomain(project);
@@ -78,7 +77,7 @@ const ProjectGridCard: React.FC<{
               onError={favicon.onError}
             />
           ) : (
-            fw.icon("var(--foreground)")
+            <ProjectStackIcon framework={project.framework} />
           )}
         </div>
         <div className="min-w-0 flex-1">
