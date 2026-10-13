@@ -1442,7 +1442,11 @@ async function checkGpuTarget(
   const gpuServices = servicesRequestingGpu(services);
   if (gpuServices.length === 0) return null;
   const server = serverId
-    ? await repos.server.getInOrganization(serverId, organizationId).catch(() => null)
+    ? await repos.server.getInOrganization(serverId, organizationId).catch((diagnosticFailure) => {
+        // A server row we cannot read only drops the manual GPU mark; detection still decides.
+        observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/preflight");
+        return null;
+      })
     : null;
   const capacity = await getTrustedHostCapacity(serverId, organizationId, { isLocalTarget });
   return gpuTargetCheck({

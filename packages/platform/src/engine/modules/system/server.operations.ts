@@ -84,7 +84,10 @@ const CAPACITY_PROBE_TIMEOUT_MS = 4000;
 async function probeServerCapacity(serverId: string, organizationId: string): Promise<HostCapacity | null> {
   if (env.CLOUD_MODE) return null;
   const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), CAPACITY_PROBE_TIMEOUT_MS));
-  const probe = getHostCapacity(serverId, organizationId, { localFallback: false }).catch(() => null);
+  const probe = getHostCapacity(serverId, organizationId, { localFallback: false }).catch((diagnosticFailure) => {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/system/server.operations");
+    return null;
+  });
   const got = await Promise.race([probe, timeout]);
   return got && got.source === "docker" ? got : null;
 }
