@@ -1,5 +1,5 @@
 import { reportCaughtError } from "@repo/core/diagnostics";
-import { resourcesSource, type ResourceFrontmatter } from "@/lib/source";
+import { blogSource, type BlogFrontmatter } from "@/lib/source";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -9,7 +9,7 @@ import ResourceWriterSidebar from "@/components/resources/writer-sidebar";
 const SITE_URL = "https://openship.io";
 
 type Params = Promise<{ slug: string[] }>;
-type RPage = { url: string; data: ResourceFrontmatter };
+type RPage = { url: string; data: BlogFrontmatter };
 
 function calculateReadingTime(content: string): number {
   return Math.max(1, Math.ceil(content.split(/\s+/).length / 200));
@@ -23,7 +23,7 @@ function formatDate(raw: string): string {
       year: "numeric",
     });
   } catch (error) {
-    reportCaughtError(error, "web/app/(site)/resources/[...slug]/page");
+    reportCaughtError(error, "web/app/(site)/blog/[...slug]/page");
     return raw;
   }
 }
@@ -36,24 +36,19 @@ function formatDateShort(raw: string): string {
       year: "numeric",
     });
   } catch (error) {
-    reportCaughtError(error, "web/app/(site)/resources/[...slug]/page");
+    reportCaughtError(error, "web/app/(site)/blog/[...slug]/page");
     return raw;
   }
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Params;
-}): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug } = await params;
-  const rawPage = resourcesSource.getPage(slug);
+  const rawPage = blogSource.getPage(slug);
   if (!rawPage) return {};
   const page = rawPage as unknown as RPage;
 
-  const title = `${page.data.title} – Openship Resources`;
-  const description =
-    page.data.description ?? "A resource article from the Openship team.";
+  const title = `${page.data.title} – Openship Blog`;
+  const description = page.data.description ?? "An article from the Openship team.";
 
   return {
     title,
@@ -78,23 +73,24 @@ export async function generateMetadata({
   };
 }
 
-export default async function ResourcePostPage({ params }: { params: Params }) {
+export default async function BlogPostPage({ params }: { params: Params }) {
   const { slug } = await params;
-  const rawPage = resourcesSource.getPage(slug);
+  const rawPage = blogSource.getPage(slug);
   if (!rawPage) notFound();
   const page = rawPage as unknown as RPage;
 
   const MDXContent = page.data.body;
-  const readingTime = calculateReadingTime(
-    page.data._exports?.raw || page.data.title || ""
-  );
+  const content = await page.data.getText("raw").catch((error) => {
+    reportCaughtError(error, "web/app/(site)/blog/[...slug]/page");
+    return page.data.title;
+  });
+  const readingTime = calculateReadingTime(content);
 
-  const allPages = resourcesSource.getPages() as unknown as RPage[];
+  const allPages = blogSource.getPages() as unknown as RPage[];
   const related = allPages
     .filter(
       (p) =>
-        p.url !== page.url &&
-        p.data.category?.toLowerCase() === page.data.category?.toLowerCase()
+        p.url !== page.url && p.data.category?.toLowerCase() === page.data.category?.toLowerCase(),
     )
     .sort((a, b) => (b.data.date ?? "").localeCompare(a.data.date ?? ""))
     .slice(0, 3);
@@ -129,8 +125,8 @@ export default async function ResourcePostPage({ params }: { params: Params }) {
       {
         "@type": "ListItem",
         position: 2,
-        name: "Resources",
-        item: `${SITE_URL}/resources`,
+        name: "Blog",
+        item: `${SITE_URL}/blog`,
       },
       {
         "@type": "ListItem",
@@ -159,7 +155,7 @@ export default async function ResourcePostPage({ params }: { params: Params }) {
           </div>
 
           <div className="rp-center-col">
-            <Link href="/resources" className="rp-back">
+            <Link href="/blog" className="rp-back">
               <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
@@ -168,30 +164,22 @@ export default async function ResourcePostPage({ params }: { params: Params }) {
                   d="M15 19l-7-7 7-7"
                 />
               </svg>
-              All resources
+              All posts
             </Link>
 
             <header>
-              {page.data.category && (
-                <span className="rp-category">{page.data.category}</span>
-              )}
+              {page.data.category && <span className="rp-category">{page.data.category}</span>}
               <h1 className="rp-title">{page.data.title}</h1>
-              {page.data.description && (
-                <p className="rp-desc">{page.data.description}</p>
-              )}
+              {page.data.description && <p className="rp-desc">{page.data.description}</p>}
               <div className="rp-meta">
                 <div className="rp-meta-avatar" aria-hidden="true">
                   {(page.data.author || "O")[0].toUpperCase()}
                 </div>
                 <div className="rp-meta-text">
-                  <span className="rp-author-name">
-                    {page.data.author || "Openship Team"}
-                  </span>
+                  <span className="rp-author-name">{page.data.author || "Openship Team"}</span>
                   <span className="rp-meta-row">
                     {page.data.date && (
-                      <time dateTime={page.data.date}>
-                        {formatDate(page.data.date)}
-                      </time>
+                      <time dateTime={page.data.date}>{formatDate(page.data.date)}</time>
                     )}
                     <span className="rp-dot" aria-hidden="true" />
                     <span>{readingTime} min read</span>
@@ -216,9 +204,7 @@ export default async function ResourcePostPage({ params }: { params: Params }) {
             <div className="rp-related-grid">
               {related.map((post) => (
                 <Link key={post.url} href={post.url} className="rp-related-card">
-                  <span className="rp-related-cat">
-                    {post.data.category || "Post"}
-                  </span>
+                  <span className="rp-related-cat">{post.data.category || "Post"}</span>
                   <h4 className="rp-related-title">{post.data.title}</h4>
                   {post.data.description && (
                     <p className="rp-related-desc">{post.data.description}</p>
@@ -231,9 +217,7 @@ export default async function ResourcePostPage({ params }: { params: Params }) {
                     {post.data.date && (
                       <>
                         <span className="rp-related-dot" aria-hidden="true" />
-                        <time dateTime={post.data.date}>
-                          {formatDateShort(post.data.date)}
-                        </time>
+                        <time dateTime={post.data.date}>{formatDateShort(post.data.date)}</time>
                       </>
                     )}
                   </div>
@@ -248,5 +232,5 @@ export default async function ResourcePostPage({ params }: { params: Params }) {
 }
 
 export function generateStaticParams() {
-  return resourcesSource.generateParams();
+  return blogSource.generateParams();
 }

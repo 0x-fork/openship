@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   Resources - landing-aligned dark editorial design.
+   Blog - landing-aligned dark editorial design.
    Uses the same --th-* tokens as the landing for visual cohesion.
    ═══════════════════════════════════════════════════════════════ */
 
@@ -60,14 +60,16 @@
   font-size: 14px;
   font-weight: 500;
   color: var(--th-text-muted);
-  transition: color .2s ease;
+  transition: color 0.2s ease;
 }
-.res-tab:hover { color: var(--th-text-body); }
+.res-tab:hover {
+  color: var(--th-text-body);
+}
 .res-tab[data-active="true"] {
   color: var(--th-text-heading);
 }
 .res-tab[data-active="true"]::after {
-  content: '';
+  content: "";
   position: absolute;
   bottom: -19px;
   left: 0;
@@ -84,7 +86,9 @@
   border-radius: 22px;
   background: var(--th-card-bg);
   border: 1px solid var(--th-card-bd);
-  transition: border-color .25s ease, background .25s ease;
+  transition:
+    border-color 0.25s ease,
+    background 0.25s ease;
 }
 .res-featured:hover {
   border-color: var(--th-bd-strong);
@@ -171,8 +175,16 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
-@media (max-width: 900px) { .res-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 600px) { .res-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) {
+  .res-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .res-grid {
+    grid-template-columns: 1fr;
+  }
+}
 
 .res-card {
   display: flex;
@@ -181,7 +193,9 @@
   border-radius: 18px;
   background: var(--th-card-bg);
   border: 1px solid var(--th-card-bd);
-  transition: border-color .25s ease, background .25s ease;
+  transition:
+    border-color 0.25s ease,
+    background 0.25s ease;
 }
 .res-card:hover {
   border-color: var(--th-bd-strong);
@@ -280,7 +294,10 @@
   top: 120px;
 }
 @media (max-width: 1024px) {
-  .rp-left-col, .rp-right-col { position: static; }
+  .rp-left-col,
+  .rp-right-col {
+    position: static;
+  }
 }
 
 .rp-center-col {
@@ -294,10 +311,15 @@
   margin-bottom: 32px;
   font-size: 13px;
   color: var(--th-text-muted);
-  transition: color .2s ease;
+  transition: color 0.2s ease;
 }
-.rp-back:hover { color: var(--th-text-heading); }
-.rp-back svg { width: 14px; height: 14px; }
+.rp-back:hover {
+  color: var(--th-text-heading);
+}
+.rp-back svg {
+  width: 14px;
+  height: 14px;
+}
 
 .rp-category {
   display: inline-flex;
@@ -380,7 +402,9 @@
   line-height: 1.75;
   color: var(--th-text-body);
 }
-.rp-body > * + * { margin-top: 1.1em; }
+.rp-body > * + * {
+  margin-top: 1.1em;
+}
 .rp-body h2 {
   margin-top: 2.4em;
   font-size: clamp(1.5rem, 2.5vw, 1.875rem);
@@ -396,23 +420,37 @@
   letter-spacing: -0.02em;
   color: var(--th-text-heading);
 }
-.rp-body p { color: var(--th-text-body); }
+.rp-body p {
+  color: var(--th-text-body);
+}
 .rp-body a {
   color: var(--th-text-heading);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
   text-decoration-color: var(--th-bd-default);
-  transition: text-decoration-color .2s ease;
+  transition: text-decoration-color 0.2s ease;
 }
-.rp-body a:hover { text-decoration-color: var(--th-text-heading); }
-.rp-body strong { color: var(--th-text-heading); font-weight: 600; }
-.rp-body ul, .rp-body ol {
+.rp-body a:hover {
+  text-decoration-color: var(--th-text-heading);
+}
+.rp-body strong {
+  color: var(--th-text-heading);
+  font-weight: 600;
+}
+.rp-body ul,
+.rp-body ol {
   padding-left: 1.3em;
 }
-.rp-body li + li { margin-top: .4em; }
-.rp-body ul li { list-style: disc; }
-.rp-body ol li { list-style: decimal; }
+.rp-body li + li {
+  margin-top: 0.4em;
+}
+.rp-body ul li {
+  list-style: disc;
+}
+.rp-body ol li {
+  list-style: decimal;
+}
 .rp-body blockquote {
   padding: 4px 0 4px 22px;
   border-left: 2px solid var(--th-bd-default);
@@ -425,7 +463,7 @@
   background: var(--th-sf-01);
   border: 1px solid var(--th-bd-default);
   font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
-  font-size: .9em;
+  font-size: 0.9em;
   color: var(--th-text-body);
 }
 .rp-body pre {
@@ -474,7 +512,11 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
-@media (max-width: 900px) { .rp-related-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) {
+  .rp-related-grid {
+    grid-template-columns: 1fr;
+  }
+}
 .rp-related-card {
   display: flex;
   flex-direction: column;
@@ -482,7 +524,9 @@
   border-radius: 16px;
   background: var(--th-card-bg);
   border: 1px solid var(--th-card-bd);
-  transition: border-color .25s ease, background .25s ease;
+  transition:
+    border-color 0.25s ease,
+    background 0.25s ease;
 }
 .rp-related-card:hover {
   border-color: var(--th-bd-strong);
@@ -567,7 +611,10 @@
   border: 1px solid var(--th-bd-subtle);
   color: var(--th-text-muted);
   cursor: pointer;
-  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease;
 }
 .rp-share-btn:hover {
   color: var(--th-text-heading);
@@ -579,7 +626,9 @@
   height: 15px;
 }
 @media (max-width: 1024px) {
-  .rp-left-col { display: none; }
+  .rp-left-col {
+    display: none;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -639,13 +688,37 @@
   height: 30px;
   border-radius: 8px;
   color: var(--th-text-muted);
-  transition: color 160ms ease, background 160ms ease;
+  transition:
+    color 160ms ease,
+    background 160ms ease;
 }
 .rp-writer-link:hover {
   color: var(--th-text-heading);
   background: var(--th-sf-02);
 }
 @media (max-width: 1024px) {
-  .rp-right-col { display: none; }
+  .rp-right-col {
+    display: none;
+  }
 }
 
+.res-feed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 22px;
+  font-size: 13px;
+  color: var(--th-text-secondary);
+}
+.res-feed:hover {
+  color: var(--th-text-heading);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.res-feed:focus-visible,
+.res-tab:focus-visible,
+.res-card:focus-visible,
+.res-featured:focus-visible {
+  outline: 2px solid var(--th-text-heading);
+  outline-offset: 5px;
+}
