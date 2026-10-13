@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { label: "Apps", href: "/apps" },
   { label: "Emails", href: "/mail" },
   { label: "Docs", href: "/docs" },
-  { label: "Roadmap", href: "/roadmap" },
+  { label: "Blog", href: "/blog" },
   { label: "Changelog", href: "/changelog" },
   { label: "Pricing", href: "/pricing" },
 ];
@@ -79,7 +79,9 @@ export function Navbar() {
             <Link
               key={item.label}
               href={item.href}
-              aria-current={pathname === item.href || pathname?.startsWith(item.href + "/") ? "page" : undefined}
+              aria-current={
+                pathname === item.href || pathname?.startsWith(item.href + "/") ? "page" : undefined
+              }
               className="nav-pill-item rounded-full px-3 py-2 text-[14px] font-medium transition-all aria-[current=page]:bg-[var(--th-sf-04)]"
               style={{
                 color: dark ? "rgba(255,255,255,.55)" : "var(--th-text-secondary)",
@@ -136,7 +138,13 @@ export function Navbar() {
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileOpen}
           >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke={dark ? "#fff" : "var(--th-text-heading)"} strokeWidth={2}>
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke={dark ? "#fff" : "var(--th-text-heading)"}
+              strokeWidth={2}
+            >
               {mobileOpen ? (
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               ) : (
@@ -156,9 +164,7 @@ export function Navbar() {
             onClick={() => setMobileOpen(false)}
           />
           {/* Panel */}
-          <nav
-            className="absolute right-0 top-0 flex h-full w-[280px] flex-col gap-1 bg-[var(--th-bg-page)] px-6 pt-24 shadow-2xl"
-          >
+          <nav className="absolute right-0 top-0 flex h-full w-[280px] flex-col gap-1 bg-[var(--th-bg-page)] px-6 pt-24 shadow-2xl">
             {NAV_ITEMS.map((item) => (
               <Link
                 key={item.label}
@@ -204,4 +210,3 @@ export function Navbar() {
     </header>
   );
 }
-
