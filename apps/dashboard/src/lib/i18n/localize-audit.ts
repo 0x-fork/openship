@@ -59,7 +59,17 @@ export function resolveAuditEventCopy(
 ): AuditEventCopy {
 	const events = auditTranslations?.events;
 
-	// 1. Try explicit lookup from settings.json
+	// 1. Lookup in comprehensive AUDIT_TRANSLATIONS for active locale
+	const lang = locale.split(/[-_]/)[0]?.toLowerCase() || "en";
+	const dict = AUDIT_TRANSLATIONS[lang] || AUDIT_TRANSLATIONS.en;
+	const match =
+		dict?.[eventType] ||
+		dict?.[eventType.replaceAll(".", ":")] ||
+		dict?.[eventType.replaceAll(":", ".")] ||
+		dict?.[eventType.replace(".", ":")] ||
+		dict?.[eventType.replace(":", ".")];
+
+	// 2. Try explicit overrides from settings.json (merging with dict so missing fields like description don't fall back to English)
 	const explicit =
 		events?.[eventType] ||
 		events?.[eventType.replaceAll(".", ":")] ||
@@ -67,34 +77,24 @@ export function resolveAuditEventCopy(
 		events?.[eventType.replace(".", ":")] ||
 		events?.[eventType.replace(":", ".")];
 
-	if (explicit && (explicit.action || explicit.label || explicit.description)) {
+	if (explicit) {
 		return {
-			action: explicit.action || info.action,
-			label: explicit.label || info.label,
-			description: explicit.description || info.description || "",
-			actionWithoutResource: explicit.actionWithoutResource,
+			action: explicit.action || match?.action || info.action,
+			label: explicit.label || match?.label || info.label,
+			description:
+				explicit.description || match?.description || info.description || "",
+			actionWithoutResource:
+				explicit.actionWithoutResource || match?.actionWithoutResource,
 		};
 	}
 
-	// 2. Try AUDIT_TRANSLATIONS for active locale (or short code e.g. "ru-RU" -> "ru")
-	const lang = locale.split(/[-_]/)[0]?.toLowerCase() || "en";
-	const dict = AUDIT_TRANSLATIONS[lang];
-	if (dict) {
-		const match =
-			dict[eventType] ||
-			dict[eventType.replaceAll(".", ":")] ||
-			dict[eventType.replaceAll(":", ".")] ||
-			dict[eventType.replace(".", ":")] ||
-			dict[eventType.replace(":", ".")];
-
-		if (match) {
-			return {
-				action: match.action || info.action,
-				label: match.label || info.label,
-				description: match.description || info.description || "",
-				actionWithoutResource: match.actionWithoutResource,
-			};
-		}
+	if (match) {
+		return {
+			action: match.action || info.action,
+			label: match.label || info.label,
+			description: match.description || info.description || "",
+			actionWithoutResource: match.actionWithoutResource,
+		};
 	}
 
 	// 3. Fallback to info
