@@ -64,13 +64,21 @@ already includes part of a build. Available capacity can therefore permit fewer
 parallel builds than the plan ceiling. No scheduler can infer arbitrary source
 code's peak memory usage from its repository alone.
 
-Automatic builds target 1 vCPU (bounded by host capacity) and memory up to the
-smaller of 4096 MB and 65% of usable host memory after system headroom, with a
-128 MB minimum. The target does not shrink in response to transient
-pressure or a higher concurrency ceiling: the job waits for it to fit. Positive
-explicit CPU/RAM settings remain unchanged. Allocated resources are printed in
-the build log. Builds needing more memory must request it explicitly; an automatic
-target is not a guarantee that every application's compiler fits.
+Automatic builds use the server's measured available capacity rather than a
+fixed 1-vCPU / 4-GB worker. Memory leaves 5% operating-system headroom (128–512 MB)
+and subtracts outstanding build reservations. Automatic CPU subtracts outstanding
+reservations from sampled idle capacity, bounded by unreserved server CPU. Running
+builders may be conservatively counted twice, as with memory. An explicit
+dimension is preserved; only missing
+or zero dimensions are automatic. Unknown samples or extreme CPU pressure wait
+instead of launching a worker. The plan concurrency allowance is a ceiling;
+automatic builds can consume the available budget and queue subsequent builds.
+Smaller explicit build limits permit concurrent builds when they fit. The minimum
+is 0.25 vCPU and 128 MB RAM. Automatic allocation is selected at admission and
+stays fixed for that worker; it is not resized during a build. An explicit request
+waits for its chosen resources rather than being silently reduced. Allocated
+resources are printed in the build log. Available capacity is not a guarantee
+that every application's compiler fits.
 
 Single-app builds release their slot after source building and before deployment.
 Compose releases after its image-build batch. Image-only deployments do not
