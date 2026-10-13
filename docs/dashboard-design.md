@@ -625,6 +625,15 @@ keyboard focus and expose the selected filter with `aria-pressed`.
 
 Use the shared icon library and the [icon guide](client-icons.md). Avoid decorative icons that
 repeat an adjacent label or add clutter to a compact row.
+Project rows and deployment history share `ProjectStackIcon` after the catalog-logo and
+favicon choices. A missing or unrecognized framework uses the neutral application icon;
+only a declared static framework uses HTML5. Service-group deployments with no app framework
+use `layers`, based on their saved execution mode. Adding services to a recognized app must
+not replace its framework artwork.
+
+Migration retries reuse the shared destination picker after a fresh scan, even when opened
+from an existing run. Keep loading, fetch errors and empty inventory distinct, and preserve
+the selected destination's validation and transfer review before enabling Migrate.
 
 ## Catalog forms
 

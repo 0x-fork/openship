@@ -22,6 +22,8 @@ export const mapRowToDeployment = (row: any): Deployment => {
     status: statusMap[row.status] ?? row.status,
     domain: row.url ?? "",
     framework: row.framework ?? "",
+    serviceDeploymentMode: row.meta?.serviceDeploymentMode === "services" || row.meta?.serviceDeploymentMode === "single"
+      ? row.meta.serviceDeploymentMode : undefined,
     commit: {
       hash: row.commitSha?.slice(0, 7) ?? "N/A",
       fullHash: row.commitSha ?? null,
