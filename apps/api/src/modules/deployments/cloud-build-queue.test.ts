@@ -221,6 +221,23 @@ describe("Cloud build admission", () => {
     await admitCloudBuild(project, rows[1]!, starts[1]!);
     expect(starts[1]).toHaveBeenCalledOnce();
   });
+  it("assigns automatic builds the available host budget and queues siblings until release", async () => {
+    h.limit = 4;
+    const first = dep("automatic-a", {});
+    const second = dep("automatic-b", {});
+    const firstStart = start(first.id);
+    const secondStart = start(second.id);
+    await Promise.all([
+      admitCloudBuild(project, first, firstStart),
+      admitCloudBuild(project, second, secondStart),
+    ]);
+    expect(firstStart).toHaveBeenCalledWith({ cpuCores: 7.2, memoryMb: 15872, diskMb: 0 }, []);
+    expect(secondStart).not.toHaveBeenCalled();
+    expect(h.wait).toHaveBeenCalledWith(second.id, "org", expect.objectContaining({ reason: "resources" }));
+    h.reservations = [];
+    await admitCloudBuild(project, second, secondStart);
+    expect(secondStart).toHaveBeenCalledWith({ cpuCores: 7.2, memoryMb: 15872, diskMb: 0 }, []);
+  });
   it.each([4, null])(
     "respects purchased/unlimited cap %s and ignores null-resource activity",
     async (limit) => {

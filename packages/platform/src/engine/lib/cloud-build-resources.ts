@@ -15,8 +15,8 @@ export interface CloudBuildResourceInput {
   reservations: readonly CloudBuildReservation[];
   /** Missing or zero dimensions mean automatic, as in persisted resource settings. */
   requested?: Readonly<Partial<CloudBuildReservation>> | null;
-  /** Positive plan ceiling sizes automatic CPU shares, not memory or slot limits.
-   * Omitted/null (unlimited) retains the default target of up to 1 CPU. */
+  /** Validate the plan ceiling; admission slots remain owned by the caller.
+   * It must not divide or cap the resources of an automatic build. */
   concurrencyLimit?: number | null;
 }
 
@@ -37,12 +37,6 @@ export type CloudBuildResourceDecision =
       reason: "invalid-request" | "memory-exceeds-capacity" | "cpu-exceeds-capacity";
     };
 
-/** Automatic ceilings; memory targets use 65% of the post-headroom host budget. */
-export const CLOUD_BUILD_AUTOMATIC_RESOURCES: CloudBuildReservation = Object.freeze({
-  cpuCores: 1,
-  memoryMb: 4096,
-});
-
 const MIN_MEMORY_MB = 128;
 const MIN_CPU_CORES = 0.25;
 const finiteNonnegative = (value: number) => Number.isFinite(value) && value >= 0;
@@ -56,8 +50,8 @@ const finiteNonnegative = (value: number) => Number.isFinite(value) && value >= 
  * Samples may already include running builders: this deliberately double-counts
  * their memory until per-builder attribution exists, but also protects reservations
  * whose builders have not started yet. Memory headroom is 5%, clamped to 128–512 MB.
- * CPU reservations use physical capacity, not instantaneous idle CPU. Usage only
- * gates admission at extreme pressure (>=95%), including explicit requests.
+ * Automatic CPU uses sampled idle capacity, bounded by unreserved physical CPU.
+ * Explicit CPU stays unchanged. Extreme pressure (>=95%) gates both modes.
  * A sample cannot guarantee protection against future growth of unrelated apps.
  */
 export function decideCloudBuildResources(
@@ -96,21 +90,6 @@ export function decideCloudBuildResources(
     (!Number.isSafeInteger(concurrencyLimit) || concurrencyLimit <= 0)
   )
     return { kind: "wait", reason: "concurrency-unavailable" };
-  // Raising the commercial ceiling must not make each build slower. Customers
-  // may explicitly choose smaller allocations for greater parallelism.
-  const automaticCpu = Math.min(CLOUD_BUILD_AUTOMATIC_RESOURCES.cpuCores, capacity.cpuCores);
-  // Stable across samples and plan ceilings: leave room for the OS/apps without
-  // silently shrinking a queued build to whatever happens to be free right now.
-  const automaticMemory = Math.min(
-    CLOUD_BUILD_AUTOMATIC_RESOURCES.memoryMb,
-    Math.max(MIN_MEMORY_MB, Math.floor(memoryBudget * 0.65)),
-  );
-  const resources: ResourceConfig = {
-    cpuCores: cpu || Math.min(capacity.cpuCores, automaticCpu),
-    memoryMb: memory || Math.min(memoryBudget, automaticMemory),
-    // No additional disk cap: this helper neither reserves nor measures disk.
-    diskMb: 0,
-  };
   if (
     !usage?.available ||
     usage.memoryAvailableMb === null ||
@@ -140,11 +119,24 @@ export function decideCloudBuildResources(
 
   const freeMemory =
     Math.floor(Math.min(capacity.memoryMb, usage.memoryAvailableMb) - headroomMb) - reservedMemory;
-  if (resources.memoryMb > freeMemory) return { kind: "wait", reason: "memory-pressure" };
+  if (freeMemory < MIN_MEMORY_MB || memory > freeMemory)
+    return { kind: "wait", reason: "memory-pressure" };
   const freeCpu = capacity.cpuCores - reservedCpu;
   // Fractional shares (e.g. 8 CPUs / 20 slots) accumulate floating-point noise.
   const cpuRoundingTolerance = Number.EPSILON * capacity.cpuCores * (reservations.length + 2);
-  if (usage.cpuPercent >= 95 || resources.cpuCores - freeCpu > cpuRoundingTolerance)
+  if (
+    usage.cpuPercent >= 95 ||
+    freeCpu + cpuRoundingTolerance < MIN_CPU_CORES ||
+    cpu - freeCpu > cpuRoundingTolerance
+  )
     return { kind: "wait", reason: "cpu-pressure" };
+  const resources: ResourceConfig = {
+    cpuCores:
+      cpu ||
+      Math.min(freeCpu, Math.max(MIN_CPU_CORES, capacity.cpuCores * (1 - usage.cpuPercent / 100))),
+    memoryMb: memory || freeMemory,
+    // No additional disk cap: this helper neither reserves nor measures disk.
+    diskMb: 0,
+  };
   return { kind: "admit", resources };
 }
