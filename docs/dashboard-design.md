@@ -374,6 +374,8 @@ check retryable before starting the move.
   email. A shared team connection never exposes its owner's private inbox to teammates;
   offer a Cloud sign-in link when the current person has no personal link.
 - Backups uses a compact storage summary above full-width history and destination sections.
+  The project tab uses the page's Backup title once; keep Refresh right-aligned above the summary
+  without a second heading or introductory description.
   Keep secondary descriptions quiet, and stack history rows on phones while retaining dates,
   sizes, payloads and restore/detail actions. Destination detail pages retain their sidebar summary.
 - Keep project grid cards within their original compact footprint. Put identity and domain
