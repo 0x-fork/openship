@@ -151,7 +151,7 @@ function actorDisplay(e: AuditEventRow, labels: { system: string; actorPrefix: s
  * membership id and keep the human identity in the payload — so those fall back
  * to the email/name recorded at the time, and only then to a generic noun.
  */
-function resourceDisplay(e: AuditEventRow): { label: string; isSpecific: boolean } {
+function resourceDisplay(e: AuditEventRow, labels?: Record<string, string>): { label: string; isSpecific: boolean } {
   if (e.resourceName) return { label: e.resourceName, isSpecific: true };
   const payload = (e.after ?? e.before) as Record<string, unknown> | null | undefined;
   if (payload && typeof payload === "object") {
@@ -162,7 +162,8 @@ function resourceDisplay(e: AuditEventRow): { label: string; isSpecific: boolean
       if (typeof value === "string" && value.trim()) return { label: value, isSpecific: true };
     }
   }
-  return { label: auditResourceLabel(e.resourceType), isSpecific: false };
+  const fallback = (e.resourceType && labels?.[e.resourceType]) || auditResourceLabel(e.resourceType);
+  return { label: fallback, isSpecific: false };
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
@@ -253,8 +254,9 @@ function AuditDetailsBody({
   const [showTechnical, setShowTechnical] = useState(false);
   const info = describeAuditEvent(event.eventType);
   const eventLoc = (t.settings.audit as any)?.events?.[event.eventType];
-  const action = eventLoc?.action || info.action;
+  const rawAction = eventLoc?.action || info.action;
   const label = eventLoc?.label || info.label;
+  const description = eventLoc?.description || info.description;
   const tone = info.tone ?? "neutral";
   const hasBefore = event.before !== null && event.before !== undefined;
   const hasAfter = event.after !== null && event.after !== undefined;
@@ -262,7 +264,10 @@ function AuditDetailsBody({
     system: t.settings.audit.system,
     actorPrefix: t.settings.audit.actorPrefix,
   });
-  const resource = resourceDisplay(event);
+  const resource = resourceDisplay(event, (t.settings.audit as any)?.resourceLabels);
+  const action = !resource.isSpecific
+    ? (eventLoc?.actionWithoutResource || rawAction.replace(/\s+(for|of|on|from|to|in|для|от|к|в)$/i, ""))
+    : rawAction;
 
   return (
     <div className="flex flex-col gap-5 p-6">
@@ -279,8 +284,8 @@ function AuditDetailsBody({
           <p className="mt-0.5 text-xs text-muted-foreground" title={absoluteTime(event.createdAt, locale)}>
             {relativeTime(event.createdAt, t)} · {absoluteTime(event.createdAt, locale)}
           </p>
-          {info.description && (
-            <p className="mt-2 text-sm text-muted-foreground">{info.description}</p>
+          {description && (
+            <p className="mt-2 text-sm text-muted-foreground">{description}</p>
           )}
         </div>
         <button
@@ -964,13 +969,16 @@ export function AuditLog() {
                 {day.rows.map((e) => {
                   const info = describeAuditEvent(e.eventType);
                   const eventLoc = (t.settings.audit as any)?.events?.[e.eventType];
-                  const action = eventLoc?.action || info.action;
+                  const rawAction = eventLoc?.action || info.action;
                   const tone = info.tone ?? "neutral";
                   const actor = actorDisplay(e, {
                     system: t.settings.audit.system,
                     actorPrefix: t.settings.audit.actorPrefix,
                   });
-                  const resource = resourceDisplay(e);
+                  const resource = resourceDisplay(e, (t.settings.audit as any)?.resourceLabels);
+                  const action = !resource.isSpecific
+                    ? (eventLoc?.actionWithoutResource || rawAction.replace(/\s+(for|of|on|from|to|in|для|от|к|в)$/i, ""))
+                    : rawAction;
                   return (
                     <button
                       key={e.id}

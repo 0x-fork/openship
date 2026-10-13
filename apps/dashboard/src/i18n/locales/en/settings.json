@@ -655,6 +655,19 @@
       "perkGithub": "GitHub connected without registering your own app",
       "noLockIn": "Free to connect. Nothing moves, and you can disconnect at any time.",
       "viewPricing": "View pricing"
+    },
+    "connectModal": {
+      "title": "Connect Openship Cloud",
+      "requiresConnection": "{feature} requires an Openship Cloud connection. Connect your account to unlock:",
+      "features": {
+        "deployments": "Cloud deployments",
+        "infra": "Managed infrastructure",
+        "ssl": "Automatic SSL & domains",
+        "cdn": "Global CDN"
+      },
+      "connect": "Connect to Openship Cloud",
+      "waitingSignIn": "Waiting for sign in…",
+      "maybeLater": "Maybe later"
     }
   },
   "instance": {
@@ -1159,7 +1172,28 @@
       "terminal:write": {
         "action": "opened a terminal on",
         "label": "Terminal session opened"
+      },
+      "deployment:write": {
+        "action": "started a deploy for",
+        "actionWithoutResource": "started a deploy",
+        "label": "Deploy action",
+        "description": "A deployment endpoint was invoked — start, retry, rollback, or promote."
+      },
+      "deployment:admin": {
+        "action": "ran an admin action on the deploy for",
+        "actionWithoutResource": "ran an admin action on the deploy",
+        "label": "Deploy admin action",
+        "description": "An administrative action was invoked on a deployment."
       }
+    },
+    "resourceLabels": {
+      "project": "an app",
+      "service": "a service",
+      "container": "a container",
+      "deployment": "a deployment",
+      "domain": "a domain",
+      "server": "a server",
+      "settings": "settings"
     }
   },
   "updates": {

@@ -595,6 +595,19 @@
       "perkGithub": "无需注册您自己的应用即可连接 GitHub",
       "noLockIn": "免费连接。不移动任何数据，您可以随时断开连接。",
       "viewPricing": "查看价格"
+    },
+    "connectModal": {
+      "title": "连接 Openship Cloud",
+      "requiresConnection": "{feature} 需要连接 Openship Cloud。连接您的账号以解锁：",
+      "features": {
+        "deployments": "云端部署",
+        "infra": "托管基础设施",
+        "ssl": "自动 SSL 与域名",
+        "cdn": "全球 CDN"
+      },
+      "connect": "连接到 Openship Cloud",
+      "waitingSignIn": "等待登录…",
+      "maybeLater": "稍后再说"
     }
   },
   "instance": {
@@ -1099,7 +1112,28 @@
       "terminal:write": {
         "action": "打开了终端：",
         "label": "终端会话已打开"
+      },
+      "deployment:write": {
+        "action": "启动了部署:",
+        "actionWithoutResource": "启动了部署",
+        "label": "部署操作",
+        "description": "调用了部署端点 — 启动、重试、回滚或提升。"
+      },
+      "deployment:admin": {
+        "action": "对部署执行了管理操作:",
+        "actionWithoutResource": "对部署执行了管理操作",
+        "label": "部署管理操作",
+        "description": "对部署调用了管理操作。"
       }
+    },
+    "resourceLabels": {
+      "project": "应用",
+      "service": "服务",
+      "container": "容器",
+      "deployment": "部署",
+      "domain": "域名",
+      "server": "服务器",
+      "settings": "设置"
     }
   },
   "updates": {

@@ -191,7 +191,9 @@ export function ServiceDetailPanel({
       if (typeof window === "undefined" || !window.localStorage) return;
       const key = `openship.serviceterm.resume.${service.id}`;
       setTerminalResumeToken(window.localStorage.getItem(key));
-    } catch {}
+    } catch {
+      // diagnostics-ignore: localStorage access may fail in restricted/private browsing mode.
+    }
   }, [service.id]);
   const persistResumeToken = (token: string | null) => {
     setTerminalResumeToken(token);
@@ -200,7 +202,9 @@ export function ServiceDetailPanel({
       const key = `openship.serviceterm.resume.${service.id}`;
       if (token) window.localStorage.setItem(key, token);
       else window.localStorage.removeItem(key);
-    } catch {}
+    } catch {
+      // diagnostics-ignore: localStorage write may fail in restricted/private browsing mode.
+    }
   };
 
   // ── Backup section state ────────────────────────────────────────────

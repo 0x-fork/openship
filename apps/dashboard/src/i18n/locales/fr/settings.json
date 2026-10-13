@@ -595,6 +595,19 @@
       "perkGithub": "GitHub connecté sans avoir à enregistrer votre propre application",
       "noLockIn": "Connexion gratuite. Rien ne bouge et vous pouvez vous déconnecter à tout moment.",
       "viewPricing": "Voir les tarifs"
+    },
+    "connectModal": {
+      "title": "Connecter Openship Cloud",
+      "requiresConnection": "{feature} nécessite une connexion Openship Cloud. Connectez votre compte pour débloquer :",
+      "features": {
+        "deployments": "Déploiements cloud",
+        "infra": "Infrastructure gérée",
+        "ssl": "SSL et domaines automatiques",
+        "cdn": "CDN mondial"
+      },
+      "connect": "Se connecter à Openship Cloud",
+      "waitingSignIn": "En attente de connexion…",
+      "maybeLater": "Peut-être plus tard"
     }
   },
   "instance": {
@@ -1099,7 +1112,28 @@
       "terminal:write": {
         "action": "a ouvert un terminal sur",
         "label": "Session de terminal ouverte"
+      },
+      "deployment:write": {
+        "action": "a lancé un déploiement pour",
+        "actionWithoutResource": "a lancé un déploiement",
+        "label": "Action de déploiement",
+        "description": "Un point de terminaison de déploiement a été appelé : démarrage, nouvel essai, restauration ou promotion."
+      },
+      "deployment:admin": {
+        "action": "a exécuté une action d’administrateur sur le déploiement de",
+        "actionWithoutResource": "a exécuté une action d’administrateur sur le déploiement",
+        "label": "Action d’administrateur de déploiement",
+        "description": "Une action administrative a été appelée sur un déploiement."
       }
+    },
+    "resourceLabels": {
+      "project": "une application",
+      "service": "un service",
+      "container": "un conteneur",
+      "deployment": "un déploiement",
+      "domain": "un domaine",
+      "server": "un serveur",
+      "settings": "paramètres"
     }
   },
   "updates": {

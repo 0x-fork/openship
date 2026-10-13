@@ -294,7 +294,9 @@ export function setActiveOrganizationId(orgId: string | null) {
           window.localStorage.removeItem("openship.activeOrgId");
         }
       }
-    } catch {}
+    } catch {
+      // diagnostics-ignore: localStorage write may fail in restricted/private browsing mode.
+    }
   }
 }
 

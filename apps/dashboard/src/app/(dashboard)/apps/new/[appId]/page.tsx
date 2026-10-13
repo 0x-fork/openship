@@ -394,6 +394,7 @@ export default function AppInstallPage() {
   // a narrow viewport. Re-measured on resize for the same reason. The measurement
   // is skipped while expanded (where the two heights are equal by definition, so
   // measuring would clear the flag and remove the way back).
+  const localizedDescription = template ? ((t.library as any)?.catalog?.apps?.[template.id] || template.description) : "";
   const descRef = useRef<HTMLParagraphElement | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
   const [descClamped, setDescClamped] = useState(false);
@@ -405,7 +406,7 @@ export default function AppInstallPage() {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [descExpanded, template?.description]);
+  }, [descExpanded, localizedDescription]);
 
   // Project name shown in Openship. Editable for a fresh install (a second
   // install of the same app auto-suffixes server-side, e.g. "Convex 2"); hidden
@@ -1514,7 +1515,7 @@ export default function AppInstallPage() {
       <CleanDeployProgressCard
         appId={appId}
         title={template.name}
-        description={template.description}
+        description={localizedDescription}
         phase={phase}
         progress={progress}
         phaseLabel={phaseLabel}
@@ -1620,7 +1621,7 @@ export default function AppInstallPage() {
               ref={descRef}
               className={`text-sm text-muted-foreground ${descExpanded ? "" : "line-clamp-2"}`}
             >
-              {template.description}
+              {localizedDescription}
             </p>
             {(descClamped || descExpanded) && (
               <button

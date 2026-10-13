@@ -634,6 +634,19 @@
       "perkGithub": "Kendi uygulamanızı kaydetmeden bağlı GitHub",
       "noLockIn": "Bağlanmak ücretsizdir. Hiçbir şey taşınmaz ve istediğiniz zaman bağlantıyı kesebilirsiniz.",
       "viewPricing": "Fiyatlandırmayı görüntüle"
+    },
+    "connectModal": {
+      "title": "Openship Cloud Bağla",
+      "requiresConnection": "{feature} için Openship Cloud bağlantısı gerekir. Erişimi açmak için hesabınızı bağlayın:",
+      "features": {
+        "deployments": "Bulut dağıtımları",
+        "infra": "Yönetilen altyapı",
+        "ssl": "Otomatik SSL ve alan adları",
+        "cdn": "Küresel CDN"
+      },
+      "connect": "Openship Cloud Bağlan",
+      "waitingSignIn": "Giriş bekleniyor…",
+      "maybeLater": "Belki daha sonra"
     }
   },
   "instance": {
@@ -1138,7 +1151,28 @@
       "terminal:write": {
         "action": "uçbirim açtı:",
         "label": "Uçbirim oturumu açıldı"
+      },
+      "deployment:write": {
+        "action": "için bir dağıtım başlattı:",
+        "actionWithoutResource": "bir dağıtım başlattı",
+        "label": "Dağıtım eylemi",
+        "description": "Bir dağıtım uç noktası çağrıldı — başlatma, yeniden deneme, geri alma veya yükseltme."
+      },
+      "deployment:admin": {
+        "action": "dağıtımında bir yönetici eylemi gerçekleştirdi:",
+        "actionWithoutResource": "dağıtımda bir yönetici eylemi gerçekleştirdi",
+        "label": "Dağıtım yönetici eylemi",
+        "description": "Bir dağıtım üzerinde yönetici eylemi çağrıldı."
       }
+    },
+    "resourceLabels": {
+      "project": "bir uygulama",
+      "service": "bir servis",
+      "container": "bir konteyner",
+      "deployment": "bir dağıtım",
+      "domain": "bir alan adı",
+      "server": "bir sunucu",
+      "settings": "ayarlar"
     }
   },
   "updates": {

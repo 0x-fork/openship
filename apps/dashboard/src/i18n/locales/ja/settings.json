@@ -595,6 +595,19 @@
       "perkGithub": "独自のアプリを登録することなく GitHub に接続",
       "noLockIn": "接続は無料。データ等の移行は発生せず、いつでも切断できます。",
       "viewPricing": "料金プランを見る"
+    },
+    "connectModal": {
+      "title": "Openship Cloud に接続",
+      "requiresConnection": "{feature} には Openship Cloud の接続が必要です。アカウントを接続してロック解除:",
+      "features": {
+        "deployments": "クラウドデプロイ",
+        "infra": "マネージドインフラ",
+        "ssl": "自動SSLとドメイン",
+        "cdn": "グローバルCDN"
+      },
+      "connect": "Openship Cloud に接続",
+      "waitingSignIn": "サインイン待機中…",
+      "maybeLater": "後で"
     }
   },
   "instance": {
@@ -1099,7 +1112,28 @@
       "terminal:write": {
         "action": "ターミナルを開きました：",
         "label": "ターミナルセッション開始"
+      },
+      "deployment:write": {
+        "action": "のデプロイを開始しました:",
+        "actionWithoutResource": "デプロイを開始しました",
+        "label": "デプロイアクション",
+        "description": "デプロイエンドポイントが呼び出されました（開始、再試行、ロールバック、昇格）。"
+      },
+      "deployment:admin": {
+        "action": "のデプロイで管理者アクションを実行しました:",
+        "actionWithoutResource": "デプロイで管理者アクションを実行しました",
+        "label": "デプロイ管理者アクション",
+        "description": "デプロイで管理者アクションが呼び出されました。"
       }
+    },
+    "resourceLabels": {
+      "project": "アプリ",
+      "service": "サービス",
+      "container": "コンテナ",
+      "deployment": "デプロイ",
+      "domain": "ドメイン",
+      "server": "サーバー",
+      "settings": "設定"
     }
   },
   "updates": {

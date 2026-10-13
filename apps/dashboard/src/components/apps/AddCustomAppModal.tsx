@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { appsApi } from "@/lib/api";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { useToast } from "@/context/ToastContext";
-import { useI18n } from "@/components/i18n-provider";
+import { useI18n, interpolate } from "@/components/i18n-provider";
 
 /**
  * Upload a custom app JSON → validate → add it to this org's catalog as an
@@ -43,16 +43,16 @@ export function AddCustomAppModal({
     try {
       obj = JSON.parse(text);
     } catch {
-      setError("That file isn't valid JSON.");
+      setError(m.invalidJson || "That file isn't valid JSON.");
       return;
     }
     if (!isValidAppTemplate(obj)) {
-      setError("This isn't a valid app definition — check the required fields and references.");
+      setError(m.invalidDefinition || "This isn't a valid app definition — check the required fields and references.");
       return;
     }
     const t = obj as { kind?: string; name?: string; id?: string };
     if (t.kind !== "template") {
-      setError("Only template apps can be added (flow apps aren't supported).");
+      setError(m.onlyTemplateSupported || "Only template apps can be added (flow apps aren't supported).");
       return;
     }
     setTemplate(obj);
@@ -69,11 +69,11 @@ export function AddCustomAppModal({
     setBusy(true);
     try {
       await appsApi.addCustom(template);
-      showToast(`Added "${name}" to your catalog.`, "success");
+      showToast(interpolate(m.addedToast || "Added \"{name}\" to your catalog.", { name: name || "app" }), "success");
       onAdded();
       onClose();
     } catch (err) {
-      setError(getApiErrorMessage(err, "Couldn't add the app."));
+      setError(getApiErrorMessage(err, m.failedToast || "Couldn't add the app."));
     } finally {
       setBusy(false);
     }

@@ -595,6 +595,19 @@
       "perkGithub": "GitHub verbunden, ohne eine eigene App registrieren zu müssen",
       "noLockIn": "Kostenlos verbinden. Nichts wird verschoben, und Sie können die Verbindung jederzeit trennen.",
       "viewPricing": "Preise anzeigen"
+    },
+    "connectModal": {
+      "title": "Openship Cloud verbinden",
+      "requiresConnection": "{feature} erfordert eine Openship Cloud-Verbindung. Verbinden Sie Ihr Konto zum Freischalten:",
+      "features": {
+        "deployments": "Cloud-Bereitstellungen",
+        "infra": "Verwaltete Infrastruktur",
+        "ssl": "Automatische SSL & Domains",
+        "cdn": "Globales CDN"
+      },
+      "connect": "Mit Openship Cloud verbinden",
+      "waitingSignIn": "Warten auf Anmeldung…",
+      "maybeLater": "Vielleicht später"
     }
   },
   "instance": {
@@ -1099,7 +1112,28 @@
       "terminal:write": {
         "action": "hat ein Terminal geöffnet auf",
         "label": "Terminalsitzung geöffnet"
+      },
+      "deployment:write": {
+        "action": "startete eine Bereitstellung für",
+        "actionWithoutResource": "startete eine Bereitstellung",
+        "label": "Bereitstellungsaktion",
+        "description": "Ein Bereitstellungsendpunkt wurde aufgerufen – Start, Wiederholung, Rollback oder Hochstufung."
+      },
+      "deployment:admin": {
+        "action": "führte eine Administratoraktion für die Bereitstellung von",
+        "actionWithoutResource": "führte eine Administratoraktion für die Bereitstellung aus",
+        "label": "Bereitstellungs-Administratoraktion",
+        "description": "Eine administrative Aktion für eine Bereitstellung wurde aufgerufen."
       }
+    },
+    "resourceLabels": {
+      "project": "eine App",
+      "service": "ein Dienst",
+      "container": "ein Container",
+      "deployment": "eine Bereitstellung",
+      "domain": "eine Domain",
+      "server": "ein Server",
+      "settings": "Einstellungen"
     }
   },
   "updates": {

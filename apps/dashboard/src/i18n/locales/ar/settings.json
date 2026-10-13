@@ -595,6 +595,19 @@
       "perkGithub": "GitHub متصل دون تسجيل تطبيقك الخاص",
       "noLockIn": "الاتصال مجاني. لا شيء ينتقل، ويمكنك قطع الاتصال في أي وقت.",
       "viewPricing": "عرض الأسعار"
+    },
+    "connectModal": {
+      "title": "ربط Openship Cloud",
+      "requiresConnection": "تتطلب {feature} الاتصال بـ Openship Cloud. اربط حسابك للوصول إلى:",
+      "features": {
+        "deployments": "عمليات النشر السحابية",
+        "infra": "بنية تحتية مدارة",
+        "ssl": "شهادات SSL ونطاقات تلقائية",
+        "cdn": "شبكة توصيل محتوى عالمية"
+      },
+      "connect": "الاتصال بـ Openship Cloud",
+      "waitingSignIn": "في انتظار تسجيل الدخول…",
+      "maybeLater": "ربما لاحقاً"
     }
   },
   "instance": {
@@ -1099,7 +1112,28 @@
       "terminal:write": {
         "action": "فتح جلسة طرفية على",
         "label": "تم فتح جلسة طرفية"
+      },
+      "deployment:write": {
+        "action": "بدأ عملية نشر لـ",
+        "actionWithoutResource": "بدأ عملية نشر",
+        "label": "إجراء النشر",
+        "description": "تم استدعاء نقطة نهاية النشر — بدء، إعادة محاولة، استرجاع أو ترقية."
+      },
+      "deployment:admin": {
+        "action": "نفّذ إجراء مسؤول على نشر",
+        "actionWithoutResource": "نفّذ إجراء مسؤول على النشر",
+        "label": "إجراء مسؤول النشر",
+        "description": "تم استدعاء إجراء إداري على عملية نشر."
       }
+    },
+    "resourceLabels": {
+      "project": "تطبيق",
+      "service": "خدمة",
+      "container": "حاوية",
+      "deployment": "نشر",
+      "domain": "نطاق",
+      "server": "خادم",
+      "settings": "إعدادات"
     }
   },
   "updates": {

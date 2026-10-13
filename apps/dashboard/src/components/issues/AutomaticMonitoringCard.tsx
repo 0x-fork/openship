@@ -43,7 +43,7 @@ export function AutomaticMonitoringCard({
                 id="automatic-monitoring-title"
                 className="text-[15px] font-semibold text-foreground"
               >
-                Automatic monitoring
+                {copy.title}
               </h3>
               <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                 {!watcher.available ? copy.badgeUnavailable : watching ? copy.badgeEnabled : copy.badgeOff}
@@ -95,7 +95,7 @@ export function AutomaticMonitoringCard({
                 className="font-medium text-foreground underline underline-offset-4"
                 href={`/jobs/${encodeURIComponent(watcher.key)}`}
               >
-                Monitoring schedule
+                {copy.scheduleLink}
               </Link>
             )}
             {watcher.available && (
@@ -103,7 +103,7 @@ export function AutomaticMonitoringCard({
                 className="font-medium text-foreground underline underline-offset-4"
                 href="/monitoring?tab=notifications"
               >
-                Configure alerts
+                {copy.alertsLink}
               </Link>
             )}
           </div>

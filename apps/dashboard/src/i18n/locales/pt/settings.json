@@ -595,6 +595,19 @@
       "perkGithub": "GitHub conectado sem registrar seu próprio aplicativo",
       "noLockIn": "Conexão gratuita. Nada muda de lugar e você pode desconectar a qualquer momento.",
       "viewPricing": "Ver preços"
+    },
+    "connectModal": {
+      "title": "Conectar Openship Cloud",
+      "requiresConnection": "{feature} requer uma conexão com o Openship Cloud. Conecte sua conta para desbloquear:",
+      "features": {
+        "deployments": "Implantações na nuvem",
+        "infra": "Infraestrutura gerenciada",
+        "ssl": "SSL e dominios automáticos",
+        "cdn": "CDN global"
+      },
+      "connect": "Conectar ao Openship Cloud",
+      "waitingSignIn": "Aguardando login…",
+      "maybeLater": "Talvez mais tarde"
     }
   },
   "instance": {
@@ -1099,7 +1112,28 @@
       "terminal:write": {
         "action": "abriu um terminal em",
         "label": "Sessão de terminal aberta"
+      },
+      "deployment:write": {
+        "action": "iniciou uma implantação para",
+        "actionWithoutResource": "iniciou uma implantação",
+        "label": "Ação de implantação",
+        "description": "Um endpoint de implantação foi chamado: iniciar, tentar novamente, reverter ou promover."
+      },
+      "deployment:admin": {
+        "action": "executou uma ação de administrador na implantação de",
+        "actionWithoutResource": "executou uma ação de administrador na implantação",
+        "label": "Ação de administrador de implantação",
+        "description": "Uma ação administrativa foi chamada em uma implantação."
       }
+    },
+    "resourceLabels": {
+      "project": "um aplicativo",
+      "service": "um serviço",
+      "container": "um contêiner",
+      "deployment": "uma implantação",
+      "domain": "um domínio",
+      "server": "um servidor",
+      "settings": "configurações"
     }
   },
   "updates": {

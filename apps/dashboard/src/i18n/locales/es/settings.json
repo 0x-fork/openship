@@ -595,6 +595,19 @@
       "perkGithub": "GitHub conectado sin necesidad de registrar tu propia app",
       "noLockIn": "Conexión gratuita. Nada cambia de sitio y puedes desconectarte en cualquier momento.",
       "viewPricing": "Ver precios"
+    },
+    "connectModal": {
+      "title": "Conectar Openship Cloud",
+      "requiresConnection": "{feature} requiere una conexión a Openship Cloud. Conecta tu cuenta para desbloquear:",
+      "features": {
+        "deployments": "Despliegues en la nube",
+        "infra": "Infraestructura gestionada",
+        "ssl": "SSL y dominios automáticos",
+        "cdn": "CDN global"
+      },
+      "connect": "Conectar a Openship Cloud",
+      "waitingSignIn": "Esperando inicio de sesión…",
+      "maybeLater": "Quizás más tarde"
     }
   },
   "instance": {
@@ -1099,7 +1112,28 @@
       "terminal:write": {
         "action": "abrió un terminal en",
         "label": "Sesión de terminal abierta"
+      },
+      "deployment:write": {
+        "action": "inició un despliegue para",
+        "actionWithoutResource": "inició un despliegue",
+        "label": "Acción de despliegue",
+        "description": "Se invocó un endpoint de despliegue: inicio, reintento, reversión o promoción."
+      },
+      "deployment:admin": {
+        "action": "ejecutó una acción de administrador en el despliegue de",
+        "actionWithoutResource": "ejecutó una acción de administrador en el despliegue",
+        "label": "Acción de administrador de despliegue",
+        "description": "Se invocó una acción administrativa en un despliegue."
       }
+    },
+    "resourceLabels": {
+      "project": "una aplicación",
+      "service": "un servicio",
+      "container": "un contenedor",
+      "deployment": "un despliegue",
+      "domain": "un dominio",
+      "server": "un servidor",
+      "settings": "ajustes"
     }
   },
   "updates": {
