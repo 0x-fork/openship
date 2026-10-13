@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useId, useState } from "react";
@@ -539,6 +540,7 @@ const BuildSettings: React.FC<BuildSettingsProps> = ({
                           });
                           setPhpError(null);
                         } catch (error) {
+                          observeCaughtError(error, "dashboard/components/import-project/BuildSettings");
                           setPhpError(error instanceof Error ? error.message : bs.phpVersionDesc);
                         }
                       }}
