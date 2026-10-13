@@ -4,7 +4,73 @@
     "commandHint": "Executa em cada servidor selecionado. Use docker run --rm para uma tarefa em um contêiner.",
     "cloudServersHint": "Use um servidor existente ou adicione um servidor dedicado com sua própria assinatura.",
     "cloudUsageHint": "As tarefas compartilham a capacidade e a cota de uso do servidor selecionado. O plano deve estar ativo para executá-las.",
-    "addDedicatedServer": "Adicionar servidor dedicado"
+    "addDedicatedServer": "Adicionar servidor dedicado",
+    "title": "Nova tarefa",
+    "name": "Nome",
+    "namePlaceholder": "Vacuum noturno do BD",
+    "server": "Servidor",
+    "servers": "Servidores",
+    "noServers": "Nenhum servidor conectado ainda — adicione um primeiro.",
+    "command": "Comando",
+    "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
+    "scheduleType": "Quando executar",
+    "scheduleTypes": {
+      "recurring": "Em um agendamento",
+      "once": "Uma vez",
+      "manual": "Manual"
+    },
+    "sections": {
+      "basics": "Básico",
+      "schedule": "Agendamento",
+      "servers": "Servidores de destino",
+      "reliability": "Confiabilidade",
+      "environment": "Ambiente",
+      "triggers": "Dependências e gatilhos",
+      "notifications": "Notificações"
+    },
+    "schedule": "Agendamento (cron)",
+    "runAt": "Executar às",
+    "manualHint": "Executa apenas quando acionado — Executar agora, uma dependência ou um evento.",
+    "timeout": "Tempo limite (s)",
+    "retryAttempts": "Tentativas máximas",
+    "retryBackoff": "Intervalo entre tentativas (s)",
+    "advanced": "Avançado",
+    "env": "Variáveis de ambiente",
+    "addVar": "Adicionar variável",
+    "secrets": "Segredos",
+    "addSecret": "Adicionar segredo",
+    "replaceSecrets": "Substituir segredos",
+    "secretsSet": "segredo(s) definido(s)",
+    "noSecrets": "Nenhum segredo definido.",
+    "dependencies": "Executar após",
+    "dependenciesHint": "Esta tarefa é executada após as tarefas selecionadas serem concluídas com sucesso.",
+    "triggers": "Gatilhos de eventos",
+    "notifications": "Notificações",
+    "noChannels": "Nenhum canal de notificação ainda — adicione um em Monitoramento → Notificações.",
+    "notificationsHint": "Substitui as configurações globais de notificação para esta tarefa.",
+    "submit": "Criar tarefa",
+    "creating": "Salvando…",
+    "cancel": "Cancelar",
+    "needServer": "Conecte um servidor primeiro",
+    "pasteEnv": "Colar .env",
+    "uploadEnv": "Enviar .env",
+    "envPasteEmpty": "Nenhuma variável encontrada",
+    "comingSoon": "Em breve",
+    "setupChannel": "Configurar um canal",
+    "customTriggerSoon": "Gatilho personalizado",
+    "docsLink": "Saiba mais sobre tarefas",
+    "docsBody": "Agendamentos, tentativas, segredos e notificações",
+    "summary": {
+      "title": "Resumo",
+      "command": "Comando",
+      "schedule": "Agendamento",
+      "targets": "Destinos",
+      "retry": "Tentativas",
+      "timeout": "Tempo limite",
+      "notify": "Notificações",
+      "none": "—",
+      "retryOff": "Desativado"
+    }
   },
   "systemJobLabels": {
     "github:deployment-checks": "Verificações de implantação do GitHub",
@@ -27,5 +93,120 @@
     "system:health-watch": "Monitoramento de integridade",
     "jobs:due-once": "Executar tarefas avulsas na fila",
     "edge:verify": "Verificação de proxy perimetral"
+  },
+  "backups": {
+    "section": "Agendamentos de backup",
+    "sectionDesc": "Backups automáticos agendados por projeto ou serviço. Gerenciados na aba Backups de cada projeto.",
+    "projectDefault": "Padrão do projeto",
+    "mailServer": "Servidor de e-mail",
+    "manage": "Gerenciar em Backups",
+    "badge": "Backup",
+    "never": "Nunca executado",
+    "status": {
+      "succeeded": "Concluído",
+      "failed": "Falhou",
+      "cancelled": "Cancelado",
+      "running": "Em execução"
+    }
+  },
+  "title": "Tarefas",
+  "subtitle": "Manutenção integrada e comandos personalizados em execução nos seus servidores.",
+  "empty": "Nenhuma tarefa agendada ainda.",
+  "searchPlaceholder": "Pesquisar tarefas…",
+  "noResults": "Nenhuma tarefa corresponde aos seus filtros.",
+  "overview": {
+    "title": "Visão geral",
+    "subtitle": "Tarefas nesta instância",
+    "all": "Todas as tarefas",
+    "running": "Em execução",
+    "failed": "Com falha",
+    "scheduled": "Agendadas",
+    "disabled": "Desativadas"
+  },
+  "loadFailed": "Falha ao carregar tarefas.",
+  "kind": {
+    "system": "Sistema",
+    "custom": "Personalizadas"
+  },
+  "fields": {
+    "schedule": "Agendamento",
+    "nextRun": "Próxima execução",
+    "lastRun": "Última execução",
+    "never": "Nunca executado",
+    "notScheduled": "Não agendado"
+  },
+  "status": {
+    "success": "Sucesso",
+    "failed": "Falhou",
+    "running": "Em execução"
+  },
+  "actions": {
+    "run": "Executar agora",
+    "running": "Executando…",
+    "edit": "Editar agendamento",
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "enable": "Ativar",
+    "disable": "Desativar",
+    "viewLogs": "Logs"
+  },
+  "cronHint": "Cron padrão de 5 campos (minuto hora dia mês dia_da_semana), UTC.",
+  "toast": {
+    "ran": "{label} iniciado.",
+    "ranFailed": "Falha ao executar {label}.",
+    "saved": "Agendamento atualizado para {label}.",
+    "saved2": "Tarefa atualizada.",
+    "saveFailed": "Falha ao atualizar {label}.",
+    "enabled": "{label} ativado.",
+    "disabled": "{label} desativado.",
+    "toggleFailed": "Falha ao atualizar {label}.",
+    "title": "Tarefas",
+    "created": "Tarefa criada.",
+    "createFailed": "Falha ao criar tarefa.",
+    "deleted": "Tarefa excluída.",
+    "deleteFailed": "Falha ao excluir tarefa."
+  },
+  "newJob": "Nova tarefa",
+  "sections": {
+    "system": "Tarefas do sistema",
+    "systemDesc": "Manutenção integrada nesta instância.",
+    "custom": "Tarefas personalizadas",
+    "customDesc": "Comandos executados nos seus servidores em um agendamento."
+  },
+  "customEmpty": {
+    "title": "Nenhuma tarefa personalizada ainda",
+    "desc": "Execute um comando em um dos seus servidores — em um agendamento, uma vez ou em um evento — com tentativas, segredos, logs em tempo real e notificações.",
+    "cta": "Criar tarefa",
+    "docs": "Documentação"
+  },
+  "edit": {
+    "title": "Editar tarefa",
+    "action": "Editar",
+    "save": "Salvar alterações"
+  },
+  "detail": {
+    "back": "Voltar para tarefas",
+    "tabs": {
+      "overview": "Visão geral",
+      "runs": "Execuções"
+    },
+    "servers": "Servidores",
+    "retry": "Tentativas",
+    "retryValue": "{n} tentativas, intervalo de {s}s",
+    "notifyValue": "{c} canal(is) em {s}",
+    "onceAt": "Uma vez às",
+    "noRuns": "Nenhuma execução ainda."
+  },
+  "delete": {
+    "action": "Excluir",
+    "confirm": "Excluir esta tarefa?",
+    "deleting": "Excluindo…"
+  },
+  "logs": {
+    "title": "Logs de execução",
+    "streaming": "Transmitindo…",
+    "empty": "Nenhuma saída ainda.",
+    "close": "Fechar",
+    "exit": "Código de saída {code}"
   }
 }

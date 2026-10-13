@@ -31,7 +31,9 @@
       "title": "このコードを GitHub で入力してください",
       "goToPrefix": "次のページへ移動",
       "goToSuffix": "して、上記のコードを入力してください。",
-      "waiting": "認証を待機しています…"
+      "waiting": "認証を待機しています…",
+      "openGithub": "GitHub を開く",
+      "copyCode": "クリックしてコピー"
     },
     "default": {
       "title": "デプロイするには GitHub に接続",
@@ -45,7 +47,13 @@
       "ghCli": "gh CLI でログイン",
       "ghCliDesc": "お使いのマシンの GitHub ログインを使用します。クラウドは不要です。",
       "useGhCli": "gh CLI を使う",
-      "connecting": "接続中…"
+      "connecting": "接続中…",
+      "manual": "手動 GitHub 接続",
+      "manualDesc": "設定でセットアップ — 独自の GitHub App/OAuth、またはこのインスタンスの gh CLI。Openship アカウントは不要です。",
+      "manualCta": "設定でセットアップ",
+      "byoc": "SSH キーまたはアクセストークン",
+      "byocDesc": "独自の認証情報を使用 — サーバーごとのデプロイキーまたはトークン。サインインは不要です。",
+      "byocCta": "セットアップ"
     },
     "installationPicker": {
       "title": "GitHubへのアクセスを選択",
@@ -60,6 +68,12 @@
       "successDescription": "リポジトリへのアクセスが準備できました。Openshipに戻れます。",
       "errorTitle": "GitHub接続の確認が必要です",
       "returnToApp": "ライブラリに戻る"
+    },
+    "token": {
+      "title": "GitHub トークンで接続",
+      "connect": "接続",
+      "create": "GitHub でトークンを作成",
+      "failed": "トークンを保存できませんでした。"
     }
   },
   "folderUpload": {
@@ -173,7 +187,9 @@
     "notConnectedManage": "未接続 — 設定で管理",
     "optional": "任意",
     "footnote": "リポジトリの閲覧とデプロイに使用するGitHub接続を管理します。",
-    "manageGithubSettings": "設定で GitHub を管理"
+    "manageGithubSettings": "設定で GitHub を管理",
+    "methodToken": "GitHub トークン",
+    "methodDevice": "GitHub サインイン"
   },
   "urlImport": {
     "invalidUrl": "有効な GitHub リポジトリ URL を入力してください",

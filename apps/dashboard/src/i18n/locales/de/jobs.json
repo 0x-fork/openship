@@ -4,7 +4,73 @@
     "commandHint": "Wird auf jedem ausgewählten Server ausgeführt. Verwende docker run --rm für eine Aufgabe in einem Container.",
     "cloudServersHint": "Nutze einen vorhandenen Server oder füge einen dedizierten Server mit eigenem Abonnement hinzu.",
     "cloudUsageHint": "Jobs teilen sich die Kapazität und das Nutzungskontingent des ausgewählten Servers. Zur Ausführung muss sein Tarif aktiv sein.",
-    "addDedicatedServer": "Dedizierten Server hinzufügen"
+    "addDedicatedServer": "Dedizierten Server hinzufügen",
+    "title": "Neuer Job",
+    "name": "Name",
+    "namePlaceholder": "Nächtliches DB-Vakuum",
+    "server": "Server",
+    "servers": "Server",
+    "noServers": "Noch keine Server verbunden — fügen Sie zuerst einen hinzu.",
+    "command": "Befehl",
+    "commandPlaceholder": "pg_dump ... > /backups/db.sql",
+    "scheduleType": "Wann ausführen",
+    "scheduleTypes": {
+      "recurring": "Nach Zeitplan",
+      "once": "Einmalig",
+      "manual": "Manuell"
+    },
+    "sections": {
+      "basics": "Grundlagen",
+      "schedule": "Zeitplan",
+      "servers": "Zielserver",
+      "reliability": "Zuverlässigkeit",
+      "environment": "Umgebung",
+      "triggers": "Abhängigkeiten & Trigger",
+      "notifications": "Benachrichtigungen"
+    },
+    "schedule": "Zeitplan (Cron)",
+    "runAt": "Ausführen um",
+    "manualHint": "Wird nur bei Auslösung ausgeführt — Jetzt ausführen, eine Abhängigkeit oder ein Ereignis.",
+    "timeout": "Zeitlimit (s)",
+    "retryAttempts": "Max. Versuche",
+    "retryBackoff": "Wartezeit (s)",
+    "advanced": "Erweitert",
+    "env": "Umgebungsvariablen",
+    "addVar": "Variable hinzufügen",
+    "secrets": "Secrets",
+    "addSecret": "Secret hinzufügen",
+    "replaceSecrets": "Secrets ersetzen",
+    "secretsSet": "Secret(s) festgelegt",
+    "noSecrets": "Keine Secrets festgelegt.",
+    "dependencies": "Ausführen nach",
+    "dependenciesHint": "Dieser Job wird ausgeführt, nachdem die ausgewählten Jobs erfolgreich abgeschlossen wurden.",
+    "triggers": "Ereignis-Trigger",
+    "notifications": "Benachrichtigungen",
+    "noChannels": "Noch keine Benachrichtigungskanäle vorhanden — fügen Sie einen unter Monitoring → Benachrichtigungen hinzu.",
+    "notificationsHint": "Überschreibt die globalen Benachrichtigungseinstellungen für diesen Job.",
+    "submit": "Job erstellen",
+    "creating": "Wird gespeichert…",
+    "cancel": "Abbrechen",
+    "needServer": "Zuerst einen Server verbinden",
+    "pasteEnv": ".env einfügen",
+    "uploadEnv": ".env hochladen",
+    "envPasteEmpty": "Keine Variablen gefunden",
+    "comingSoon": "Demnächst",
+    "setupChannel": "Kanal einrichten",
+    "customTriggerSoon": "Benutzerdefinierter Trigger",
+    "docsLink": "Mehr über Jobs erfahren",
+    "docsBody": "Zeitpläne, Wiederholungen, Secrets & Benachrichtigungen",
+    "summary": {
+      "title": "Zusammenfassung",
+      "command": "Befehl",
+      "schedule": "Zeitplan",
+      "targets": "Ziele",
+      "retry": "Wiederholung",
+      "timeout": "Timeout",
+      "notify": "Benachrichtigungen",
+      "none": "—",
+      "retryOff": "Keine"
+    }
   },
   "systemJobLabels": {
     "github:deployment-checks": "GitHub-Deployment-Prüfungen",
@@ -27,5 +93,120 @@
     "system:health-watch": "Integritätsprüfung",
     "jobs:due-once": "Einmalige Aufgaben ausführen",
     "edge:verify": "Edge-Überprüfung"
+  },
+  "backups": {
+    "section": "Backup-Zeitpläne",
+    "sectionDesc": "Automatische Backups, geplant pro Projekt oder Dienst. Wird unter dem Backup-Tab jedes Projekts verwaltet.",
+    "projectDefault": "Projektstandard",
+    "mailServer": "Mailserver",
+    "manage": "In Backups verwalten",
+    "badge": "Backup",
+    "never": "Nie ausgeführt",
+    "status": {
+      "succeeded": "Erfolgreich",
+      "failed": "Fehlgeschlagen",
+      "cancelled": "Abgebrochen",
+      "running": "Wird ausgeführt"
+    }
+  },
+  "title": "Jobs",
+  "subtitle": "Integrierte Wartungsaufgaben und benutzerdefinierte Befehle, die auf Ihren Servern ausgeführt werden.",
+  "empty": "Noch keine geplanten Jobs.",
+  "searchPlaceholder": "Jobs suchen…",
+  "noResults": "Keine Jobs entsprechen Ihren Filtern.",
+  "overview": {
+    "title": "Auf einen Blick",
+    "subtitle": "Jobs auf dieser Instanz",
+    "all": "Alle Jobs",
+    "running": "Wird ausgeführt",
+    "failed": "Fehlgeschlagen",
+    "scheduled": "Geplant",
+    "disabled": "Deaktiviert"
+  },
+  "loadFailed": "Laden der Jobs fehlgeschlagen.",
+  "kind": {
+    "system": "System",
+    "custom": "Benutzerdefiniert"
+  },
+  "fields": {
+    "schedule": "Zeitplan",
+    "nextRun": "Nächste Ausführung",
+    "lastRun": "Letzte Ausführung",
+    "never": "Nie ausgeführt",
+    "notScheduled": "Nicht geplant"
+  },
+  "status": {
+    "success": "Erfolg",
+    "failed": "Fehlgeschlagen",
+    "running": "Wird ausgeführt"
+  },
+  "actions": {
+    "run": "Jetzt ausführen",
+    "running": "Wird ausgeführt…",
+    "edit": "Zeitplan bearbeiten",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "viewLogs": "Logs"
+  },
+  "cronHint": "Standard-5-Felder-Cron (Minute Stunde Tag Monat Wochentag), UTC.",
+  "toast": {
+    "ran": "{label} gestartet.",
+    "ranFailed": "Ausführung von {label} fehlgeschlagen.",
+    "saved": "Zeitplan für {label} aktualisiert.",
+    "saved2": "Job aktualisiert.",
+    "saveFailed": "Aktualisierung von {label} fehlgeschlagen.",
+    "enabled": "{label} aktiviert.",
+    "disabled": "{label} deaktiviert.",
+    "toggleFailed": "Aktualisierung von {label} fehlgeschlagen.",
+    "title": "Jobs",
+    "created": "Job erstellt.",
+    "createFailed": "Erstellen des Jobs fehlgeschlagen.",
+    "deleted": "Job gelöscht.",
+    "deleteFailed": "Löschen des Jobs fehlgeschlagen."
+  },
+  "newJob": "Neuer Job",
+  "sections": {
+    "system": "Systemjobs",
+    "systemDesc": "Integrierte Wartungsaufgaben auf dieser Instanz.",
+    "custom": "Benutzerdefinierte Jobs",
+    "customDesc": "Befehle, die Sie nach Zeitplan auf Ihren Servern ausführen."
+  },
+  "customEmpty": {
+    "title": "Noch keine benutzerdefinierten Jobs",
+    "desc": "Führen Sie einen Befehl auf einem Ihrer Server aus — nach Zeitplan, einmalig oder bei einem Ereignis — mit Wiederholungen, Secrets, Live-Logs und Benachrichtigungen.",
+    "cta": "Job erstellen",
+    "docs": "Dokumentation"
+  },
+  "edit": {
+    "title": "Job bearbeiten",
+    "action": "Bearbeiten",
+    "save": "Änderungen speichern"
+  },
+  "detail": {
+    "back": "Zurück zu Jobs",
+    "tabs": {
+      "overview": "Übersicht",
+      "runs": "Ausführungen"
+    },
+    "servers": "Server",
+    "retry": "Wiederholung",
+    "retryValue": "{n} Versuche, {s}s Backoff",
+    "notifyValue": "{c} Kanal/Kanäle bei {s}",
+    "onceAt": "Einmalig um",
+    "noRuns": "Noch keine Ausführungen."
+  },
+  "delete": {
+    "action": "Löschen",
+    "confirm": "Diesen Job löschen?",
+    "deleting": "Wird gelöscht…"
+  },
+  "logs": {
+    "title": "Ausführungsprotokolle",
+    "streaming": "Wird gestreamt…",
+    "empty": "Noch keine Ausgabe.",
+    "close": "Schließen",
+    "exit": "Exit-Code {code}"
   }
 }

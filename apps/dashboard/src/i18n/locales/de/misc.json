@@ -94,7 +94,12 @@
     "grantRejectedTitle": "Dein Konto kann das nicht erteilen",
     "grantRejected": "{resource} wurde entfernt, weil dein eigener Zugriff das nicht abdeckt. Prüfe die Zusammenfassung und autorisiere erneut.",
     "deny": "Ablehnen",
-    "authorize": "Autorisieren"
+    "authorize": "Autorisieren",
+    "dgReadSource": "Dateiinhalte aus den von Ihnen festgelegten Pfaden lesen",
+    "dgNotReadSource": "Beliebige Dateiinhalte aus Ihren Repositories lesen",
+    "levelViewHint": "Nur Lesen: Einstellungen, Logs und Metadaten. Keine Änderungen.",
+    "levelManageHint": "Bereitstellen, neu starten und Einstellungen ändern. Kein Löschen möglich.",
+    "levelFullHint": "Alles, einschließlich des Löschens der Ressource selbst."
   },
   "acceptInvite": {
     "invalidInvitation": "Ungültige Einladung",
@@ -157,7 +162,9 @@
     "signedInAs": "Angemeldet als",
     "authorizing": "Wird autorisiert…",
     "authorize": "Autorisieren",
-    "cancel": "Abbrechen"
+    "cancel": "Abbrechen",
+    "deviceDoneTitle": "Mit Openship Cloud verbunden",
+    "deviceDoneBody": "Sie können diesen Tab schließen und zu Ihrem Terminal zurückkehren — die Einrichtung wird automatisch fortgesetzt."
   },
   "cloudConnect": {
     "noCode": "Der Authentifizierungscode wurde nicht bereitgestellt. Bitte versuche es erneut.",
@@ -224,7 +231,18 @@
     "restoreComplete": "Wiederherstellung abgeschlossen.",
     "restoreStatus": "Wiederherstellung {status}",
     "failed": "fehlgeschlagen",
-    "close": "Schließen"
+    "close": "Schließen",
+    "cancelFailed": "Wiederherstellung konnte nicht abgebrochen werden",
+    "cancelPending": "Abbruch angefordert. Die Wiederherstellung stoppt am nächsten sicheren Punkt — dieses Fenster zeigt das Ergebnis.",
+    "destructiveNotYet": "Es wurden noch keine Daten geschrieben, ein Abbruch ist jetzt sicher.",
+    "destructiveNow": "Daten werden geschrieben. Ein Abbruch hinterlässt unvollständige Daten.",
+    "abortRestore": "Wiederherstellung abbrechen",
+    "abortTitle": "Diese Wiederherstellung abbrechen?",
+    "abortBodyClean": "Die Wiederherstellung hat noch nichts geschrieben. Ein Abbruch belässt Ihre Daten genau so, wie sie sind; der Dienst wird neu gestartet, falls er gestoppt wurde.",
+    "abortBodyDestructive": "Die Wiederherstellung hat bereits mit dem Schreiben begonnen. Ein Abbruch hinterlässt unvollständige Daten im Ziel und der Dienst bleibt bewusst gestoppt — führen Sie diese (oder eine neuere) Wiederherstellung vollständig durch, bevor Sie ihn starten.",
+    "abortKeepGoing": "Wiederherstellung fortsetzen",
+    "abortConfirm": "Ja, abbrechen",
+    "partialDataNotice": "Das Wiederherstellungsziel enthält unvollständige Daten und der Dienst wurde bewusst gestoppt gelassen. Führen Sie diese (oder eine neuere) Wiederherstellung vollständig durch, bevor Sie ihn starten."
   },
   "terminalTabs": {
     "shell": "Shell {n}",
@@ -368,6 +386,19 @@
     "historyPage": "Seite {page}",
     "incremental": "Inkrementell",
     "moreContents": "+{count} weitere",
-    "destinationDetails": "Details zum Ziel"
+    "destinationDetails": "Details zum Ziel",
+    "providerLabel": "Anbieter",
+    "providerAws": "AWS S3",
+    "providerR2": "Cloudflare R2",
+    "providerB2": "Backblaze B2",
+    "providerWasabi": "Wasabi",
+    "providerDo": "DigitalOcean Spaces",
+    "providerMinio": "MinIO / Benutzerdefiniert",
+    "fieldAccountId": "Konto-ID",
+    "hintAccountId": "Ihre Cloudflare-Konto-ID — wird zum Erstellen des R2-Endpunkts verwendet.",
+    "hintEndpointMinio": "Vollständige S3-Endpunkt-URL, z. B. https://minio.example.com:9000",
+    "testConnection": "Verbindung testen",
+    "testing": "Verbindung wird getestet…",
+    "testOk": "Verbunden — der Bucket ist erreichbar und beschreibbar."
   }
 }

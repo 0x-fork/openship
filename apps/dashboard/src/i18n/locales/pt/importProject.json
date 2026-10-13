@@ -115,7 +115,8 @@
     "addReleaseCommand": "Adicionar comando",
     "removeReleaseCommand": "Remover comando {number}",
     "runtimeImageLabel": "Imagem de execução",
-    "runtimeImageDesc": "Imagem base de produção opcional para Docker. Deve ser compatível com o runtime e a receita gerada; deixe em branco para usar o padrão."
+    "runtimeImageDesc": "Imagem base de produção opcional para Docker. Deve ser compatível com o runtime e a receita gerada; deixe em branco para usar o padrão.",
+    "staticPathHint": "Servido como arquivos estáticos a partir da borda — nada é executado como processo."
   },
   "projectSettings": {
     "framework": "Framework",
@@ -185,7 +186,9 @@
       "domainLabel": "Domínio",
       "free": "Grátis",
       "custom": "Personalizado",
-      "routingTrafficPrefix": "Roteando tráfego para a porta"
+      "routingTrafficPrefix": "Roteando tráfego para a porta",
+      "duplicateTitle": "Domínio duplicado",
+      "duplicateDescription": "Duas rotas apontam para o mesmo domínio — altere uma para que cada rota tenha o seu:"
     },
     "shared": {
       "title": "Ambiente compartilhado",
@@ -362,7 +365,18 @@
       "loopbackBodyService": "O serviço \"{service}\" só escuta dentro do contêiner na porta {port}.",
       "loopbackHelp": "Para um app que recebe tráfego roteado, escute em 0.0.0.0 e faça o deploy novamente, ou direcione o tráfego ao proxy previsto.",
       "openSettings": "Abrir configurações",
-      "skipError": "Não foi possível dispensar este aviso. Tente novamente."
+      "skipError": "Não foi possível dispensar este aviso. Tente novamente.",
+      "title": "Aviso de incompatibilidade de porta",
+      "bannerTitle": "Incompatibilidade de porta do contêiner detectada",
+      "review": "Revisar porta",
+      "note": "O roteador de borda está apontando para a porta {port}, mas sua aplicação não respondeu lá.",
+      "body": "Nada respondeu na porta {port}. Se sua aplicação escuta em uma porta diferente, atualize-a abaixo.",
+      "bodyService": "Serviço \"{service}\": nada respondeu na porta {port}. Se escutar em uma porta diferente, defina a correta aqui.",
+      "newPortLabel": "Porta correta",
+      "changePort": "Alterar porta",
+      "skip": "Pular",
+      "applied": "Roteamento atualizado para a porta {port}.",
+      "changeError": "Não foi possível atualizar a porta. Tente novamente."
     }
   },
   "deploymentHealth": {

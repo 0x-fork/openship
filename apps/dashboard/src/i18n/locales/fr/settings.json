@@ -67,7 +67,9 @@
       "credentials": "Identifiants",
       "cloud": "Cloud",
       "infrastructure": "Infrastructure",
-      "instance": "Instance"
+      "instance": "Instance",
+      "email": "E-mail",
+      "systemSender": "Expéditeur système"
     }
   },
   "github": {
@@ -115,12 +117,49 @@
       "optionalSuffix": "sur cette machine pour activer les clonages en build local des dépôts hors de vos installations App. Les déploiements distants passent toujours par l'App.",
       "disconnectPrefix": "Pour déconnecter, exécutez",
       "disconnectSuffix": "dans votre terminal.",
-      "use": "Utiliser la CLI gh"
+      "use": "Utiliser la CLI gh",
+      "login": "Se connecter avec GitHub",
+      "deviceHint": "Saisissez ce code à usage unique sur GitHub pour autoriser cette instance :",
+      "waiting": "En attente d'autorisation — se met à jour automatiquement.",
+      "tokenAltPrefix": "Vous préférez un jeton ? Ajoutez un jeton d'accès personnel sous",
+      "tokenAltLink": "Identifiants de clonage.",
+      "forwardOnNote": "Le transfert est activé — gh CLI authentifie aussi les clones sur les serveurs distants. Votre identité est acheminée via SSH pour chaque clone ; rien n'est stocké sur le serveur.",
+      "forwardOffHint": "Builds locaux uniquement pour le moment. Activez « Transférer mon identité git aux serveurs de build » pour utiliser gh CLI aussi pour les déploiements distants.",
+      "manageForward": "Gérer le transfert",
+      "disconnectBody": "Openship supprimera cet identifiant de cette instance et cessera de l'utiliser pour les clones. Il reste valide sur GitHub jusqu'à ce que vous le révoquiez là-bas. Vous pouvez vous reconnecter à tout moment.",
+      "recheck": "Vérifier à nouveau"
     },
     "replaceToken": "Remplacer le jeton GitHub",
     "clearToken": "Effacer le jeton enregistré",
     "tokenEditorDescription": "Utilisez un jeton d’accès personnel GitHub pour parcourir les dépôts et compiler sur cette instance.",
-    "methodTokenDesc": "Utilisez un jeton GitHub pour parcourir les dépôts et compiler localement."
+    "methodTokenDesc": "Utilisez un jeton GitHub pour parcourir les dépôts et compiler localement.",
+    "activeVia": "Connecté via {method}",
+    "pickMethod": "Choisissez la manière dont Openship accède à vos dépôts.",
+    "methodDevice": "Connexion GitHub",
+    "methodApp": "Application GitHub",
+    "methodAppDesc": "Jetons d'installation temporaires à portée limitée pour les déploiements locaux et distants.",
+    "methodSshDesc": "Associer une clé de déploiement à chaque serveur (Serveurs → GitHub).",
+    "signIn": "Se connecter avec GitHub",
+    "signInDesc": "Connexion via le navigateur avec un code d'appareil. Rien à enregistrer, pas d'accès SSH au serveur.",
+    "changeMethod": "Changer de méthode",
+    "otherMethods": "Autres méthodes",
+    "openGithub": "Ouvrir GitHub",
+    "copyCode": "Cliquer pour copier",
+    "tokenConnect": "Connecter",
+    "tokenGhHint": "Déjà connecté sur le serveur avec",
+    "tokenSaveFailed": "Impossible d'enregistrer le jeton.",
+    "forwardOffHint": "Builds locaux uniquement. Activez « Transférer mon identité git aux serveurs de build » pour l'utiliser aussi sur les serveurs distants.",
+    "remoteCredentialHint": "Utilisé pour parcourir les dépôts et les builds s'exécutant sur cet hôte. Les déploiements qui compilent sur un serveur distant utilisent l'identifiant propre à ce serveur — ajoutez une clé de déploiement ou un jeton par serveur.",
+    "methodToken": "Jeton GitHub",
+    "methodHostCli": "gh CLI sur cet hôte",
+    "manageTokensOnGithub": "Gérer les jetons sur GitHub",
+    "manageAccessOnGithub": "Gérer les accès sur GitHub",
+    "disconnectScopeNote": "La déconnexion supprime cet identifiant d'Openship et cesse de l'utiliser pour les clones. Il reste valide sur GitHub tant que vous ne le révoquez pas là-bas.",
+    "credentialRejected": "GitHub a rejeté l'identifiant {method} enregistré.",
+    "credentialRejectedImpact": "Il a été révoqué, a expiré ou a perdu une autorisation requise. Les déploiements effectuant un clone échoueront jusqu'à ce que vous vous reconnectiez ci-dessous.",
+    "credentialUnreachable": "Impossible de joindre GitHub avec {method}.",
+    "credentialUnreachableImpact": "Il s'agit généralement d'un problème réseau plutôt que d'un mauvais identifiant — Openship continue de l'utiliser. Se reconnecter n'aidera pas si GitHub est inaccessible.",
+    "credentialCheckedAt": "Dernière vérification à {time}"
   },
   "deployDefaults": {
     "title": "Valeurs par défaut de déploiement",
@@ -263,7 +302,8 @@
       "cleared": "Jeton de clonage effacé",
       "clearFailed": "Échec de l'effacement du jeton",
       "updateDefaultFailed": "Échec de la mise à jour de la valeur par défaut"
-    }
+    },
+    "forwardGitFailed": "Échec de la mise à jour du transfert git"
   },
   "tokens": {
     "title": "Jetons d'accès personnels",
@@ -310,7 +350,9 @@
       "revoked": "« {name} » révoqué",
       "revokeFailed": "Échec de la révocation du jeton",
       "loadFailed": "Échec du chargement des jetons"
-    }
+    },
+    "callsOne": " · 1 appel",
+    "callsMany": " · {count} appels"
   },
   "mcp": {
     "title": "MCP",
@@ -339,13 +381,30 @@
     "allResources": "Toutes les ressources",
     "resourcesOne": "{count} ressource",
     "resourcesMany": "{count} ressources",
-    "orgPrefix": "{org} · ",
+    "orgPrefix": "{org}: ",
     "authorized": "Autorisé le {date}",
     "lastUsedSuffix": " · dernière utilisation {date}",
     "toast": {
       "disconnected": "Client MCP déconnecté",
       "disconnectFailed": "Échec de la déconnexion"
-    }
+    },
+    "callsOne": " · 1 appel",
+    "callsMany": " · {count} appels",
+    "editAccess": "Modifier l'accès",
+    "viewActivity": "Activité",
+    "editScopeTitle": "Accès de {client}",
+    "editScopeSubtitle": "Les modifications s'appliquent à la prochaine requête de l'agent — il n'a pas besoin de se reconnecter.",
+    "editScopeOrg": "Dans {org}",
+    "wasNResourcesOne": "actuellement 1 ressource",
+    "wasNResourcesMany": "actuellement {count} ressources",
+    "saveScope": "Enregistrer l'accès",
+    "scopeSaved": "Accès mis à jour",
+    "scopeSaveFailed": "Impossible de mettre à jour l'accès",
+    "loadScopeFailed": "Impossible de charger l'accès de ce client",
+    "scopeGrantRejected": "Vous ne pouvez plus accorder {resource}, cet élément a donc été retiré. Enregistrez à nouveau pour continuer.",
+    "confirmWidenTitle": "Cela supprime toutes les restrictions",
+    "confirmWidenBody": "L'agent agira avec l'ensemble de vos accès, avec effet immédiat. Appuyez à nouveau pour confirmer.",
+    "confirmWidenAction": "Supprimer toutes les restrictions"
   },
   "team": {
     "heading": "Équipe",
@@ -437,6 +496,17 @@
       "deleted": "Espace de travail supprimé",
       "leaveFailed": "Impossible de quitter l'espace de travail",
       "left": "Espace de travail quitté"
+    },
+    "reachability": {
+      "description": "Les membres de l'équipe ont besoin d'une URL publique pour accéder à cet espace de travail.",
+      "notInstalledTitle": "Donner une adresse publique à Openship",
+      "notInstalledBody": "Openship n'est pas encore configuré avec une URL publique. Déployez-le avec une adresse publique (ex. `openship up --public-url …`), puis ajoutez un domaine ici afin que vos collègues puissent y accéder.",
+      "noDomainTitle": "Ajouter un domaine à Openship",
+      "noDomainBody": "Ajoutez un domaine à l'application Openship afin que vos collaborateurs puissent accéder à cet espace — les invitations s'activent automatiquement dès sa mise en ligne.",
+      "addDomain": "Ajouter un domaine",
+      "pendingTitle": "Terminez la configuration de votre domaine",
+      "pendingBody": "Votre domaine Openship est en attente de vérification (DNS / SSL). Les invitations s'activeront dès qu'il sera en ligne.",
+      "viewDomain": "Voir le domaine"
     }
   },
   "inviteMember": {
@@ -479,7 +549,15 @@
     "emailSent": "Invitation envoyée par e-mail",
     "recipientHint": "Seul le compte {email} peut accepter cette invitation.",
     "invitationLink": "Lien d’invitation",
-    "manageLinkHint": "Gérez ou révoquez ce lien dans les invitations en attente."
+    "manageLinkHint": "Gérez ou révoquez ce lien dans les invitations en attente.",
+    "mailReady": "Prêt",
+    "mailNotSetUp": "Non configuré",
+    "cloudReady": "Connecté",
+    "cloudNotReady": "Non connecté",
+    "noMailSystem": "Aucun système de messagerie n'est configuré, l'invitation ne sera donc pas distribuée.",
+    "setUpEmail": "Configurer l'e-mail →",
+    "cloudNotConnected": "Openship Cloud n'est pas connecté et ne peut donc pas envoyer l'invitation.",
+    "connectCloud": "Connecter Openship Cloud →"
   },
   "teamWorkspace": {
     "title": "Espace de travail d'équipe",
@@ -507,6 +585,16 @@
     "toast": {
       "disconnected": "Déconnecté d'Openship Cloud",
       "disconnectFailed": "Échec de la déconnexion"
+    },
+    "pitch": {
+      "title": "Ajouter Openship Cloud",
+      "body": "Chaque projet bénéficie d'un domaine .{domain} gratuit avec SSL automatique — sans DNS ni certificats. Vos propres serveurs continuent de fonctionner exactement comme maintenant.",
+      "perkDomain": "Domaine .{domain} gratuit + SSL automatique sur chaque projet",
+      "perkDeploy": "Déployez sur le cloud managé ou restez sur vos propres serveurs",
+      "perkServices": "Postgres, Redis et d'autres services managés, provisionnés en un clic",
+      "perkGithub": "GitHub connecté sans avoir à enregistrer votre propre application",
+      "noLockIn": "Connexion gratuite. Rien ne bouge et vous pouvez vous déconnecter à tout moment.",
+      "viewPricing": "Voir les tarifs"
     }
   },
   "instance": {
@@ -676,7 +764,10 @@
       "saving": "Enregistrement…",
       "editHint": "Laissez les identifiants vides pour conserver les secrets enregistrés. Un changement de destination nécessite un nouveau test d’envoi.",
       "signingSecret": "Secret de signature",
-      "secretHint": "Copiez ce secret maintenant pour vérifier les signatures du webhook. Il n’est affiché qu’une fois."
+      "secretHint": "Copiez ce secret maintenant pour vérifier les signatures du webhook. Il n’est affiché qu’une fois.",
+      "noEmailTransport": "Aucun serveur de messagerie n'est configuré sur cette instance, les notifications par e-mail ne seront donc pas distribuées.",
+      "setUpSmtp": "Configurer SMTP →",
+      "otherAddress": "Autre adresse…"
     },
     "subscriptions": {
       "title": "Ce dont vous voulez être notifié",
@@ -741,7 +832,9 @@
       "today": "Aujourd'hui",
       "last7": "7 derniers jours",
       "last30": "30 derniers jours",
-      "last90": "90 derniers jours"
+      "last90": "90 derniers jours",
+      "anyAgent": "Tout agent",
+      "agentCalls": "{count} événements"
     },
     "tabs": {
       "all": "Tout"
@@ -765,7 +858,8 @@
       "when": "Quand",
       "cameFrom": "Provenance",
       "technical": "Détails techniques",
-      "eventType": "Type d'événement"
+      "eventType": "Type d'événement",
+      "viaAgent": "Agent"
     }
   },
   "updates": {
@@ -1144,5 +1238,90 @@
       "title": "Mode démo",
       "description": "Flouter les adresses IP, hôtes et variables d'environnement lors des partages d'écran et enregistrements."
     }
+  },
+  "productView": {
+    "title": "Interface",
+    "description": "Quel plan de contrôle ce tableau de bord vous affiche.",
+    "platformLabel": "Plateforme complète",
+    "platformDesc": "Projets, applications, déploiements, serveurs — toutes les capacités de cette installation.",
+    "mailLabel": "Messagerie uniquement",
+    "mailDesc": "Le plan de contrôle de messagerie dans la barre latérale : domaines, boîtes aux lettres, DNS, file d'attente, journaux.",
+    "instanceDefault": "Cette instance utilise par défaut le mode {mode}.",
+    "useDefault": "Utiliser le paramètre par défaut de l'instance"
+  },
+  "mailMode": {
+    "title": "Mode produit",
+    "description": "Ce que cette instance présente. C'est la valeur par défaut pour tous — chaque utilisateur peut choisir sa propre vue dans Paramètres → Général.",
+    "platformLabel": "Plateforme complète",
+    "platformDesc": "Projets, applications, déploiements, serveurs — toutes les capacités de cette installation.",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "Définit l'instance sous la marque Openship Mail et transforme la barre latérale en plan de contrôle de messagerie.",
+    "savedOverridden": "Enregistré. Votre propre vue reste inchangée — vous l'avez choisie dans Paramètres → Général.",
+    "errorToast": "Impossible de modifier le mode produit.",
+    "envNote": "Cette instance suit OPENSHIP_PRODUCT=mail défini dans l'environnement. Choisir un mode ici le remplace."
+  },
+  "email": {
+    "title": "E-mail (SMTP)",
+    "description": "Le service SMTP par lequel cette instance envoie des e-mails",
+    "intro": "Utilisé pour la réinitialisation de mot de passe, la vérification d'e-mail, les invitations d'équipe et les notifications. Collez simplement les identifiants SMTP de n'importe quel fournisseur — Amazon SES, Gmail, Mailgun, un relais d'entreprise — hôte, port, nom d'utilisateur, mot de passe. Aucun serveur à configurer ; Openship s'y connecte directement. Le mot de passe est chiffré et ne sera plus jamais affiché.",
+    "loading": "Chargement…",
+    "configuredBadge": "Configuré",
+    "notConfigured": "Pas encore configuré — la réinitialisation de mot de passe, les invitations et les notifications par e-mail restent désactivées tant que vous n'avez pas saisi d'identifiants SMTP ci-dessous.",
+    "providerLabel": "Fournisseur",
+    "hostLabel": "Hôte SMTP",
+    "hostPlaceholder": "smtp.exemple.fr",
+    "portLabel": "Port",
+    "userLabel": "Nom d'utilisateur",
+    "userPlaceholder": "utilisateur@exemple.fr",
+    "passwordLabel": "Mot de passe",
+    "passwordPlaceholder": "Mot de passe SMTP ou clé d'application",
+    "passwordKeepPlaceholder": "•••••••• (laisser vide pour conserver l'actuel)",
+    "fromLabel": "Adresse d'expédition",
+    "fromPlaceholder": "Openship <noreply@exemple.fr>",
+    "fromHint": "Optionnel. Par défaut identique au nom d'utilisateur.",
+    "fromHintRequired": "Requis — votre nom d'utilisateur n'est pas une adresse e-mail, les destinataires ont donc besoin d'une vraie adresse d'expédition.",
+    "fromRequired": "Saisissez une adresse d'expédition — le nom d'utilisateur de ce fournisseur n'étant pas un e-mail, il ne peut pas servir d'expéditeur.",
+    "fromInvalid": "L'adresse d'expédition doit contenir un e-mail valide (ex. Nom <vous@exemple.fr>).",
+    "save": "Enregistrer les paramètres SMTP",
+    "saving": "Enregistrement…",
+    "saved": "Paramètres SMTP enregistrés",
+    "saveFailed": "Impossible d'enregistrer les paramètres SMTP",
+    "hostRequired": "Saisissez l'hôte SMTP.",
+    "portInvalid": "Le port doit être un nombre entre 1 et 65535.",
+    "testTitle": "Envoyer un e-mail de test",
+    "testPlaceholder": "vous@exemple.fr",
+    "sendTest": "Envoyer le test",
+    "sending": "Envoi…",
+    "testSent": "E-mail de test envoyé — vérifiez la boîte de réception.",
+    "testFailed": "Échec du test",
+    "saveFirst": "Enregistrez vos paramètres SMTP avant d'envoyer un test.",
+    "disable": "Désactiver et effacer SMTP",
+    "disabled": "SMTP désactivé",
+    "toastTitle": "E-mail"
+  },
+  "edgeOrphans": {
+    "title": "Routes edge non suivies",
+    "description": "Noms d'hôtes que cette machine sert encore mais dont Openship n'a aucune trace",
+    "scan": "Analyser",
+    "scanning": "Analyse en cours…",
+    "allClear": "Chaque nom d'hôte servi par le point d'entrée est répertorié.",
+    "comparedTo": "Comparé à {count} noms d'hôtes suivis.",
+    "unavailable": "Impossible de vérifier le point d'entrée",
+    "explain": "Supprimer un projet avec « Supprimer d'Openship uniquement » laisse délibérément sa route active. Une route d'application résiduelle renvoie alors 502 une fois son conteneur supprimé, mais une route STATIQUE résiduelle continue de servir les anciens fichiers avec un code 200 — même sur un nom d'hôte réattribué à un autre projet.",
+    "kindStatic": "Fichiers statiques",
+    "kindProxy": "Route d'application",
+    "staticWarning": "Sert toujours des fichiers. Répond aux requêtes aujourd'hui.",
+    "proxyWarning": "Pointe vers un service en amont probablement disparu.",
+    "servingFrom": "Servi depuis",
+    "proxyingTo": "Relayé vers",
+    "alsoAnswers": "Répond également pour",
+    "stopServing": "Cesser de servir",
+    "stopping": "Arrêt…",
+    "stopped": "{hostname} n'est plus servi.",
+    "stopFailed": "Impossible de cesser de servir {hostname}",
+    "confirmTitle": "Cesser de servir {hostname} ?",
+    "confirmBody": "Cela supprime la configuration du point d'entrée pour ce nom d'hôte uniquement. Les fichiers construits restent sur le disque et rien d'autre sur le serveur n'est modifié. Si un projet est déployé plus tard sur ce nom d'hôte, il créera sa propre route.",
+    "confirmCta": "Cesser de servir",
+    "cancel": "Annuler"
   }
 }

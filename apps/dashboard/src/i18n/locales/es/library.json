@@ -31,7 +31,9 @@
       "title": "Introduce este código en GitHub",
       "goToPrefix": "Ve a",
       "goToSuffix": "e introduce el código de arriba.",
-      "waiting": "Esperando la autorización…"
+      "waiting": "Esperando la autorización…",
+      "openGithub": "Abrir GitHub",
+      "copyCode": "Haz clic para copiar"
     },
     "default": {
       "title": "Conecta GitHub para desplegar",
@@ -45,7 +47,13 @@
       "ghCli": "Inicia sesión con la CLI de gh",
       "ghCliDesc": "Usa el inicio de sesión de GitHub de tu equipo. No hace falta la nube.",
       "useGhCli": "Usar la CLI de gh",
-      "connecting": "Conectando…"
+      "connecting": "Conectando…",
+      "manual": "Conexión manual a GitHub",
+      "manualDesc": "Configurar en Configuración: tu propia GitHub App/OAuth o el CLI gh de esta instancia. Sin cuenta de Openship.",
+      "manualCta": "Configurar en Configuración",
+      "byoc": "Clave SSH o token de acceso",
+      "byocDesc": "Usa tus propias credenciales: una clave de despliegue por servidor o un token. Sin inicio de sesión.",
+      "byocCta": "Configurar"
     },
     "installationPicker": {
       "title": "Elige el acceso a GitHub",
@@ -60,6 +68,12 @@
       "successDescription": "El acceso a los repositorios está listo. Puedes volver a Openship.",
       "errorTitle": "La conexión con GitHub necesita atención",
       "returnToApp": "Volver a la biblioteca"
+    },
+    "token": {
+      "title": "Conectar con un token de GitHub",
+      "connect": "Conectar",
+      "create": "Crear un token en GitHub",
+      "failed": "No se pudo guardar el token."
     }
   },
   "folderUpload": {
@@ -173,7 +187,9 @@
     "notConnectedManage": "No conectado — gestiona en Ajustes",
     "optional": "Opcional",
     "footnote": "Gestiona las conexiones de GitHub para explorar y desplegar repositorios.",
-    "manageGithubSettings": "gestionar GitHub en Ajustes"
+    "manageGithubSettings": "gestionar GitHub en Ajustes",
+    "methodToken": "Token de GitHub",
+    "methodDevice": "Iniciar sesión con GitHub"
   },
   "urlImport": {
     "invalidUrl": "Introduce una URL válida de repositorio de GitHub",

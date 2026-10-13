@@ -56,8 +56,6 @@
     "emptyDescription": "اربط خادمًا عبر SSH وسيتولى Openship الباقي - يتم إعداد Docker وOpenResty وSSL وعمليات النشر تلقائيًا.",
     "addFirstServer": "أضف خادمك الأول",
     "whatGetsConfigured": "ما الذي يتم إعداده",
-    "dockerDesc": "بيئة تشغيل الحاويات",
-    "openRestyDesc": "وكيل عكسي وSSL",
     "monitoring": "المراقبة",
     "monitoringDesc": "فحوصات الصحة",
     "gitDesc": "النشر من المصدر",
@@ -122,7 +120,12 @@
       "skippedMany": "{n} بحاجة إلى انتباه في صفحتها الخاصة",
       "nothingToDo": "لا يوجد ما يُطبَّق",
       "applyFailed": "تعذّر بدء التحديثات"
-    }
+    },
+    "featContainer": "بيئة تشغيل الحاويات",
+    "featContainerDesc": "تشغيل كل تطبيق في بيئة معزولة",
+    "featProxy": "بروكسي عكسي",
+    "featProxyDesc": "التوجيه وSSL",
+    "seeDocs": "راجع المستندات"
   },
   "containers": {
     "subtitle": "حاويات الحافة والبريد على هذا الخادم",
@@ -204,7 +207,18 @@
     "toastKeyPathTestRequired": "مسار المفتاح مطلوب لاختبار الاتصال",
     "toastConnectionSuccess": "نجح الاتصال",
     "toastConnectionFailed": "فشل الاتصال",
-    "toastConnectionTestFailed": "فشل اختبار الاتصال"
+    "toastConnectionTestFailed": "فشل اختبار الاتصال",
+    "keyModePaste": "لصق / رفع",
+    "keyModePath": "مسار المضيف",
+    "keyPathBrowse": "تصفح…",
+    "keyPathHelp": "المسار المطلق للمفتاح الخاص على الجهاز الذي يقوم بتشغيل Openship.",
+    "keyPaste": "المفتاح الخاص",
+    "keyPastePlaceholder": "-----BEGIN OPENSSH PRIVATE KEY-----\n…",
+    "keyPasteHelp": "يتم تشفير المفاتيح الملصقة أثناء حفظها ولا تغادر الخادم أبداً.",
+    "keyStoredKeep": "المفتاح محفوظ — الصق مفتاحاً جديداً لاستبداله، أو اتركه فارغاً للاحتفاظ به.",
+    "keyUploadFile": "رفع ملف المفتاح",
+    "keyPasteInvalid": "لا يبدو هذا الملف كمفتاح خاص صالح.",
+    "toastKeyRequired": "المفتاح الخاص مطلوب"
   },
   "detail": {
     "tabs": {
@@ -293,7 +307,11 @@
       "toastRemovedKeptOther": "تمت إزالة السيرفر. أُزيل {count} من الأعمال من Openship وما زالت تعمل.",
       "toastRemovedDestroyedOne": "تمت إزالة السيرفر. تم حذف عمل واحد من الجهاز.",
       "toastRemovedDestroyedOther": "تمت إزالة السيرفر. تم حذف {count} من الأعمال من الجهاز."
-    }
+    },
+    "sshPort": "منفذ SSH · {port}",
+    "port": "المنفذ",
+    "reinstallDockerTitle": "هل تريد إعادة تثبيت Docker على هذا الخادم؟",
+    "reinstallDockerMessage": "سيؤدي هذا إلى تشغيل برنامج التثبيت الرسمي لـ Docker، والذي يقوم بتنزيل المحرك الحالي — على خادم محدث، هذه ترقية رئيسية. يؤدي تثبيت Docker أو ترقيته إلى إعادة تشغيل البرنامج الخفي (daemon)، مما يعيد تشغيل كل حاوية على هذا الخادم، بما في ذلك أي شيء يقوم Openship بتشغيله هنا. لن يقوم أي شيء آخر بتثبيت Docker نيابة عنك: الخطوات الأخرى تتخطاه أثناء عمله."
   },
   "banner": {
     "unreachableTitle": "تعذّر الوصول إلى {host}",
@@ -311,7 +329,18 @@
     "retry": "إعادة المحاولة",
     "editCredentials": "تعديل بيانات الاعتماد",
     "editServer": "تعديل الخادم",
-    "showRawError": "عرض الخطأ الخام"
+    "showRawError": "عرض الخطأ الخام",
+    "hostChannelTitle": "يتعذر على Openship الوصول إلى مضيف هذا الجهاز",
+    "hostChannelBody": "يعمل Openship في حاوية هنا ويتواصل مع المضيف عبر SSH على {target}. لم تكن هناك استجابة هناك، لذا لا يمكن تشغيل عمليات مستوى المضيف على هذا الجهاز.",
+    "hostChannelImpact": "عمليات النشر العادية على هذا الجهاز لا تزال تعمل — حيث تمر عبر مقبس Docker. محظور حتى تعمل القناة: طرفية المضيف، ومعلومات نظام المضيف وفحص منافذ المضيف؛ والاستيلاء على :80/:443 من بروكسي لم يبدأه Openship؛ وتثبيت أو تحديث محرك البريد؛ ونشر تطبيق من الدليل يحتاج إلى ملف تكوين يتم إنشاؤه على المضيف (مثل kong.yml الخاص بـ Supabase). يُقرأ هذا الجهاز أيضاً كـ \"غير متصل\" في قائمة خوادم لوحة التحكم أثناء تعطل القناة.",
+    "hostChannelFix": "قم بتشغيل هذا على المضيف، ثم أعد المحاولة:",
+    "hostChannelMissingTitle": "ليس لدى Openship قناة لمضيف هذا الجهاز",
+    "hostChannelMissingBody": "يعمل Openship في حاوية هنا، وقناة SSH التي يستخدمها للوصول إلى المضيف لم يتم توفيرها أبداً. لم يكن هناك عنوان للاتصال به، لذا لا يوجد شيء معطل هنا — عمليات مستوى المضيف على هذا الجهاز ليس لديها مكان للتشغيل ببساطة.",
+    "hostChannelWouldUse": "بمجرد توفير القناة، ستصل إلى المضيف عند {target}. لم يتصل أي شيء بهذا العنوان بعد.",
+    "hostChannelProvisionFix": "قم بتشغيل هذا على المضيف لتوفير القناة، ثم أعد المحاولة:",
+    "hostChannelAuthTitle": "رفض المضيف مفتاح Openship",
+    "hostChannelAuthBody": "يعمل Openship في حاوية هنا ويصل إلى المضيف عبر SSH عند {target}. استجاب المضيف ثم رفض المفتاح، لذلك لا يمكن تشغيل عمليات مستوى المضيف. إما أن المفتاح لم يعد مصرحاً به لهذا الحساب، أو أن sshd لا يسمح لهذا الحساب بتسجيل الدخول على الإطلاق. لا تُستخدم بيانات اعتماد SSH المخزنة على هذا الخادم لهذا الاتصال — فالقناة لها مفتاحها الخاص.",
+    "hostChannelReauthorizeFix": "قم بتشغيل هذا على المضيف لإعادة تفويض مفتاح القناة، ثم أعد المحاولة:"
   },
   "overview": {
     "cpu": "المعالج",
@@ -360,7 +389,12 @@
     "statusInstalled": "مثبّت",
     "statusRemoved": "تمت الإزالة",
     "statusFailed": "فشل",
-    "statusWaiting": "في الانتظار"
+    "statusWaiting": "في الانتظار",
+    "roleDocker": "بيئة تشغيل الحاويات",
+    "roleGit": "التحكم في الإصدارات",
+    "roleOpenresty": "بروكسي عكسي",
+    "roleCertbot": "شهادات SSL",
+    "roleRsync": "نقل الملفات"
   },
   "ports": {
     "title": "إعادة توجيه المنافذ",

@@ -22,7 +22,9 @@
       "title": "Bu kodu GitHub üzerinde girin",
       "goToPrefix": "Adrese gidin: ",
       "goToSuffix": "ve yukarıdaki kodu girin.",
-      "waiting": "Yetkilendirme bekleniyor…"
+      "waiting": "Yetkilendirme bekleniyor…",
+      "openGithub": "GitHub'ı Aç",
+      "copyCode": "Kopyalamak için tıklayın"
     },
     "default": {
       "title": "Dağıtım yapmak için GitHub'a bağlanın",
@@ -36,7 +38,13 @@
       "ghCli": "gh CLI ile giriş yapın",
       "ghCliDesc": "Makinenizin GitHub girişini kullanın. Bulut gerekmez.",
       "useGhCli": "gh CLI Kullan",
-      "connecting": "Bağlanılıyor…"
+      "connecting": "Bağlanılıyor…",
+      "manual": "Manuel GitHub bağlantısı",
+      "manualDesc": "Ayarlar'da yapılandırın — kendi GitHub App/OAuth uygulamanız veya bu örneğin gh CLI'si. Openship hesabı gerekmez.",
+      "manualCta": "Ayarlar'da yapılandırın",
+      "byoc": "SSH anahtarı veya erişim belirteci",
+      "byocDesc": "Kendi kimlik bilgilerinizi getirin — sunucu başına bir dağıtım anahtarı veya bir belirteç. Oturum açma gerekmez.",
+      "byocCta": "Yapılandır"
     },
     "installationPicker": {
       "title": "GitHub erişimini seçin",
@@ -51,6 +59,12 @@
       "successDescription": "Depolara erişim hazır. Openship’e dönebilirsiniz.",
       "errorTitle": "GitHub bağlantısı ilgilenmenizi gerektiriyor",
       "returnToApp": "Kütüphaneye dön"
+    },
+    "token": {
+      "title": "GitHub belirteci ile bağlanın",
+      "connect": "Bağlan",
+      "create": "GitHub'da bir belirteç oluşturun",
+      "failed": "Belirteç kaydedilemedi."
     }
   },
   "folderUpload": {
@@ -164,12 +178,23 @@
     "notConnectedManage": "Bağlı değil — Ayarlar kısmında yönetin",
     "optional": "İsteğe bağlı",
     "footnote": "Depoları görüntülemek ve dağıtmak için kullanılan GitHub bağlantılarını yönetin.",
-    "manageGithubSettings": "GitHub'ı Ayarlar kısmında yönetin"
+    "manageGithubSettings": "GitHub'ı Ayarlar kısmında yönetin",
+    "methodToken": "GitHub belirteci",
+    "methodDevice": "GitHub ile oturum açma"
   },
   "urlImport": {
     "invalidUrl": "Geçerli bir GitHub depo URL'si girin",
     "title": "Git URL'sinden İçe Aktar",
     "description": "İçe aktarmak için herkese açık bir depo URL'si yapıştırın. GitHub bağlantısı gerekmez.",
     "importButton": "Depoyu İçe Aktar"
+  },
+  "ghCliConsent": {
+    "title": "Depolarınız okunsun mu?",
+    "body": "OpenShip, zaten oturum açmış olduğunuz gh CLI'yi kullanarak GitHub depolarınızı listeleyebilir.",
+    "bodyWithLogin": "OpenShip, @{login} olarak oturum açtığınız gh CLI'yi kullanarak GitHub depolarınızı listeleyebilir.",
+    "pointNoCloud": "Buluta hiçbir şey gönderilmez — liste bu makineden asla ayrılmaz.",
+    "pointDesktopOnly": "Yalnızca masaüstü uygulamasında yerel gh kimlik doğrulamanızı kullanarak çalışır.",
+    "pointReadOnly": "Salt okunur: dağıtmak için birini seçebilmeniz amacıyla depoları listeler.",
+    "allow": "İzin ver"
   }
 }

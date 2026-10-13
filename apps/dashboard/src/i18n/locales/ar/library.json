@@ -31,7 +31,9 @@
       "title": "أدخل هذا الرمز في GitHub",
       "goToPrefix": "انتقل إلى",
       "goToSuffix": "وأدخل الرمز أعلاه.",
-      "waiting": "في انتظار التفويض…"
+      "waiting": "في انتظار التفويض…",
+      "openGithub": "فتح GitHub",
+      "copyCode": "انقر للنسخ"
     },
     "default": {
       "title": "اتصل بـ GitHub للنشر",
@@ -45,7 +47,13 @@
       "ghCli": "سجّل الدخول عبر gh CLI",
       "ghCliDesc": "استخدم تسجيل دخول GitHub على جهازك. لا حاجة إلى السحابة.",
       "useGhCli": "استخدم gh CLI",
-      "connecting": "جارٍ الاتصال…"
+      "connecting": "جارٍ الاتصال…",
+      "manual": "اتصال يدوي بـ GitHub",
+      "manualDesc": "الإعداد في الإعدادات — تطبيق GitHub App/OAuth الخاص بك، أو gh CLI لهذا المثيل. لا يلزم وجود حساب Openship.",
+      "manualCta": "الإعداد في الإعدادات",
+      "byoc": "مفتاح SSH أو رمز الوصول",
+      "byocDesc": "استخدم بيانات الاعتماد الخاصة بك — مفتاح نشر لكل خادم، أو رمز مميز. لا يلزم تسجيل الدخول.",
+      "byocCta": "إعداد"
     },
     "installationPicker": {
       "title": "اختر الوصول إلى GitHub",
@@ -60,6 +68,12 @@
       "successDescription": "الوصول إلى المستودعات جاهز. يمكنك العودة إلى Openship.",
       "errorTitle": "اتصال GitHub يحتاج إلى مراجعة",
       "returnToApp": "العودة إلى المكتبة"
+    },
+    "token": {
+      "title": "الاتصال باستخدام رمز GitHub",
+      "connect": "اتصال",
+      "create": "إنشاء رمز مميز على GitHub",
+      "failed": "تعذر حفظ الرمز المميز."
     }
   },
   "folderUpload": {
@@ -173,7 +187,9 @@
     "notConnectedManage": "غير متصل — الإدارة من الإعدادات",
     "optional": "اختياري",
     "footnote": "إدارة اتصالات GitHub المستخدمة لتصفح المستودعات ونشرها.",
-    "manageGithubSettings": "إدارة GitHub من الإعدادات"
+    "manageGithubSettings": "إدارة GitHub من الإعدادات",
+    "methodToken": "رمز GitHub",
+    "methodDevice": "تسجيل الدخول عبر GitHub"
   },
   "urlImport": {
     "invalidUrl": "أدخل رابط مستودع GitHub صالحًا",

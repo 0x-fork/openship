@@ -115,7 +115,8 @@
     "addReleaseCommand": "コマンドを追加",
     "removeReleaseCommand": "コマンド {number} を削除",
     "runtimeImageLabel": "実行イメージ",
-    "runtimeImageDesc": "Docker ビルド用の任意の本番ベースイメージです。ランタイムと生成レシピに対応する必要があります。空欄で既定値を使用します。"
+    "runtimeImageDesc": "Docker ビルド用の任意の本番ベースイメージです。ランタイムと生成レシピに対応する必要があります。空欄で既定値を使用します。",
+    "staticPathHint": "エッジから静的ファイルとして配信されます。プロセスとしては何も実行されません。"
   },
   "projectSettings": {
     "framework": "フレームワーク",
@@ -185,7 +186,9 @@
       "domainLabel": "ドメイン",
       "free": "無料",
       "custom": "カスタム",
-      "routingTrafficPrefix": "トラフィックのルーティング先ポート"
+      "routingTrafficPrefix": "トラフィックのルーティング先ポート",
+      "duplicateTitle": "重複したドメイン",
+      "duplicateDescription": "2 つのルートが同じドメインを指しています。各ルートが独自のドメインを持つように 1 つを変更してください:"
     },
     "shared": {
       "title": "共有環境",
@@ -362,7 +365,18 @@
       "loopbackBodyService": "サービス「{service}」はポート {port} でコンテナ内部からの接続のみを受け付けています。",
       "loopbackHelp": "ルーティング先のアプリは 0.0.0.0 で接続を受け付けるよう設定して再デプロイするか、想定されたプロキシへルーティングしてください。",
       "openSettings": "設定を開く",
-      "skipError": "この警告を非表示にできませんでした。もう一度お試しください。"
+      "skipError": "この警告を非表示にできませんでした。もう一度お試しください。",
+      "title": "ポート不一致に関する通知",
+      "bannerTitle": "コンテナポートの不一致が検出されました",
+      "review": "ポートを確認",
+      "note": "エッジルーターはポート {port} を指していますが、アプリケーションはそこで応答しませんでした。",
+      "body": "ポート {port} で応答がありませんでした。アプリケーションが別のポートでリッスンしている場合は、以下で更新してください。",
+      "bodyService": "サービス「{service}」: ポート {port} で応答がありませんでした。別のポートでリッスンしている場合は、ここで正しいポートを設定してください。",
+      "newPortLabel": "正しいポート",
+      "changePort": "ポートを変更",
+      "skip": "スキップ",
+      "applied": "ポート {port} へのルーティングを更新しました。",
+      "changeError": "ポートを更新できませんでした。もう一度お試しください。"
     }
   },
   "deploymentHealth": {

@@ -31,7 +31,9 @@
       "title": "在 GitHub 上输入此代码",
       "goToPrefix": "前往",
       "goToSuffix": "并输入上方的代码。",
-      "waiting": "等待授权中…"
+      "waiting": "等待授权中…",
+      "openGithub": "打开 GitHub",
+      "copyCode": "点击复制"
     },
     "default": {
       "title": "连接 GitHub 以部署",
@@ -45,7 +47,13 @@
       "ghCli": "使用 gh CLI 登录",
       "ghCliDesc": "使用你本机的 GitHub 登录。无需云端。",
       "useGhCli": "使用 gh CLI",
-      "connecting": "连接中…"
+      "connecting": "连接中…",
+      "manual": "手动 GitHub 连接",
+      "manualDesc": "在设置中配置 — 您自己的 GitHub App/OAuth，或此实例的 gh CLI。无需 Openship 账户。",
+      "manualCta": "在设置中配置",
+      "byoc": "SSH 密钥或访问令牌",
+      "byocDesc": "使用您自己的凭据 — 每个服务器的部署密钥或令牌。无需登录。",
+      "byocCta": "配置"
     },
     "installationPicker": {
       "title": "选择 GitHub 访问权限",
@@ -60,6 +68,12 @@
       "successDescription": "仓库访问已就绪，可以返回 Openship。",
       "errorTitle": "GitHub 连接需要处理",
       "returnToApp": "返回资源库"
+    },
+    "token": {
+      "title": "使用 GitHub 令牌连接",
+      "connect": "连接",
+      "create": "在 GitHub 上创建令牌",
+      "failed": "无法保存令牌。"
     }
   },
   "folderUpload": {
@@ -173,7 +187,9 @@
     "notConnectedManage": "未连接——在设置中管理",
     "optional": "可选",
     "footnote": "管理用于浏览和部署仓库的 GitHub 连接。",
-    "manageGithubSettings": "在设置中管理 GitHub"
+    "manageGithubSettings": "在设置中管理 GitHub",
+    "methodToken": "GitHub 令牌",
+    "methodDevice": "GitHub 登录"
   },
   "urlImport": {
     "invalidUrl": "请输入有效的 GitHub 仓库 URL",

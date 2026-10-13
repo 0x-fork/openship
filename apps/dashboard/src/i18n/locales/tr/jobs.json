@@ -92,7 +92,7 @@
     "servers": "Sunucular",
     "noServers": "Henüz sunucu bağlanmadı — önce bir tane ekleyin.",
     "command": "Komut",
-    "commandPlaceholder": "pg_dump ... > /backups/db.sql",
+    "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
     "commandHint": "Seçilen her sunucuda çalışır. Konteyner görevleri için docker run --rm kullanın.",
     "cloudServersHint": "Mevcut bir sunucuyu kullanın veya kendi aboneliği olan ayrı bir sunucu ekleyin.",
     "cloudUsageHint": "Görevler, seçilen sunucunun kapasitesini ve kullanım kotasını paylaşır. Çalışması için aboneliği etkin olmalıdır.",

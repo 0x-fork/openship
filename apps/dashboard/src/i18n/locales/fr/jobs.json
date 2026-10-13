@@ -92,7 +92,7 @@
     "servers": "Serveurs",
     "noServers": "Aucun serveur connecté — ajoutez-en un d'abord.",
     "command": "Commande",
-    "commandPlaceholder": "pg_dump ... > /backups/db.sql",
+    "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
     "commandHint": "S'exécute sur chaque serveur sélectionné. Utilisez docker run --rm pour une tâche en conteneur.",
     "cloudServersHint": "Utilisez un serveur existant ou ajoutez un serveur dédié avec son propre abonnement.",
     "cloudUsageHint": "Les tâches partagent la capacité et le quota d'utilisation du serveur sélectionné. Son abonnement doit être actif.",

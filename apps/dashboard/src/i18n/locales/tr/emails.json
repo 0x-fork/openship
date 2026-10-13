@@ -146,7 +146,9 @@
     "hide": "Gizle",
     "reveal": "Göster",
     "generateTitle": "Güçlü rastgele bir şifre oluşturun",
-    "generate": "Oluştur"
+    "generate": "Oluştur",
+    "startFailed": "E-posta motoru kurulumu başlatılamadı.",
+    "startFailedFallback": "Kurulumu başlatmak için bağlantı kurulamadı. SSH erişimini doğrulayın ve tekrar deneyin."
   },
   "sidebar": {
     "portConflict": {

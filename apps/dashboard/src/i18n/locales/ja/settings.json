@@ -67,7 +67,9 @@
       "credentials": "認証情報",
       "cloud": "クラウド",
       "infrastructure": "インフラ",
-      "instance": "インスタンス"
+      "instance": "インスタンス",
+      "email": "メール",
+      "systemSender": "システム送信者"
     }
   },
   "github": {
@@ -115,12 +117,49 @@
       "optionalSuffix": "このマシン上で実行すると、App のインストール範囲外のリポジトリのローカルビルド用クローンが有効になります。リモートデプロイは常に App 経由でルーティングされます。",
       "disconnectPrefix": "切断するには、次を実行してください:",
       "disconnectSuffix": "ターミナルで実行します。",
-      "use": "gh CLI を使用"
+      "use": "gh CLI を使用",
+      "login": "GitHub でログイン",
+      "deviceHint": "このワンタイムコードを GitHub で入力して、このインスタンスを承認してください:",
+      "waiting": "認証を待機中 — 自動的に更新されます。",
+      "tokenAltPrefix": "トークンをお使いですか？ 個人用アクセストークンを追加してください:",
+      "tokenAltLink": "クローン認証情報",
+      "forwardOnNote": "転送が有効です — gh CLI はリモートサーバーのクローンも認証します。あなたの ID はクローンごとに SSH 経由でトンネリングされ、サーバーには何も保存されません。",
+      "forwardOffHint": "現在はローカルビルドのみです。「ビルドサーバーに git ID を転送する」をオンにすると、リモートサーバーのデプロイにも gh CLI を使用できます。",
+      "manageForward": "転送を管理",
+      "disconnectBody": "Openship はこのインスタンスからこの認証情報を削除し、クローンへの使用を停止します。GitHub で取り消すまで GitHub 上では有効なままです。いつでも再接続できます。",
+      "recheck": "再確認"
     },
     "replaceToken": "GitHubトークンを置き換える",
     "clearToken": "保存済みトークンを削除",
     "tokenEditorDescription": "GitHubの個人アクセストークンを使用して、リポジトリの閲覧やこのインスタンスでのビルドを行います。",
-    "methodTokenDesc": "GitHubトークンを使用して、リポジトリの閲覧やローカルビルドを行います。"
+    "methodTokenDesc": "GitHubトークンを使用して、リポジトリの閲覧やローカルビルドを行います。",
+    "activeVia": "{method} 経由で接続中",
+    "pickMethod": "Openship がリポジトリにアクセスする方法を選択してください。",
+    "methodDevice": "GitHub サインイン",
+    "methodApp": "GitHub App",
+    "methodAppDesc": "ローカルおよびリモートデプロイ用の、スコープ制限された短期間のインストールトークン。",
+    "methodSshDesc": "各サーバーにデプロイキーを登録します（「サーバー」→「GitHub」）。",
+    "signIn": "GitHub でサインイン",
+    "signInDesc": "デバイスコードを使用したブラウザサインイン。登録不要で、サーバーへの SSH も不要です。",
+    "changeMethod": "方法を変更",
+    "otherMethods": "その他の方法",
+    "openGithub": "GitHub を開く",
+    "copyCode": "クリックしてコピー",
+    "tokenConnect": "接続",
+    "tokenGhHint": "既にサーバー上でログイン済み:",
+    "tokenSaveFailed": "トークンを保存できませんでした。",
+    "forwardOffHint": "ローカルビルドのみ。「ビルドサーバーに git ID を転送する」をオンにすると、リモートサーバーのデプロイにも使用できます。",
+    "remoteCredentialHint": "このホスト上で実行されるリポジトリ閲覧およびビルドに使用されます。リモートサーバー上でビルドするデプロイではそのサーバー自身の認証情報が使用されます — サーバーごとにデプロイキーまたはトークンを追加してください。",
+    "methodToken": "GitHub トークン",
+    "methodHostCli": "このホスト上の gh CLI",
+    "manageTokensOnGithub": "GitHub でトークンを管理",
+    "manageAccessOnGithub": "GitHub でアクセス権を管理",
+    "disconnectScopeNote": "切断すると、Openship からこの認証情報が削除され、クローンへの使用が停止されます。GitHub 上で取り消すまでは有効なままです。",
+    "credentialRejected": "GitHub は保存された {method} を拒否しました。",
+    "credentialRejectedImpact": "取り消されたか、有効期限が切れたか、必要なスコープが失われました。これを使用してクローンするデプロイは、以下で再接続するまで失敗し続けます。",
+    "credentialUnreachable": "保存された {method} を確認するために GitHub に接続できませんでした。",
+    "credentialUnreachableImpact": "これは通常、認証情報の問題ではなくネットワークの問題です — Openship は引き続きこれを使用します。GitHub に接続できない場合、再接続しても解決しません。",
+    "credentialCheckedAt": "最終確認 {time}"
   },
   "deployDefaults": {
     "title": "デプロイのデフォルト",
@@ -263,7 +302,8 @@
       "cleared": "クローントークンをクリアしました",
       "clearFailed": "トークンのクリアに失敗しました",
       "updateDefaultFailed": "デフォルトの更新に失敗しました"
-    }
+    },
+    "forwardGitFailed": "Git 転送の更新に失敗しました"
   },
   "tokens": {
     "title": "個人用アクセストークン",
@@ -310,7 +350,9 @@
       "revoked": "\"{name}\" を取り消しました",
       "revokeFailed": "トークンの取り消しに失敗しました",
       "loadFailed": "トークンの読み込みに失敗しました"
-    }
+    },
+    "callsOne": " · 1 件の呼び出し",
+    "callsMany": " · {count} 件の呼び出し"
   },
   "mcp": {
     "title": "MCP",
@@ -339,13 +381,30 @@
     "allResources": "すべてのリソース",
     "resourcesOne": "{count} 件のリソース",
     "resourcesMany": "{count} 件のリソース",
-    "orgPrefix": "{org} · ",
+    "orgPrefix": "{org}: ",
     "authorized": "{date} に認可済み",
     "lastUsedSuffix": " · 最終使用 {date}",
     "toast": {
       "disconnected": "MCP クライアントを切断しました",
       "disconnectFailed": "切断に失敗しました"
-    }
+    },
+    "callsOne": " · 1 件の呼び出し",
+    "callsMany": " · {count} 件の呼び出し",
+    "editAccess": "アクセス権を編集",
+    "viewActivity": "アクティビティ",
+    "editScopeTitle": "{client} のアクセス権",
+    "editScopeSubtitle": "変更はエージェントの次のリクエスト時に適用されます — 再接続は不要です。",
+    "editScopeOrg": "{org} 内",
+    "wasNResourcesOne": "現在 1 つのリソース",
+    "wasNResourcesMany": "現在 {count} 個のリソース",
+    "saveScope": "アクセス権を保存",
+    "scopeSaved": "アクセス権を更新しました",
+    "scopeSaveFailed": "アクセス権を更新できませんでした",
+    "loadScopeFailed": "このクライアントのアクセス権を読み込めませんでした",
+    "scopeGrantRejected": "{resource} へのアクセス権を付与できなくなったため削除されました。続行するには再度保存してください。",
+    "confirmWidenTitle": "すべての制限を解除します",
+    "confirmWidenBody": "エージェントは直ちにあなたの全権限で動作します。確認するにはもう一度押してください。",
+    "confirmWidenAction": "すべての制限を解除"
   },
   "team": {
     "heading": "チーム",
@@ -395,7 +454,31 @@
       "deleteBody": "このワークスペースとその中のすべてを完全に削除します。",
       "leaveBody": "このワークスペースから退出します — 戻るには新しい招待が必要です。",
       "deleteConfirm": "このワークスペースを削除しますか？プロジェクト、メンバー、設定が全員から削除されます。元に戻せません。",
-      "leaveConfirm": "このワークスペースから退出しますか？再度招待されるまでアクセスできなくなります。"
+      "leaveConfirm": "このワークスペースから退出しますか？再度招待されるまでアクセスできなくなります。",
+      "manage": {
+        "title": "ワークスペースの管理",
+        "sectionBody": "このワークスペースの名前変更、プロジェクトの一時停止、または削除を行います。",
+        "nameLabel": "ワークスペース名",
+        "rename": "名前変更",
+        "projects": "プロジェクト ({count})",
+        "noProjects": "このワークスペースにはプロジェクトがありません。",
+        "running": "実行中",
+        "stopped": "停止中",
+        "pauseTitle": "すべて一時停止",
+        "pauseBody": "すべてのプロジェクトを停止しますが、ワークスペースは保持します — いつでも再開できます。",
+        "pauseButton": "すべてのプロジェクトを停止",
+        "deleteTitle": "ワークスペースを削除",
+        "deleteBody": "すべての {count} 個のプロジェクト（コンテナとルート）を破棄し、ワークスペースを削除します。ボリュームデータは復旧可能な状態で残ります。元に戻すことはできません。",
+        "confirmLabel": "確認のため「{name}」と入力してください",
+        "deleting": "削除中…",
+        "deletingProject": "{name} を削除中…",
+        "deletingWorkspace": "ワークスペースを削除中…",
+        "toastRenamed": "ワークスペース名を変更しました",
+        "toastRenameFailed": "ワークスペース名を変更できませんでした",
+        "toastPaused": "{count} 件のプロジェクトを停止しました",
+        "toastPauseFailed": "一部のプロジェクトを停止できませんでした",
+        "toastProjectFailed": "{name} を削除できませんでした"
+      }
     },
     "toast": {
       "teamNameRequired": "チーム名は必須です",
@@ -413,6 +496,17 @@
       "deleted": "ワークスペースを削除しました",
       "leaveFailed": "ワークスペースから退出できませんでした",
       "left": "ワークスペースから退出しました"
+    },
+    "reachability": {
+      "description": "チームメンバーがこのワークスペースにアクセスするには公開 URL が必要です。",
+      "notInstalledTitle": "Openship に公開アドレスを設定",
+      "notInstalledBody": "Openship はまだ公開 URL で設定されていません。公開アドレスを指定してデプロイし（例: `openship up --public-url …`）、ここにドメインを追加してチームメンバーがアクセスできるようにしてください。",
+      "noDomainTitle": "Openship にドメインを追加",
+      "noDomainBody": "チームメンバーがこのワークスペースにアクセスできるように Openship アプリにドメインを追加してください — 稼働すると招待機能が自動的に有効になります。",
+      "addDomain": "ドメインを追加",
+      "pendingTitle": "ドメインの設定を完了してください",
+      "pendingBody": "Openship ドメインは検証待機中です (DNS / SSL)。稼働すると招待機能が有効になります。",
+      "viewDomain": "ドメインを表示"
     }
   },
   "inviteMember": {
@@ -455,7 +549,15 @@
     "emailSent": "招待メールを送信しました",
     "recipientHint": "この招待を承認できるのは {email} のみです。",
     "invitationLink": "招待リンク",
-    "manageLinkHint": "保留中の招待から、このリンクを管理または取り消せます。"
+    "manageLinkHint": "保留中の招待から、このリンクを管理または取り消せます。",
+    "mailReady": "準備完了",
+    "mailNotSetUp": "未設定",
+    "cloudReady": "接続済み",
+    "cloudNotReady": "未接続",
+    "noMailSystem": "メールシステムが設定されていないため、招待は送信されません。",
+    "setUpEmail": "メールを設定 →",
+    "cloudNotConnected": "Openship Cloud が接続されていないため、招待を送信できません。",
+    "connectCloud": "Openship Cloud を接続 →"
   },
   "teamWorkspace": {
     "title": "チームワークスペース",
@@ -483,6 +585,16 @@
     "toast": {
       "disconnected": "Openship Cloud から切断しました",
       "disconnectFailed": "切断に失敗しました"
+    },
+    "pitch": {
+      "title": "Openship Cloud を追加",
+      "body": "すべてのプロジェクトが自動 SSL 付きの無料 .{domain} ドメインを取得できます（DNS や証明書の設定は不要）。独自のサーバーも現在とまったく同様に機能し続けます。",
+      "perkDomain": "すべてのプロジェクトで無料の .{domain} ドメイン + 自動 SSL",
+      "perkDeploy": "マネージドクラウドにデプロイ、または独自のサーバーをそのまま利用",
+      "perkServices": "ワンクリックでプロビジョニングされるマネージド Postgres、Redis など",
+      "perkGithub": "独自のアプリを登録することなく GitHub に接続",
+      "noLockIn": "接続は無料。データ等の移行は発生せず、いつでも切断できます。",
+      "viewPricing": "料金プランを見る"
     }
   },
   "instance": {
@@ -652,7 +764,10 @@
       "saving": "保存中…",
       "editHint": "認証情報を空欄にすると保存済みのシークレットを保持します。送信先の変更後は再テストが必要です。",
       "signingSecret": "署名シークレット",
-      "secretHint": "Webhookの署名を検証するため、このシークレットを今コピーしてください。表示されるのは一度だけです。"
+      "secretHint": "Webhookの署名を検証するため、このシークレットを今コピーしてください。表示されるのは一度だけです。",
+      "noEmailTransport": "このインスタンスにはメールサーバーが設定されていないため、メール通知は送信されません。",
+      "setUpSmtp": "SMTP を設定 →",
+      "otherAddress": "その他のアドレス…"
     },
     "subscriptions": {
       "title": "通知を受け取る対象",
@@ -717,7 +832,9 @@
       "today": "今日",
       "last7": "過去 7 日間",
       "last30": "過去 30 日間",
-      "last90": "過去 90 日間"
+      "last90": "過去 90 日間",
+      "anyAgent": "任意のエージェント",
+      "agentCalls": "{count} 件のイベント"
     },
     "tabs": {
       "all": "すべて"
@@ -741,7 +858,8 @@
       "when": "日時",
       "cameFrom": "経路",
       "technical": "技術的な詳細",
-      "eventType": "イベントタイプ"
+      "eventType": "イベントタイプ",
+      "viaAgent": "エージェント"
     }
   },
   "updates": {
@@ -1120,5 +1238,90 @@
       "title": "デモモード",
       "description": "画面共有や録画時にIPアドレス、ホスト名、環境変数の値をぼかします。"
     }
+  },
+  "productView": {
+    "title": "インターフェース",
+    "description": "このダッシュボードに表示するコントロールプレーン。",
+    "platformLabel": "フルプラットフォーム",
+    "platformDesc": "プロジェクト、アプリ、デプロイ、サーバー — この環境の全機能。",
+    "mailLabel": "メールのみ",
+    "mailDesc": "サイドバーのメール管理画面: ドメイン、メールボックス、DNS、キュー、ログ。",
+    "instanceDefault": "このインスタンスのデフォルトは {mode} です。",
+    "useDefault": "インスタンスのデフォルトを使用"
+  },
+  "mailMode": {
+    "title": "プロダクトモード",
+    "description": "このインスタンスの表示モード。ここでの全ユーザーのデフォルトとなります（各ユーザーは「設定」→「一般」で個別に変更可能）。",
+    "platformLabel": "フルプラットフォーム",
+    "platformDesc": "プロジェクト、アプリ、デプロイ、サーバー — この環境の全機能。",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "インスタンスを Openship Mail としてブランド化し、サイドバーをメール管理画面にします。",
+    "savedOverridden": "保存しました。個人の表示設定は変更されません（「設定」→「一般」で選択済み）。",
+    "errorToast": "プロダクトモードを変更できませんでした。",
+    "envNote": "このインスタンスは環境変数の OPENSHIP_PRODUCT=mail に従っています。ここでモードを選択すると上書きされます。"
+  },
+  "email": {
+    "title": "メール (SMTP)",
+    "description": "このインスタンスがメール送信に使用する SMTP サービス",
+    "intro": "パスワードリセット、メール確認、チームへの招待、通知に使用されます。任意のプロバイダー（Amazon SES、Gmail、Mailgun、企業リレーなど）の SMTP 認証情報（ホスト、ポート、ユーザー名、パスワード）を貼り付けるだけです。サーバーのセットアップは不要で、Openship が直接接続します。パスワードは暗号化され、再表示されることはありません。",
+    "loading": "読み込み中…",
+    "configuredBadge": "設定済み",
+    "notConfigured": "まだ設定されていません — 下記に SMTP 認証情報を入力するまで、パスワードリセット、招待、メール通知は無効のままです。",
+    "providerLabel": "プロバイダー",
+    "hostLabel": "SMTP ホスト",
+    "hostPlaceholder": "smtp.example.com",
+    "portLabel": "ポート",
+    "userLabel": "ユーザー名",
+    "userPlaceholder": "user@example.com",
+    "passwordLabel": "パスワード",
+    "passwordPlaceholder": "SMTP パスワードまたはアプリキー",
+    "passwordKeepPlaceholder": "•••••••• (現在のパスワードを保持する場合は空欄)",
+    "fromLabel": "送信元アドレス (From)",
+    "fromPlaceholder": "Openship <no-reply@example.com>",
+    "fromHint": "任意。デフォルトはユーザー名です。",
+    "fromHintRequired": "必須 — ユーザー名がメールアドレス形式ではないため、受信者に実際の送信元アドレスが必要です。",
+    "fromRequired": "送信元アドレスを入力してください — このプロバイダーのユーザー名はメールアドレスではないため、送信者になれません。",
+    "fromInvalid": "送信元アドレスには有効なメールアドレスを含める必要があります（例: 名前 <you@example.com>）。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "SMTP 設定を保存しました",
+    "saveFailed": "SMTP 設定を保存できませんでした",
+    "hostRequired": "SMTP ホストを入力してください。",
+    "portInvalid": "ポートは 1 から 65535 の間の数値である必要があります。",
+    "testTitle": "テストメールを送信",
+    "testPlaceholder": "you@example.com",
+    "sendTest": "テスト送信",
+    "sending": "送信中…",
+    "testSent": "テストメールを送信しました — 受信トレイを確認してください。",
+    "testFailed": "テストに失敗しました",
+    "saveFirst": "テストメールを送信する前に SMTP 設定を保存してください。",
+    "disable": "SMTP を無効化してクリア",
+    "disabled": "SMTP を無効化しました",
+    "toastTitle": "メール"
+  },
+  "edgeOrphans": {
+    "title": "未追跡のエッジルート",
+    "description": "このマシンが現在も配信しているが、Openship に記録がないホスト名",
+    "scan": "スキャン",
+    "scanning": "スキャン中…",
+    "allClear": "エッジが配信しているすべてのホスト名が把握されています。",
+    "comparedTo": "{count} 件の追跡対象ホスト名と比較済み。",
+    "unavailable": "エッジを確認できませんでした",
+    "explain": "「Openship からのみ削除」でプロジェクトを削除した場合、そのルートは意図的に実行されたまま残ります。残されたアプリルートはコンテナが削除されると 502 を返しますが、残された静的 (STATIC) ルートは古いファイルを 200 で配信し続けます（そのホスト名がその後別のプロジェクトに割り当てられた場合でも同様です）。",
+    "kindStatic": "静的ファイル",
+    "kindProxy": "アプリルート",
+    "staticWarning": "現在もファイルを配信しています。今日もリクエストに応答しています。",
+    "proxyWarning": "おそらく既に存在しないアップストリームを指しています。",
+    "servingFrom": "配信元",
+    "proxyingTo": "プロキシ先",
+    "alsoAnswers": "次の応答も行っています",
+    "stopServing": "配信を停止",
+    "stopping": "停止中…",
+    "stopped": "{hostname} の配信を停止しました。",
+    "stopFailed": "{hostname} の配信を停止できませんでした",
+    "confirmTitle": "{hostname} の配信を停止しますか？",
+    "confirmBody": "これにより、このホスト名のエッジ設定のみが削除されます。ビルドされたファイルはディスク上に残り、サーバー上の他のものには影響しません。後でプロジェクトがこのホスト名にデプロイされた場合、独自のルートが作成されます。",
+    "confirmCta": "配信を停止",
+    "cancel": "キャンセル"
   }
 }

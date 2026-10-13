@@ -67,7 +67,9 @@
       "credentials": "凭据",
       "cloud": "云",
       "infrastructure": "基础设施",
-      "instance": "实例"
+      "instance": "实例",
+      "email": "邮件",
+      "systemSender": "系统发件人"
     }
   },
   "github": {
@@ -115,12 +117,49 @@
       "optionalSuffix": "在此机器上，以便对你的 App 安装范围之外的仓库启用本地构建克隆。远程部署始终通过 App 进行。",
       "disconnectPrefix": "要断开连接，请运行",
       "disconnectSuffix": "在你的终端中。",
-      "use": "使用 gh CLI"
+      "use": "使用 gh CLI",
+      "login": "使用 GitHub 登录",
+      "deviceHint": "在 GitHub 上输入此一次性代码以授权此实例：",
+      "waiting": "等待授权中 — 将自动更新。",
+      "tokenAltPrefix": "更喜欢使用令牌？请在以下位置添加个人访问令牌：",
+      "tokenAltLink": "克隆凭据。",
+      "forwardOnNote": "转发已开启 — gh CLI 还会验证远程服务器的克隆。您的身份将通过 SSH 在每次克隆时建立隧道；服务器上不存储任何内容。",
+      "forwardOffHint": "目前仅限本地构建。开启“将我的 git 身份转发到构建服务器”，也可将 gh CLI 用于远程服务器部署。",
+      "manageForward": "管理转发",
+      "disconnectBody": "Openship 将从此实例中移除此凭据，并停止将其用于克隆。在您于 GitHub 撤销之前，该凭据在 GitHub 上仍有效。您可以随时重新连接。",
+      "recheck": "重新检查"
     },
     "replaceToken": "替换 GitHub 令牌",
     "clearToken": "清除已保存的令牌",
     "tokenEditorDescription": "使用 GitHub 个人访问令牌浏览仓库并在此实例上构建。",
-    "methodTokenDesc": "使用 GitHub 令牌浏览仓库并进行本地构建。"
+    "methodTokenDesc": "使用 GitHub 令牌浏览仓库并进行本地构建。",
+    "activeVia": "已通过 {method} 连接",
+    "pickMethod": "选择 Openship 访问您仓库的方式。",
+    "methodDevice": "GitHub 登录",
+    "methodApp": "GitHub App",
+    "methodAppDesc": "用于本地和远程部署的具有特定作用域的短期安装令牌。",
+    "methodSshDesc": "为每台服务器绑定一个部署密钥（服务器 → GitHub）。",
+    "signIn": "使用 GitHub 登录",
+    "signInDesc": "使用设备代码在浏览器中登录。无需注册，无需 SSH 进入服务器。",
+    "changeMethod": "更改方式",
+    "otherMethods": "其他方式",
+    "openGithub": "打开 GitHub",
+    "copyCode": "点击复制",
+    "tokenConnect": "连接",
+    "tokenGhHint": "已在服务器上登录：",
+    "tokenSaveFailed": "无法保存令牌。",
+    "forwardOffHint": "仅限本地构建。开启“将我的 git 身份转发到构建服务器”以将其用于远程服务器部署。",
+    "remoteCredentialHint": "用于在此主机上运行的仓库浏览和构建。在远程服务器上构建的部署使用该服务器自身的凭据 — 请为每台服务器添加部署密钥或令牌。",
+    "methodToken": "GitHub 令牌",
+    "methodHostCli": "此主机上的 gh CLI",
+    "manageTokensOnGithub": "在 GitHub 上管理令牌",
+    "manageAccessOnGithub": "在 GitHub 上管理访问权限",
+    "disconnectScopeNote": "断开连接会从 Openship 中移除此凭据，并停止将其用于克隆。在您于 GitHub 撤销之前，它在 GitHub 上保持有效。",
+    "credentialRejected": "GitHub 拒绝了存储的 {method}。",
+    "credentialRejectedImpact": "它已被撤销、已过期或丢失了所需的作用域。使用它进行克隆的部署将持续失败，直到您在下方重新连接。",
+    "credentialUnreachable": "无法连接到 GitHub 以检查存储的 {method}。",
+    "credentialUnreachableImpact": "这通常是网络问题而非凭据错误 — Openship 将继续使用它。如果 GitHub 无法访问，重新连接也无济于事。",
+    "credentialCheckedAt": "上次检查时间 {time}"
   },
   "deployDefaults": {
     "title": "部署默认设置",
@@ -263,7 +302,8 @@
       "cleared": "克隆令牌已清除",
       "clearFailed": "清除令牌失败",
       "updateDefaultFailed": "更新默认设置失败"
-    }
+    },
+    "forwardGitFailed": "更新 git 转发失败"
   },
   "tokens": {
     "title": "个人访问令牌",
@@ -310,7 +350,9 @@
       "revoked": "已撤销 \"{name}\"",
       "revokeFailed": "撤销令牌失败",
       "loadFailed": "加载令牌失败"
-    }
+    },
+    "callsOne": " · 1 次调用",
+    "callsMany": " · {count} 次调用"
   },
   "mcp": {
     "title": "MCP",
@@ -339,13 +381,30 @@
     "allResources": "所有资源",
     "resourcesOne": "{count} 项资源",
     "resourcesMany": "{count} 项资源",
-    "orgPrefix": "{org} · ",
+    "orgPrefix": "{org}: ",
     "authorized": "已授权 {date}",
     "lastUsedSuffix": " · 上次使用 {date}",
     "toast": {
       "disconnected": "MCP 客户端已断开连接",
       "disconnectFailed": "断开连接失败"
-    }
+    },
+    "callsOne": " · 1 次调用",
+    "callsMany": " · {count} 次调用",
+    "editAccess": "编辑访问权限",
+    "viewActivity": "活动",
+    "editScopeTitle": "{client} 访问权限",
+    "editScopeSubtitle": "更改将在 Agent 的下一次请求中生效 — 无需重新连接。",
+    "editScopeOrg": "在 {org} 中",
+    "wasNResourcesOne": "当前 1 个资源",
+    "wasNResourcesMany": "当前 {count} 个资源",
+    "saveScope": "保存访问权限",
+    "scopeSaved": "访问权限已更新",
+    "scopeSaveFailed": "无法更新访问权限",
+    "loadScopeFailed": "无法加载此客户端的访问权限",
+    "scopeGrantRejected": "您无法再授予 {resource} 的权限，因此已将其移除。再次保存以继续。",
+    "confirmWidenTitle": "这将解除所有限制",
+    "confirmWidenBody": "Agent 将立即以您的完全访问权限行动。再次按下以确认。",
+    "confirmWidenAction": "解除所有限制"
   },
   "team": {
     "heading": "团队",
@@ -395,7 +454,31 @@
       "deleteBody": "永久删除此工作区及其中的所有内容。",
       "leaveBody": "退出此工作区 —— 需要新的邀请才能重新加入。",
       "deleteConfirm": "删除此工作区？其项目、成员和设置将对所有人移除。此操作无法撤销。",
-      "leaveConfirm": "退出此工作区？在再次收到邀请之前你将无法访问。"
+      "leaveConfirm": "退出此工作区？在再次收到邀请之前你将无法访问。",
+      "manage": {
+        "title": "管理工作区",
+        "sectionBody": "重命名此工作区、暂停其项目或将其删除。",
+        "nameLabel": "工作区名称",
+        "rename": "重命名",
+        "projects": "项目 ({count})",
+        "noProjects": "此工作区中暂无项目。",
+        "running": "运行中",
+        "stopped": "已停止",
+        "pauseTitle": "全部暂停",
+        "pauseBody": "停止每个项目但保留工作区 — 随时可以恢复。",
+        "pauseButton": "停止所有项目",
+        "deleteTitle": "删除工作区",
+        "deleteBody": "销毁所有 {count} 个项目（容器和路由）并删除工作区。卷数据保持可恢复状态。此操作无法撤销。",
+        "confirmLabel": "输入 “{name}” 以确认",
+        "deleting": "正在删除…",
+        "deletingProject": "正在移除 {name}…",
+        "deletingWorkspace": "正在移除工作区…",
+        "toastRenamed": "工作区已重命名",
+        "toastRenameFailed": "无法重命名工作区",
+        "toastPaused": "已停止 {count} 个项目",
+        "toastPauseFailed": "某些项目无法停止",
+        "toastProjectFailed": "无法移除 {name}"
+      }
     },
     "toast": {
       "teamNameRequired": "团队名称为必填项",
@@ -413,6 +496,17 @@
       "deleted": "工作区已删除",
       "leaveFailed": "无法退出工作区",
       "left": "已退出工作区"
+    },
+    "reachability": {
+      "description": "团队成员需要一个公开 URL 才能访问此工作区。",
+      "notInstalledTitle": "为 Openship 提供公开地址",
+      "notInstalledBody": "Openship 尚未配置公开 URL。请使用公开地址部署（例如 `openship up --public-url …`），然后在此添加域名以便团队成员访问。",
+      "noDomainTitle": "为 Openship 添加域名",
+      "noDomainBody": "为 Openship 应用添加域名，以便团队成员可以访问此工作区 — 一旦上线，邀请功能将自动开启。",
+      "addDomain": "添加域名",
+      "pendingTitle": "完成域名设置",
+      "pendingBody": "您的 Openship 域名正在等待验证 (DNS / SSL)。上线后即可开启邀请。",
+      "viewDomain": "查看域名"
     }
   },
   "inviteMember": {
@@ -455,7 +549,15 @@
     "emailSent": "邀请邮件已发送",
     "recipientHint": "只有 {email} 可以接受此邀请。",
     "invitationLink": "邀请链接",
-    "manageLinkHint": "在“待处理邀请”中管理或撤销此链接。"
+    "manageLinkHint": "在“待处理邀请”中管理或撤销此链接。",
+    "mailReady": "就绪",
+    "mailNotSetUp": "未配置",
+    "cloudReady": "已连接",
+    "cloudNotReady": "未连接",
+    "noMailSystem": "未设置邮件系统，因此邀请将无法送达。",
+    "setUpEmail": "配置邮件 →",
+    "cloudNotConnected": "Openship Cloud 未连接，因此无法发送邀请。",
+    "connectCloud": "连接 Openship Cloud →"
   },
   "teamWorkspace": {
     "title": "团队工作区",
@@ -483,6 +585,16 @@
     "toast": {
       "disconnected": "已断开与 Openship Cloud 的连接",
       "disconnectFailed": "断开连接失败"
+    },
+    "pitch": {
+      "title": "添加 Openship Cloud",
+      "body": "每个项目均可获得免费的 .{domain} 域名及自动 SSL — 无需配置 DNS 和证书。您自己的服务器将完全保持现有工作方式。",
+      "perkDomain": "每个项目均享有免费 .{domain} 域名 + 自动 SSL",
+      "perkDeploy": "部署到托管云，或保留在您自己的服务器上",
+      "perkServices": "一键配置托管 Postgres、Redis 等服务",
+      "perkGithub": "无需注册您自己的应用即可连接 GitHub",
+      "noLockIn": "免费连接。不移动任何数据，您可以随时断开连接。",
+      "viewPricing": "查看价格"
     }
   },
   "instance": {
@@ -652,7 +764,10 @@
       "saving": "正在保存…",
       "editHint": "凭据字段留空可保留已存储的密钥。更改目标后需要重新测试以验证发送。",
       "signingSecret": "签名密钥",
-      "secretHint": "请立即复制此密钥以验证 Webhook 签名。密钥仅显示一次。"
+      "secretHint": "请立即复制此密钥以验证 Webhook 签名。密钥仅显示一次。",
+      "noEmailTransport": "此实例上未配置邮件服务器，因此邮件通知将无法送达。",
+      "setUpSmtp": "配置 SMTP →",
+      "otherAddress": "其他地址…"
     },
     "subscriptions": {
       "title": "要接收哪些通知",
@@ -717,7 +832,9 @@
       "today": "今天",
       "last7": "最近 7 天",
       "last30": "最近 30 天",
-      "last90": "最近 90 天"
+      "last90": "最近 90 天",
+      "anyAgent": "任意 Agent",
+      "agentCalls": "{count} 个事件"
     },
     "tabs": {
       "all": "全部"
@@ -741,7 +858,8 @@
       "when": "时间",
       "cameFrom": "来源",
       "technical": "技术详情",
-      "eventType": "事件类型"
+      "eventType": "事件类型",
+      "viaAgent": "Agent"
     }
   },
   "updates": {
@@ -1120,5 +1238,90 @@
       "title": "演示模式",
       "description": "在屏幕共享和录屏期间模糊处理 IP 地址、主机名和环境变量值。"
     }
+  },
+  "productView": {
+    "title": "界面",
+    "description": "此仪表板向您展示的控制平面。",
+    "platformLabel": "完整平台",
+    "platformDesc": "项目、应用、部署、服务器 — 此安装支持的所有功能。",
+    "mailLabel": "仅邮件",
+    "mailDesc": "侧边栏中的邮件控制面板：域名、邮箱、DNS、队列、日志。",
+    "instanceDefault": "此实例默认为 {mode}。",
+    "useDefault": "使用实例默认值"
+  },
+  "mailMode": {
+    "title": "产品模式",
+    "description": "此实例呈现自身的形式。这是所有用户的默认设置 — 每位用户仍可在“设置 → 常规”中选择自己的视图。",
+    "platformLabel": "完整平台",
+    "platformDesc": "项目、应用、部署、服务器 — 此安装支持的所有功能。",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "将实例品牌化为 Openship Mail，并将侧边栏作为邮件控制面板。",
+    "savedOverridden": "已保存。您的个人视图保持不变 — 您已在“设置 → 常规”中进行了选择。",
+    "errorToast": "无法更改产品模式。",
+    "envNote": "此实例遵循环境变量 OPENSHIP_PRODUCT=mail。在此选择模式将覆盖该变量。"
+  },
+  "email": {
+    "title": "邮件 (SMTP)",
+    "description": "此实例发送邮件所使用的 SMTP 服务",
+    "intro": "用于密码重置、邮箱验证、团队邀请和通知。只需粘贴来自任何服务商（Amazon SES、Gmail、Mailgun、企业中继）的 SMTP 凭据 — 主机、端口、用户名、密码。无需设置服务器；Openship 直接与其连接。密码经过加密且不会再次显示。",
+    "loading": "加载中…",
+    "configuredBadge": "已配置",
+    "notConfigured": "尚未配置 — 在您于下方输入 SMTP 凭据之前，密码重置、邀请和邮件通知将保持关闭状态。",
+    "providerLabel": "服务商",
+    "hostLabel": "SMTP 主机",
+    "hostPlaceholder": "smtp.example.com",
+    "portLabel": "端口",
+    "userLabel": "用户名",
+    "userPlaceholder": "user@example.com",
+    "passwordLabel": "密码",
+    "passwordPlaceholder": "SMTP 密码或应用密钥",
+    "passwordKeepPlaceholder": "•••••••• (留空以保留当前密码)",
+    "fromLabel": "发件人地址",
+    "fromPlaceholder": "Openship <no-reply@example.com>",
+    "fromHint": "可选。默认为用户名。",
+    "fromHintRequired": "必填 — 您的用户名不是邮箱地址，因此收件人需要一个真实的发件人地址。",
+    "fromRequired": "请输入发件人地址 — 该服务商的用户名不是邮箱，因此不能作为发件人。",
+    "fromInvalid": "发件人地址必须包含有效邮箱（例如 Name <you@example.com>）。",
+    "save": "保存",
+    "saving": "正在保存…",
+    "saved": "SMTP 设置已保存",
+    "saveFailed": "无法保存 SMTP 设置",
+    "hostRequired": "请输入 SMTP 主机。",
+    "portInvalid": "端口必须是 1 到 65535 之间的数字。",
+    "testTitle": "发送测试邮件",
+    "testPlaceholder": "you@example.com",
+    "sendTest": "发送测试",
+    "sending": "正在发送…",
+    "testSent": "测试邮件已发送 — 请检查收件箱。",
+    "testFailed": "测试失败",
+    "saveFirst": "在发送测试邮件之前，请先保存您的 SMTP 设置。",
+    "disable": "停用并清除 SMTP",
+    "disabled": "SMTP 已停用",
+    "toastTitle": "邮件"
+  },
+  "edgeOrphans": {
+    "title": "未跟踪的边缘路由",
+    "description": "此机器仍在提供服务但 Openship 无记录的主机名",
+    "scan": "扫描",
+    "scanning": "正在扫描…",
+    "allClear": "边缘服务的所有主机名均已记录。",
+    "comparedTo": "已与 {count} 个受跟踪的主机名进行比对。",
+    "unavailable": "无法检查边缘",
+    "explain": "使用“仅从 Openship 中移除”删除项目时，会有意保留其路由运行。遗留的应用路由在容器消失后将返回 502，但遗留的静态 (STATIC) 路由会继续以 200 返回旧文件 — 即使该主机名后来分配给了另一个项目也是如此。",
+    "kindStatic": "静态文件",
+    "kindProxy": "应用路由",
+    "staticWarning": "仍在提供文件服务。今天仍在响应请求。",
+    "proxyWarning": "指向可能已不存在的上游服务。",
+    "servingFrom": "服务来源",
+    "proxyingTo": "代理至",
+    "alsoAnswers": "同时响应",
+    "stopServing": "停止服务",
+    "stopping": "正在停止…",
+    "stopped": "不再为 {hostname} 提供服务。",
+    "stopFailed": "无法停止为 {hostname} 提供服务",
+    "confirmTitle": "停止为 {hostname} 提供服务？",
+    "confirmBody": "这仅会移除该主机名的边缘配置。构建的文件仍保留在磁盘上，服务器上的其他内容不受影响。如果稍后有项目部署到该主机名，它将创建自己的路由。",
+    "confirmCta": "停止服务",
+    "cancel": "取消"
   }
 }

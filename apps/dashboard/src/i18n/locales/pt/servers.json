@@ -43,8 +43,6 @@
     "emptyDescription": "Conecte um servidor via SSH e o Openship trata do resto — Docker, OpenResty, SSL e implantações, tudo configurado automaticamente.",
     "addFirstServer": "Adicionar o Seu Primeiro Servidor",
     "whatGetsConfigured": "O que é configurado",
-    "dockerDesc": "Runtime de contêineres",
-    "openRestyDesc": "Proxy reverso e SSL",
     "monitoring": "Monitoramento",
     "monitoringDesc": "Verificações de saúde",
     "gitDesc": "Implantações a partir do código-fonte",
@@ -109,7 +107,12 @@
       "skippedMany": "{n} precisam de atenção na própria página",
       "nothingToDo": "Nada a aplicar",
       "applyFailed": "Não foi possível iniciar as atualizações"
-    }
+    },
+    "featContainer": "Runtime de contêineres",
+    "featContainerDesc": "Executa cada aplicação de forma isolada",
+    "featProxy": "Proxy reverso",
+    "featProxyDesc": "Roteamento e SSL",
+    "seeDocs": "Ver documentação"
   },
   "containers": {
     "subtitle": "Contêineres de edge e e-mail neste servidor",
@@ -191,7 +194,18 @@
     "toastKeyPathTestRequired": "O caminho da chave é obrigatório para testar a conexão",
     "toastConnectionSuccess": "Conexão bem-sucedida",
     "toastConnectionFailed": "Falha na conexão",
-    "toastConnectionTestFailed": "Falha no teste de conexão"
+    "toastConnectionTestFailed": "Falha no teste de conexão",
+    "keyModePaste": "Colar / Enviar",
+    "keyModePath": "Caminho do host",
+    "keyPathBrowse": "Procurar…",
+    "keyPathHelp": "Caminho absoluto para a chave privada na máquina que executa o Openship.",
+    "keyPaste": "Chave privada",
+    "keyPastePlaceholder": "-----BEGIN OPENSSH PRIVATE KEY-----\n…",
+    "keyPasteHelp": "As chaves coladas são criptografadas em repouso e nunca saem do servidor.",
+    "keyStoredKeep": "Uma chave está armazenada — cole uma nova para substituí-la ou deixe em branco para mantê-la.",
+    "keyUploadFile": "Enviar arquivo de chave",
+    "keyPasteInvalid": "Esse arquivo não parece ser uma chave privada válida.",
+    "toastKeyRequired": "Uma chave privada é obrigatória"
   },
   "detail": {
     "tabs": {
@@ -280,7 +294,11 @@
       "toastRemovedKeptOther": "Servidor removido. {count} cargas de trabalho saíram do Openship e continuam rodando.",
       "toastRemovedDestroyedOne": "Servidor removido. 1 carga de trabalho foi apagada da máquina.",
       "toastRemovedDestroyedOther": "Servidor removido. {count} cargas de trabalho foram apagadas da máquina."
-    }
+    },
+    "sshPort": "Porta SSH: {port}",
+    "port": "Porta",
+    "reinstallDockerTitle": "Reinstalar o Docker neste servidor?",
+    "reinstallDockerMessage": "Isso executa o instalador oficial do Docker, que baixa a versão atual do motor — em um servidor atualizado isso representa uma grande atualização. Instalar ou atualizar o Docker reinicia o daemon, o que reinicia todos os contêineres neste servidor, incluindo qualquer coisa que o Openship esteja executando aqui. Nenhuma outra etapa instalará o Docker para você: as outras etapas o ignoram enquanto ele estiver funcionando."
   },
   "banner": {
     "unreachableTitle": "Não foi possível acessar {host}",
@@ -298,7 +316,18 @@
     "retry": "Tentar novamente",
     "editCredentials": "Editar credenciais",
     "editServer": "Editar servidor",
-    "showRawError": "Mostrar erro bruto"
+    "showRawError": "Mostrar erro bruto",
+    "hostChannelTitle": "O Openship não consegue alcançar o host desta máquina",
+    "hostChannelBody": "O Openship é executado em um contêiner aqui e se comunica com o host via SSH em {target}. Nada respondeu lá, então ele não pode executar operações em nível de host nesta máquina.",
+    "hostChannelImpact": "Deploys normais nesta máquina ainda funcionam — eles passam pelo socket do Docker. Bloqueado até que o canal funcione: o terminal do host, as informações do sistema do host e o escaneamento de portas do host; assumir o controle das portas :80/:443 de um proxy que não foi iniciado pelo Openship; instalar ou atualizar o motor de e-mail; fazer deploy de um aplicativo do catálogo que precise de um arquivo de configuração gerado no host (como o kong.yml do Supabase). Esta máquina também será exibida como \"Offline\" na lista de servidores do painel enquanto o canal estiver inativo.",
+    "hostChannelFix": "Execute isto no host e tente novamente:",
+    "hostChannelMissingTitle": "O Openship não possui um canal para o host desta máquina",
+    "hostChannelMissingBody": "O Openship é executado em um contêiner aqui, e o canal SSH usado para alcançar o host nunca foi provisionado. Não havia endereço para contato, então nada aqui está fora do ar — as operações em nível de host simplesmente não têm onde rodar.",
+    "hostChannelWouldUse": "Uma vez provisionado, o canal alcançará o host em {target}. Nada contatou esse endereço ainda.",
+    "hostChannelProvisionFix": "Execute isto no host para provisionar o canal e tente novamente:",
+    "hostChannelAuthTitle": "O host recusou a chave do Openship",
+    "hostChannelAuthBody": "O Openship é executado em um contêiner aqui e alcança o host via SSH em {target}. O host respondeu e depois rejeitou a chave, portanto operações em nível de host não podem ser executadas. Ou a chave não está mais autorizada para essa conta, ou o sshd não permite o login dessa conta. As credenciais SSH armazenadas neste servidor não são usadas para esta conexão — o canal possui sua própria chave.",
+    "hostChannelReauthorizeFix": "Execute isto no host para autorizar novamente a chave do canal e tente de novo:"
   },
   "overview": {
     "cpu": "CPU",
@@ -347,7 +376,12 @@
     "statusInstalled": "Instalado",
     "statusRemoved": "Removido",
     "statusFailed": "Falhou",
-    "statusWaiting": "Aguardando"
+    "statusWaiting": "Aguardando",
+    "roleDocker": "Runtime de contêineres",
+    "roleGit": "Controle de versão",
+    "roleOpenresty": "Proxy reverso",
+    "roleCertbot": "Certificados SSL",
+    "roleRsync": "Transferência de arquivos"
   },
   "ports": {
     "title": "Encaminhamento de Portas",

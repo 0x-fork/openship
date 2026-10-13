@@ -4,7 +4,73 @@
     "commandHint": "選択した各サーバーで実行します。コンテナ内のタスクには docker run --rm を使用してください。",
     "cloudServersHint": "既存のサーバーを使うか、独立したサブスクリプションを持つ専用サーバーを追加できます。",
     "cloudUsageHint": "ジョブは選択したサーバーのリソースと利用枠を共有します。実行には有効なプランが必要です。",
-    "addDedicatedServer": "専用サーバーを追加"
+    "addDedicatedServer": "専用サーバーを追加",
+    "title": "新規ジョブ",
+    "name": "名前",
+    "namePlaceholder": "毎晩の DB バキューム",
+    "server": "サーバー",
+    "servers": "サーバー",
+    "noServers": "サーバーがまだ接続されていません — 先に追加してください。",
+    "command": "コマンド",
+    "commandPlaceholder": "pg_dump ... > /backups/backup.sql",
+    "scheduleType": "実行タイミング",
+    "scheduleTypes": {
+      "recurring": "スケジュール実行",
+      "once": "1回のみ",
+      "manual": "手動"
+    },
+    "sections": {
+      "basics": "基本設定",
+      "schedule": "スケジュール",
+      "servers": "対象サーバー",
+      "reliability": "信頼性",
+      "environment": "環境",
+      "triggers": "依存関係とトリガー",
+      "notifications": "通知"
+    },
+    "schedule": "スケジュール (cron)",
+    "runAt": "実行日時",
+    "manualHint": "トリガー時のみ実行されます（「今すぐ実行」、依存関係、またはイベント）。",
+    "timeout": "タイムアウト (秒)",
+    "retryAttempts": "最大試行回数",
+    "retryBackoff": "バックオフ (秒)",
+    "advanced": "詳細設定",
+    "env": "環境変数",
+    "addVar": "変数を追加",
+    "secrets": "シークレット",
+    "addSecret": "シークレットを追加",
+    "replaceSecrets": "シークレットを置き換え",
+    "secretsSet": "個のシークレットが設定済み",
+    "noSecrets": "シークレットは設定されていません。",
+    "dependencies": "実行前提",
+    "dependenciesHint": "このジョブは選択したジョブが成功した後に実行されます。",
+    "triggers": "イベントトリガー",
+    "notifications": "通知",
+    "noChannels": "通知チャンネルがまだありません — 「モニタリング」→「通知」で追加してください。",
+    "notificationsHint": "このジョブのグローバル通知設定を上書きします。",
+    "submit": "ジョブを作成",
+    "creating": "保存中…",
+    "cancel": "キャンセル",
+    "needServer": "最初にサーバーを接続してください",
+    "pasteEnv": ".env を貼り付け",
+    "uploadEnv": ".env をアップロード",
+    "envPasteEmpty": "変数が見つかりません",
+    "comingSoon": "近日公開",
+    "setupChannel": "チャンネルを設定",
+    "customTriggerSoon": "カスタムトリガー",
+    "docsLink": "ジョブについて詳しく見る",
+    "docsBody": "スケジュール、リトライ、シークレット、通知",
+    "summary": {
+      "title": "概要",
+      "command": "コマンド",
+      "schedule": "スケジュール",
+      "targets": "対象",
+      "retry": "リトライ",
+      "timeout": "タイムアウト",
+      "notify": "通知",
+      "none": "—",
+      "retryOff": "なし"
+    }
   },
   "systemJobLabels": {
     "github:deployment-checks": "GitHub デプロイチェック",
@@ -27,5 +93,120 @@
     "system:health-watch": "ヘルスチェック巡回",
     "jobs:due-once": "キューに入った単発ジョブの実行",
     "edge:verify": "エッジ検証スイープ"
+  },
+  "backups": {
+    "section": "バックアップスケジュール",
+    "sectionDesc": "プロジェクトまたはサービスごとにスケジュールされた自動バックアップ。各プロジェクトの「バックアップ」タブで管理されます。",
+    "projectDefault": "プロジェクトのデフォルト",
+    "mailServer": "メールサーバー",
+    "manage": "バックアップで管理",
+    "badge": "バックアップ",
+    "never": "実行履歴なし",
+    "status": {
+      "succeeded": "成功",
+      "failed": "失敗",
+      "cancelled": "キャンセル",
+      "running": "実行中"
+    }
+  },
+  "title": "ジョブ",
+  "subtitle": "サーバー上で実行される組み込みのメンテナンスおよびカスタムコマンド。",
+  "empty": "スケジュールされたジョブはまだありません。",
+  "searchPlaceholder": "ジョブを検索…",
+  "noResults": "フィルターに一致するジョブはありません。",
+  "overview": {
+    "title": "概要",
+    "subtitle": "このインスタンスのジョブ",
+    "all": "すべてのジョブ",
+    "running": "実行中",
+    "failed": "失敗",
+    "scheduled": "スケジュール済み",
+    "disabled": "無効"
+  },
+  "loadFailed": "ジョブの読み込みに失敗しました。",
+  "kind": {
+    "system": "システム",
+    "custom": "カスタム"
+  },
+  "fields": {
+    "schedule": "スケジュール",
+    "nextRun": "次回実行",
+    "lastRun": "前回実行",
+    "never": "実行履歴なし",
+    "notScheduled": "未設定"
+  },
+  "status": {
+    "success": "成功",
+    "failed": "失敗",
+    "running": "実行中"
+  },
+  "actions": {
+    "run": "今すぐ実行",
+    "running": "実行中…",
+    "edit": "スケジュールを編集",
+    "save": "保存",
+    "cancel": "キャンセル",
+    "enable": "有効化",
+    "disable": "無効化",
+    "viewLogs": "ログ"
+  },
+  "cronHint": "標準の 5 フィールド cron（分 時 日 月 曜日）、UTC。",
+  "toast": {
+    "ran": "{label} を開始しました。",
+    "ranFailed": "{label} の実行に失敗しました。",
+    "saved": "{label} のスケジュールを更新しました。",
+    "saved2": "ジョブを更新しました。",
+    "saveFailed": "{label} の更新に失敗しました。",
+    "enabled": "{label} を有効にしました。",
+    "disabled": "{label} を無効にしました。",
+    "toggleFailed": "{label} の更新に失敗しました。",
+    "title": "ジョブ",
+    "created": "ジョブを作成しました。",
+    "createFailed": "ジョブの作成に失敗しました。",
+    "deleted": "ジョブを削除しました。",
+    "deleteFailed": "ジョブの削除に失敗しました。"
+  },
+  "newJob": "新規ジョブ",
+  "sections": {
+    "system": "システムジョブ",
+    "systemDesc": "このインスタンスの組み込みメンテナンス。",
+    "custom": "カスタムジョブ",
+    "customDesc": "サーバー上でスケジュールに従って実行するコマンド。"
+  },
+  "customEmpty": {
+    "title": "カスタムジョブはまだありません",
+    "desc": "スケジュール、単発、またはイベント時に、リトライ、シークレット、リアルタイムログ、通知を備えたコマンドをサーバー上で実行します。",
+    "cta": "ジョブを作成",
+    "docs": "ドキュメント"
+  },
+  "edit": {
+    "title": "ジョブを編集",
+    "action": "編集",
+    "save": "変更を保存"
+  },
+  "detail": {
+    "back": "ジョブ一覧に戻る",
+    "tabs": {
+      "overview": "概要",
+      "runs": "実行履歴"
+    },
+    "servers": "サーバー",
+    "retry": "リトライ",
+    "retryValue": "{n} 回試行、{s} 秒バックオフ",
+    "notifyValue": "{s} 時に {c} 件のチャンネル",
+    "onceAt": "実行日時",
+    "noRuns": "実行履歴はまだありません。"
+  },
+  "delete": {
+    "action": "削除",
+    "confirm": "このジョブを削除しますか？",
+    "deleting": "削除中…"
+  },
+  "logs": {
+    "title": "実行ログ",
+    "streaming": "ストリーミング中…",
+    "empty": "出力はまだありません。",
+    "close": "閉じる",
+    "exit": "終了コード {code}"
   }
 }

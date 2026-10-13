@@ -31,7 +31,9 @@
       "title": "Saisissez ce code sur GitHub",
       "goToPrefix": "Rendez-vous sur",
       "goToSuffix": "et saisissez le code ci-dessus.",
-      "waiting": "En attente de l'autorisation…"
+      "waiting": "En attente de l'autorisation…",
+      "openGithub": "Ouvrir GitHub",
+      "copyCode": "Cliquer pour copier"
     },
     "default": {
       "title": "Connectez GitHub pour déployer",
@@ -45,7 +47,13 @@
       "ghCli": "Se connecter avec la CLI gh",
       "ghCliDesc": "Utilisez la connexion GitHub de votre machine. Aucun cloud requis.",
       "useGhCli": "Utiliser la CLI gh",
-      "connecting": "Connexion…"
+      "connecting": "Connexion…",
+      "manual": "Connexion manuelle à GitHub",
+      "manualDesc": "Configurer dans Paramètres — votre propre application GitHub App/OAuth ou le CLI gh de cette instance. Aucun compte Openship requis.",
+      "manualCta": "Configurer dans Paramètres",
+      "byoc": "Clé SSH ou jeton d'accès",
+      "byocDesc": "Apportez vos propres identifiants — une clé de déploiement par serveur ou un jeton. Aucune connexion requise.",
+      "byocCta": "Configurer"
     },
     "installationPicker": {
       "title": "Choisir un accès GitHub",
@@ -60,6 +68,12 @@
       "successDescription": "L’accès aux dépôts est prêt. Vous pouvez revenir à Openship.",
       "errorTitle": "La connexion GitHub nécessite votre attention",
       "returnToApp": "Retour à la bibliothèque"
+    },
+    "token": {
+      "title": "Se connecter avec un jeton GitHub",
+      "connect": "Se connecter",
+      "create": "Créer un jeton sur GitHub",
+      "failed": "Impossible d'enregistrer le jeton."
     }
   },
   "folderUpload": {
@@ -173,7 +187,9 @@
     "notConnectedManage": "Non connecté — gérer dans les paramètres",
     "optional": "Facultatif",
     "footnote": "Gérez les connexions GitHub utilisées pour parcourir et déployer les dépôts.",
-    "manageGithubSettings": "gérer GitHub dans les paramètres"
+    "manageGithubSettings": "gérer GitHub dans les paramètres",
+    "methodToken": "Jeton GitHub",
+    "methodDevice": "Connexion GitHub"
   },
   "urlImport": {
     "invalidUrl": "Saisissez une URL de dépôt GitHub valide",

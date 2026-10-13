@@ -67,7 +67,9 @@
       "credentials": "Zugangsdaten",
       "cloud": "Cloud",
       "infrastructure": "Infrastruktur",
-      "instance": "Instanz"
+      "instance": "Instanz",
+      "email": "E-Mail",
+      "systemSender": "Systemabsender"
     }
   },
   "github": {
@@ -115,12 +117,49 @@
       "optionalSuffix": "auf diesem Rechner aus, um lokale Build-Klone von Repos außerhalb deiner App-Installationen zu ermöglichen. Entfernte Deployments laufen immer über die App.",
       "disconnectPrefix": "Zum Trennen führe",
       "disconnectSuffix": "in deinem Terminal aus.",
-      "use": "gh CLI verwenden"
+      "use": "gh CLI verwenden",
+      "login": "Mit GitHub anmelden",
+      "deviceHint": "Geben Sie diesen Einmalcode bei GitHub ein, um diese Instanz zu autorisieren:",
+      "waiting": "Warte auf Autorisierung — aktualisiert sich automatisch.",
+      "tokenAltPrefix": "Bevorzugen Sie ein Token? Fügen Sie ein persönliches Zugriffstoken hinzu unter",
+      "tokenAltLink": "Klon-Zugangsdaten.",
+      "forwardOnNote": "Weiterleitung ist aktiv — gh CLI authentifiziert auch Klonvorgänge auf Remote-Servern. Ihre Identität wird pro Klonvorgang über SSH getunnelt; auf dem Server wird nichts gespeichert.",
+      "forwardOffHint": "Vorerst nur lokale Builds. Aktivieren Sie „Meine Git-Identität an Build-Server weiterleiten“, um gh CLI auch für Deployments auf Remote-Servern zu nutzen.",
+      "manageForward": "Weiterleitung verwalten",
+      "disconnectBody": "Openship entfernt diese Zugangsdaten von dieser Instanz und verwendet sie nicht mehr für Klonvorgänge. Sie bleiben bei GitHub gültig, bis Sie sie dort widerrufen. Sie können sich jederzeit wieder verbinden.",
+      "recheck": "Erneut prüfen"
     },
     "replaceToken": "GitHub-Token ersetzen",
     "clearToken": "Gespeicherten Token löschen",
     "tokenEditorDescription": "Verwende einen persönlichen GitHub-Zugriffstoken, um Repositories zu durchsuchen und auf dieser Instanz zu bauen.",
-    "methodTokenDesc": "Verwende einen GitHub-Token zum Durchsuchen von Repositories und für lokale Builds."
+    "methodTokenDesc": "Verwende einen GitHub-Token zum Durchsuchen von Repositories und für lokale Builds.",
+    "activeVia": "Verbunden über {method}",
+    "pickMethod": "Wählen Sie, wie Openship auf Ihre Repositories zugreift.",
+    "methodDevice": "GitHub-Anmeldung",
+    "methodApp": "GitHub-App",
+    "methodAppDesc": "Eingeschränkte, kurzlebige Installations-Token für lokale und Remote-Deployments.",
+    "methodSshDesc": "Jedem Server einen Deploy-Key zuweisen (Server → GitHub).",
+    "signIn": "Mit GitHub anmelden",
+    "signInDesc": "Browser-Anmeldung mit Gerätecode. Nichts zu registrieren, kein SSH auf den Server.",
+    "changeMethod": "Methode ändern",
+    "otherMethods": "Andere Methoden",
+    "openGithub": "GitHub öffnen",
+    "copyCode": "Zum Kopieren klicken",
+    "tokenConnect": "Verbinden",
+    "tokenGhHint": "Bereits auf dem Server angemeldet mit",
+    "tokenSaveFailed": "Token konnte nicht gespeichert werden.",
+    "forwardOffHint": "Nur lokale Builds. Aktivieren Sie „Meine Git-Identität an Build-Server weiterleiten“, um sie auch für Remote-Server-Deployments zu verwenden.",
+    "remoteCredentialHint": "Wird zum Durchsuchen von Repositories und für Builds auf diesem Host verwendet. Deployments, die auf einem Remote-Server bauen, verwenden dessen eigene Zugangsdaten — fügen Sie pro Server einen Deploy-Key oder ein Token hinzu.",
+    "methodToken": "GitHub-Token",
+    "methodHostCli": "gh CLI auf diesem Host",
+    "manageTokensOnGithub": "Token auf GitHub verwalten",
+    "manageAccessOnGithub": "Zugriff auf GitHub verwalten",
+    "disconnectScopeNote": "Trennen entfernt diese Zugangsdaten aus Openship und stoppt deren Verwendung für Klonvorgänge. Sie bleiben bei GitHub gültig, bis Sie sie dort widerrufen.",
+    "credentialRejected": "GitHub hat die gespeicherte Methode {method} abgelehnt.",
+    "credentialRejectedImpact": "Sie wurde widerrufen, ist abgelaufen oder hat eine erforderliche Berechtigung verloren. Deployments, die damit klonen, schlagen fehl, bis Sie sich unten erneut verbinden.",
+    "credentialUnreachable": "GitHub konnte mit {method} nicht erreicht werden.",
+    "credentialUnreachableImpact": "Dies ist meist ein Netzwerkproblem und keine ungültige Zugangsberechtigung — Openship verwendet sie weiterhin. Ein erneutes Verbinden hilft nicht, wenn GitHub unerreichbar ist.",
+    "credentialCheckedAt": "Zuletzt geprüft: {time}"
   },
   "deployDefaults": {
     "title": "Deploy-Standardwerte",
@@ -263,7 +302,8 @@
       "cleared": "Klon-Token gelöscht",
       "clearFailed": "Token konnte nicht gelöscht werden",
       "updateDefaultFailed": "Standard konnte nicht aktualisiert werden"
-    }
+    },
+    "forwardGitFailed": "Aktualisierung der Git-Weiterleitung fehlgeschlagen"
   },
   "tokens": {
     "title": "Persönliche Zugriffstokens",
@@ -310,7 +350,9 @@
       "revoked": "\"{name}\" widerrufen",
       "revokeFailed": "Token konnte nicht widerrufen werden",
       "loadFailed": "Tokens konnten nicht geladen werden"
-    }
+    },
+    "callsOne": " · 1 Aufruf",
+    "callsMany": " · {count} Aufrufe"
   },
   "mcp": {
     "title": "MCP",
@@ -339,13 +381,30 @@
     "allResources": "Alle Ressourcen",
     "resourcesOne": "{count} Ressource",
     "resourcesMany": "{count} Ressourcen",
-    "orgPrefix": "{org} · ",
+    "orgPrefix": "{org}: ",
     "authorized": "Autorisiert am {date}",
     "lastUsedSuffix": " · zuletzt verwendet am {date}",
     "toast": {
       "disconnected": "MCP-Client getrennt",
       "disconnectFailed": "Trennen fehlgeschlagen"
-    }
+    },
+    "callsOne": " · 1 Aufruf",
+    "callsMany": " · {count} Aufrufe",
+    "editAccess": "Zugriff bearbeiten",
+    "viewActivity": "Aktivität",
+    "editScopeTitle": "Zugriff für {client}",
+    "editScopeSubtitle": "Änderungen greifen bei der nächsten Anfrage des Agenten — er muss sich nicht neu verbinden.",
+    "editScopeOrg": "In Organisation {org}",
+    "wasNResourcesOne": "aktuell 1 Ressource",
+    "wasNResourcesMany": "aktuell {count} Ressourcen",
+    "saveScope": "Zugriff speichern",
+    "scopeSaved": "Zugriff aktualisiert",
+    "scopeSaveFailed": "Zugriff konnte nicht aktualisiert werden",
+    "loadScopeFailed": "Zugriff dieses Clients konnte nicht geladen werden",
+    "scopeGrantRejected": "Sie können {resource} nicht mehr gewähren, daher wurde es entfernt. Erneut speichern, um fortzufahren.",
+    "confirmWidenTitle": "Dies entfernt alle Einschränkungen",
+    "confirmWidenBody": "Der Agent agiert mit Ihren vollen Zugriffsrechten, sofort wirksam. Zur Bestätigung erneut drücken.",
+    "confirmWidenAction": "Alle Einschränkungen aufheben"
   },
   "team": {
     "heading": "Team",
@@ -395,7 +454,31 @@
       "deleteBody": "Diesen Arbeitsbereich und alles darin dauerhaft entfernen.",
       "leaveBody": "Diesen Arbeitsbereich verlassen — für die Rückkehr brauchst du eine neue Einladung.",
       "deleteConfirm": "Diesen Arbeitsbereich löschen? Seine Projekte, Mitglieder und Einstellungen werden für alle entfernt. Das kann nicht rückgängig gemacht werden.",
-      "leaveConfirm": "Diesen Arbeitsbereich verlassen? Du verlierst den Zugriff, bis du erneut eingeladen wirst."
+      "leaveConfirm": "Diesen Arbeitsbereich verlassen? Du verlierst den Zugriff, bis du erneut eingeladen wirst.",
+      "manage": {
+        "title": "Workspace verwalten",
+        "sectionBody": "Diesen Workspace umbenennen, seine Projekte anhalten oder ihn löschen.",
+        "nameLabel": "Workspace-Name",
+        "rename": "Umbenennen",
+        "projects": "Projekte ({count})",
+        "noProjects": "Keine Projekte in diesem Workspace.",
+        "running": "Läuft",
+        "stopped": "Gestoppt",
+        "pauseTitle": "Alles anhalten",
+        "pauseBody": "Alle Projekte stoppen, aber den Workspace behalten — jederzeit fortsetzbar.",
+        "pauseButton": "Alle Projekte stoppen",
+        "deleteTitle": "Workspace löschen",
+        "deleteBody": "Entfernt alle {count} Projekte (Container und Routen) und löscht den Workspace. Volume-Daten bleiben wiederherstellbar. Kann nicht rückgängig gemacht werden.",
+        "confirmLabel": "„{name}“ eingeben zur Bestätigung",
+        "deleting": "Wird gelöscht…",
+        "deletingProject": "{name} wird entfernt…",
+        "deletingWorkspace": "Workspace wird entfernt…",
+        "toastRenamed": "Workspace umbenannt",
+        "toastRenameFailed": "Workspace konnte nicht umbenannt werden",
+        "toastPaused": "{count} Projekte angehalten",
+        "toastPauseFailed": "Einige Projekte konnten nicht angehalten werden",
+        "toastProjectFailed": "{name} konnte nicht entfernt werden"
+      }
     },
     "toast": {
       "teamNameRequired": "Teamname ist erforderlich",
@@ -413,6 +496,17 @@
       "deleted": "Arbeitsbereich gelöscht",
       "leaveFailed": "Arbeitsbereich konnte nicht verlassen werden",
       "left": "Arbeitsbereich verlassen"
+    },
+    "reachability": {
+      "description": "Teammitglieder benötigen eine öffentliche URL, um diesen Workspace zu erreichen.",
+      "notInstalledTitle": "Openship eine öffentliche Adresse geben",
+      "notInstalledBody": "Openship ist noch nicht mit einer öffentlichen URL eingerichtet. Stellen Sie es mit einer öffentlichen Adresse bereit (z. B. `openship up --public-url …`) und fügen Sie hier eine Domain hinzu, damit Teammitglieder darauf zugreifen können.",
+      "noDomainTitle": "Domain zu Openship hinzufügen",
+      "noDomainBody": "Fügen Sie der Openship-App eine Domain hinzu, damit Teammitglieder diesen Workspace erreichen können — Einladungen werden automatisch aktiviert, sobald sie online ist.",
+      "addDomain": "Domain hinzufügen",
+      "pendingTitle": "Domain-Einrichtung abschließen",
+      "pendingBody": "Ihre Openship-Domain wartet auf Verifizierung (DNS / SSL). Einladungen werden aktiviert, sobald sie live ist.",
+      "viewDomain": "Domain anzeigen"
     }
   },
   "inviteMember": {
@@ -455,7 +549,15 @@
     "emailSent": "Einladung per E-Mail gesendet",
     "recipientHint": "Nur {email} kann diese Einladung annehmen.",
     "invitationLink": "Einladungslink",
-    "manageLinkHint": "Verwalte oder widerrufe diesen Link unter Ausstehende Einladungen."
+    "manageLinkHint": "Verwalte oder widerrufe diesen Link unter Ausstehende Einladungen.",
+    "mailReady": "Bereit",
+    "mailNotSetUp": "Nicht eingerichtet",
+    "cloudReady": "Verbunden",
+    "cloudNotReady": "Nicht verbunden",
+    "noMailSystem": "Kein E-Mail-System eingerichtet, daher wird die Einladung nicht zugestellt.",
+    "setUpEmail": "E-Mail einrichten →",
+    "cloudNotConnected": "Openship Cloud ist nicht verbunden und kann die Einladung daher nicht senden.",
+    "connectCloud": "Openship Cloud verbinden →"
   },
   "teamWorkspace": {
     "title": "Team-Arbeitsbereich",
@@ -483,6 +585,16 @@
     "toast": {
       "disconnected": "Verbindung zu Openship Cloud getrennt",
       "disconnectFailed": "Trennen fehlgeschlagen"
+    },
+    "pitch": {
+      "title": "Openship Cloud hinzufügen",
+      "body": "Jedes Projekt erhält eine kostenlose .{domain}-Domain mit automatischem SSL — ohne DNS, ohne Zertifikate. Ihre eigenen Server laufen genauso weiter wie bisher.",
+      "perkDomain": "Kostenlose .{domain}-Domain + automatisches SSL für jedes Projekt",
+      "perkDeploy": "In Managed Cloud deployen oder auf eigenen Servern bleiben",
+      "perkServices": "Verwaltetes Postgres, Redis und mehr, mit einem Klick bereitgestellt",
+      "perkGithub": "GitHub verbunden, ohne eine eigene App registrieren zu müssen",
+      "noLockIn": "Kostenlos verbinden. Nichts wird verschoben, und Sie können die Verbindung jederzeit trennen.",
+      "viewPricing": "Preise anzeigen"
     }
   },
   "instance": {
@@ -652,7 +764,10 @@
       "saving": "Wird gespeichert…",
       "editHint": "Lassen Sie Zugangsdaten leer, um gespeicherte Geheimnisse zu behalten. Änderungen am Ziel erfordern einen neuen Zustellungstest.",
       "signingSecret": "Signaturgeheimnis",
-      "secretHint": "Kopieren Sie dieses Geheimnis jetzt, um Webhook-Signaturen zu prüfen. Es wird nur einmal angezeigt."
+      "secretHint": "Kopieren Sie dieses Geheimnis jetzt, um Webhook-Signaturen zu prüfen. Es wird nur einmal angezeigt.",
+      "noEmailTransport": "Auf dieser Instanz ist kein E-Mail-Server eingerichtet, daher werden E-Mail-Benachrichtigungen nicht zugestellt.",
+      "setUpSmtp": "SMTP einrichten →",
+      "otherAddress": "Andere Adresse…"
     },
     "subscriptions": {
       "title": "Worüber benachrichtigt werden",
@@ -717,7 +832,9 @@
       "today": "Heute",
       "last7": "Letzte 7 Tage",
       "last30": "Letzte 30 Tage",
-      "last90": "Letzte 90 Tage"
+      "last90": "Letzte 90 Tage",
+      "anyAgent": "Beliebiger Agent",
+      "agentCalls": "{count} Ereignisse"
     },
     "tabs": {
       "all": "Alle"
@@ -741,7 +858,8 @@
       "when": "Wann",
       "cameFrom": "Herkunft",
       "technical": "Technische Details",
-      "eventType": "Ereignistyp"
+      "eventType": "Ereignistyp",
+      "viaAgent": "Agent"
     }
   },
   "updates": {
@@ -1120,5 +1238,90 @@
       "title": "Demo-Modus",
       "description": "IP-Adressen, Hosts und Umgebungsvariablen bei Bildschirmfreigaben und Aufnahmen unkenntlich machen."
     }
+  },
+  "productView": {
+    "title": "Oberfläche",
+    "description": "Welche Steuerungsebene dieses Dashboard anzeigt.",
+    "platformLabel": "Vollständige Plattform",
+    "platformDesc": "Projekte, Apps, Deployments, Server — alles, was diese Installation bietet.",
+    "mailLabel": "Nur E-Mail",
+    "mailDesc": "Die E-Mail-Steuerungsebene in der Seitenleiste: Domains, Postfächer, DNS, Warteschlange, Logs.",
+    "instanceDefault": "Diese Instanz verwendet standardmäßig {mode}.",
+    "useDefault": "Standard der Instanz verwenden"
+  },
+  "mailMode": {
+    "title": "Produktmodus",
+    "description": "Als was sich diese Instanz präsentiert. Dies ist der Standard für alle — jeder Benutzer kann unter Einstellungen → Allgemein eine eigene Ansicht wählen.",
+    "platformLabel": "Vollständige Plattform",
+    "platformDesc": "Projekte, Apps, Deployments, Server — alles, was diese Installation bietet.",
+    "mailLabel": "Openship Mail",
+    "mailDesc": "Kennzeichnet die Instanz als Openship Mail und macht die Seitenleiste zur E-Mail-Steuerungsebene.",
+    "savedOverridden": "Gespeichert. Ihre eigene Ansicht bleibt unverändert — Sie haben sie unter Einstellungen → Allgemein gewählt.",
+    "errorToast": "Produktmodus konnte nicht geändert werden.",
+    "envNote": "Diese Instanz folgt OPENSHIP_PRODUCT=mail aus der Umgebung. Die Auswahl eines Modus hier überschreibt dies."
+  },
+  "email": {
+    "title": "E-Mail (SMTP)",
+    "description": "Der SMTP-Dienst, über den diese Instanz E-Mails versendet",
+    "intro": "Wird für Passwort-Resets, E-Mail-Verifizierung, Team-Einladungen und Benachrichtigungen verwendet. Fügen Sie einfach die SMTP-Zugangsdaten eines beliebigen Anbieters ein — Amazon SES, Gmail, Mailgun oder ein Firmen-Relay — Host, Port, Benutzername, Passwort. Kein Server einzurichten; Openship verbindet sich direkt. Das Passwort wird verschlüsselt und nicht wieder angezeigt.",
+    "loading": "Wird geladen…",
+    "configuredBadge": "Konfiguriert",
+    "notConfigured": "Noch nicht eingerichtet — Passwort-Resets, Einladungen und E-Mail-Benachrichtigungen bleiben deaktiviert, bis Sie unten SMTP-Zugangsdaten eingeben.",
+    "providerLabel": "Anbieter",
+    "hostLabel": "SMTP-Host",
+    "hostPlaceholder": "smtp.beispiel.de",
+    "portLabel": "Port",
+    "userLabel": "Benutzername",
+    "userPlaceholder": "benutzer@beispiel.de",
+    "passwordLabel": "Passwort",
+    "passwordPlaceholder": "SMTP-Passwort oder App-Schlüssel",
+    "passwordKeepPlaceholder": "•••••••• (leer lassen, um aktuelles beizubehalten)",
+    "fromLabel": "Absenderadresse",
+    "fromPlaceholder": "Openship <noreply@beispiel.de>",
+    "fromHint": "Optional. Standardmäßig der Benutzername.",
+    "fromHintRequired": "Erforderlich — Ihr Benutzername ist keine E-Mail-Adresse, daher benötigen Empfänger eine echte Absenderadresse.",
+    "fromRequired": "Geben Sie eine Absenderadresse ein — der Benutzername dieses Anbieters ist keine E-Mail-Adresse und kann nicht als Absender fungieren.",
+    "fromInvalid": "Absenderadresse muss eine gültige E-Mail enthalten (z. B. Name <du@beispiel.de>).",
+    "save": "SMTP-Einstellungen speichern",
+    "saving": "Wird gespeichert…",
+    "saved": "SMTP-Einstellungen gespeichert",
+    "saveFailed": "SMTP-Einstellungen konnten nicht gespeichert werden",
+    "hostRequired": "Geben Sie den SMTP-Host ein.",
+    "portInvalid": "Port muss eine Zahl zwischen 1 und 65535 sein.",
+    "testTitle": "Test-E-Mail senden",
+    "testPlaceholder": "du@beispiel.de",
+    "sendTest": "Test senden",
+    "sending": "Wird gesendet…",
+    "testSent": "Test-E-Mail gesendet — prüfen Sie Ihren Posteingang.",
+    "testFailed": "Test fehlgeschlagen",
+    "saveFirst": "Speichern Sie Ihre SMTP-Einstellungen, bevor Sie einen Test senden.",
+    "disable": "SMTP deaktivieren & löschen",
+    "disabled": "SMTP deaktiviert",
+    "toastTitle": "E-Mail"
+  },
+  "edgeOrphans": {
+    "title": "Nicht nachverfolgte Edge-Routen",
+    "description": "Hostnamen, die dieser Rechner noch bedient, über die Openship jedoch keine Aufzeichnungen hat",
+    "scan": "Scannen",
+    "scanning": "Wird gescannt…",
+    "allClear": "Jeder vom Edge bediente Hostname ist erfasst.",
+    "comparedTo": "Verglichen mit {count} erfassten Hostnamen.",
+    "unavailable": "Edge konnte nicht geprüft werden",
+    "explain": "Das Entfernen eines Projekts mit „Nur aus Openship entfernen“ lässt dessen Route absichtlich weiterlaufen. Eine verbliebene App-Route liefert 502, sobald ihr Container weg ist, aber eine verbliebene STATISCHE Route liefert weiterhin die alten Dateien mit 200 aus — selbst auf einem Hostnamen, der inzwischen einem anderen Projekt zugewiesen wurde.",
+    "kindStatic": "Statische Dateien",
+    "kindProxy": "App-Route",
+    "staticWarning": "Liefert weiterhin Dateien aus. Beantwortet Anfragen heute.",
+    "proxyWarning": "Zeigt auf einen Upstream, der wahrscheinlich nicht mehr existiert.",
+    "servingFrom": "Bereitgestellt aus",
+    "proxyingTo": "Weiterleitung an",
+    "alsoAnswers": "Antwortet auch für",
+    "stopServing": "Bereitstellung stoppen",
+    "stopping": "Wird gestoppt…",
+    "stopped": "{hostname} wird nicht mehr bedient.",
+    "stopFailed": "Bereitstellung für {hostname} konnte nicht gestoppt werden",
+    "confirmTitle": "Bereitstellung für {hostname} stoppen?",
+    "confirmBody": "Dies entfernt die Edge-Konfiguration nur für diesen Hostnamen. Erstellte Dateien bleiben auf der Festplatte und alles andere auf dem Server bleibt unberührt. Wenn später ein Projekt auf diesen Hostnamen bereitgestellt wird, erstellt es eine eigene Route.",
+    "confirmCta": "Bereitstellung stoppen",
+    "cancel": "Abbrechen"
   }
 }

@@ -115,7 +115,8 @@
     "addReleaseCommand": "Befehl hinzufügen",
     "removeReleaseCommand": "Befehl {number} entfernen",
     "runtimeImageLabel": "Runtime-Image",
-    "runtimeImageDesc": "Optionales Produktions-Basisimage für Docker-Builds. Muss zur Runtime und zum generierten Rezept passen; leer lassen für den verwalteten Standard."
+    "runtimeImageDesc": "Optionales Produktions-Basisimage für Docker-Builds. Muss zur Runtime und zum generierten Rezept passen; leer lassen für den verwalteten Standard.",
+    "staticPathHint": "Wird als statische Dateien vom Edge bereitgestellt — es läuft kein Hintergrundprozess."
   },
   "projectSettings": {
     "framework": "Framework",
@@ -185,7 +186,9 @@
       "domainLabel": "Domain",
       "free": "Kostenlos",
       "custom": "Benutzerdefiniert",
-      "routingTrafficPrefix": "Verkehr wird geleitet an Port"
+      "routingTrafficPrefix": "Verkehr wird geleitet an Port",
+      "duplicateTitle": "Doppelte Domain",
+      "duplicateDescription": "Zwei Routen verweisen auf dieselbe Domain — ändern Sie eine, damit jede Route eine eigene Domain hat:"
     },
     "shared": {
       "title": "Gemeinsame Umgebung",
@@ -362,7 +365,18 @@
       "loopbackBodyService": "Dienst \"{service}\" lauscht nur innerhalb des Containers auf Port {port}.",
       "loopbackHelp": "Für eine App mit weitergeleitetem Datenverkehr: auf 0.0.0.0 lauschen und erneut bereitstellen oder den vorgesehenen Proxy als Ziel verwenden.",
       "openSettings": "Einstellungen öffnen",
-      "skipError": "Dieser Hinweis konnte nicht ausgeblendet werden. Bitte erneut versuchen."
+      "skipError": "Dieser Hinweis konnte nicht ausgeblendet werden. Bitte erneut versuchen.",
+      "title": "Hinweis auf abweichenden Port",
+      "bannerTitle": "Abweichender Container-Port erkannt",
+      "review": "Port überprüfen",
+      "note": "Der Edge-Router leitet den Datenverkehr an Port {port} weiter, aber Ihre Anwendung hat dort nicht geantwortet.",
+      "body": "Auf Port {port} hat nichts geantwortet. Wenn Ihre Anwendung auf einem anderen Port lauscht, aktualisieren Sie ihn unten.",
+      "bodyService": "Dienst „{service}“: Auf Port {port} hat nichts geantwortet. Wenn er auf einem anderen Port lauscht, geben Sie hier den richtigen an.",
+      "newPortLabel": "Korrekter Port",
+      "changePort": "Port ändern",
+      "skip": "Überspringen",
+      "applied": "Routing auf Port {port} aktualisiert.",
+      "changeError": "Der Port konnte nicht aktualisiert werden. Bitte versuchen Sie es erneut."
     }
   },
   "deploymentHealth": {
