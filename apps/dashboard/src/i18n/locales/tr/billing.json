@@ -292,7 +292,8 @@
     "cancelNotice": "Ödenen dönem sonunda yenileme durdurulacak. Aboneliğiniz o zamana kadar devam eder.",
     "confirmCancel": "Yenilemeyi durdur",
     "keepPlan": "Aboneliği koru",
-    "error": "Aboneliğiniz güncellenemedi. Lütfen tekrar deneyin."
+    "error": "Aboneliğiniz güncellenemedi. Lütfen tekrar deneyin.",
+    "manage": "Aboneliği yönet"
   },
   "checkout": {
     "checking": "Satın alma işleminiz doğrulanıyor…",
@@ -583,7 +584,7 @@
     "save": "Kaydet",
     "delete": "Sunucunı sil",
     "confirmDelete": "Bu boş sunucuyu sil",
-    "deleteHint": "Önce tüm projeleri kaldırın ve aboneliği sonlandırın. Bu işlem boş sunucuyu ve kalan disk verilerini kalıcı olarak siler.",
+    "deleteHint": "Projeleri silmek aboneliği iptal etmez. Abonelikli bir sunucuyu silmeden önce Faturalandırma bölümünden yenilemeyi durdurun ve ödenen dönemin bitmesini bekleyin. Silme işlemi boş sunucuyu ve kalan disk verilerini kalıcı olarak kaldırır.",
     "buildCapacityTitle": "Sunucu kapasitesini kontrol edin",
     "buildCapacityHint": "Derlemeler bu alandaki boş kapasiteyi kullanır. Boştaki bir servisi durdurun veya kapasiteyi artırın, ardından yeniden deneyin.",
     "openWorkspace": "Sunucunı aç",
