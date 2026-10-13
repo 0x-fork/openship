@@ -263,6 +263,10 @@
         "failed": "Impossible de mettre à jour le nom d'hôte interne",
         "invalid": "Saisissez au moins une lettre ou un chiffre"
       }
+    },
+    "export": {
+      "title": "Exporter le projet",
+      "description": "Téléchargez tous les paramètres du projet, variables d'environnement et identifiants au format JSON."
     }
   },
   "backup": {

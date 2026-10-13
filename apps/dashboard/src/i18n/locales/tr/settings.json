@@ -913,7 +913,43 @@
       "rowsRestored": "{count} satır geri yüklendi",
       "secretsRestored": "{count} gizli veri geri yüklendi",
       "secretsNotRestored": "gizli veriler GERİ YÜKLENEMEDİ (parola yok/hatalı) — kimlik bilgilerini tekrar girin"
-    }
+    },
+    "backupTitle": "Yedekleme ve kurtarma",
+    "backupDesc": "Bir dosya dışa aktarın veya mevcut bir yedekten geri yükleyin.",
+    "backupWarning": "Arşiv dosyaları Openship veritabanını ve kimlik bilgilerini içerir. Docker birim içerikleri sunucularında kalır; hizmet verileri için proje yedeklerini kullanın.",
+    "exportInstanceTitle": "Örneği veya projeleri dışa aktar",
+    "exportInstanceDesc": "Ortamları ve bağımlılıklarıyla birlikte tam bir örneği veya seçilen projeleri seçin.",
+    "exportProjectTitle": "Projeyi dışa aktar",
+    "exportProjectDesc": "Tüm proje ayarlarını, ortam değişkenlerini ve kimlik bilgilerini düz JSON olarak indirin.",
+    "exportProjectIntro": "Tüm ortamları, hizmetleri, dağıtım geçmişini, analizleri, bağlantıları, alan adlarını, yedekleme ayarlarını ve anahtarları içerir. JSON dosyası şifrelenmemiştir ve parola olmadan içe aktarılır.",
+    "exportProjectReconnection": "Hedefin mevcut iş yüklerine yeniden bağlanabilmesi için aynı sunuculara veya OpenShip Cloud hesabına ihtiyacı vardır.",
+    "exportInstanceIntro": "Depolanan ortam değişkenleri, sunucu anahtarları, kimlik bilgileri, yapılandırma ve geçmiş dahil olmak üzere kontrol panelini dışa aktarın.",
+    "scopeLabel": "Dışa aktarma kapsamı",
+    "scopeInstance": "Tüm örnek",
+    "scopeProjects": "Seçilen projeler ve ortamlar",
+    "recordsAcrossEnvsIncluded": "{envs} ortamda {count} kayıt dahil edildi.",
+    "checkingExport": "Dışa aktarma içeriği kontrol ediliyor…",
+    "downloadExport": "Dışa aktarmayı indir",
+    "downloadAgain": "Tekrar indir",
+    "exporting": "Dışa aktarılıyor…",
+    "exportDownloaded": "Dışa aktarma indirildi",
+    "exportCompleteToast": "Dışa aktarma indirildi. Hedef kontrol panelinde Ayarlar → Örnek altından içe aktarın.",
+    "optSecretsLabel": "Ortam değerleri, anahtarlar ve kimlik bilgileri",
+    "optSecretsDesc": "Sunucu anahtarları, satır içi Compose yapılandırması ve gizli dosyalarla okunabilir JSON olarak dahil edilmiştir.",
+    "optLinkedAppsLabel": "Bağlı uygulamalar",
+    "optLinkedAppsDesc": "Seçim için gereken veritabanı ve depolama projelerini dahil edin.",
+    "optServersLabel": "İlgili kendi sunucularınız (önerilir)",
+    "optServersDesc": "Sunucu bağlantılarını ve Git anahtarlarını dahil edin. Eşleşen sunucular içe aktarma sırasında yeniden kullanılabilir.",
+    "optDomainsLabel": "Alan adları ve yönlendirme",
+    "optBackupsLabel": "Yedekleme yapılandırması",
+    "optBackupsDesc": "İlkeler ve hedefler; yedekleme verileri depolarında kalır.",
+    "optIntegrationsLabel": "Paylaşılan entegrasyonlar",
+    "optIntegrationsDesc": "Git sağlayıcı uygulamaları, kayıt defteri girişleri ve çalışma alanı DNS kimlik bilgileri.",
+    "historyOptionsSummary": "Geçmiş seçenekleri · {total} öğeden {count} tanesi dahil edildi",
+    "recordsSelected": "{count} kayıt seçildi.",
+    "recordsAcrossEnvsSelected": "{envs} ortamda {count} kayıt seçildi.",
+    "selectAtLeastOne": "En az bir proje veya ortam seçin.",
+    "cloudNotice": "Hedef çalışma alanı aynı Openship Cloud hesabına bağlanana kadar Cloud projeleri çalışmayacaktır."
   },
   "migrate": {
     "chooseTitle": "Çok kullanıcılı moda geçin",
@@ -1146,5 +1182,13 @@
     "removeNamed": "{name} anahtarını kaldır",
     "remove": "Kaldır",
     "removeConfirm": "Bu anahtar artık giriş yapmanızı sağlamayacak. Başka bir giriş yöntemi bulundurun."
+  },
+  "preferences": {
+    "title": "Tercihler",
+    "description": "Bu tarayıcı için kişisel görünüm tercihleri — sunucuya hiçbir şey gönderilmez.",
+    "demoMode": {
+      "title": "Demo modu",
+      "description": "Ekran paylaşımları ve kayıtlar sırasında IP adreslerini, sunucuları ve ortam değişkenlerini bulanıklaştırın."
+    }
   }
 }

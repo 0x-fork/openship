@@ -31,6 +31,7 @@ import copyJa from "./locales/ja.json";
 import copyPt from "./locales/pt.json";
 import copyTr from "./locales/tr.json";
 import copyZh from "./locales/zh.json";
+import copyRu from "./locales/ru.json";
 
 /* ─── Catalog ─────────────────────────────────────────────────────────────── */
 
@@ -54,7 +55,7 @@ export const DEFAULT_PLAN_TIER: PlanTierId = "free";
 
 /* ─── Locales ─────────────────────────────────────────────────────────────── */
 
-export const PRICING_LOCALES = ["en", "ar", "de", "es", "fr", "ja", "pt", "tr", "zh"] as const;
+export const PRICING_LOCALES = ["en", "ar", "de", "es", "fr", "ja", "pt", "tr", "zh", "ru"] as const;
 export type PricingLocale = (typeof PRICING_LOCALES)[number];
 
 /** English copy — the source of truth and the fallback for every other locale. */
@@ -78,6 +79,7 @@ const COPY: Record<PricingLocale, PartialCopy> = {
   pt: copyPt,
   tr: copyTr,
   zh: copyZh,
+  ru: copyRu,
 };
 
 /**

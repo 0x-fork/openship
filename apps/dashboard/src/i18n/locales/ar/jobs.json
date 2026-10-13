@@ -5,5 +5,27 @@
     "cloudServersHint": "استخدم خادمًا موجودًا أو أضف خادمًا مخصصًا باشتراك مستقل.",
     "cloudUsageHint": "تشارك المهام موارد الخادم المحدد ورصيد استخدامه. يجب أن يكون اشتراكه نشطًا لتشغيلها.",
     "addDedicatedServer": "إضافة خادم مخصص"
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "فحوصات نشر GitHub",
+    "cloud:workspace-recovery": "عمليات مساحة العمل السحابية",
+    "ssl:renew": "تجديد شهادة SSL",
+    "projects:orphan-gc": "تنظيف الموارد المعزولة",
+    "images:gc": "تنظيف عناصر النشر",
+    "domains:verify-pending": "التحقق من النطاقات المخصصة",
+    "updates:scan": "فحص التحديثات",
+    "backups:retention-prune": "حذف النسخ الاحتياطية القديمة",
+    "backups:stale-sweep": "مطابقة النسخ الاحتياطية المعلقة",
+    "prune:audit": "تنظيف سجل التدقيق",
+    "prune:incidents": "تنظيف سجل الحوادث",
+    "sampler:resources": "أداة أخذ عينات الموارد",
+    "system:analytics-scraper": "جامع التحليلات",
+    "build-cache:gc": "تنظيف ذاكرة التخزين المؤقت للبناء",
+    "cloud:https-health": "فحص صحة HTTPS السحابي",
+    "system:server-modules": "فحص وحدات الخادم",
+    "system:server-containers": "فحص حاويات الخادم",
+    "system:health-watch": "فحص الصحة الشامل",
+    "jobs:due-once": "تشغيل المهام المؤقتة المنتظرة",
+    "edge:verify": "فحص التحقق من الحافة"
   }
 }

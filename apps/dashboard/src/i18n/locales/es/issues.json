@@ -112,5 +112,35 @@
     "mailHint": "Openship no pudo comprobar este servidor de correo. Puede que siga funcionando. Comprueba la conexión y vuelve a intentarlo.",
     "apiTitle": "No se puede conectar con Openship",
     "apiHint": "Las actualizaciones de estado pueden retrasarse."
+  },
+  "actionLabels": {
+    "retryRouting": "Reintentar enrutamiento",
+    "verifyDns": "Verificar DNS",
+    "renewCert": "Renovar certificado",
+    "recheckCert": "Volver a comprobar certificado",
+    "redeploy": "Redesplegar",
+    "keep": "Mantener",
+    "rejectRollback": "Rechazar y revertir",
+    "dismiss": "Descartar advertencia"
+  },
+  "titles": {
+    "routingUnsynced": "El enrutamiento no se sincronizó",
+    "domainUnverified": "{hostname} no está verificado",
+    "certExpired": "El certificado para {hostname} ha caducado",
+    "certFailed": "Falló el certificado para {hostname}",
+    "partialDecision": "Fallaron algunos servicios: conservar o rechazar esta versión",
+    "portInUse": "Puerto {port} en uso"
+  },
+  "messages": {
+    "domainDnsUnverified": "El DNS para este nombre de host aún no se ha verificado. Compruebe los registros y vuelva a intentarlo.",
+    "routingUnsynced": "El despliegue fue correcto, pero la ruta perimetral no se sincronizó. Reintentar solo ejecuta el paso de enrutamiento.",
+    "certHttpsWillFail": "HTTPS fallará para este nombre de host hasta que se emita un certificado. Renovar vuelve a ejecutar la emisión.",
+    "partialServices": "Algunos servicios no pudieron iniciarse. El resto está activo. Conserve la versión o reviértala.",
+    "partialNamedServices": "Estos servicios fallaron: {services}. El resto está activo. Conserve la versión o reviértala.",
+    "noCertOnServer": "No se encontró ningún certificado HTTPS utilizable en el servidor.",
+    "dnsOtherServer": "El DNS apunta a un servidor diferente",
+    "txtMissing": "Falta el registro TXT de propiedad",
+    "mailCertExpired": "El certificado de correo ha caducado.",
+    "certEdgeFailed": "No se pudo confirmar el certificado ({detail}). Asegúrese de que el dominio apunte a este servidor y los puertos 80/443 sean accesibles."
   }
 }

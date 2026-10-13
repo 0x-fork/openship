@@ -1021,7 +1021,43 @@
       "rowsRestored": "{count} rows restored",
       "secretsRestored": "{count} secrets restored",
       "secretsNotRestored": "secrets NOT restored (no/incorrect passphrase) — re-enter credentials"
-    }
+    },
+    "backupTitle": "Backup & recovery",
+    "backupDesc": "Export a file or restore an existing backup.",
+    "backupWarning": "Archive files include the Openship database and credentials. Docker volume contents remain on their servers; use project backups for service data.",
+    "exportInstanceTitle": "Export instance or projects",
+    "exportInstanceDesc": "Choose a complete instance or selected projects, with their environments and dependencies.",
+    "exportProjectTitle": "Export project",
+    "exportProjectDesc": "Download all project settings, environment values, and credentials as plain JSON.",
+    "exportProjectIntro": "Includes all environments, services, deployment history, analytics, connections, domains, backup settings, environment values, and keys. The JSON file is unencrypted and imports without a password.",
+    "exportProjectReconnection": "The destination needs the same servers or OpenShip Cloud account to reconnect to existing workloads. Their details will be shown after download.",
+    "exportInstanceIntro": "Export the control plane, including stored environment values, server keys, credentials, configuration, and history. The JSON file is unencrypted and needs no password. Workloads on the same servers keep their existing target bindings.",
+    "scopeLabel": "Export scope",
+    "scopeInstance": "Entire instance",
+    "scopeProjects": "Selected projects and environments",
+    "recordsAcrossEnvsIncluded": "{count} records across {envs} environments included.",
+    "checkingExport": "Checking export contents…",
+    "downloadExport": "Download export",
+    "downloadAgain": "Download again",
+    "exporting": "Exporting…",
+    "exportDownloaded": "Export downloaded",
+    "exportCompleteToast": "Export downloaded. Import it from Settings → Instance on the destination control plane.",
+    "optSecretsLabel": "Environment values, keys, and credentials",
+    "optSecretsDesc": "Included as readable JSON, with server keys, inline Compose configuration, and secret files stored in metadata.",
+    "optLinkedAppsLabel": "Linked apps",
+    "optLinkedAppsDesc": "Include database and storage projects required by the selection.",
+    "optServersLabel": "Related self-hosted servers (recommended)",
+    "optServersDesc": "Include server connections and their Git keys. Existing matching servers can be reused during import.",
+    "optDomainsLabel": "Domains and routing",
+    "optBackupsLabel": "Backup configuration",
+    "optBackupsDesc": "Policies and destinations; backup payloads remain in their storage.",
+    "optIntegrationsLabel": "Shared integrations",
+    "optIntegrationsDesc": "Git provider apps, registry logins, and workspace DNS credentials.",
+    "historyOptionsSummary": "History options · {count} of {total} included",
+    "recordsSelected": "{count} records selected.",
+    "recordsAcrossEnvsSelected": "{count} records across {envs} environments selected.",
+    "selectAtLeastOne": "Select at least one project or environment.",
+    "cloudNotice": "Cloud projects will not work until the destination workspace is connected to the same Openship Cloud account. This export preserves cloud workspace references; it cannot transfer a cloud server between accounts."
   },
   "migrate": {
     "chooseTitle": "Move to multi-user mode",
@@ -1279,5 +1315,13 @@
     "removeNamed": "Remove {name}",
     "remove": "Remove",
     "removeConfirm": "This passkey will no longer sign you in. Keep another sign-in method available."
+  },
+  "preferences": {
+    "title": "Preferences",
+    "description": "Personal display preferences for this browser — nothing is sent to the server.",
+    "demoMode": {
+      "title": "Demo mode",
+      "description": "Blur IP addresses, hosts, and environment values during screen-shares and recordings."
+    }
   }
 }

@@ -263,6 +263,10 @@
         "failed": "Interner Hostname konnte nicht aktualisiert werden",
         "invalid": "Gib mindestens einen Buchstaben oder eine Ziffer ein"
       }
+    },
+    "export": {
+      "title": "Projekt exportieren",
+      "description": "Alle Projekteinstellungen, Umgebungswerte und Anmeldedaten als JSON herunterladen."
     }
   },
   "backup": {

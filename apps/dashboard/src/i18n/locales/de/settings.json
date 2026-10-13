@@ -843,7 +843,43 @@
       "rowsRestored": "{count} Zeilen wiederhergestellt",
       "secretsRestored": "{count} Geheimnisse wiederhergestellt",
       "secretsNotRestored": "Geheimnisse NICHT wiederhergestellt (keine/falsche Passphrase) — Anmeldedaten erneut eingeben"
-    }
+    },
+    "backupTitle": "Sicherung & Wiederherstellung",
+    "backupDesc": "Exportieren Sie eine Datei oder stellen Sie eine vorhandene Sicherung wieder her.",
+    "backupWarning": "Archivdateien enthalten die Openship-Datenbank und Anmeldeinformationen. Inhalte von Docker-Volumes verbleiben auf ihren Servern; verwenden Sie Projektsicherungen für Dienstdaten.",
+    "exportInstanceTitle": "Instanz oder Projekte exportieren",
+    "exportInstanceDesc": "Wählen Sie eine vollständige Instanz oder ausgewählte Projekte mit Umgebungen und Abhängigkeiten.",
+    "exportProjectTitle": "Projekt exportieren",
+    "exportProjectDesc": "Laden Sie alle Projekteinstellungen, Umgebungswerte und Anmeldeinformationen als JSON herunter.",
+    "exportProjectIntro": "Enthält alle Umgebungen, Dienste, Deployment-Verläufe, Analysen, Verbindungen, Domains, Backup-Einstellungen und Schlüssel. Die JSON-Datei ist unverschlüsselt und wird ohne Passwort importiert.",
+    "exportProjectReconnection": "Das Ziel benötigt dieselben Server oder dasselbe OpenShip Cloud-Konto, um vorhandene Workloads wieder anzubinden.",
+    "exportInstanceIntro": "Exportieren Sie die Steuerungsebene inklusive Umgebungswerten, Server-Schlüsseln, Konfiguration und Verlauf. Die JSON-Datei ist unverschlüsselt.",
+    "scopeLabel": "Exportumfang",
+    "scopeInstance": "Gesamte Instanz",
+    "scopeProjects": "Ausgewählte Projekte und Umgebungen",
+    "recordsAcrossEnvsIncluded": "{count} Datensätze über {envs} Umgebungen enthalten.",
+    "checkingExport": "Exportinhalt wird geprüft…",
+    "downloadExport": "Export herunterladen",
+    "downloadAgain": "Erneut herunterladen",
+    "exporting": "Exportieren…",
+    "exportDownloaded": "Export heruntergeladen",
+    "exportCompleteToast": "Export heruntergeladen. Importieren Sie ihn unter Einstellungen → Instanz auf der Zielinstanz.",
+    "optSecretsLabel": "Umgebungswerte, Schlüssel und Anmeldedaten",
+    "optSecretsDesc": "Als lesbares JSON enthalten, mit Server-Schlüsseln, Compose-Konfiguration und Geheimnissen.",
+    "optLinkedAppsLabel": "Verknüpfte Apps",
+    "optLinkedAppsDesc": "Datenbank- und Speicherprojekte einschließen, die von der Auswahl benötigt werden.",
+    "optServersLabel": "Zugehörige eigene Server (empfohlen)",
+    "optServersDesc": "Serververbindungen und Git-Schlüssel einschließen. Passende Server können beim Import wiederverwendet werden.",
+    "optDomainsLabel": "Domains und Routing",
+    "optBackupsLabel": "Sicherungskonfiguration",
+    "optBackupsDesc": "Richtlinien und Ziele; Sicherungsdaten verbleiben in ihrem Speicher.",
+    "optIntegrationsLabel": "Geteilte Integrationen",
+    "optIntegrationsDesc": "Git-Anbieter-Apps, Registry-Logins und DNS-Anmeldeinformationen.",
+    "historyOptionsSummary": "Verlaufsoptionen · {count} von {total} enthalten",
+    "recordsSelected": "{count} Datensätze ausgewählt.",
+    "recordsAcrossEnvsSelected": "{count} Datensätze über {envs} Umgebungen ausgewählt.",
+    "selectAtLeastOne": "Wählen Sie mindestens ein Projekt oder eine Umgebung aus.",
+    "cloudNotice": "Cloud-Projekte funktionieren erst, wenn der Ziel-Workspace mit demselben Openship Cloud-Konto verbunden ist."
   },
   "migrate": {
     "chooseTitle": "In den Mehrbenutzermodus wechseln",
@@ -1076,5 +1112,13 @@
     "removeNamed": "{name} entfernen",
     "remove": "Entfernen",
     "removeConfirm": "Dieser Passkey kann dich nicht mehr anmelden. Halte eine andere Anmeldemethode bereit."
+  },
+  "preferences": {
+    "title": "Einstellungen",
+    "description": "Persönliche Anzeigeeinstellungen für diesen Browser – nichts wird an den Server gesendet.",
+    "demoMode": {
+      "title": "Demo-Modus",
+      "description": "IP-Adressen, Hosts und Umgebungsvariablen bei Bildschirmfreigaben und Aufnahmen unkenntlich machen."
+    }
   }
 }

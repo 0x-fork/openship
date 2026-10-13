@@ -112,5 +112,35 @@
     "mailHint": "Openship はこのメールサーバーの状態を確認できませんでした。サーバーは稼働している可能性があります。接続を確認して再試行してください。",
     "apiTitle": "Openship に接続できません",
     "apiHint": "ステータスの更新が遅れる場合があります。"
+  },
+  "actionLabels": {
+    "retryRouting": "ルーティングを再試行",
+    "verifyDns": "DNS を検証",
+    "renewCert": "証明書を更新",
+    "recheckCert": "証明書を再確認",
+    "redeploy": "再デプロイ",
+    "keep": "維持する",
+    "rejectRollback": "拒否してロールバック",
+    "dismiss": "警告を閉じる"
+  },
+  "titles": {
+    "routingUnsynced": "ルーティングが同期されていません",
+    "domainUnverified": "{hostname} は未検証です",
+    "certExpired": "{hostname} の証明書の期限が切れました",
+    "certFailed": "{hostname} の証明書に失敗しました",
+    "partialDecision": "一部のサービスに障害が発生しました — 維持するか拒否するか選択してください",
+    "portInUse": "ポート {port} は既に使用されています"
+  },
+  "messages": {
+    "domainDnsUnverified": "このホスト名の DNS はまだ検証されていません。レコードを確認して再度実行してください。",
+    "routingUnsynced": "デプロイは成功しましたが、エッジルートが同期されませんでした。再試行するとルーティングステップのみ再実行されます。",
+    "certHttpsWillFail": "証明書が発行されるまで、このホスト名の HTTPS 接続は失敗します。",
+    "partialServices": "一部のサービスを起動できませんでした。残りは稼働しています。このリリースを維持するかロールバックしてください。",
+    "partialNamedServices": "次のサービスが失敗しました: {services}。残りは稼働しています。維持するかロールバックしてください。",
+    "noCertOnServer": "サーバー上に使用可能な HTTPS 証明書が見つかりませんでした。",
+    "dnsOtherServer": "DNS が別のサーバーを指しています",
+    "txtMissing": "所有権確認 TXT レコードがありません",
+    "mailCertExpired": "メール証明書の期限が切れました。",
+    "certEdgeFailed": "証明書を確認できませんでした ({detail})。ドメインがこのサーバーを指し、ポート 80/443 が到達可能であることを確認してください。"
   }
 }

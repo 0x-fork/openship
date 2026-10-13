@@ -5,5 +5,27 @@
     "cloudServersHint": "Use um servidor existente ou adicione um servidor dedicado com sua própria assinatura.",
     "cloudUsageHint": "As tarefas compartilham a capacidade e a cota de uso do servidor selecionado. O plano deve estar ativo para executá-las.",
     "addDedicatedServer": "Adicionar servidor dedicado"
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "Verificações de implantação do GitHub",
+    "cloud:workspace-recovery": "Operações de workspace na nuvem",
+    "ssl:renew": "Renovação de certificado SSL",
+    "projects:orphan-gc": "Limpeza de recursos órfãos",
+    "images:gc": "Limpeza de artefatos de implantação",
+    "domains:verify-pending": "Verificar domínios personalizados",
+    "updates:scan": "Verificação de atualizações",
+    "backups:retention-prune": "Excluir backups expirados",
+    "backups:stale-sweep": "Reconciliação de backups pendentes",
+    "prune:audit": "Limpar registro de auditoria",
+    "prune:incidents": "Limpar histórico de incidentes",
+    "sampler:resources": "Amostrador de uso de recursos",
+    "system:analytics-scraper": "Coletor de análises",
+    "build-cache:gc": "Limpeza de cache de compilação",
+    "cloud:https-health": "Saúde HTTPS na nuvem",
+    "system:server-modules": "Varredura de módulos do servidor",
+    "system:server-containers": "Varredura de contêineres do servidor",
+    "system:health-watch": "Monitoramento de integridade",
+    "jobs:due-once": "Executar tarefas avulsas na fila",
+    "edge:verify": "Verificação de proxy perimetral"
   }
 }

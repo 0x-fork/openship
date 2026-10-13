@@ -112,5 +112,35 @@
     "mailHint": "Openship konnte diesen Mailserver nicht prüfen. Er läuft möglicherweise weiterhin. Prüfe die Verbindung und versuche es erneut.",
     "apiTitle": "Openship nicht erreichbar",
     "apiHint": "Statusaktualisierungen können verzögert sein."
+  },
+  "actionLabels": {
+    "retryRouting": "Routing wiederholen",
+    "verifyDns": "DNS überprüfen",
+    "renewCert": "Zertifikat erneuern",
+    "recheckCert": "Zertifikat erneut prüfen",
+    "redeploy": "Neu deployen",
+    "keep": "Behalten",
+    "rejectRollback": "Ablehnen und zurückrollen",
+    "dismiss": "Warnung ausblenden"
+  },
+  "titles": {
+    "routingUnsynced": "Routing nicht synchronisiert",
+    "domainUnverified": "{hostname} ist nicht verifiziert",
+    "certExpired": "Das Zertifikat für {hostname} ist abgelaufen",
+    "certFailed": "Zertifikat für {hostname} fehlgeschlagen",
+    "partialDecision": "Einige Dienste fehlgeschlagen – Release behalten oder ablehnen",
+    "portInUse": "Port {port} wird bereits verwendet"
+  },
+  "messages": {
+    "domainDnsUnverified": "DNS für diesen Hostnamen wurde noch nicht verifiziert. Überprüfen Sie die Einträge und wiederholen Sie die Prüfung.",
+    "routingUnsynced": "Das Deployment war erfolgreich, aber die Edge-Route wurde nicht synchronisiert. Wiederholen führt nur den Routing-Schritt erneut aus.",
+    "certHttpsWillFail": "HTTPS schlägt für diesen Hostnamen fehl, bis ein Zertifikat ausgestellt wurde. Erneuern führt die Ausstellung erneut durch.",
+    "partialServices": "Einige Dienste konnten nicht gestartet werden. Der Rest läuft. Behalten Sie das Release oder rollen Sie zurück.",
+    "partialNamedServices": "Diese Dienste sind fehlgeschlagen: {services}. Der Rest läuft. Release behalten oder zurückrollen.",
+    "noCertOnServer": "Auf dem Server wurde kein verwendbares HTTPS-Zertifikat gefunden.",
+    "dnsOtherServer": "DNS verweist auf einen anderen Server",
+    "txtMissing": "TXT-Eintrag zur Inhaberschaft fehlt",
+    "mailCertExpired": "Das Mail-Zertifikat ist abgelaufen.",
+    "certEdgeFailed": "Zertifikat konnte nicht bestätigt werden ({detail}). Stellen Sie sicher, dass die Domain auf diesen Server zeigt und Ports 80/443 erreichbar sind."
   }
 }

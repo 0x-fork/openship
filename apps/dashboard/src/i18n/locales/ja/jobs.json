@@ -5,5 +5,27 @@
     "cloudServersHint": "既存のサーバーを使うか、独立したサブスクリプションを持つ専用サーバーを追加できます。",
     "cloudUsageHint": "ジョブは選択したサーバーのリソースと利用枠を共有します。実行には有効なプランが必要です。",
     "addDedicatedServer": "専用サーバーを追加"
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "GitHub デプロイチェック",
+    "cloud:workspace-recovery": "クラウドワークスペース運用",
+    "ssl:renew": "SSL 証明書の更新",
+    "projects:orphan-gc": "孤立したリソースのクリーンアップ",
+    "images:gc": "デプロイアーティファクトのクリーンアップ",
+    "domains:verify-pending": "カスタムドメインの検証",
+    "updates:scan": "アップデートのスキャン",
+    "backups:retention-prune": "期限切れバックアップの削除",
+    "backups:stale-sweep": "保留中バックアップの整合性確認",
+    "prune:audit": "監査ログの整理",
+    "prune:incidents": "インシデント履歴の整理",
+    "sampler:resources": "リソース使用状況サンプラー",
+    "system:analytics-scraper": "アナリティクススクレイパー",
+    "build-cache:gc": "ビルドキャッシュのクリーンアップ",
+    "cloud:https-health": "クラウド HTTPS ヘルスチェック",
+    "system:server-modules": "サーバーモジュールスキャン",
+    "system:server-containers": "サーバーコンテナスキャン",
+    "system:health-watch": "ヘルスチェック巡回",
+    "jobs:due-once": "キューに入った単発ジョブの実行",
+    "edge:verify": "エッジ検証スイープ"
   }
 }

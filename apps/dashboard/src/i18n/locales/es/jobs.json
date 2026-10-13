@@ -5,5 +5,27 @@
     "cloudServersHint": "Usa un servidor existente o añade un servidor dedicado con su propia suscripción.",
     "cloudUsageHint": "Las tareas comparten la capacidad y la cuota de uso del servidor seleccionado. Su plan debe estar activo para ejecutarlas.",
     "addDedicatedServer": "Añadir un servidor dedicado"
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "Comprobaciones de despliegue de GitHub",
+    "cloud:workspace-recovery": "Operaciones de espacio de trabajo Cloud",
+    "ssl:renew": "Renovación de certificados SSL",
+    "projects:orphan-gc": "Limpieza de recursos huérfanos",
+    "images:gc": "Limpieza de artefactos de despliegue",
+    "domains:verify-pending": "Verificar dominios personalizados",
+    "updates:scan": "Búsqueda de actualizaciones",
+    "backups:retention-prune": "Purga de copias de seguridad expiradas",
+    "backups:stale-sweep": "Conciliación de copias pendientes",
+    "prune:audit": "Depurar registro de auditoría",
+    "prune:incidents": "Depurar historial de incidentes",
+    "sampler:resources": "Muestreo de uso de recursos",
+    "system:analytics-scraper": "Recopilador de analítica",
+    "build-cache:gc": "Limpieza de caché de compilación",
+    "cloud:https-health": "Salud de HTTPS en la nube",
+    "system:server-modules": "Escaneo de módulos del servidor",
+    "system:server-containers": "Escaneo de contenedores del servidor",
+    "system:health-watch": "Monitoreo de estado",
+    "jobs:due-once": "Ejecutar tareas puntuales pendientes",
+    "edge:verify": "Verificación de proxy perimetral"
   }
 }

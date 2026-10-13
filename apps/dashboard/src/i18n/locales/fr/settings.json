@@ -867,7 +867,43 @@
       "rowsRestored": "{count} lignes restaurées",
       "secretsRestored": "{count} secrets restaurés",
       "secretsNotRestored": "secrets NON restaurés (phrase secrète absente/incorrecte) — ressaisissez les identifiants"
-    }
+    },
+    "backupTitle": "Sauvegarde et récupération",
+    "backupDesc": "Exportez un fichier ou restaurez une sauvegarde existante.",
+    "backupWarning": "Les archives incluent la base de données et les identifiants Openship. Le contenu des volumes Docker reste sur leurs serveurs ; utilisez les sauvegardes de projet pour les données de service.",
+    "exportInstanceTitle": "Exporter l'instance ou des projets",
+    "exportInstanceDesc": "Choisissez une instance complète ou des projets sélectionnés, avec leurs environnements et dépendances.",
+    "exportProjectTitle": "Exporter le projet",
+    "exportProjectDesc": "Téléchargez tous les paramètres du projet, variables d'environnement et identifiants au format JSON.",
+    "exportProjectIntro": "Comprend tous les environnements, services, historique des déploiements, analyses, connexions, domaines, sauvegardes et clés. Le fichier JSON n'est pas chiffré et s'importe sans mot de passe.",
+    "exportProjectReconnection": "La destination nécessite les mêmes serveurs ou le même compte OpenShip Cloud pour reconnecter les charges de travail.",
+    "exportInstanceIntro": "Exportez le plan de contrôle, y compris les variables d'environnement, clés de serveur, identifiants, configuration et historique.",
+    "scopeLabel": "Périmètre d'export",
+    "scopeInstance": "Instance entière",
+    "scopeProjects": "Projets et environnements sélectionnés",
+    "recordsAcrossEnvsIncluded": "{count} enregistrements sur {envs} environnements inclus.",
+    "checkingExport": "Vérification du contenu…",
+    "downloadExport": "Télécharger l'export",
+    "downloadAgain": "Télécharger à nouveau",
+    "exporting": "Exportation…",
+    "exportDownloaded": "Export téléchargé",
+    "exportCompleteToast": "Export téléchargé. Importez-le depuis Paramètres → Instance sur le plan de contrôle de destination.",
+    "optSecretsLabel": "Variables d'environnement, clés et identifiants",
+    "optSecretsDesc": "Inclus au format JSON lisible, avec clés de serveur, configuration Compose et fichiers secrets.",
+    "optLinkedAppsLabel": "Applications liées",
+    "optLinkedAppsDesc": "Inclure les projets de base de données et de stockage requis par la sélection.",
+    "optServersLabel": "Serveurs auto-hébergés associés (recommandé)",
+    "optServersDesc": "Inclure les connexions aux serveurs et leurs clés Git. Les serveurs correspondants peuvent être réutilisés.",
+    "optDomainsLabel": "Domaines et routage",
+    "optBackupsLabel": "Configuration des sauvegardes",
+    "optBackupsDesc": "Stratégies et destinations ; les sauvegardes restent dans leur stockage.",
+    "optIntegrationsLabel": "Intégrations partagées",
+    "optIntegrationsDesc": "Applications de fournisseurs Git, identifiants de registres et identifiants DNS.",
+    "historyOptionsSummary": "Options d'historique · {count} sur {total} incluses",
+    "recordsSelected": "{count} enregistrements sélectionnés.",
+    "recordsAcrossEnvsSelected": "{count} enregistrements sur {envs} environnements sélectionnés.",
+    "selectAtLeastOne": "Sélectionnez au moins un projet ou un environnement.",
+    "cloudNotice": "Les projets Cloud ne fonctionneront pas tant que l'espace de travail de destination n'est pas connecté au même compte Openship Cloud."
   },
   "migrate": {
     "chooseTitle": "Passer en mode multi-utilisateur",
@@ -1100,5 +1136,13 @@
     "removeNamed": "Supprimer {name}",
     "remove": "Supprimer",
     "removeConfirm": "Cette clé ne permettra plus de vous connecter. Gardez une autre méthode de connexion disponible."
+  },
+  "preferences": {
+    "title": "Préférences",
+    "description": "Préférences d'affichage personnelles pour ce navigateur — rien n'est envoyé au serveur.",
+    "demoMode": {
+      "title": "Mode démo",
+      "description": "Flouter les adresses IP, hôtes et variables d'environnement lors des partages d'écran et enregistrements."
+    }
   }
 }

@@ -112,5 +112,35 @@
     "mailHint": "Openship n’a pas pu vérifier ce serveur mail. Il fonctionne peut-être encore. Vérifiez la connexion et réessayez.",
     "apiTitle": "Openship est injoignable",
     "apiHint": "Les mises à jour de l’état peuvent être retardées."
+  },
+  "actionLabels": {
+    "retryRouting": "Réessayer le routage",
+    "verifyDns": "Vérifier le DNS",
+    "renewCert": "Renouveler le certificat",
+    "recheckCert": "Revérifier le certificat",
+    "redeploy": "Redéployer",
+    "keep": "Conserver",
+    "rejectRollback": "Rejeter et restaurer",
+    "dismiss": "Ignorer l'avertissement"
+  },
+  "titles": {
+    "routingUnsynced": "Le routage n'est pas synchronisé",
+    "domainUnverified": "{hostname} n'est pas vérifié",
+    "certExpired": "Le certificat pour {hostname} a expiré",
+    "certFailed": "Échec du certificat pour {hostname}",
+    "partialDecision": "Certains services ont échoué — conserver ou rejeter",
+    "portInUse": "Port {port} déjà utilisé"
+  },
+  "messages": {
+    "domainDnsUnverified": "Le DNS pour ce nom d'hôte n'est pas encore vérifié. Vérifiez les enregistrements et réessayez.",
+    "routingUnsynced": "Le déploiement a réussi mais sa route Edge ne s'est pas synchronisée. Réessayer relance uniquement l'étape de routage.",
+    "certHttpsWillFail": "HTTPS échouera pour cet hôte tant qu'un certificat n'est pas émis. Le renouvellement relance l'émission.",
+    "partialServices": "Certains services n'ont pas pu démarrer. Le reste fonctionne. Conservez la version ou effectuez un rollback.",
+    "partialNamedServices": "Ces services ont échoué : {services}. Le reste fonctionne. Conservez la version ou effectuez un rollback.",
+    "noCertOnServer": "Aucun certificat HTTPS utilisable n'a été trouvé sur le serveur.",
+    "dnsOtherServer": "Le DNS pointe vers un autre serveur",
+    "txtMissing": "Enregistrement TXT de propriété manquant",
+    "mailCertExpired": "Le certificat de messagerie a expiré.",
+    "certEdgeFailed": "Impossible de confirmer le certificat ({detail}). Assurez-vous que le domaine pointe vers ce serveur et que les ports 80/443 sont accessibles."
   }
 }

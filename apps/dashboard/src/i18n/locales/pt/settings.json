@@ -843,7 +843,43 @@
       "rowsRestored": "{count} linhas restauradas",
       "secretsRestored": "{count} segredos restaurados",
       "secretsNotRestored": "segredos NÃO restaurados (frase-senha ausente/incorreta) — insira novamente as credenciais"
-    }
+    },
+    "backupTitle": "Backup e recuperação",
+    "backupDesc": "Exporte um arquivo ou restaure um backup existente.",
+    "backupWarning": "Os arquivos de arquivo incluem o banco de dados e credenciais do Openship. Os volumes do Docker permanecem em seus servidores; use backups do projeto para dados de serviços.",
+    "exportInstanceTitle": "Exportar instância ou projetos",
+    "exportInstanceDesc": "Escolha uma instância completa ou projetos selecionados, com seus ambientes e dependências.",
+    "exportProjectTitle": "Exportar projeto",
+    "exportProjectDesc": "Baixe todas as configurações do projeto, variáveis de ambiente e credenciais em JSON simples.",
+    "exportProjectIntro": "Inclui todos os ambientes, serviços, histórico de implantação, análises, conexões, domínios, backups e chaves. O arquivo JSON não é criptografado e é importado sem senha.",
+    "exportProjectReconnection": "O destino precisa dos mesmos servidores ou conta do OpenShip Cloud para reconectar as cargas de trabalho.",
+    "exportInstanceIntro": "Exporte o plano de controle, incluindo variáveis de ambiente, chaves de servidor, credenciais, configuração e histórico.",
+    "scopeLabel": "Escopo de exportação",
+    "scopeInstance": "Instância inteira",
+    "scopeProjects": "Projetos e ambientes selecionados",
+    "recordsAcrossEnvsIncluded": "{count} registros em {envs} ambientes incluídos.",
+    "checkingExport": "Verificando conteúdo da exportação…",
+    "downloadExport": "Baixar exportação",
+    "downloadAgain": "Baixar novamente",
+    "exporting": "Exportando…",
+    "exportDownloaded": "Exportação baixada",
+    "exportCompleteToast": "Exportação baixada. Importe-a em Configurações → Instância no plano de controle de destino.",
+    "optSecretsLabel": "Valores de ambiente, chaves e credenciais",
+    "optSecretsDesc": "Incluído como JSON legível, com chaves de servidor, configuração do Compose e arquivos secretos.",
+    "optLinkedAppsLabel": "Aplicativos vinculados",
+    "optLinkedAppsDesc": "Incluir projetos de banco de dados e armazenamento exigidos pela seleção.",
+    "optServersLabel": "Servidores auto-hospedados relacionados (recomendado)",
+    "optServersDesc": "Incluir conexões de servidor e suas chaves Git. Servidores correspondentes podem ser reutilizados.",
+    "optDomainsLabel": "Domínios e roteamento",
+    "optBackupsLabel": "Configuração de backup",
+    "optBackupsDesc": "Políticas e destinos; os backups permanecem em seu armazenamento.",
+    "optIntegrationsLabel": "Integrações compartilhadas",
+    "optIntegrationsDesc": "Aplicativos de provedores Git, logins de registro e credenciais DNS do workspace.",
+    "historyOptionsSummary": "Opções de histórico · {count} de {total} incluídas",
+    "recordsSelected": "{count} registros selecionados.",
+    "recordsAcrossEnvsSelected": "{count} registros em {envs} ambientes selecionados.",
+    "selectAtLeastOne": "Selecione pelo menos um projeto ou ambiente.",
+    "cloudNotice": "Os projetos do Cloud não funcionarão até que o workspace de destino esteja conectado à mesma conta do Openship Cloud."
   },
   "migrate": {
     "chooseTitle": "Mudar para o modo multiusuário",
@@ -1076,5 +1112,13 @@
     "removeNamed": "Remover {name}",
     "remove": "Remover",
     "removeConfirm": "Esta chave não permitirá mais entrar. Mantenha outro método de acesso disponível."
+  },
+  "preferences": {
+    "title": "Preferências",
+    "description": "Preferências pessoais de exibição para este navegador — nada é enviado para o servidor.",
+    "demoMode": {
+      "title": "Modo demo",
+      "description": "Desfoque endereços IP, hosts e variáveis de ambiente durante gravações e compartilhamento de tela."
+    }
   }
 }

@@ -263,6 +263,10 @@
         "failed": "No se pudo actualizar el nombre de host interno",
         "invalid": "Escribe al menos una letra o dígito"
       }
+    },
+    "export": {
+      "title": "Exportar proyecto",
+      "description": "Descargue todas las configuraciones del proyecto, valores de entorno y credenciales en JSON plano."
     }
   },
   "backup": {

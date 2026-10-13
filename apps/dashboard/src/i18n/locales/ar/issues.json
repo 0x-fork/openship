@@ -112,5 +112,35 @@
     "mailHint": "تعذر على Openship التحقق من خادم البريد. قد يكون ما زال يعمل. تحقق من الاتصال وأعد المحاولة.",
     "apiTitle": "تعذّر الاتصال بـ Openship",
     "apiHint": "قد تتأخر تحديثات الحالة."
+  },
+  "actionLabels": {
+    "retryRouting": "إعادة محاولة التوجيه",
+    "verifyDns": "التحقق من DNS",
+    "renewCert": "تجديد الشهادة",
+    "recheckCert": "إعادة فحص الشهادة",
+    "redeploy": "إعادة النشر",
+    "keep": "الاحتفاظ",
+    "rejectRollback": "رفض والتراجع",
+    "dismiss": "تجاهل التحذير"
+  },
+  "titles": {
+    "routingUnsynced": "لم تتم مزامنة التوجيه",
+    "domainUnverified": "{hostname} غير موثق",
+    "certExpired": "انتهت صلاحية شهادة {hostname}",
+    "certFailed": "فشلت شهادة {hostname}",
+    "partialDecision": "فشلت بعض الخدمات — احتفظ بهذا الإصدار أو ارفضه",
+    "portInUse": "المنفذ {port} قيد الاستخدام"
+  },
+  "messages": {
+    "domainDnsUnverified": "لم يتم التحقق من DNS لهذا المضيف بعد. تحقق من السجلات وأعد المحاولة.",
+    "routingUnsynced": "نجح النشر ولكن لم تتم مزامنة مسار الحافة. تؤدي إعادة المحاولة إلى تشغيل خطوة التوجيه فقط.",
+    "certHttpsWillFail": "سيفشل HTTPS لهذا المضيف حتى يتم إصدار الشهادة.",
+    "partialServices": "فشل بدء تشغيل بعض الخدمات. الباقي يعمل. احتفظ بالإصدار أو تراجع عنه.",
+    "partialNamedServices": "فشلت هذه الخدمات: {services}. الباقي يعمل. احتفظ بالإصدار أو تراجع عنه.",
+    "noCertOnServer": "لم يتم العثور على شهادة HTTPS صالحة على الخادم.",
+    "dnsOtherServer": "يشير DNS إلى خادم مختلف",
+    "txtMissing": "سجل ملكية TXT مفقود",
+    "mailCertExpired": "انتهت صلاحية شهادة البريد.",
+    "certEdgeFailed": "تعذر تأكيد الشهادة ({detail}). تأكد من أن النطاق يشير إلى هذا الخادم والمنافذ 80/443 مفتوحة."
   }
 }

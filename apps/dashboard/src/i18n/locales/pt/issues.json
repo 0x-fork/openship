@@ -112,5 +112,35 @@
     "mailHint": "O Openship não conseguiu verificar este servidor de e-mail. Ele pode continuar funcionando. Verifique a conexão e tente novamente.",
     "apiTitle": "Não foi possível conectar ao Openship",
     "apiHint": "As atualizações de status podem atrasar."
+  },
+  "actionLabels": {
+    "retryRouting": "Tentar roteamento novamente",
+    "verifyDns": "Verificar DNS",
+    "renewCert": "Renovar certificado",
+    "recheckCert": "Reverificar certificado",
+    "redeploy": "Reimplantar",
+    "keep": "Manter",
+    "rejectRollback": "Rejeitar e reverter",
+    "dismiss": "Dispensar aviso"
+  },
+  "titles": {
+    "routingUnsynced": "O roteamento não foi sincronizado",
+    "domainUnverified": "{hostname} não foi verificado",
+    "certExpired": "O certificado para {hostname} expirou",
+    "certFailed": "Falha no certificado para {hostname}",
+    "partialDecision": "Alguns serviços falharam — manter ou rejeitar esta versão",
+    "portInUse": "Porta {port} em uso"
+  },
+  "messages": {
+    "domainDnsUnverified": "O DNS para este nome de host ainda não foi verificado. Verifique os registros e tente novamente.",
+    "routingUnsynced": "A implantação foi bem-sucedida, mas a rota perimetral não sincronizou. Tentar novamente reexecuta apenas o roteamento.",
+    "certHttpsWillFail": "O HTTPS falhará para este host até que um certificado seja emitido. A renovação reexecuta a emissão.",
+    "partialServices": "Alguns serviços não iniciaram. O restante está ativo. Mantenha a versão ou reverta.",
+    "partialNamedServices": "Estes serviços falharam: {services}. O restante está ativo. Mantenha a versão ou reverta.",
+    "noCertOnServer": "Nenhum certificado HTTPS utilizável foi encontrado no servidor.",
+    "dnsOtherServer": "O DNS aponta para um servidor diferente",
+    "txtMissing": "Registro TXT de propriedade ausente",
+    "mailCertExpired": "O certificado de e-mail expirou.",
+    "certEdgeFailed": "Não foi possível confirmar o certificado ({detail}). Verifique se o domínio aponta para este servidor e as portas 80/443 estão acessíveis."
   }
 }

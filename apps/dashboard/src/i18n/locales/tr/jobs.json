@@ -186,5 +186,27 @@
     "close": "Kapat",
     "exit": "Çıkış kodu {code}"
   },
-  "cloudSubtitle": "Yönetilen sunucularınızda zamanlanmış ve isteğe bağlı komutlar."
+  "cloudSubtitle": "Yönetilen sunucularınızda zamanlanmış ve isteğe bağlı komutlar.",
+  "systemJobLabels": {
+    "github:deployment-checks": "GitHub dağıtım kontrolleri",
+    "cloud:workspace-recovery": "Bulut çalışma alanı işlemleri",
+    "ssl:renew": "SSL sertifikası yenileme",
+    "projects:orphan-gc": "Sahipsiz kaynak temizliği",
+    "images:gc": "Dağıtım yapıtı temizliği",
+    "domains:verify-pending": "Özel alan adlarını doğrula",
+    "updates:scan": "Güncelleme taraması",
+    "backups:retention-prune": "Süresi dolmuş yedekleri temizle",
+    "backups:stale-sweep": "Askıda kalan yedekleri eşitle",
+    "prune:audit": "Denetim günlüğünü temizle",
+    "prune:incidents": "Olay geçmişini temizle",
+    "sampler:resources": "Kaynak kullanımı örnekleyici",
+    "system:analytics-scraper": "Analitik toplayıcı",
+    "build-cache:gc": "Derleme önbelleği temizliği",
+    "cloud:https-health": "Bulut HTTPS durumu",
+    "system:server-modules": "Sunucu modülü taraması",
+    "system:server-containers": "Sunucu konteyner taraması",
+    "system:health-watch": "Sağlık kontrolü taraması",
+    "jobs:due-once": "Kuyruktaki tek seferlik işleri çalıştır",
+    "edge:verify": "Uç nokta doğrulama taraması"
+  }
 }

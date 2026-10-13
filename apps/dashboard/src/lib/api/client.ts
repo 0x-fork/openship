@@ -301,7 +301,7 @@ export function getActiveOrganizationId(): string | null {
 
 // Restore from localStorage on module load so a page refresh keeps the
 // previously-active org in context until the auth hook sets a fresh one.
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && window.localStorage) {
   const stored = window.localStorage.getItem("openship.activeOrgId");
   if (stored) _currentOrgId = stored;
 }

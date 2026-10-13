@@ -100,6 +100,9 @@ export default function JobDetailPage() {
     return <PageContainer><p className="py-20 text-center text-sm text-muted-foreground">{j.loadFailed}</p></PageContainer>;
   }
 
+  const jobLabel = !isCustom && j.systemJobLabels && (j.systemJobLabels as Record<string, string>)[job.key]
+    ? (j.systemJobLabels as Record<string, string>)[job.key]!
+    : job.label;
   const cfg = job.actionConfig ?? {};
   const scheduleText =
     job.scheduleType === "recurring" ? job.cronExpression ?? "—"
@@ -115,7 +118,7 @@ export default function JobDetailPage() {
         </button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h1 className="truncate text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>{job.label}</h1>
+            <h1 className="truncate text-2xl font-medium text-foreground/80" style={{ letterSpacing: "-0.2px" }}>{jobLabel}</h1>
             <span className="shrink-0 rounded-md bg-foreground/[0.06] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
               {isCustom ? j.kind.custom : j.kind.system}
             </span>

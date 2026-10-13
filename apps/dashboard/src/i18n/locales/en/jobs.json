@@ -186,5 +186,27 @@
     "empty": "No output yet.",
     "close": "Close",
     "exit": "Exit code {code}"
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "GitHub deployment checks",
+    "cloud:workspace-recovery": "Cloud workspace operations",
+    "ssl:renew": "SSL certificate renewal",
+    "projects:orphan-gc": "Orphaned resource cleanup",
+    "images:gc": "Deployment artifact cleanup",
+    "domains:verify-pending": "Verify custom domains",
+    "updates:scan": "Update scan",
+    "backups:retention-prune": "Backup retention prune",
+    "backups:stale-sweep": "Backup in-flight stale reconciliation",
+    "prune:audit": "Audit log prune",
+    "prune:incidents": "Incident retention prune",
+    "sampler:resources": "Resource usage sampler",
+    "system:analytics-scraper": "Analytics scraper",
+    "build-cache:gc": "Build cache cleanup",
+    "cloud:https-health": "Cloud HTTPS health",
+    "system:server-modules": "Server module scan",
+    "system:server-containers": "Server container scan",
+    "system:health-watch": "Health check sweep",
+    "jobs:due-once": "Run queued one-shot jobs",
+    "edge:verify": "Edge verification sweep"
   }
 }

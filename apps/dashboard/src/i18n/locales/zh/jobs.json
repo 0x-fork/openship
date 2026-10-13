@@ -5,5 +5,27 @@
     "cloudServersHint": "使用现有服务器，或添加拥有独立订阅的专用服务器。",
     "cloudUsageHint": "任务共享所选服务器的资源和使用额度。运行任务需要有效的套餐。",
     "addDedicatedServer": "添加专用服务器"
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "GitHub 部署检查",
+    "cloud:workspace-recovery": "云工作区操作",
+    "ssl:renew": "SSL 证书续订",
+    "projects:orphan-gc": "孤立资源清理",
+    "images:gc": "部署产物清理",
+    "domains:verify-pending": "验证自定义域名",
+    "updates:scan": "更新扫描",
+    "backups:retention-prune": "清理已过期的备份",
+    "backups:stale-sweep": "未完成备份对齐",
+    "prune:audit": "清理审计日志",
+    "prune:incidents": "清理事件历史记录",
+    "sampler:resources": "资源使用采样器",
+    "system:analytics-scraper": "分析数据收集器",
+    "build-cache:gc": "构建缓存清理",
+    "cloud:https-health": "云端 HTTPS 健康检查",
+    "system:server-modules": "服务器模块扫描",
+    "system:server-containers": "服务器容器扫描",
+    "system:health-watch": "健康检查巡检",
+    "jobs:due-once": "运行排队的一次性任务",
+    "edge:verify": "边缘验证巡检"
   }
 }

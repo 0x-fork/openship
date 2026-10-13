@@ -112,5 +112,35 @@
     "mailHint": "Openship could not verify this mail server. It may still be running. Check the connection and retry.",
     "apiTitle": "Can’t reach Openship",
     "apiHint": "Status updates may be delayed."
+  },
+  "actionLabels": {
+    "retryRouting": "Retry routing",
+    "verifyDns": "Verify DNS",
+    "renewCert": "Renew certificate",
+    "recheckCert": "Re-check certificate",
+    "redeploy": "Redeploy",
+    "keep": "Keep",
+    "rejectRollback": "Reject and roll back",
+    "dismiss": "Dismiss warning"
+  },
+  "titles": {
+    "routingUnsynced": "Routing didn't sync",
+    "domainUnverified": "{hostname} isn't verified",
+    "certExpired": "The certificate for {hostname} expired",
+    "certFailed": "The certificate for {hostname} failed",
+    "partialDecision": "Some services failed — keep or reject this release",
+    "portInUse": "Port {port} in use"
+  },
+  "messages": {
+    "domainDnsUnverified": "DNS for this hostname hasn't verified yet. Check the records, then re-run the check.",
+    "routingUnsynced": "The deploy succeeded but its edge route didn't sync, so the public URL may not resolve yet. Retrying re-runs just the routing step — it does not rebuild.",
+    "certHttpsWillFail": "HTTPS will fail for this hostname until a certificate is issued. Renewing re-runs issuance.",
+    "partialServices": "Some services failed to come up. The rest are live. Keep the release, or reject it to roll back to the previous one.",
+    "partialNamedServices": "These services failed: {services}. The rest are live. Keep the release, or reject it to roll back to the previous one.",
+    "noCertOnServer": "No usable HTTPS certificate was found on the server.",
+    "dnsOtherServer": "DNS points to a different server",
+    "txtMissing": "Ownership TXT record missing",
+    "mailCertExpired": "The mail certificate has expired.",
+    "certEdgeFailed": "Couldn't confirm a certificate ({detail}). Make sure the domain points at this server (a CDN like Cloudflare in front is fine) and ports 80/443 are reachable, then Verify again."
   }
 }

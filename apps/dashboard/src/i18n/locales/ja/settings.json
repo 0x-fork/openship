@@ -843,7 +843,43 @@
       "rowsRestored": "{count} 行を復元しました",
       "secretsRestored": "{count} 件のシークレットを復元しました",
       "secretsNotRestored": "シークレットは復元されませんでした（パスフレーズなし / 誤り） — 認証情報を再入力してください"
-    }
+    },
+    "backupTitle": "バックアップと復元",
+    "backupDesc": "ファイルをエクスポートするか、既存のバックアップを復元します。",
+    "backupWarning": "アーカイブファイルには Openship データベースと資格情報が含まれます。Docker ボリュームの内容はサーバーに残ります。サービスデータにはプロジェクトバックアップを使用してください。",
+    "exportInstanceTitle": "インスタンスまたはプロジェクトのエクスポート",
+    "exportInstanceDesc": "完全なインスタンスまたは選択したプロジェクトを、環境と依存関係を含めてエクスポートします。",
+    "exportProjectTitle": "プロジェクトのエクスポート",
+    "exportProjectDesc": "すべてのプロジェクト設定、環境変数、資格情報を JSON 形式でダウンロードします。",
+    "exportProjectIntro": "すべての環境、サービス、デプロイ履歴、アナリティクス、接続、ドメイン、バックアップ設定、環境変数、キーが含まれます。JSON ファイルは暗号化されておらず、パスワードなしでインポートできます。",
+    "exportProjectReconnection": "移行先で既存のワークロードに再接続するには、同じサーバーまたは OpenShip Cloud アカウントが必要です。",
+    "exportInstanceIntro": "コントロールプレーン（環境変数、サーバーキー、資格情報、構成、履歴）をエクスポートします。",
+    "scopeLabel": "エクスポート範囲",
+    "scopeInstance": "インスタンス全体",
+    "scopeProjects": "選択したプロジェクトと環境",
+    "recordsAcrossEnvsIncluded": "{envs} 個の環境にわたる {count} 件のレコードが含まれています。",
+    "checkingExport": "エクスポート内容を確認中…",
+    "downloadExport": "エクスポートをダウンロード",
+    "downloadAgain": "再ダウンロード",
+    "exporting": "エクスポート中…",
+    "exportDownloaded": "エクスポートが完了しました",
+    "exportCompleteToast": "エクスポートをダウンロードしました。移行先の「設定 → インスタンス」からインポートしてください。",
+    "optSecretsLabel": "環境変数、キー、資格情報",
+    "optSecretsDesc": "サーバーキー、インライン Compose 構成、シークレットファイルを含む読み取り可能な JSON として含まれます。",
+    "optLinkedAppsLabel": "連携アプリ",
+    "optLinkedAppsDesc": "選択対象に必要なデータベースおよびストレージプロジェクトを含めます。",
+    "optServersLabel": "関連セルフホストサーバー（推奨）",
+    "optServersDesc": "サーバー接続と Git キーを含めます。インポート時に一致する既存サーバーを再利用できます。",
+    "optDomainsLabel": "ドメインとルーティング",
+    "optBackupsLabel": "バックアップ構成",
+    "optBackupsDesc": "ポリシーと送信先。バックアップデータはストレージに残ります。",
+    "optIntegrationsLabel": "共有連携",
+    "optIntegrationsDesc": "Git プロバイダーアプリ、レジストリログイン、ワークスペース DNS 資格情報。",
+    "historyOptionsSummary": "履歴オプション · {total} 件中 {count} 件が含まれています",
+    "recordsSelected": "{count} 件のレコードが選択されました。",
+    "recordsAcrossEnvsSelected": "{envs} 個の環境にわたる {count} 件のレコードが選択されました。",
+    "selectAtLeastOne": "少なくとも 1 つのプロジェクトまたは環境を選択してください。",
+    "cloudNotice": "移行先のワークスペースが同じ Openship Cloud アカウントに接続されるまで、Cloud プロジェクトは動作しません。"
   },
   "migrate": {
     "chooseTitle": "マルチユーザーモードに移行",
@@ -1076,5 +1112,13 @@
     "removeNamed": "{name}を削除",
     "remove": "削除",
     "removeConfirm": "このパスキーではログインできなくなります。他のログイン方法を確保してください。"
+  },
+  "preferences": {
+    "title": "環境設定",
+    "description": "このブラウザの個人表示設定 — サーバーには何も送信されません。",
+    "demoMode": {
+      "title": "デモモード",
+      "description": "画面共有や録画時にIPアドレス、ホスト名、環境変数の値をぼかします。"
+    }
   }
 }

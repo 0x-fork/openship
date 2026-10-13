@@ -186,5 +186,27 @@
     "close": "Fermer",
     "exit": "Code de sortie {code}"
   },
-  "cloudSubtitle": "Commandes planifiées et à la demande sur vos serveurs gérés."
+  "cloudSubtitle": "Commandes planifiées et à la demande sur vos serveurs gérés.",
+  "systemJobLabels": {
+    "github:deployment-checks": "Vérifications de déploiement GitHub",
+    "cloud:workspace-recovery": "Opérations d'espace de travail Cloud",
+    "ssl:renew": "Renouvellement des certificats SSL",
+    "projects:orphan-gc": "Nettoyage des ressources orphelines",
+    "images:gc": "Nettoyage des artefacts de déploiement",
+    "domains:verify-pending": "Vérifier les domaines personnalisés",
+    "updates:scan": "Recherche de mises à jour",
+    "backups:retention-prune": "Purger les sauvegardes expirées",
+    "backups:stale-sweep": "Rapprochement des sauvegardes bloquées",
+    "prune:audit": "Nettoyer le journal d'audit",
+    "prune:incidents": "Nettoyer l'historique des incidents",
+    "sampler:resources": "Échantillonnage des ressources",
+    "system:analytics-scraper": "Collecteur d'analyses",
+    "build-cache:gc": "Nettoyage du cache de build",
+    "cloud:https-health": "Santé HTTPS dans le Cloud",
+    "system:server-modules": "Analyse des modules serveur",
+    "system:server-containers": "Analyse des conteneurs serveur",
+    "system:health-watch": "Surveillance de santé",
+    "jobs:due-once": "Exécuter les tâches ponctuelles",
+    "edge:verify": "Vérification du proxy Edge"
+  }
 }

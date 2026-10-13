@@ -5,5 +5,27 @@
     "cloudServersHint": "Nutze einen vorhandenen Server oder füge einen dedizierten Server mit eigenem Abonnement hinzu.",
     "cloudUsageHint": "Jobs teilen sich die Kapazität und das Nutzungskontingent des ausgewählten Servers. Zur Ausführung muss sein Tarif aktiv sein.",
     "addDedicatedServer": "Dedizierten Server hinzufügen"
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "GitHub-Deployment-Prüfungen",
+    "cloud:workspace-recovery": "Cloud-Workspace-Operationen",
+    "ssl:renew": "SSL-Zertifikatserneuerung",
+    "projects:orphan-gc": "Bereinigung verwaister Ressourcen",
+    "images:gc": "Bereinigung von Deployment-Artefakten",
+    "domains:verify-pending": "Benutzerdefinierte Domains überprüfen",
+    "updates:scan": "Update-Scan",
+    "backups:retention-prune": "Bereinigung abgelaufener Backups",
+    "backups:stale-sweep": "Abgleich hängengebliebener Backups",
+    "prune:audit": "Audit-Protokoll bereinigen",
+    "prune:incidents": "Vorfallsverlauf bereinigen",
+    "sampler:resources": "Ressourcennutzung erfassen",
+    "system:analytics-scraper": "Analyse-Scraper",
+    "build-cache:gc": "Build-Cache bereinigen",
+    "cloud:https-health": "Cloud-HTTPS-Statusprüfung",
+    "system:server-modules": "Server-Modul-Scan",
+    "system:server-containers": "Server-Container-Scan",
+    "system:health-watch": "Integritätsprüfung",
+    "jobs:due-once": "Einmalige Aufgaben ausführen",
+    "edge:verify": "Edge-Überprüfung"
   }
 }

@@ -186,5 +186,27 @@
     "empty": "Вывода пока нет.",
     "close": "Закрыть",
     "exit": "Код выхода {code}"
+  },
+  "systemJobLabels": {
+    "github:deployment-checks": "Проверки деплоев GitHub",
+    "cloud:workspace-recovery": "Операции облачных воркспейсов",
+    "ssl:renew": "Продление SSL-сертификатов",
+    "projects:orphan-gc": "Очистка потерянных ресурсов",
+    "images:gc": "Очистка артефактов деплоя",
+    "domains:verify-pending": "Проверка пользовательских доменов",
+    "updates:scan": "Поиск обновлений",
+    "backups:retention-prune": "Удаление устаревших резервных копий",
+    "backups:stale-sweep": "Сверка зависших резервных копий",
+    "prune:audit": "Очистка журнала аудита",
+    "prune:incidents": "Очистка истории инцидентов",
+    "sampler:resources": "Сбор метрик ресурсов",
+    "system:analytics-scraper": "Сбор аналитики",
+    "build-cache:gc": "Очистка кэша сборки",
+    "cloud:https-health": "Проверка HTTPS в облаке",
+    "system:server-modules": "Сканирование модулей сервера",
+    "system:server-containers": "Сканирование контейнеров сервера",
+    "system:health-watch": "Проверка состояния сервисов",
+    "jobs:due-once": "Выполнение запланированных разовых задач",
+    "edge:verify": "Проверка граничного прокси"
   }
 }

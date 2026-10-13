@@ -112,5 +112,35 @@
     "mailHint": "Openship 无法检查此邮件服务器。它可能仍在运行。请检查连接后重试。",
     "apiTitle": "无法连接到 Openship",
     "apiHint": "状态更新可能会延迟。"
+  },
+  "actionLabels": {
+    "retryRouting": "重试路由",
+    "verifyDns": "验证 DNS",
+    "renewCert": "续订证书",
+    "recheckCert": "重新检查证书",
+    "redeploy": "重新部署",
+    "keep": "保留",
+    "rejectRollback": "拒绝并回滚",
+    "dismiss": "忽略警告"
+  },
+  "titles": {
+    "routingUnsynced": "路由未同步",
+    "domainUnverified": "{hostname} 未验证",
+    "certExpired": "{hostname} 的证书已过期",
+    "certFailed": "{hostname} 的证书获取失败",
+    "partialDecision": "部分服务失败 — 保留或拒绝此发布",
+    "portInUse": "端口 {port} 已被占用"
+  },
+  "messages": {
+    "domainDnsUnverified": "此主机名的 DNS 尚未验证。请检查解析记录，然后重新运行检查。",
+    "routingUnsynced": "部署成功但边缘路由未同步，公网地址可能暂时无法解析。重试将仅重新运行路由步骤，无需重新构建。",
+    "certHttpsWillFail": "在签发证书之前，此主机名的 HTTPS 将失败。续订将重新尝试签发。",
+    "partialServices": "部分服务未能启动。其余服务正常运行。请保留此发布或回滚到上一个版本。",
+    "partialNamedServices": "这些服务失败：{services}。其余服务正常运行。请保留此发布或回滚到上一个版本。",
+    "noCertOnServer": "服务器上未找到可用的 HTTPS 证书。",
+    "dnsOtherServer": "DNS 解析指向了其他服务器",
+    "txtMissing": "缺少所有权验证 TXT 记录",
+    "mailCertExpired": "邮件证书已过期。",
+    "certEdgeFailed": "无法确认证书 ({detail})。请确保域名指向此服务器且 80/443 端口可达，然后再次验证。"
   }
 }

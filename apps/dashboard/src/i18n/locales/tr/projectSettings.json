@@ -367,6 +367,10 @@
         "failed": "Dahili ana bilgisayar adı güncellenemedi",
         "invalid": "En az bir harf veya rakam girin"
       }
+    },
+    "export": {
+      "title": "Projeyi dışa aktar",
+      "description": "Tüm proje ayarlarını, ortam değişkenlerini ve kimlik bilgilerini düz JSON olarak indirin."
     }
   },
   "routeRules": {

@@ -843,7 +843,43 @@
       "rowsRestored": "{count} filas restauradas",
       "secretsRestored": "{count} secretos restaurados",
       "secretsNotRestored": "secretos NO restaurados (frase de contraseña incorrecta o ausente) — vuelve a introducir las credenciales"
-    }
+    },
+    "backupTitle": "Copia de seguridad y recuperación",
+    "backupDesc": "Exporte un archivo o restaure una copia de seguridad existente.",
+    "backupWarning": "Los archivos de archivado incluyen la base de datos y credenciales de Openship. Los volúmenes de Docker permanecen en sus servidores; use copias del proyecto para datos de servicios.",
+    "exportInstanceTitle": "Exportar instancia o proyectos",
+    "exportInstanceDesc": "Elija una instancia completa o proyectos seleccionados, con sus entornos y dependencias.",
+    "exportProjectTitle": "Exportar proyecto",
+    "exportProjectDesc": "Descargue todas las configuraciones del proyecto, valores de entorno y credenciales en JSON plano.",
+    "exportProjectIntro": "Incluye todos los entornos, servicios, historial de despliegues, analítica, conexiones, dominios, configuraciones de respaldo y claves. El archivo JSON no está cifrado y se importa sin contraseña.",
+    "exportProjectReconnection": "El destino necesita los mismos servidores o cuenta de OpenShip Cloud para reconectar las cargas de trabajo existentes.",
+    "exportInstanceIntro": "Exporte el plano de control, incluidos valores de entorno, claves de servidor, credenciales, configuración e historial.",
+    "scopeLabel": "Alcance de exportación",
+    "scopeInstance": "Instancia completa",
+    "scopeProjects": "Proyectos y entornos seleccionados",
+    "recordsAcrossEnvsIncluded": "{count} registros en {envs} entornos incluidos.",
+    "checkingExport": "Comprobando contenido de exportación…",
+    "downloadExport": "Descargar exportación",
+    "downloadAgain": "Descargar de nuevo",
+    "exporting": "Exportando…",
+    "exportDownloaded": "Exportación descargada",
+    "exportCompleteToast": "Exportación descargada. Impórtela desde Configuración → Instancia en el plano de control de destino.",
+    "optSecretsLabel": "Valores de entorno, claves y credenciales",
+    "optSecretsDesc": "Incluidos como JSON legible, con claves de servidor, configuración de Compose y archivos secretos.",
+    "optLinkedAppsLabel": "Aplicaciones vinculadas",
+    "optLinkedAppsDesc": "Incluye proyectos de bases de datos y almacenamiento requeridos por la selección.",
+    "optServersLabel": "Servidores autoalojados relacionados (recomendado)",
+    "optServersDesc": "Incluye conexiones a servidores y sus claves Git. Los servidores coincidentes se pueden reutilizar.",
+    "optDomainsLabel": "Dominios y enrutamiento",
+    "optBackupsLabel": "Configuración de copias de seguridad",
+    "optBackupsDesc": "Políticas y destinos; las cargas útiles de respaldo permanecen en su almacenamiento.",
+    "optIntegrationsLabel": "Integraciones compartidas",
+    "optIntegrationsDesc": "Aplicaciones de proveedores Git, registros y credenciales DNS del espacio de trabajo.",
+    "historyOptionsSummary": "Opciones de historial · {count} de {total} incluidas",
+    "recordsSelected": "{count} registros seleccionados.",
+    "recordsAcrossEnvsSelected": "{count} registros en {envs} entornos seleccionados.",
+    "selectAtLeastOne": "Seleccione al menos un proyecto o entorno.",
+    "cloudNotice": "Los proyectos de Cloud no funcionarán hasta que el espacio de trabajo de destino esté conectado a la misma cuenta de Openship Cloud."
   },
   "migrate": {
     "chooseTitle": "Cambiar al modo multiusuario",
@@ -1076,5 +1112,13 @@
     "removeNamed": "Eliminar {name}",
     "remove": "Eliminar",
     "removeConfirm": "Esta clave ya no permitirá iniciar sesión. Conserva otro método de acceso."
+  },
+  "preferences": {
+    "title": "Preferencias",
+    "description": "Preferencias personales de visualización para este navegador; no se envía nada al servidor.",
+    "demoMode": {
+      "title": "Modo demo",
+      "description": "Desenfoca direcciones IP, hosts y valores de entorno durante grabaciones y pantallas compartidas."
+    }
   }
 }

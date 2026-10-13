@@ -843,7 +843,43 @@
       "rowsRestored": "已恢复 {count} 行",
       "secretsRestored": "已恢复 {count} 项机密信息",
       "secretsNotRestored": "机密信息未恢复（无口令/口令不正确）—— 请重新输入凭据"
-    }
+    },
+    "backupTitle": "备份与恢复",
+    "backupDesc": "导出备份文件或还原现有备份。",
+    "backupWarning": "归档文件包含 Openship 数据库和凭据。Docker 卷内容保留在其服务器上；服务数据请使用项目备份。",
+    "exportInstanceTitle": "导出实例或项目",
+    "exportInstanceDesc": "选择完整实例或特定项目及其环境和依赖项。",
+    "exportProjectTitle": "导出项目",
+    "exportProjectDesc": "以纯 JSON 格式下载所有项目设置、环境变量和凭据。",
+    "exportProjectIntro": "包含所有环境、服务、部署历史记录、分析、连接、域名、备份设置、环境变量和密钥。JSON 文件未加密，无需密码即可导入。",
+    "exportProjectReconnection": "目标端需要相同的服务器或 OpenShip Cloud 帐户才能重新连接到现有工作负载。",
+    "exportInstanceIntro": "导出控制面板数据，包括存储的环境变量、服务器密钥、凭据、配置和历史记录。JSON 文件未加密且不需要密码。",
+    "scopeLabel": "导出范围",
+    "scopeInstance": "整个实例",
+    "scopeProjects": "选定的项目和环境",
+    "recordsAcrossEnvsIncluded": "包含跨 {envs} 个环境的 {count} 条记录。",
+    "checkingExport": "正在检查导出内容…",
+    "downloadExport": "下载导出文件",
+    "downloadAgain": "再次下载",
+    "exporting": "正在导出…",
+    "exportDownloaded": "导出已下载",
+    "exportCompleteToast": "导出已下载。请在目标控制平面的“设置 → 实例”中将其导入。",
+    "optSecretsLabel": "环境变量、密钥和凭据",
+    "optSecretsDesc": "以可读 JSON 格式包含，带有服务器密钥、内联 Compose 配置和元数据中存储的机密文件。",
+    "optLinkedAppsLabel": "关联应用",
+    "optLinkedAppsDesc": "包含所选内容所需的数据库和存储项目。",
+    "optServersLabel": "关联的自托管服务器（推荐）",
+    "optServersDesc": "包含服务器连接及其 Git 密钥。现有匹配服务器可在导入期间重复使用。",
+    "optDomainsLabel": "域名与路由",
+    "optBackupsLabel": "备份配置",
+    "optBackupsDesc": "策略和目标；备份数据保留在其存储中。",
+    "optIntegrationsLabel": "共享集成",
+    "optIntegrationsDesc": "Git 提供商应用、镜像仓库登录名和工作区 DNS 凭据。",
+    "historyOptionsSummary": "历史记录选项 · 已包含 {count}/{total} 项",
+    "recordsSelected": "已选择 {count} 条记录。",
+    "recordsAcrossEnvsSelected": "已选择跨 {envs} 个环境的 {count} 条记录。",
+    "selectAtLeastOne": "请选择至少一个项目或环境。",
+    "cloudNotice": "在目标工作区连接到同一个 Openship Cloud 帐户之前，Cloud 项目将无法运行。"
   },
   "migrate": {
     "chooseTitle": "切换到多用户模式",
@@ -1076,5 +1112,13 @@
     "removeNamed": "移除 {name}",
     "remove": "移除",
     "removeConfirm": "此通行密钥将无法再用于登录，请确保还有其他登录方式。"
+  },
+  "preferences": {
+    "title": "偏好设置",
+    "description": "当前浏览器的个人显示偏好设置 — 不会向服务器发送任何数据。",
+    "demoMode": {
+      "title": "演示模式",
+      "description": "在屏幕共享和录屏期间模糊处理 IP 地址、主机名和环境变量值。"
+    }
   }
 }

@@ -112,5 +112,35 @@
     "mailHint": "Openship bu posta sunucusunu kontrol edemedi. Sunucu hâlâ çalışıyor olabilir. Bağlantıyı kontrol edip yeniden deneyin.",
     "apiTitle": "Openship’e ulaşılamıyor",
     "apiHint": "Durum güncellemeleri gecikebilir."
+  },
+  "actionLabels": {
+    "retryRouting": "Yönlendirmeyi tekrar dene",
+    "verifyDns": "DNS'i doğrula",
+    "renewCert": "Sertifikayı yenile",
+    "recheckCert": "Sertifikayı tekrar kontrol et",
+    "redeploy": "Yeniden dağıt",
+    "keep": "Koru",
+    "rejectRollback": "Reddet ve geri al",
+    "dismiss": "Uyarıyı kapat"
+  },
+  "titles": {
+    "routingUnsynced": "Yönlendirme eşitlenmedi",
+    "domainUnverified": "{hostname} doğrulanmadı",
+    "certExpired": "{hostname} sertifikasının süresi doldu",
+    "certFailed": "{hostname} için sertifika başarısız oldu",
+    "partialDecision": "Bazı hizmetler başarısız oldu — bu sürümü koruyun veya reddedin",
+    "portInUse": "Bağlantı noktası {port} kullanımda"
+  },
+  "messages": {
+    "domainDnsUnverified": "Bu ana bilgisayar adı için DNS henüz doğrulanmadı. Kayıtları kontrol edin ve tekrar deneyin.",
+    "routingUnsynced": "Dağıtım başarılı oldu ancak uç yönlendirme eşitlenmedi. Yeniden denemek yalnızca yönlendirme adımını çalıştırır.",
+    "certHttpsWillFail": "Bir sertifika verilene kadar bu ana bilgisayar için HTTPS başarısız olacaktır.",
+    "partialServices": "Bazı hizmetler başlatılamadı. Kalanlar çalışıyor. Sürümü koruyun veya geri alın.",
+    "partialNamedServices": "Bu hizmetler başarısız oldu: {services}. Kalanlar çalışıyor. Sürümü koruyun veya geri alın.",
+    "noCertOnServer": "Sunucuda kullanılabilir bir HTTPS sertifikası bulunamadı.",
+    "dnsOtherServer": "DNS başka bir sunucuyu işaret ediyor",
+    "txtMissing": "Sahiplik TXT kaydı eksik",
+    "mailCertExpired": "Posta sertifikasının süresi doldu.",
+    "certEdgeFailed": "Sertifika doğrulanamadı ({detail}). Alan adının bu sunucuyu işaret ettiğinden ve 80/443 bağlantı noktalarının açık olduğundan emin olun."
   }
 }

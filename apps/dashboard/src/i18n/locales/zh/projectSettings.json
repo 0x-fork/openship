@@ -263,6 +263,10 @@
         "failed": "无法更新内部主机名",
         "invalid": "请至少输入一个字母或数字"
       }
+    },
+    "export": {
+      "title": "导出项目",
+      "description": "以纯 JSON 格式下载所有项目设置、环境变量和凭据。"
     }
   },
   "backup": {
