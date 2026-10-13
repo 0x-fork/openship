@@ -6,7 +6,8 @@ the GitHub overlay consumed by deployed instances; development uses its bundled
 copy. Existing installed services retain their saved configuration.
 
 The Catalog health workflow checks the registry manifests for all offered app
-and companion-service images daily and on catalog changes. It does not pull
+and companion-service images, including literal inline-build `FROM` and external
+`COPY --from` dependencies, daily and on catalog changes. It does not pull
 layers for the inventory check. A failed check means the image could not be
 verified from that runner; inspect the registry/network response before changing
 a template. It never changes customer services or automatically swaps registries.
@@ -17,6 +18,28 @@ console access, authenticated S3 and an object surviving container replacement.
 Containers have no external network, capped CPU/RAM and disposable named volumes.
 Run it locally with `bun scripts/smoke-catalog-minio.ts` against your test Docker
 daemon. `CATALOG_TEST_PLATFORM` can select either architecture.
+
+WordPress, Odoo Community, PostgreSQL + pgAdmin, MariaDB + Adminer, RabbitMQ,
+Authentik, and Nextcloud have native AMD64 and ARM64 smoke jobs as well. They
+materialize the canonical images, inline builds, environment, volumes, mounted
+files with the engine's read-only binding semantics, and required setup hooks. Tests exercise application access and generated
+credentials, write data, replace all containers, and verify persistence. Authentik
+checks the stored administrator password through its authentication backend and
+the public login page; it does not drive a browser SSO integration.
+
+```sh
+# Use a disposable test daemon. No customer API or Cloud purchase is involved.
+DOCKER_CONTEXT=your-test-context bun scripts/smoke-catalog-apps.ts
+# Or select individual stacks:
+DOCKER_CONTEXT=your-test-context bun scripts/smoke-catalog-apps.ts wordpress odoo
+```
+
+The stacks use their catalog CPU/RAM limits and loopback-only test UI ports.
+Database and broker ports are not published. Networks, containers, named volumes,
+and generated test images are removed afterward; pulled upstream images stay
+cached. These tests validate stack recipes, not provider TLS issuance, billing,
+or an application's optional integrations. The normal install, routing, build,
+backup, and monitoring engines remain the deployment path.
 
 The pinned Chainguard MinIO **development** image includes `sh` and `mc`, required
 by the setup hook. The distroless image is not a drop-in substitute. It runs as

@@ -1,7 +1,20 @@
 import { describe, expect, it } from "bun:test";
-import { catalogImages, checkCatalogImages } from "./check-catalog-images";
+import { catalogBuildImages, catalogImages, checkCatalogImages } from "./check-catalog-images";
 
 describe("catalog registry availability", () => {
+  it("checks external build dependencies without treating local stages as registry images", () => {
+    const dockerfile =
+      "FROM --platform=$BUILDPLATFORM wordpress:7.1.3-php8.3-apache AS web\nCOPY --from=wordpress:cli-2.12.0-php8.3 /usr/local/bin/wp /usr/local/bin/wp\nFROM web AS final\nCOPY --from=0 /a /b\nFROM scratch\n";
+    expect(catalogBuildImages(dockerfile)).toEqual([
+      "wordpress:7.1.3-php8.3-apache",
+      "wordpress:cli-2.12.0-php8.3",
+    ]);
+    expect([
+      ...catalogImages([
+        { id: "wp", available: true, services: [{ name: "wordpress", build: { dockerfile } }] },
+      ]).keys(),
+    ]).toEqual(catalogBuildImages(dockerfile));
+  });
   it("checks every offered image once and excludes disabled/build-only apps", () => {
     const images = catalogImages(
       [

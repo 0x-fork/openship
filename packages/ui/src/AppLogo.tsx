@@ -44,6 +44,13 @@ const BRAND_LOGO: Record<
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
   gitea: { slug: "gitea" },
+  wordpress: { slug: "wordpress" },
+  odoo: { slug: "odoo" },
+  postgresql: { slug: "postgresql" },
+  mariadb: { slug: "mariadb" },
+  rabbitmq: { slug: "rabbitmq" },
+  authentik: { slug: "authentik" },
+  nextcloud: { slug: "nextcloud" },
   minio: { slug: "minio" },
   freshrss: { slug: "freshrss" },
   excalidraw: { slug: "excalidraw" },

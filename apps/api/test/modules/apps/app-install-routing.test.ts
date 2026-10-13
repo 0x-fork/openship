@@ -114,6 +114,51 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
 });
 
+it("installs WordPress through the API with the selected owner and matching encrypted database credentials", async () => {
+  listServicesMock.mockResolvedValue([
+    { id: "svc-wordpress", name: "wordpress" },
+    { id: "svc-wordpress-db", name: "wordpress-db" },
+  ]);
+  await installApp(ctx, {
+    templateId: "wordpress",
+    config: {
+      OPENSHIP_ADMIN_EMAIL: "owner@example.com",
+      OPENSHIP_SITE_TITLE: "Our site",
+      OPENSHIP_ADMIN_USER: "owner",
+    },
+    routes: [{ service: "wordpress", port: 80, mode: "custom", customDomain: "site.example.com" }],
+  });
+  const writes = (id: string) =>
+    setEnvMock.mock.calls.find((call) => call[2] === id)?.[3].vars as Array<{
+      key: string;
+      value: string;
+      isSecret: boolean;
+    }>;
+  const wordpress = writes("svc-wordpress");
+  expect(wordpress).toEqual(
+    expect.arrayContaining([
+      { key: "OPENSHIP_ADMIN_EMAIL", value: "owner@example.com", isSecret: false },
+      { key: "OPENSHIP_SITE_TITLE", value: "Our site", isSecret: false },
+      { key: "OPENSHIP_ADMIN_USER", value: "owner", isSecret: false },
+    ]),
+  );
+  const dbPassword = writes("svc-wordpress-db").find((field) => field.key === "MARIADB_PASSWORD")!;
+  expect(wordpress.find((field) => field.key === "WORDPRESS_DB_PASSWORD")).toMatchObject({
+    value: dbPassword.value,
+    isSecret: true,
+  });
+  expect(dbPassword.isSecret).toBe(true);
+  expect(wordpress.find((field) => field.key === "OPENSHIP_ADMIN_PASSWORD")).toMatchObject({
+    isSecret: true,
+    value: expect.stringMatching(/^[a-f0-9]{64}$/),
+  });
+  expect(payloadFor("wordpress-db")).toMatchObject({
+    exposed: false,
+    publicEndpoints: [],
+    ports: [],
+  });
+});
+
 describe("app install — routing comes from the operator's choice", () => {
   it("persists Cloud Ghost without a domain as internal, and publishes only a chosen domain", async () => {
     const input = { templateId: "ghost", serverId: "cloud-server" };

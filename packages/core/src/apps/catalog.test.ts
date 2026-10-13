@@ -89,7 +89,7 @@ describe("app catalog (JSON)", () => {
           `${app.id}/${service.name} uses a post-0.6.6 serviceSpec field but entry has no minEngine — engine gate cannot refuse pre-0.6.6 installs`,
         ).toBeDefined();
         expect(
-          templateEngineOk(app.minEngine, MIN_ENGINE),
+          templateEngineOk(MIN_ENGINE, app.minEngine),
           `${app.id}/${service.name} declares minEngine=${app.minEngine}, must be >= ${MIN_ENGINE}`,
         ).toBe(true);
       }
