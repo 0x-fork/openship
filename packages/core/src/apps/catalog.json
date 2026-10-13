@@ -6271,7 +6271,8 @@
             "postgres_data:/var/lib/postgresql/data"
           ],
           "secretEnv": [
-            "POSTGRES_PASSWORD"
+            "POSTGRES_PASSWORD",
+            "OPENSHIP_APP_PASSWORD"
           ],
           "healthcheck": {
             "test": [
@@ -6351,6 +6352,13 @@
           "label": "pgAdmin email",
           "default": "admin@example.com",
           "required": true
+        },
+        {
+          "key": "OPENSHIP_APP_PASSWORD",
+          "service": "postgres",
+          "label": "Application database password",
+          "generate": "secret",
+          "secret": true
         }
       ],
       "management": {
@@ -6381,7 +6389,7 @@
           {
             "id": "url",
             "label": "Database URL",
-            "source": "template:postgresql://openship:{{env:postgres:POSTGRES_PASSWORD}}@postgres:5432/app",
+            "source": "template:postgresql://app:{{env:postgres:OPENSHIP_APP_PASSWORD}}@postgres:5432/app",
             "service": "postgres",
             "secret": true,
             "envKey": "DATABASE_URL",
@@ -6389,8 +6397,15 @@
           },
           {
             "id": "password",
-            "label": "Database password",
+            "label": "Database administrator password",
             "source": "env:postgres:POSTGRES_PASSWORD",
+            "secret": true,
+            "help": "Use with the preloaded openship administrator in pgAdmin."
+          },
+          {
+            "id": "appPassword",
+            "label": "Application database password",
+            "source": "env:postgres:OPENSHIP_APP_PASSWORD",
             "secret": true
           }
         ],
@@ -6442,7 +6457,7 @@
             "description": "Use the private database URL from another project or a local tunnel."
           }
         ],
-        "article": "## PostgreSQL with pgAdmin\n\nThis stack includes PostgreSQL and the pgAdmin project's own container. PostgreSQL stays on the private project network; pgAdmin has a separate generated login and can use an Openship domain.\n\n## Connect\n\nThe Connection card contains the private `DATABASE_URL`, database password, and pgAdmin credentials. pgAdmin is preloaded with the database server; enter the separate database password when connecting. Its login password does not grant database access by itself. Use **Use in a project** for application connections or **Open in localhost** for a local client.\n\nThe `openship` database role is the instance administrator. Create a restricted role in pgAdmin for applications that need fewer permissions. The stack does not expose PostgreSQL publicly or configure public PostgreSQL TLS.\n\n## Persistence and backups\n\nThe database and pgAdmin configuration have separate persistent volumes. Take a database backup before upgrades. Changing PostgreSQL major versions requires migration or dump/restore; changing the image tag alone is insufficient.\n\n[PostgreSQL image](https://hub.docker.com/_/postgres) · [pgAdmin container deployment](https://www.pgadmin.org/docs/pgadmin4/latest/container_deployment.html)"
+        "article": "## PostgreSQL with pgAdmin\n\nThis stack includes PostgreSQL and the pgAdmin project's own container. PostgreSQL stays on the private project network; pgAdmin has a separate generated login and can use an Openship domain.\n\n## Connect\n\nThe Connection card contains the private `DATABASE_URL`, application password, database administrator password, and pgAdmin credentials. pgAdmin is preloaded with the `openship` administrator; enter its separate database administrator password when connecting. Its login password does not grant database access by itself. Use **Use in a project** for application connections or **Open in localhost** for a local client.\n\nThe `app` role owns the application database and cannot administer roles or create databases. Its password and the `DATABASE_URL` are separate from the `openship` instance administrator. Create additional restricted roles in pgAdmin when needed. The stack does not expose PostgreSQL publicly or configure public PostgreSQL TLS.\n\n## Persistence and backups\n\nThe database and pgAdmin configuration have separate persistent volumes. Take a database backup before upgrades. Changing PostgreSQL major versions requires migration or dump/restore; changing the image tag alone is insufficient.\n\n[PostgreSQL image](https://hub.docker.com/_/postgres) · [pgAdmin container deployment](https://www.pgadmin.org/docs/pgadmin4/latest/container_deployment.html)"
       },
       "installLayout": {
         "settings": "single",
@@ -6475,6 +6490,11 @@
           "service": "pgadmin",
           "path": "/pgadmin4/servers.json",
           "content": "{\"Servers\": {\"1\": {\"Name\": \"PostgreSQL\", \"Group\": \"Openship\", \"Host\": \"postgres\", \"Port\": 5432, \"MaintenanceDB\": \"app\", \"Username\": \"openship\", \"SSLMode\": \"prefer\"}}}"
+        },
+        {
+          "service": "postgres",
+          "path": "/docker-entrypoint-initdb.d/openship-app-role.sh",
+          "content": "#!/bin/sh\nset -eu\npsql -v ON_ERROR_STOP=1 --username \"$POSTGRES_USER\" --dbname \"$POSTGRES_DB\" --set app_password=\"$OPENSHIP_APP_PASSWORD\" <<'SQL'\nCREATE ROLE app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD :'app_password';\nALTER DATABASE app OWNER TO app;\nGRANT USAGE, CREATE ON SCHEMA public TO app;\nSQL\n"
         }
       ],
       "provides": [

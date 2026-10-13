@@ -4,9 +4,9 @@ This stack includes PostgreSQL and the pgAdmin project's own container. PostgreS
 
 ## Connect
 
-The Connection card contains the private `DATABASE_URL`, database password, and pgAdmin credentials. pgAdmin is preloaded with the database server; enter the separate database password when connecting. Its login password does not grant database access by itself. Use **Use in a project** for application connections or **Open in localhost** for a local client.
+The Connection card contains the private `DATABASE_URL`, application password, database administrator password, and pgAdmin credentials. pgAdmin is preloaded with the `openship` administrator; enter its separate database administrator password when connecting. Its login password does not grant database access by itself. Use **Use in a project** for application connections or **Open in localhost** for a local client.
 
-The `openship` database role is the instance administrator. Create a restricted role in pgAdmin for applications that need fewer permissions. The stack does not expose PostgreSQL publicly or configure public PostgreSQL TLS.
+The `app` role owns the application database and cannot administer roles or create databases. Its password and the `DATABASE_URL` are separate from the `openship` instance administrator. Create additional restricted roles in pgAdmin when needed. The stack does not expose PostgreSQL publicly or configure public PostgreSQL TLS.
 
 ## Persistence and backups
 

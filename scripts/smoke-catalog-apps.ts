@@ -347,6 +347,18 @@ async function smokeApp(app: AppTemplate) {
         break;
       }
       case "postgresql": {
+        const appSql = (sql: string) =>
+          exec(
+            "postgres",
+            'PGPASSWORD="$OPENSHIP_APP_PASSWORD" psql -h 127.0.0.1 -U app -d app -Atc ' +
+              quote(sql),
+          );
+        assert(
+          (await appSql(
+            "SELECT rolsuper::text || '|' || rolcreatedb::text || '|' || rolcreaterole::text FROM pg_roles WHERE rolname = current_user",
+          )) === "false|false|false",
+          "PostgreSQL application connection has administrative privileges",
+        );
         const page = await request("pgadmin", "/login");
         const body = await page.text();
         const csrf =
@@ -386,16 +398,12 @@ async function smokeApp(app: AppTemplate) {
           browser.status === 200 && !browser.headers.get("Location"),
           "pgAdmin administrator login failed (HTTP " + login.status + ")",
         );
-        await exec(
-          "postgres",
-          `psql -U openship -d app -c "CREATE TABLE openship_smoke (value text); INSERT INTO openship_smoke VALUES ('${marker}')"`,
+        await appSql(
+          `CREATE TABLE openship_smoke (value text); INSERT INTO openship_smoke VALUES ('${marker}')`,
         );
         await replace();
         assert(
-          (await exec(
-            "postgres",
-            "psql -U openship -d app -Atc 'SELECT value FROM openship_smoke'",
-          )) === marker,
+          (await appSql("SELECT value FROM openship_smoke")) === marker,
           "PostgreSQL data did not persist",
         );
         break;

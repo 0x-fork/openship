@@ -20,7 +20,7 @@
         "POSTGRES_DB": "app"
       },
       "volumes": ["postgres_data:/var/lib/postgresql/data"],
-      "secretEnv": ["POSTGRES_PASSWORD"],
+      "secretEnv": ["POSTGRES_PASSWORD", "OPENSHIP_APP_PASSWORD"],
       "healthcheck": {
         "test": ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""],
         "interval": "10s",
@@ -87,6 +87,13 @@
       "label": "pgAdmin email",
       "default": "admin@example.com",
       "required": true
+    },
+    {
+      "key": "OPENSHIP_APP_PASSWORD",
+      "service": "postgres",
+      "label": "Application database password",
+      "generate": "secret",
+      "secret": true
     }
   ],
   "management": {
@@ -117,7 +124,7 @@
       {
         "id": "url",
         "label": "Database URL",
-        "source": "template:postgresql://openship:{{env:postgres:POSTGRES_PASSWORD}}@postgres:5432/app",
+        "source": "template:postgresql://app:{{env:postgres:OPENSHIP_APP_PASSWORD}}@postgres:5432/app",
         "service": "postgres",
         "secret": true,
         "envKey": "DATABASE_URL",
@@ -125,8 +132,15 @@
       },
       {
         "id": "password",
-        "label": "Database password",
+        "label": "Database administrator password",
         "source": "env:postgres:POSTGRES_PASSWORD",
+        "secret": true,
+        "help": "Use with the preloaded openship administrator in pgAdmin."
+      },
+      {
+        "id": "appPassword",
+        "label": "Application database password",
+        "source": "env:postgres:OPENSHIP_APP_PASSWORD",
         "secret": true
       }
     ],
@@ -205,6 +219,11 @@
       "service": "pgadmin",
       "path": "/pgadmin4/servers.json",
       "content": "{\"Servers\": {\"1\": {\"Name\": \"PostgreSQL\", \"Group\": \"Openship\", \"Host\": \"postgres\", \"Port\": 5432, \"MaintenanceDB\": \"app\", \"Username\": \"openship\", \"SSLMode\": \"prefer\"}}}"
+    },
+    {
+      "service": "postgres",
+      "path": "/docker-entrypoint-initdb.d/openship-app-role.sh",
+      "content": "#!/bin/sh\nset -eu\npsql -v ON_ERROR_STOP=1 --username \"$POSTGRES_USER\" --dbname \"$POSTGRES_DB\" --set app_password=\"$OPENSHIP_APP_PASSWORD\" <<'SQL'\nCREATE ROLE app WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD :'app_password';\nALTER DATABASE app OWNER TO app;\nGRANT USAGE, CREATE ON SCHEMA public TO app;\nSQL\n"
     }
   ],
   "provides": [
