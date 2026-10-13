@@ -1251,6 +1251,11 @@
         "action": "ran the failing job",
         "actionWithoutResource": "ran the failing job",
         "label": "Job failed"
+      },
+      "issues.history.clear": {
+        "action": "cleared resolved monitoring history",
+        "actionWithoutResource": "cleared resolved monitoring history",
+        "label": "Monitoring history cleared"
       }
     },
     "resourceLabels": {

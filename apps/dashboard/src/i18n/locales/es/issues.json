@@ -239,5 +239,15 @@
       "coverageErrorsOne": "{n} comprobación falló",
       "coverageErrorsOther": "{n} comprobaciones fallaron"
     }
+  },
+  "history": {
+    "clear": "Borrar historial",
+    "confirm": "¿Borrar el historial de incidentes resueltos?",
+    "hint": "Esto elimina permanentemente los incidentes resueltos de este espacio de trabajo. Se conservan los problemas activos, los registros de auditoría y las notificaciones.",
+    "confirmClear": "Borrar incidentes resueltos",
+    "clearing": "Borrando…",
+    "cancel": "Cancelar",
+    "cleared": "Historial de monitoreo borrado.",
+    "failed": "No se pudo borrar el historial. Inténtalo de nuevo."
   }
 }

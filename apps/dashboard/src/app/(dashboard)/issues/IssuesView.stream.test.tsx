@@ -25,6 +25,8 @@ vi.mock("@/components/notifications/NotificationSettings", () => ({
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
+  apiBaseUrl: "http://localhost/api/",
+  clearHistory: vi.fn(),
   install: vi.fn(),
   containers: vi.fn(),
   reload: vi.fn(),
@@ -48,9 +50,9 @@ vi.mock("@/components/issues/MonitoringHealth", () => ({
   MonitoringHealth: () => <div>Container health content</div>,
 }));
 vi.mock("@/lib/api", () => ({
-  getApiBaseUrl: () => "http://localhost/api/",
+  getApiBaseUrl: () => mocks.apiBaseUrl,
   getApiErrorMessage: (_: unknown, fallback: string) => fallback,
-  issuesApi: { list: mocks.list, rescanStatus: mocks.rescanStatus, rescan: mocks.rescan },
+  issuesApi: { list: mocks.list, clearHistory: mocks.clearHistory, rescanStatus: mocks.rescanStatus, rescan: mocks.rescan },
   systemApi: { getInstallSession: mocks.install, listServerContainers: mocks.containers },
 }));
 vi.mock("@/hooks/useInfraFleet", () => ({
@@ -137,9 +139,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   fetcher.mockReset();
   mocks.serverIds = ["one", "two"];
+  mocks.apiBaseUrl = "http://localhost/api/";
   mocks.selfHosted = true;
   mocks.deployMode = "docker";
   mocks.rescan.mockReset();
+  mocks.clearHistory.mockReset().mockResolvedValue({ data: { deleted: 1 } });
   mocks.rescanStatus.mockReset().mockResolvedValue({ data: null });
   mocks.install.mockReset().mockResolvedValue({ active: false });
   mocks.containers.mockReset().mockResolvedValue([]);
@@ -170,6 +174,97 @@ beforeEach(() => {
 });
 
 describe("Monitoring health navigation", () => {
+  function historyFeed(canClearHistory = true): IssueFeed {
+    return { status: "resolved", canClearHistory, counts: { total: 1, outage: 0, actionRequired: 1, advisory: 0 },
+      data: [{ id: "resolved-server", scope: "server", source: "incident", kind: "server_unreachable",
+        severity: "action_required", title: "Server unreachable", message: "Old connection failure",
+        resolvedAt: "2026-10-12T10:00:00Z", resolveWith: [],
+        target: { id: "one", scope: "server", name: "Old server", href: "/servers/one" } }] };
+  }
+  async function renderHistory() {
+    window.history.replaceState(null, "", "/monitoring?tab=resolved");
+    mocks.list.mockResolvedValue(historyFeed());
+    await render();
+  }
+  it("confirms history deletion, shares rapid clicks, then refreshes the resolved feed", async () => {
+    await renderHistory();
+    await click("Clear history");
+    expect(mocks.clearHistory).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Active issues, audit logs and notifications are kept.");
+    await click("Cancel");
+    expect(mocks.clearHistory).not.toHaveBeenCalled();
+    await click("Clear history");
+    const pending = deferred<{ data: { deleted: number } }>();
+    mocks.clearHistory.mockReturnValue(pending.promise);
+    const button = buttons("Clear resolved history")[0]!;
+    await act(async () => { button.click(); button.click(); });
+    expect(mocks.clearHistory).toHaveBeenCalledOnce();
+    expect(buttons("Clearing…")[0]?.disabled).toBe(true);
+    mocks.list.mockResolvedValue({ ...historyFeed(), data: [], counts: { total: 0, outage: 0, actionRequired: 0, advisory: 0 } });
+    await act(async () => pending.resolve({ data: { deleted: 1 } }));
+    expect(container.textContent).not.toContain("Old server");
+    expect(mocks.list).toHaveBeenLastCalledWith("resolved");
+    expect(mocks.toast).toHaveBeenCalledWith("success", "Monitoring history cleared.", "Monitoring");
+  });
+  it("retains history on failure and allows a confirmed retry", async () => {
+    await renderHistory();
+    mocks.clearHistory.mockRejectedValueOnce(new Error("request lost"));
+    await click("Clear history");
+    await click("Clear resolved history");
+    expect(container.textContent).toContain("Could not clear history. Try again.");
+    expect(container.textContent).toContain("Old server");
+    expect(mocks.toast).not.toHaveBeenCalled();
+    await click("Clear resolved history");
+    expect(mocks.clearHistory).toHaveBeenCalledTimes(2);
+  });
+  it("discards a pending deletion's feedback after switching organizations", async () => {
+    await renderHistory();
+    const pending = deferred<{ data: { deleted: number } }>();
+    mocks.clearHistory.mockReturnValue(pending.promise);
+    await click("Clear history");
+    await click("Clear resolved history");
+    mocks.list.mockResolvedValue(historyFeed(false));
+    await act(async () => setActiveOrganizationId("org-2"));
+    expect(buttons("Clear resolved history")).toHaveLength(0);
+    expect(buttons("Clear history")).toHaveLength(0);
+    await act(async () => pending.resolve({ data: { deleted: 1 } }));
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Old server");
+  });
+  it("does not use an old confirmation to clear another organization's history", async () => {
+    await renderHistory();
+    await click("Clear history");
+    const confirm = buttons("Clear resolved history")[0]!;
+    mocks.list.mockReturnValue(deferred<IssueFeed>().promise);
+    await act(async () => {
+      setActiveOrganizationId("org-2");
+      confirm.click();
+    });
+    expect(mocks.clearHistory).not.toHaveBeenCalled();
+    expect(buttons("Clear resolved history")).toHaveLength(0);
+  });
+  it("does not use an old confirmation on another instance with the same workspace ID", async () => {
+    await renderHistory();
+    await click("Clear history");
+    mocks.apiBaseUrl = "https://other-instance.test/api/";
+    await click("Clear resolved history");
+    expect(mocks.clearHistory).not.toHaveBeenCalled();
+  });
+  it("hides deletion when the API does not grant the capability", async () => {
+    window.history.replaceState(null, "", "/monitoring?tab=resolved");
+    mocks.list.mockResolvedValue(historyFeed(false));
+    await render();
+    expect(container.textContent).toContain("Old server");
+    expect(buttons("Clear history")).toHaveLength(0);
+    expect(mocks.clearHistory).not.toHaveBeenCalled();
+  });
+  it("waits for an explicit workspace rather than using the cookie's default for deletion", async () => {
+    await renderHistory();
+    await act(async () => setActiveOrganizationId(null));
+    expect(buttons("Clear history")).toHaveLength(0);
+    expect(mocks.clearHistory).not.toHaveBeenCalled();
+  });
+
   it("opens notification settings directly without loading the issue feed", async () => {
     window.history.replaceState(null, "", "/monitoring?tab=notifications");
     await render();
@@ -395,8 +490,10 @@ describe("monitoring connection recovery", () => {
   it("does not start a queued refresh in another workspace", async () => {
     const pendingOverview = await finishScanWhileFeedLoads();
     await act(async () => setActiveOrganizationId("org-2"));
+    // The scope subscription starts one fresh read for the new organization.
+    expect(mocks.list).toHaveBeenCalledTimes(3);
     await act(async () => pendingOverview.resolve(emptyFeed));
-    expect(mocks.list).toHaveBeenCalledTimes(2);
+    expect(mocks.list).toHaveBeenCalledTimes(3);
     expect(mocks.toast).not.toHaveBeenCalled();
   });
 

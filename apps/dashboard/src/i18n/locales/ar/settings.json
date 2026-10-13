@@ -1191,6 +1191,11 @@
         "action": "شغّل المهمة الفاشلة",
         "actionWithoutResource": "شغّل المهمة الفاشلة",
         "label": "فشلت المهمة"
+      },
+      "issues.history.clear": {
+        "action": "مسح سجل المراقبة المحلول",
+        "actionWithoutResource": "مسح سجل المراقبة المحلول",
+        "label": "تم مسح سجل المراقبة"
       }
     },
     "resourceLabels": {

@@ -239,5 +239,15 @@
       "coverageErrorsOne": "{n} verificação falhou",
       "coverageErrorsOther": "{n} verificações falharam"
     }
+  },
+  "history": {
+    "clear": "Limpar histórico",
+    "confirm": "Limpar o histórico de incidentes resolvidos?",
+    "hint": "Isso remove permanentemente os incidentes resolvidos deste espaço de trabalho. Os problemas ativos, registros de auditoria e notificações são mantidos.",
+    "confirmClear": "Limpar incidentes resolvidos",
+    "clearing": "Limpando…",
+    "cancel": "Cancelar",
+    "cleared": "Histórico de monitoramento limpo.",
+    "failed": "Não foi possível limpar o histórico. Tente novamente."
   }
 }

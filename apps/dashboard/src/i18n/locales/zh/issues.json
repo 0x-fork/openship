@@ -239,5 +239,15 @@
       "coverageErrorsOne": "{n} 项检查失败",
       "coverageErrorsOther": "{n} 项检查失败"
     }
+  },
+  "history": {
+    "clear": "清除历史记录",
+    "confirm": "清除已解决的监控事件历史？",
+    "hint": "这会永久删除此工作区中已解决的事件。当前问题、审计日志和通知将被保留。",
+    "confirmClear": "清除已解决的历史",
+    "clearing": "正在清除…",
+    "cancel": "取消",
+    "cleared": "监控历史已清除。",
+    "failed": "无法清除历史记录。请重试。"
   }
 }
