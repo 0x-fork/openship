@@ -45,12 +45,17 @@ export async function listCheckouts(ctx: ExecutionContext, input: BillingScopeIn
     3,
     async (owner) => {
       const server = await summary(owner);
+      let capacityReadFailed = false;
       const capacity =
         owner.namespace &&
         owner.pendingCheckouts.some(
-          (intent) => intent.checkoutId && intent.request.kind === "subscription",
+          (intent) => intent.checkoutId && !intent.cancellation && intent.request.kind === "subscription",
         )
-          ? await billing.getPendingCapacityCheckout(owner.namespace).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/billing/billing-checkout-recovery"); return null; })
+          ? await billing.getPendingCapacityCheckout(owner.namespace).catch((diagnosticFailure) => {
+              capacityReadFailed = true;
+              observeCaughtError(diagnosticFailure, "platform/engine/modules/billing/billing-checkout-recovery");
+              return null;
+            })
           : null;
       return mapWithLimit(
         owner.pendingCheckouts,
@@ -69,6 +74,15 @@ export async function listCheckouts(ctx: ExecutionContext, input: BillingScopeIn
           const matchingQuote =
             capacity?.pendingCheckout?.checkoutId === intent.checkoutId &&
             capacity?.pendingCheckout?.quote.paymentSource === "stripe";
+          const canCancel = Boolean(
+            checkout && payable(checkout) && (intent.cancellation || matchingQuote),
+          );
+          const cancelUnavailableReason: BillingPendingCheckout["cancelUnavailableReason"] =
+            !canCancel && checkout && payable(checkout) && !intent.cancellation
+              ? capacityReadFailed && request.kind === "subscription"
+                ? "provider_unavailable"
+                : "unsupported"
+              : undefined;
           return {
             id: identity(owner, intent),
             checkoutId: intent.checkoutId ?? null,
@@ -93,9 +107,8 @@ export async function listCheckouts(ctx: ExecutionContext, input: BillingScopeIn
                     ? "open"
                     : "processing",
             canResume,
-            canCancel: Boolean(
-              checkout && payable(checkout) && (intent.cancellation || matchingQuote),
-            ),
+            canCancel,
+            ...(cancelUnavailableReason ? { cancelUnavailableReason } : {}),
           };
         },
       );

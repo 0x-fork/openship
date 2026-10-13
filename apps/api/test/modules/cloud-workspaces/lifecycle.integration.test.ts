@@ -1007,10 +1007,24 @@ describe("workspace payment and deletion races", () => {
       h.billing.getPendingCapacityCheckout.mockResolvedValue({ pendingCheckout: checkoutId ? {
         checkoutId, quote: { id: "other-quote", paymentSource: "stripe" },
       } : null });
-      expect(await selected()).toMatchObject({ canResume: true, canCancel: false });
+      expect(await selected()).toMatchObject({ canResume: true, canCancel: false, cancelUnavailableReason: "unsupported" });
       await expect(remote().cancelCheckout(await action())).rejects.toMatchObject({ code: "BILLING_CHECKOUT_CANCEL_UNAVAILABLE" });
       expect(h.billing.cancelCapacityCheckout).not.toHaveBeenCalled();
       expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts[0]).not.toHaveProperty("cancellation");
+    });
+    it("distinguishes a failed cancellation read from unsupported cancellation, then restores Cancel after refresh", async () => {
+      await purchase();
+      h.billing.getPendingCapacityCheckout.mockRejectedValueOnce(new Error("provider timeout"));
+      const item = await selected();
+      expect(item).toMatchObject({ state: "open", canResume: true, canCancel: false,
+        cancelUnavailableReason: "provider_unavailable" });
+      expect(h.billing.cancelCapacityCheckout).not.toHaveBeenCalled();
+      expect(h.billing.createCheckout).toHaveBeenCalledOnce();
+      const refreshed = await selected();
+      expect(refreshed).toMatchObject({ state: "open", canCancel: true });
+      expect(refreshed).not.toHaveProperty("cancelUnavailableReason");
+      expect(await remote().cancelCheckout({ workspaceId: workspace.id, id: item.id })).toMatchObject({ status: "expired" });
+      await expect(purchase()).resolves.toHaveProperty("checkoutId");
     });
     it("keeps unknown provider state pending and does not replay, clear or cancel it", async () => {
       await purchase();

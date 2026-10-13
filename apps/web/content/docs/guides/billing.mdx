@@ -137,6 +137,9 @@ This remains available before a server has a paid plan. A pending cancellation
 keeps the purchase tracked until confirmed; a payment that completes meanwhile
 opens its verification status instead of another checkout. Confirmed cancellation
 or expiry lets you choose a new plan and remove an unused, unpaid server.
+If cancellation cannot be verified, refresh the payment status. If this payment
+has no supported cancellation, complete it or wait for expiry before selecting
+another plan; removing its local record would leave its payment link active.
 
 ## Cancellation and retained storage
 

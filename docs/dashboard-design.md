@@ -491,6 +491,9 @@ check retryable before starting the move.
   name, with Resume and provider-supported cancellation. Never present a pending or
   unknown cancellation as complete. After confirmed cancellation, offer another plan
   and reuse the existing delete confirmation for an unused, unpaid server.
+  Distinguish failed cancellation checks (Refresh) from payments without provider-supported
+  cancellation (complete the payment or wait for expiry). Show the support link once;
+  neither condition may clear a payable checkout or allow a competing subscription.
 - Monthly servers show purchased resources, paid-through coverage and measured CPU time;
   they have no compute-credit donut, exhaustion alert or credit top-up action. Keep optional
   managed proxy transfer and retained-storage charges distinct from compute coverage, with

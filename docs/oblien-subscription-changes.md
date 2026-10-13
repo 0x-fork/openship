@@ -8,6 +8,33 @@ supplies trusted retail offers and the existing server resize/restart workflow.
 Provider contract: [Reseller subscription plan changes](https://oblien.com/docs/api/billing#reseller-subscription-plan-changes).
 Checked against the published API docs and npm SDK on October 3, 2026.
 
+## Unfinished initial checkouts
+
+Checked against `oblien@2.10.0` and the provider billing documentation on
+October 14, 2026. This is separate from changing an existing subscription.
+
+Openship can cancel a hosted capacity payment when
+`billing.capacity(namespace).pendingCheckout` identifies its exact checkout
+and Stripe quote. It persists the quote and retry key before calling
+`billing.cancelCapacityChange`, then reads the original checkout again. Only
+confirmed expiry releases an unpaid payment for another purchase. A concurrent
+payment or unknown outcome keeps the original purchase tracked.
+
+The SDK has no general cancellation operation by checkout ID. A successful
+capacity read without a matching quote returns
+`cancelUnavailableReason: "unsupported"`; a failed capacity read returns
+`"provider_unavailable"`. The dashboard offers Refresh for the latter. Neither
+case clears the purchase locally, and the optional reason preserves compatibility
+with older clients and Cloud APIs.
+
+To enable cancellation for every unfinished payment, Oblien needs an
+authenticated operation bound to the owner, namespace, opaque checkout ID and
+stable idempotency key. It must invalidate the custom payment link and any
+underlying Stripe session, preserve reservations while cancellation is uncertain,
+and expose the result through checkout status. If payment wins the race, it must
+report that payment instead of promising cancellation. Subscription cancellation
+is not a substitute: it stops renewal of an existing paid subscription.
+
 ## Customer flow
 
 1. Select a server in Billing's right sidebar and choose **Review change** on
