@@ -266,11 +266,16 @@ When webmail runs on the mail server itself, Openship maps this backend hostname
 address inside the container while preserving the hostname used to verify the mail certificate.
 The mapping is saved for redeploy and rollback. Cloud and other-server webmail use the mail server's
 ordinary DNS address; external-backend settings are left as supplied.
+Both IMAP and SMTP honor the container's hostname mappings; SMTP still requires verified TLS before
+sending credentials. Existing installs need the updated control plane and webmail image, then
+**Mail → Deploy webmail** once to save the mapping. Later project redeploys reuse it.
 
 Connection failures and invalid or expired certificates show a mail-server connection error. “Invalid email
 or password” is reserved for a credential rejection from IMAP. Check the webmail host's DNS and network path,
 the mail server's client ports, and its certificate; keep TLS verification enabled. After changing a mailbox
 password or backend setting, sign in again to refresh the saved session credentials.
+Sign-in has a 40-second browser deadline covering verification and session confirmation. If the
+connection stalls, the form shows “Sign in timed out” and allows another attempt.
 </Callout>
 
 <Callout title="I don't see an “Emails” item in the sidebar" type="warn">
