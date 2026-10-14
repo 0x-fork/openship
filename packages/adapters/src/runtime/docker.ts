@@ -183,6 +183,7 @@ import { transferLocalDirectory } from "./transfer";
 import { splitRuntimeEnv, droppedRuntimeEnvMessage } from "./runtime-env";
 import {
   ownsNetworkEndpoint,
+  parseComposeDurationNs,
   parseContainerHosts,
   safeErrorMessage,
   withTimeout,
@@ -738,39 +739,6 @@ export function packBuildContext(
   };
 }
 
-const DURATION_UNITS_NS: Record<string, number> = {
-  ns: 1,
-  us: 1_000,
-  µs: 1_000,
-  ms: 1_000_000,
-  s: 1_000_000_000,
-  m: 60_000_000_000,
-  h: 3_600_000_000_000,
-};
-
-/**
- * Parse a compose/Go duration ("30s", "1m30s", "500ms") to nanoseconds — the
- * unit Docker's Engine API expects for Healthcheck timings. A bare number is
- * treated as seconds (lenient; compose long-form usually carries units, but
- * bare ints appear in the wild). Returns undefined when nothing parses, so the
- * caller omits the field and Docker keeps its default.
- */
-function parseDurationNs(value: string | undefined): number | undefined {
-  if (value == null) return undefined;
-  const str = String(value).trim();
-  if (!str) return undefined;
-  if (/^\d+(\.\d+)?$/.test(str)) return Math.round(parseFloat(str) * 1_000_000_000);
-  const re = /(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/g;
-  let total = 0;
-  let matched = false;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(str)) !== null) {
-    matched = true;
-    total += parseFloat(m[1]!) * DURATION_UNITS_NS[m[2]!]!;
-  }
-  return matched ? Math.round(total) : undefined;
-}
-
 /**
  * Convert a parsed compose healthcheck into a Docker Engine Healthcheck object.
  * `test` string → `["CMD-SHELL", cmd]`; `test` array → `["CMD", ...argv]`;
@@ -804,9 +772,9 @@ export function toDockerHealthcheck(
   }
   if (!Test) return undefined;
 
-  const Interval = parseDurationNs(hc.interval);
-  const Timeout = parseDurationNs(hc.timeout);
-  const StartPeriod = parseDurationNs(hc.startPeriod);
+  const Interval = parseComposeDurationNs(hc.interval);
+  const Timeout = parseComposeDurationNs(hc.timeout);
+  const StartPeriod = parseComposeDurationNs(hc.startPeriod);
   return {
     Test,
     ...(Interval !== undefined && { Interval }),
@@ -824,6 +792,8 @@ export function toDockerHealthcheck(
  * positive sub-second grace clamps up to one second rather than truncating to
  * "kill now"; an explicit zero stays zero. Returns an empty object when neither
  * is set so the spread adds no keys and Docker keeps its defaults (SIGTERM/10s).
+ * A grace period that isn't a whole duration ("soon", and "1m30" too) counts as
+ * unset rather than being half-read into a shorter one.
  */
 export function toStopConfig(advanced?: ComposeAdvanced): {
   StopSignal?: string;
@@ -832,7 +802,7 @@ export function toStopConfig(advanced?: ComposeAdvanced): {
   const out: { StopSignal?: string; StopTimeout?: number } = {};
   const signal = advanced?.stopSignal?.trim();
   if (signal) out.StopSignal = signal;
-  const graceNs = parseDurationNs(advanced?.stopGracePeriod);
+  const graceNs = parseComposeDurationNs(advanced?.stopGracePeriod);
   if (graceNs !== undefined) {
     out.StopTimeout = graceNs <= 0 ? 0 : Math.max(1, Math.round(graceNs / 1_000_000_000));
   }

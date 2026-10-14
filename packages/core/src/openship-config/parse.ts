@@ -39,6 +39,7 @@ import { validateImageReference } from "../project-source";
 import { isValidEnvKey, normalizeProjectRootDirectory } from "../utils";
 import { isRuntimeVersion, runtimeVersionError } from "../runtime-version";
 import { isValidServiceName } from "../service-name";
+import { isComposeDuration } from "../duration";
 
 const TOP_LEVEL_KEYS = new Set([
   "$schema",
@@ -515,15 +516,13 @@ function parseStopSignal(ctx: Ctx, v: unknown, path: string): string | undefined
   return sig;
 }
 
-// Anchored on purpose, stricter than the runtime's own scan: `parseDurationNs`
-// reads "1m30" as one minute and drops the 30, and a grace period silently
-// shorter than the one asked for is the failure these fields exist to prevent.
-const STOP_GRACE_PERIOD_RE = /^(?:\d+(?:\.\d+)?|(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h))+)$/;
+// The shared grammar in `../duration`, which the runtime and the compose parser
+// read too, so a value accepted here is one the runtime applies as written.
 
 function parseStopGracePeriod(ctx: Ctx, v: unknown, path: string): string | undefined {
   const dur = ctx.str(v, path);
   if (dur === undefined) return undefined;
-  if (!STOP_GRACE_PERIOD_RE.test(dur)) {
+  if (!isComposeDuration(dur)) {
     ctx.err(path, 'must be a duration like "90s", "1m30s", "10m", or a bare number of seconds');
     return undefined;
   }
