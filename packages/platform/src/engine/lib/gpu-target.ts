@@ -2,7 +2,7 @@
  * GPU placement decision, kept in a leaf module (no I/O, no heavy imports) so each case is testable
  * without loading the whole preflight dependency chain.
  */
-import { effectiveGpu, type HostCapacity } from "@repo/core";
+import { effectiveGpu, hasComposeGpuRequest, type HostCapacity } from "@repo/core";
 import type { PreflightCheck } from "../modules/deployments/preflight";
 import type { DeployableService } from "./deployable-service";
 
@@ -14,7 +14,7 @@ export function servicesRequestingGpu(
   services: readonly DeployableService[] | undefined,
 ): string[] {
   return (services ?? [])
-    .filter((svc) => !!(svc.advanced as { gpus?: unknown } | null | undefined)?.gpus)
+    .filter((svc) => hasComposeGpuRequest(svc.advanced))
     .map((svc) => svc.name);
 }
 

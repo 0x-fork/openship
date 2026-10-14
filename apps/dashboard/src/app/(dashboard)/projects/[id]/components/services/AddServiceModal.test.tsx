@@ -70,6 +70,7 @@ it.each(["cloud", "local", "linked"])("keeps MinIO's entrypoint argv and generat
   }));
 });
 it("sends the GPU request of Ollama (NVIDIA GPU)", async () => {
+  h.mode = "local";
   const name = "Ollama (NVIDIA GPU)";
   await render();
   await pick(name);
@@ -85,6 +86,7 @@ it("sends no GPU request for plain Ollama or a replacement image", async () => {
   expect(h.submit.mock.calls[0]![0]).not.toHaveProperty("advanced");
 });
 it("does not carry a catalog GPU request onto a user-selected replacement image", async () => {
+  h.mode = "local";
   await render();
   await pick("Ollama (NVIDIA GPU)");
   await edit("postgres:16-alpine", "example/other:v1");
@@ -137,4 +139,14 @@ it("prevents duplicate service creation while a save is pending", async () => {
   expect(h.close).not.toHaveBeenCalled();
   await act(async () => resolve());
   expect(h.close).toHaveBeenCalledOnce();
+});
+
+
+it.each(["cloud", "linked"])("offers CPU Ollama without an unusable GPU variant on managed Cloud (%s)", async mode => {
+  h.mode = mode === "cloud" ? "cloud" : "local";
+  await render(mode === "linked");
+  expect([...host.querySelectorAll("button")].some(button => button.textContent?.includes("Ollama (NVIDIA GPU)"))).toBe(false);
+  await pick("ollama/ollama:latest");
+  await act(async () => { submit(); });
+  expect(h.submit.mock.calls[0]![0]).not.toHaveProperty("advanced");
 });

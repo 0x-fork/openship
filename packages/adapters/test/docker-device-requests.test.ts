@@ -26,10 +26,7 @@ describe("toDeviceRequests", () => {
   });
 
   it("sends DeviceIDs WITHOUT Count (the daemon rejects both together)", () => {
-    const [req] = toDeviceRequests({ deviceIds: ["0", "GPU-abc"], count: 3 }) as Record<
-      string,
-      unknown
-    >[];
+    const [req] = toDeviceRequests({ deviceIds: ["0", "GPU-abc"] }) as Record<string, unknown>[];
     expect(req.DeviceIDs).toEqual(["0", "GPU-abc"]);
     expect("Count" in req).toBe(false);
   });
@@ -40,7 +37,38 @@ describe("toDeviceRequests", () => {
     ]);
   });
 
-  it("does not honor another vendor's driver (it would fail the create with an unrelated error)", () => {
-    expect(toDeviceRequests({ driver: "amd", capabilities: ["gpu"] })).toBeUndefined();
+  it("refuses unsupported drivers instead of silently deploying without a GPU", () => {
+    expect(() => toDeviceRequests({ driver: "amd", capabilities: ["gpu"] })).toThrow(
+      /only.*NVIDIA/,
+    );
   });
+});
+
+it("maps every GPU group and driver option without changing explicit zero", () => {
+  expect(
+    toDeviceRequests([{ count: 0 }, { deviceIds: ["1"], options: { mode: "passthrough" } }]),
+  ).toEqual([
+    { Driver: "nvidia", Count: 0, Capabilities: [["gpu"]] },
+    {
+      Driver: "nvidia",
+      DeviceIDs: ["1"],
+      Capabilities: [["gpu"]],
+      Options: { mode: "passthrough" },
+    },
+  ]);
+});
+
+it("refuses conflicting selectors instead of silently choosing one", () => {
+  expect(() => toDeviceRequests({ deviceIds: ["0"], count: 1 })).toThrow(/cannot be combined/);
+});
+
+it("allows NVIDIA GPU selectors while refusing unrelated CDI host devices", () => {
+  expect(
+    toDeviceRequests({
+      deviceIds: ["0", "0:1", "GPU-abc", "MIG-GPU-abc/1/0", "nvidia.com/gpu=0"],
+    })?.[0]?.DeviceIDs,
+  ).toEqual(["0", "0:1", "GPU-abc", "MIG-GPU-abc/1/0", "nvidia.com/gpu=0"]);
+  expect(() => toDeviceRequests({ deviceIds: ["example.com/host-device=root"] })).toThrow(
+    /must select NVIDIA/,
+  );
 });

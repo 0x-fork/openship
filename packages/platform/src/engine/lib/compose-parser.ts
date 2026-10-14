@@ -16,13 +16,9 @@ import {
   parseComposeNamespace,
   parseContainerHosts,
   parseEnvFile,
+  readComposeGpuConfig,
 } from "@repo/core";
-import type {
-  ComposeAdvanced,
-  ComposeGpu,
-  ComposeHealthcheck,
-  ComposeNamespaceField,
-} from "@repo/core";
+import type { ComposeAdvanced, ComposeHealthcheck, ComposeNamespaceField } from "@repo/core";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -600,8 +596,9 @@ function parseAdvanced(
   const resources = parseServiceResources(svc, env);
   if (resources) advanced.resources = resources;
 
-  const gpus = parseServiceGpus(svc, env);
-  if (gpus) advanced.gpus = gpus;
+  const gpu = readComposeGpuConfig(svc, (value) => interpolateComposeString(value, env));
+  Object.assign(advanced, gpu.config);
+  unsupported.push(...gpu.issues.map((issue) => ({ service: serviceName, ...issue })));
 
   const networkMode = parseNamespaceField(
     svc.network_mode,
@@ -786,10 +783,10 @@ function collectUnsupported(
 ): void {
   for (const [key, reason] of Object.entries(UNSUPPORTED_SERVICE_KEYS)) {
     if (!requestsSomething(svc[key])) continue;
-    // `runtime: nvidia` is honored as a GPU request (parseServiceGpus). Any other runtime
+    // `runtime: nvidia` is retained as HostConfig.Runtime. Any other runtime
     // (`runsc`, `kata`, ...) still falls back to the daemon default and is reported.
     if (key === "runtime" && isNvidiaRuntime(svc[key], env)) continue;
-    // `gpus` is modeled (parseServiceGpus) and is not in this table; nothing to skip here.
+    // `gpus` is modeled (readComposeGpuConfig) and is not in this table; nothing to skip here.
     unsupported.push({ service: serviceName, field: key, reason });
   }
 
@@ -923,99 +920,6 @@ function parseServiceResources(
     ...(cpuCores !== undefined && { cpuCores }),
     ...(memoryMb !== undefined && { memoryMb }),
   };
-}
-
-/**
- * Normalize a GPU request. Compose has three spellings and a file can carry any of them:
- *
- *  - `deploy.resources.reservations.devices: [{ driver, count|device_ids, capabilities }]` — the
- *    Compose Specification form, and the one `docker compose` itself turns into
- *    `HostConfig.DeviceRequests`;
- *  - `gpus: all` / `gpus: [{...}]` — the short top-level form (Compose >= 2.30);
- *  - `runtime: nvidia` — the pre-`--gpus` way, still everywhere in older files. It means "every GPU the
- *    runtime exposes", i.e. `count: all`.
- *
- * Only an entry that actually asks for a GPU counts. `reservations.devices` is a general device list
- * (compose also uses it for TPUs etc.), so an entry needs the `gpu` capability or the `nvidia` driver.
- * The first such entry wins: Docker takes one request per device group and OpenShip models one.
- *
- * `count` absent means ALL — that is Compose's own default, and why `{capabilities: [gpu]}` alone is
- * enough in the wild.
- */
-function parseServiceGpus(
-  svc: Record<string, unknown>,
-  env: Record<string, string>,
-): ComposeGpu | undefined {
-  const interp = (v: unknown) => (typeof v === "string" ? interpolateComposeString(v, env) : v);
-
-  const fromEntry = (raw: unknown): ComposeGpu | undefined => {
-    if (!raw || typeof raw !== "object") return undefined;
-    const e = raw as Record<string, unknown>;
-    const driver = typeof interp(e.driver) === "string" ? (interp(e.driver) as string).trim() : "";
-    const capabilities = Array.isArray(e.capabilities)
-      ? e.capabilities
-          .map((c) => interp(c))
-          .filter((c): c is string => typeof c === "string" && c.trim() !== "")
-          .map((c) => c.trim())
-      : [];
-    const wantsGpu =
-      capabilities.some((c) => c.toLowerCase() === "gpu") || driver.toLowerCase() === "nvidia";
-    if (!wantsGpu) return undefined;
-
-    const out: ComposeGpu = { driver: driver || "nvidia" };
-    if (capabilities.length > 0) out.capabilities = capabilities;
-
-    const ids = Array.isArray(e.device_ids)
-      ? e.device_ids
-          .map((d) => interp(d))
-          .filter((d): d is string | number => typeof d === "string" || typeof d === "number")
-          .map((d) => String(d).trim())
-          .filter(Boolean)
-      : [];
-    if (ids.length > 0) {
-      out.deviceIds = ids;
-      return out;
-    }
-    const count = interp(e.count);
-    if (typeof count === "number" && Number.isInteger(count) && count > 0) out.count = count;
-    else if (typeof count === "string" && /^\d+$/.test(count.trim()) && Number(count) > 0)
-      out.count = Number(count);
-    else out.count = "all"; // absent, "all", -1 and unparseable all mean every GPU (Compose default)
-    return out;
-  };
-
-  const reservations = (
-    (svc.deploy as Record<string, unknown> | undefined)?.resources as
-      | Record<string, unknown>
-      | undefined
-  )?.reservations as Record<string, unknown> | undefined;
-  const devices = reservations?.devices;
-  if (Array.isArray(devices)) {
-    for (const entry of devices) {
-      const gpu = fromEntry(entry);
-      if (gpu) return gpu;
-    }
-  }
-
-  const short = svc.gpus;
-  if (typeof short === "string" && interp(short) === "all") {
-    return { driver: "nvidia", count: "all", capabilities: ["gpu"] };
-  }
-  if (Array.isArray(short)) {
-    for (const entry of short) {
-      // `gpus` entries omit `capabilities`; the key itself says GPU.
-      const gpu = fromEntry(
-        entry && typeof entry === "object" ? { capabilities: ["gpu"], ...entry } : entry,
-      );
-      if (gpu) return gpu;
-    }
-  }
-
-  const runtime = interp(svc.runtime);
-  if (typeof runtime === "string" && runtime.trim().toLowerCase() === "nvidia") {
-    return { driver: "nvidia", count: "all", capabilities: ["gpu"] };
-  }
-  return undefined;
 }
 
 /**

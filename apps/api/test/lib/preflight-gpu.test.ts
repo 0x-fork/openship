@@ -24,6 +24,16 @@ describe("servicesRequestingGpu", () => {
   });
 });
 
+it("includes legacy runtime services and skips explicit zero/empty request lists", () => {
+  expect(
+    servicesRequestingGpu([
+      { name: "legacy", advanced: { runtime: "nvidia" } },
+      { name: "none", advanced: { gpus: { count: 0 } } },
+      { name: "empty", advanced: { gpus: [] } },
+    ] as never),
+  ).toEqual(["legacy"]);
+});
+
 describe("gpuTargetCheck (warn-only)", () => {
   it("says nothing when no service wants a GPU", () => {
     expect(gpuTargetCheck({ gpuServices: [], override: null, capacity: noGpu })).toBeNull();

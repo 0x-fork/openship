@@ -294,6 +294,14 @@ describe("composeWritePatch — gpus is compose-owned", () => {
   });
 });
 
+it("clears legacy GPU runtime only when the Compose source owns the update", () => {
+  const stored = { advanced: { runtime: "nvidia" as const, monitoringEnabled: true } };
+  expect(composeWritePatch({ name: "app" }, stored, true).advanced).toEqual({
+    monitoringEnabled: true,
+  });
+  expect(composeWritePatch({ name: "app" }, stored).advanced.runtime).toBe("nvidia");
+});
+
 describe("compose environment templates (#673)", () => {
   it("persists the raw expression instead of its scan-time partial value", () => {
     const spec = toComposeSpec({

@@ -390,6 +390,7 @@ const COMPOSE_OWNED_ADVANCED_KEYS = [
   "extraHosts",
   "entrypoint",
   "gpus",
+  "runtime",
   "imageTemplate",
   "environmentTemplateKeys",
   "environmentOverrideKeys",

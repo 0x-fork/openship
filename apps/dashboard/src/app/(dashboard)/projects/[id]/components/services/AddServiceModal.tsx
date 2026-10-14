@@ -12,7 +12,6 @@ import { defaultDomainType } from "@/lib/default-domain-type";
 import { getApiErrorMessage } from "@/lib/api";
 import EnvironmentVariables from "@/components/import-project/EnvironmentVariables";
 import { RoutingSettingsCard } from "@/components/routing/RoutingSettingsCard";
-import type { ComposeGpu } from "@repo/core";
 import { LOCAL_SERVICE_CATALOG } from "./local-service-catalog";
 import { ProjectConnectionForm } from "../UseInProjectModal";
 import { useI18n, interpolate } from "@/components/i18n-provider";
@@ -39,11 +38,6 @@ const CUSTOM_ENTRY: ImageCatalogEntry = {
 
 function isCustom(entry: ImageCatalogEntry | null): boolean {
   return entry?.id === CUSTOM_ENTRY.id;
-}
-
-/** Catalog entries are loosely typed; accept only the GPU request shape the API validates. */
-function isGpuRequest(value: unknown): value is ComposeGpu {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function envObjectFromRows(rows: EnvRow[]): Record<string, string> {
@@ -241,7 +235,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   // Every application service uses the shared Docker engine and OCI catalog.
-  const catalog = LOCAL_SERVICE_CATALOG;
+  const catalog = cloudOnly ? LOCAL_SERVICE_CATALOG.filter(entry => !entry.gpus) : LOCAL_SERVICE_CATALOG;
 
   // Configure step state. Ports is a single-line, comma-separated string -
   // 95% of services have one port and the old textarea wasted vertical space.
@@ -406,7 +400,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
         : {}),
       // A catalog entry that needs a GPU (the Ollama GPU variant) carries its
       // request; a replacement image keeps nothing, like commandArgv above.
-      ...(trimmedImage === selected?.image && isGpuRequest(selected.gpus)
+      ...(trimmedImage === selected?.image && selected.gpus
         ? { advanced: { gpus: { ...selected.gpus } } }
         : {}),
       restart: "unless-stopped",

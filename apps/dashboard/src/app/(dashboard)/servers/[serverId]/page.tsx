@@ -761,7 +761,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
                 onReconnectMonitor={monitor.reconnect}
                 showComponents={canInspect}
               />}
-              {server.gpu && <GpuCard key={`${serverId}:${server.gpu.override ?? "auto"}`} server={server} onChanged={setServer} />}
+              {server.gpu && <GpuCard key={`${serverId}:${server.gpu.override ?? "auto"}`} server={server} onChanged={updated => setServer(current => current ? { ...current, ...updated } : updated)} />}
               <ServerUsage key={`${serverId}:${managed?.state ?? "connected"}`} serverId={serverId} resources={managed?.resources} showProjects metrics={!canMonitor} />
             </>}
 

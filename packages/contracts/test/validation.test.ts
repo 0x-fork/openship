@@ -19,8 +19,19 @@ describe("operation input preservation", () => {
     // A client that reads a service and PATCHes the whole `advanced` blob back must not get a 400.
     expect(parseInput(UpdateServiceBody, { advanced })).toEqual({ advanced });
     expect(parseInput(CreateServiceBody, { name: "worker", advanced })).toMatchObject({ advanced });
-    // Strict on the shape: a zero count is not a GPU request.
-    expect(() => parseInput(UpdateServiceBody, { advanced: { gpus: { count: 0 } } })).toThrow();
+    expect(parseInput(UpdateServiceBody, { advanced: { gpus: { count: 0 } } })).toMatchObject({
+      advanced: { gpus: { count: 0 } },
+    });
+    expect(
+      parseInput(UpdateServiceBody, {
+        advanced: { runtime: "nvidia", gpus: [{ deviceIds: ["0"] }, { deviceIds: ["1"] }] },
+      }),
+    ).toMatchObject({
+      advanced: { runtime: "nvidia", gpus: [{ deviceIds: ["0"] }, { deviceIds: ["1"] }] },
+    });
+    expect(() =>
+      parseInput(UpdateServiceBody, { advanced: { gpus: { driver: "amd" } } }),
+    ).toThrow();
   });
   it("continues to reject mass assignment on strict service mutations", () => {
     expect(() => parseInput(UpdateServiceBody, { projectId: "forged", name: "web" })).toThrow();

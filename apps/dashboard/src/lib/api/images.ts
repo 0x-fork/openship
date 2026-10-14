@@ -1,3 +1,4 @@
+import type { ComposeGpu } from "@repo/core";
 import { api } from "./client";
 import { endpoints } from "./endpoints";
 
@@ -13,6 +14,8 @@ export interface ImageCatalogEntry {
   image?: string;
   /** Exact container argv required by this image's entrypoint. */
   commandArgv?: string[];
+  /** Optional NVIDIA device request for this exact catalog image. */
+  gpus?: ComposeGpu;
   /** URL to logo / icon */
   logo?: string;
   description?: string;

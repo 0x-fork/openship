@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DockerRuntime } from "./docker";
+import { DockerRuntime, inspectGpuConfig } from "./docker";
 import type { MultiServiceDeployConfig, MultiServiceGroupHandle } from "./types";
 
 /**
@@ -67,8 +67,62 @@ describe("deployServiceWorkload — GPU", () => {
     expect("DeviceRequests" in args.HostConfig).toBe(false);
   });
 
-  it("does not send a GPU request for a driver it cannot honor", async () => {
-    const args = await createWith(baseConfig({ advanced: { gpus: { driver: "amd" } } }));
-    expect("DeviceRequests" in args.HostConfig).toBe(false);
+  it("refuses a driver it cannot honor instead of creating a CPU container", async () => {
+    await expect(createWith(baseConfig({ advanced: { gpus: { driver: "amd" } } }))).rejects.toThrow(
+      /only.*NVIDIA/,
+    );
   });
+});
+
+it("passes the legacy runtime and restricted environment without requesting every GPU", async () => {
+  const args = await createWith(
+    baseConfig({ advanced: { runtime: "nvidia" }, environment: { NVIDIA_VISIBLE_DEVICES: "0" } }),
+  );
+  expect(args.HostConfig.Runtime).toBe("nvidia");
+  expect(args.HostConfig).not.toHaveProperty("DeviceRequests");
+  expect(args.Env).toContain("NVIDIA_VISIBLE_DEVICES=0");
+});
+
+it("sends both device groups through the actual container create path", async () => {
+  const args = await createWith(
+    baseConfig({ advanced: { gpus: [{ deviceIds: ["0"] }, { deviceIds: ["1"] }] } }),
+  );
+  expect(args.HostConfig.DeviceRequests).toEqual([
+    { Driver: "nvidia", DeviceIDs: ["0"], Capabilities: [["gpu"]] },
+    { Driver: "nvidia", DeviceIDs: ["1"], Capabilities: [["gpu"]] },
+  ]);
+});
+
+it("retains live GPU identity and legacy runtime from Docker inspect", () => {
+  expect(
+    inspectGpuConfig({
+      Runtime: "nvidia",
+      DeviceRequests: [
+        {
+          Driver: "nvidia",
+          Count: 0,
+          DeviceIDs: ["GPU-specific"],
+          Capabilities: [["gpu", "compute"]],
+          Options: { mode: "passthrough" },
+        },
+      ],
+    } as never),
+  ).toEqual({
+    runtime: "nvidia",
+    gpus: {
+      driver: "nvidia",
+      deviceIds: ["GPU-specific"],
+      capabilities: ["gpu", "compute"],
+      options: { mode: "passthrough" },
+    },
+  });
+  expect(inspectGpuConfig({ Runtime: "runc" } as never)).toEqual({});
+});
+
+it("refuses imported alternative capability groups it cannot replay exactly", () => {
+  expect(() =>
+    inspectGpuConfig({
+      DeviceRequests: [{ Driver: "nvidia", Count: 1, Capabilities: [["gpu"], ["compute"]] }],
+    } as never),
+  ).toThrow(/cannot be imported safely/);
 });

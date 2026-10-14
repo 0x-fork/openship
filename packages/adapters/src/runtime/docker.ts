@@ -189,7 +189,10 @@ import {
   withTimeout,
   SYSTEM,
   type ComposeAdvanced,
-  type ComposeGpu,
+  normalizeComposeGpuRequests,
+  ValidationError,
+  validateComposeGpuConfig,
+  type ComposeGpuConfig,
   type ComposeHealthcheck,
 } from "@repo/core";
 import {
@@ -810,48 +813,54 @@ export function toStopConfig(advanced?: ComposeAdvanced): {
   return out;
 }
 
-/**
- * Map a compose GPU request (carried on `advanced.gpus`) to Docker's `HostConfig.DeviceRequests`.
- *
- * This is the whole reason a container can see a card: Docker has no "GPU" setting, only a device
- * request on the CREATE call (what `docker run --gpus` builds), and the image's CUDA libraries do
- * nothing without it. The env var `NVIDIA_VISIBLE_DEVICES` is not a substitute: under the default
- * `runc` runtime it is ignored (measured on a Tesla T4 host — `nvidia-smi` not found).
- *
- * Shape rules, from the Docker Engine API:
- *  - `Count: -1` is "all GPUs"; `DeviceIDs` selects specific ones and MUST NOT be sent with a
- *    non-zero `Count` (the daemon rejects both together), so ids win and `Count` is left out.
- *  - `Capabilities` is a list of AND-lists. `[["gpu"]]` is what `--gpus all` sends. The capability
- *    `gpu` is always included: without it the nvidia driver matches nothing.
- *  - Only the `nvidia` driver is honored. Another vendor's name would fail the create with a driver
- *    error that says nothing about OpenShip, so it is skipped here and left to the caller to report.
- *
- * Returns `undefined` for "no GPU" so the spread adds no key and Docker's defaults stay untouched
- * (the same conditional-spread contract as {@link toStopConfig}).
- */
+/** Compose device groups map one-for-one to Docker requests. Invalid requests fail before create. */
 export function toDeviceRequests(
-  gpus?: ComposeGpu | null,
-): Dockerode.ContainerCreateOptions["HostConfig"] extends infer H
-  ? H extends { DeviceRequests?: infer R }
-    ? R | undefined
-    : never
-  : never {
-  if (!gpus) return undefined;
-  const driver = (gpus.driver ?? "nvidia").trim().toLowerCase();
-  if (driver !== "nvidia") return undefined;
+  gpus?: ComposeGpuConfig["gpus"] | null,
+): NonNullable<Dockerode.ContainerCreateOptions["HostConfig"]>["DeviceRequests"] {
+  const requests = normalizeComposeGpuRequests(gpus);
+  if (requests.length === 0) return undefined;
+  return requests.map((request) => ({
+    Driver: "nvidia",
+    ...(request.deviceIds
+      ? { DeviceIDs: request.deviceIds }
+      : { Count: request.count === undefined || request.count === "all" ? -1 : request.count }),
+    Capabilities: [[...new Set([...(request.capabilities ?? []), "gpu"])]],
+    ...(request.options && { Options: request.options }),
+  }));
+}
 
-  const caps = new Set((gpus.capabilities ?? []).map((c) => c.trim()).filter(Boolean));
-  caps.add("gpu");
-  const ids = (gpus.deviceIds ?? []).map((d) => d.trim()).filter(Boolean);
-  return [
-    {
-      Driver: "nvidia",
-      ...(ids.length > 0
-        ? { DeviceIDs: ids }
-        : { Count: gpus.count === undefined || gpus.count === "all" ? -1 : gpus.count }),
-      Capabilities: [[...caps]],
-    },
-  ] as never;
+/** Capture live GPU settings for adoption. Absence is recorded, not filled from a stale Compose file. */
+export function inspectGpuConfig(
+  host: Dockerode.ContainerInspectInfo["HostConfig"] | null | undefined,
+): ComposeGpuConfig {
+  const gpu: ComposeGpuConfig = {};
+  if (!host) return gpu;
+  if (host.Runtime === "nvidia") gpu.runtime = "nvidia";
+  const requests = (host.DeviceRequests ?? []).filter(
+    (request) =>
+      request.Driver?.startsWith("nvidia") ||
+      request.Capabilities?.some((group) => group.includes("gpu")),
+  );
+  if (requests.length) {
+    gpu.gpus = normalizeComposeGpuRequests(
+      requests.map((request) => {
+        if ((request.Capabilities?.length ?? 0) > 1)
+          throw new ValidationError(
+            "GPU requests with alternative capability groups cannot be imported safely",
+          );
+        return {
+          driver: request.Driver || "nvidia",
+          ...(request.DeviceIDs?.length
+            ? { deviceIds: request.DeviceIDs }
+            : { count: request.Count === -1 ? "all" : (request.Count ?? 0) }),
+          ...(request.Capabilities?.[0]?.length && { capabilities: request.Capabilities[0] }),
+          ...(request.Options && { options: request.Options }),
+        };
+      }),
+    );
+    if (gpu.gpus.length === 1) gpu.gpus = gpu.gpus[0];
+  }
+  return gpu;
 }
 
 /**
@@ -4396,6 +4405,15 @@ export class DockerRuntime implements RuntimeAdapter {
     const hc = data.Config?.Healthcheck;
     const rp = data.HostConfig?.RestartPolicy;
     const configFiles = labels["com.docker.compose.project.config_files"];
+    let gpu: ComposeGpuConfig | undefined;
+    let gpuImportError: string | undefined;
+    try {
+      gpu = inspectGpuConfig(data.HostConfig);
+    } catch (error) {
+      // diagnostics-ignore: a replay limitation is metadata for adoption, not a failed inspection.
+      if (!(error instanceof ValidationError)) throw error;
+      gpuImportError = error.message;
+    }
     return {
       id: data.Id,
       name: (data.Name ?? "").replace(/^\//, ""),
@@ -4424,6 +4442,8 @@ export class DockerRuntime implements RuntimeAdapter {
           }
         : undefined,
       resources: inspectResourceLimits(data.HostConfig),
+      gpu,
+      ...(gpuImportError && { gpuImportError }),
       composeProject: labels["com.docker.compose.project"] || undefined,
       composeService: labels["com.docker.compose.service"] || undefined,
       composeConfigFiles: configFiles
@@ -5730,6 +5750,7 @@ export class DockerRuntime implements RuntimeAdapter {
     const restartPolicy = resolveRestartPolicy(config.restart);
     const healthcheck = toDockerHealthcheck(config.advanced?.healthcheck);
     const stopConfig = toStopConfig(config.advanced);
+    validateComposeGpuConfig(config.advanced);
     const deviceRequests = toDeviceRequests(config.advanced?.gpus);
 
     // Acquire an external image BEFORE touching the running container. This is
@@ -5849,6 +5870,7 @@ export class DockerRuntime implements RuntimeAdapter {
         // Conditional spread: no GPU asked = no key sent, so a host without the nvidia
         // toolkit is never handed a request it would reject.
         ...(deviceRequests ? { DeviceRequests: deviceRequests } : {}),
+        ...(config.advanced?.runtime ? { Runtime: config.advanced.runtime } : {}),
         ...(ownsProjectEndpoint ? { PortBindings: portBindings } : {}),
         Binds: binds,
         // The project network is the default; a compose `network_mode` replaces it.

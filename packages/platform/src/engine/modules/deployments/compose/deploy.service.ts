@@ -36,6 +36,7 @@ import {
   isWildcardHostname,
   withTimeout,
   type ComposeAdvanced,
+  validateComposeGpuConfig,
   type ProxySettings,
 } from "@repo/core";
 import { getTemplateForOrg } from "../../apps/catalog-source";
@@ -1011,6 +1012,7 @@ async function deployComposeServicesUnlocked(
   for (const service of enabled) {
     if (!opts?.strictScope || !opts.targetServiceIds || opts.targetServiceIds.has(service.id)) {
       parseContainerHosts(service.advanced?.extraHosts);
+      validateComposeGpuConfig(service.advanced);
     }
   }
   await assertCloudDeploymentLimits(project.organizationId, {

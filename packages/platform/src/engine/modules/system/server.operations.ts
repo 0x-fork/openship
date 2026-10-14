@@ -83,13 +83,22 @@ const CAPACITY_PROBE_TIMEOUT_MS = 4000;
  */
 async function probeServerCapacity(serverId: string, organizationId: string): Promise<HostCapacity | null> {
   if (env.CLOUD_MODE) return null;
-  const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), CAPACITY_PROBE_TIMEOUT_MS));
-  const probe = getHostCapacity(serverId, organizationId, { localFallback: false }).catch((diagnosticFailure) => {
-    observeCaughtError(diagnosticFailure, "platform/engine/modules/system/server.operations");
-    return null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), CAPACITY_PROBE_TIMEOUT_MS);
   });
-  const got = await Promise.race([probe, timeout]);
-  return got && got.source === "docker" ? got : null;
+  const probe = getHostCapacity(serverId, organizationId, { localFallback: false }).catch(
+    (diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/system/server.operations");
+      return null;
+    },
+  );
+  try {
+    const got = await Promise.race([probe, timeout]);
+    return got && got.source === "docker" ? got : null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function listServers(ctx: ExecutionContext, live = true) {
@@ -400,8 +409,11 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   }
 
   const updated = await repos.server.update(id, patch);
-  sshManager.invalidate(id);
-  await invalidateOpenRestyPaths(id);
+  // Metadata-only edits must not terminate retained terminals, builds or deployments.
+  if (LOCAL_ROW_READONLY_FIELDS.some((field) => body[field] !== undefined)) {
+    sshManager.invalidate(id);
+    await invalidateOpenRestyPaths(id);
+  }
   // Edited connection details can repoint this row at another machine (and a
   // resize changes the specs of the same one) — re-probe capacity either way.
   await invalidateHostCapacity(ctx.organizationId, id).catch((err: unknown) =>
@@ -410,6 +422,7 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
 
   // Audit only the fields the caller intended to touch. Skip secrets entirely.
   const auditAfter: Record<string, unknown> = {};
+  if (body.gpuOverride !== undefined) auditAfter.gpuOverride = updated?.gpuOverride ?? null;
   if (body.name !== undefined) auditAfter.name = updated?.name ?? null;
   if (body.sshHost !== undefined) auditAfter.sshHost = updated?.sshHost ?? null;
   if (body.sshPort !== undefined) auditAfter.sshPort = updated?.sshPort ?? null;

@@ -148,20 +148,23 @@ export type ComposeHealthcheck = {
  * `HostConfig.DeviceRequests`, and that is what the Docker runtime builds from this (see
  * `toDeviceRequests` in the adapters). Compose spells the count as an integer or the word `all`.
  *
- * Only NVIDIA is modeled: it is the only vendor with a Docker device driver we can verify here.
- * Another `driver` is stored verbatim so a round-trip does not lose it, but the runtime only honors
- * `nvidia`.
+ * Only NVIDIA is supported. Unsupported drivers are refused, never silently dropped.
  */
 export interface ComposeGpu {
-  /** Device driver. Compose default for GPUs is `nvidia`; stored verbatim. */
+  /** Device driver. Only `nvidia` is supported. */
   driver?: string;
-  /** `"all"` or a positive integer. Mutually exclusive with `deviceIds` in compose. */
+  /** `"all"` or a non-negative integer. Mutually exclusive with `deviceIds`. */
   count?: "all" | number;
   /** Specific GPU ids/UUIDs (compose `device_ids`). */
   deviceIds?: string[];
   /** Compose `capabilities`, e.g. `["gpu"]`, `["gpu","compute","utility"]`. */
   capabilities?: string[];
+  /** Driver options from Compose's device reservation. */
+  options?: Record<string, string>;
 }
+
+/** Live Docker GPU configuration; an empty object records that neither was set. */
+export type ComposeGpuConfig = Pick<ComposeAdvanced, "gpus" | "runtime">;
 
 /**
  * Extended compose fields that don't warrant their own first-class columns.
@@ -350,7 +353,9 @@ export type ComposeAdvanced = {
    * COMPOSE_OWNED_ADVANCED_KEYS. A target without a GPU gets a PREFLIGHT WARNING, not a refusal (the
    * operator may have a GPU the probe cannot see; Docker itself still rejects the create if not).
    */
-  gpus?: ComposeGpu;
+  gpus?: ComposeGpu | ComposeGpu[];
+  /** Legacy NVIDIA runtime. Preserve NVIDIA_VISIBLE_DEVICES; this is not `gpus: all`. */
+  runtime?: "nvidia";
   /**
    * Compose `network_mode` — the network namespace this service SHARES instead of
    * getting its own. `"none"`, `"service:<name>"` (a sibling in this stack), or

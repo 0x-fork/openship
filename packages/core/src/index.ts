@@ -118,3 +118,4 @@ export * from "./github-installation-scope";
 
 export * from "./pricing/actions";
 export * from "./deployment-checks";
+export * from "./compose-gpu";
