@@ -74,7 +74,12 @@ import {
   type NginxVersion,
   type ProxySettings,
 } from "@repo/core";
-import { cloudEdgeRealIpConf, isCloudFrontedHost } from "./edge-real-ip";
+import {
+  EDGE_CONTAINER_REAL_IP_CONF_NAME,
+  cloudEdgeRealIpConf,
+  edgeContainerRealIpConf,
+  isCloudFrontedHost,
+} from "./edge-real-ip";
 import { EDGE_UPSTREAM_DOWN_HANDLER } from "./edge-upstream-down";
 import { sq } from "../system/local-shell";
 import type { RootChecked } from "../system/privilege";
@@ -3168,6 +3173,7 @@ ${serveLocation}
         }
       }
       if (this.containerEdge) {
+        await this.syncContainerRealIp();
         await this.executor.exec(this.reloadCommand, { timeout: 15_000 });
       } else {
         await reloadBareOpenResty(this.executor, this.paths, {
@@ -3178,6 +3184,7 @@ ${serveLocation}
     }
 
     if (this.containerEdge) {
+      await this.syncContainerRealIp();
       await execFileAsync("sh", ["-lc", this.reloadCommand], { timeout: 15_000 });
       return;
     }
@@ -3193,6 +3200,23 @@ ${serveLocation}
     await reloadBareOpenResty(localExecutor, this.paths, {
       allowStopped: opts.allowStopped ?? false,
     });
+  }
+
+  /**
+   * Keep the containerized edge's operator real-ip include current.
+   *
+   * A bare edge gets `OPENSHIP_EDGE_TRUSTED_PROXIES` through its own rewritable include
+   * (see `openresty-lua.ts`). The container edge's nginx.conf is baked, so before this
+   * the variable was silently ignored there: behind a proxy outside Cloudflare's ranges
+   * every visitor shared one address, one rate-limit bucket and one ban rule. Written
+   * before every reload, so a change lands with the next routing apply, and skipped
+   * when unchanged.
+   */
+  private async syncContainerRealIp(): Promise<void> {
+    const path = join(this.sitesDir, EDGE_CONTAINER_REAL_IP_CONF_NAME);
+    const content = edgeContainerRealIpConf();
+    if ((await this._captureFile(path)).content === content) return;
+    await this._writeFile(path, content);
   }
 
   private async certsExist(domain: string): Promise<boolean> {

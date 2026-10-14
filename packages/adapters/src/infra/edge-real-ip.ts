@@ -175,6 +175,53 @@ export function edgeRealIpConf(): string {
 }
 
 /**
+ * Filename of the operator real-ip include on the CONTAINERIZED edge.
+ *
+ * That edge's `nginx.conf` is baked into the image, where {@link edgeRealIpConf} was
+ * rendered at build time with no operator env, so `OPENSHIP_EDGE_TRUSTED_PROXIES`
+ * never reached it. The only directory the api can write is the bind-mounted
+ * sites-enabled, which the baked `http {}` already includes. The leading `_` keeps the
+ * file out of the route namespace, like `_default.conf` and `_management.conf`.
+ */
+export const EDGE_CONTAINER_REAL_IP_CONF_NAME = "_openship-real-ip.conf";
+
+/**
+ * The operator half of the real-ip block, for the containerized edge.
+ *
+ * Only `set_real_ip_from` lines: they accumulate, so they extend the baked Cloudflare
+ * list. `real_ip_header` and `real_ip_recursive` cannot be set twice in one scope —
+ * nginx refuses the config as `[emerg] ... is duplicate` — so the baked header stands
+ * and an override is recorded in the file instead of breaking every reload.
+ *
+ * Written even when empty, so that removing the env var removes the trust on the next
+ * apply instead of leaving the last list behind.
+ */
+export function edgeContainerRealIpConf(): string {
+  const header = edgeRealIpHeader();
+  const extra = edgeTrustedProxies();
+  const lines: string[] = [
+    "# Openship — operator-declared front proxies for the containerized edge.",
+    "#",
+    "# GENERATED on every routing apply. Source: packages/adapters/src/infra/edge-real-ip.ts",
+    "#",
+    "# The baked nginx.conf already trusts Cloudflare's ranges and reads the client",
+    "# address from its real_ip_header. This file adds OPENSHIP_EDGE_TRUSTED_PROXIES, for",
+    "# a proxy in front of this edge that is not Cloudflare (for example a tunnel",
+    "# connector on this host). Each of these can set that header and be believed, so",
+    "# keep the list to hosts you control.",
+  ];
+  if (header.toLowerCase() !== "cf-connecting-ip") {
+    lines.push(
+      "#",
+      `# OPENSHIP_EDGE_REAL_IP_HEADER=${header} is NOT applied here: the baked config`,
+      "# already sets real_ip_header, and nginx rejects a second one in the same scope.",
+    );
+  }
+  lines.push("", ...extra.map((c) => `set_real_ip_from ${c};`));
+  return lines.join("\n") + "\n";
+}
+
+/**
  * Header Openship Cloud's edge names the client in.
  *
  * Not CF-Connecting-IP: the Cloud edge is a proxy in its own right, and the header it
