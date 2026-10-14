@@ -126,7 +126,7 @@ media and database backups separate from the running installation.
 Brand assets are bundled for offline use, without modifying the artwork:
 
 - Paperless: [leaf mark](https://github.com/paperless-ngx/paperless-ngx/blob/v3.3.1/docs/assets/logo_leaf.svg), upstream GPL-3.0 project.
-- Wiki.js: [brand mark](https://github.com/requarks/wiki/blob/v2.5.315/client/static/svg/logo-wikijs.svg), upstream AGPL-3.0 project.
+- Wiki.js: [brand mark](https://github.com/requarks/wiki/blob/v2.5.315/client/static/favicons/apple-touch-icon.png), upstream AGPL-3.0 project.
 - Homepage: [app icon](https://github.com/gethomepage/homepage/blob/v2.5.0/public/apple-touch-icon.png), upstream Apache-2.0 project.
 - Immich: [brand mark](https://github.com/immich-app/immich/blob/v3.3.1/design/immich-logo.svg), upstream AGPL-3.0 project.
 - Jellyfin: [brand mark](https://github.com/jellyfin/jellyfin-ux/blob/master/logos/SVG/jellyfin-icon--color-on-light.svg), upstream [branding guidance](https://jellyfin.org/docs/general/contributing/branding/).
