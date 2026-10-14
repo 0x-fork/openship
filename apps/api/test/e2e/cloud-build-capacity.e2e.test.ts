@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { BuildLogger, DockerRuntime, LocalExecutor, sq, type BuildConfig } from "@repo/adapters";
+import { generateDockerfile } from "../../../../packages/adapters/src/runtime/docker-build-plan";
 import { describeDockerE2E, dockerSocketPath, requireDocker } from "../helpers/docker-e2e";
 
 const execFileAsync = promisify(execFile);
@@ -182,6 +183,44 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     const state = JSON.parse((await docker("volume", "inspect", `${worker}_state`)).stdout)[0];
     expect(state.Labels["openship.build-cache.project"]).toBe(projectId);
     expect(state.Labels["openship.project"]).toBeUndefined();
+  });
+
+  it.each([
+    { version: "1.22.22", install: "yarn install --pnp", run: "node -r ./.pnp.js" },
+    { version: "4.9.2", install: "yarn install", run: "yarn node" },
+  ])("keeps Yarn $version PnP dependencies runnable after the build worker stops", async ({ version, install, run }) => {
+    const directory = await mkdtemp(join(root, "yarn-pnp-"));
+    const tag = `openship/yarn-pnp-e2e:${randomUUID()}`;
+    images.add(tag);
+    const command = `${run} -p "require('is-number')(42)"`;
+    const config = {
+      projectId, sessionId: randomUUID(), resources,
+      buildImage: "node:22-bookworm-slim", runtimeImage: "node:22-bookworm-slim",
+      stack: "node", packageManager: "yarn", buildCache: true,
+      installCommand: install, buildCommand: command, startCommand: command,
+      rootDirectory: "", envVars: {}, port: 3000,
+    } as BuildConfig;
+    const logs: string[] = [];
+    try {
+      await writeFile(join(directory, "package.json"), JSON.stringify({
+        name: "openship-pnp-fixture", private: true, packageManager: `yarn@${version}`,
+        dependencies: { "is-number": "7.0.0" },
+      }));
+      await writeFile(join(directory, ".yarnrc.yml"), "nodeLinker: pnp\nenableGlobalCache: true\n");
+      await writeFile(join(directory, "Dockerfile"), generateDockerfile(config));
+      const remote = runtime as unknown as {
+        buildImageOnRemote(config: BuildConfig, directory: string, dockerfile: string,
+          tag: string, logger: BuildLogger): Promise<void>;
+      };
+      await remote.buildImageOnRemote(config, directory, "Dockerfile", tag,
+        new BuildLogger(entry => logs.push(entry.message)));
+      expect((await docker("ps", "-aq", "--filter", `name=^/${worker}$`)).stdout.trim()).toBe("");
+      // A cached build must not need its cache volume or network at runtime.
+      const result = await docker("run", "--rm", "--network", "none", tag);
+      expect(result.stdout.trim(), logs.join("\n")).toBe("true");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
 });

@@ -105,6 +105,21 @@ describe("bounded project build cache", () => {
     await pruneManagedBuildCaches(h.docker as never, h.executor, { keepBytes: 0 });
     expect(h.removed).toEqual([projectBuildCacheVolume("b")]);
   });
+  it("does not walk attached or pending state while its files can change", async () => {
+    const h = fixture([volume("a"), volume("b"), volume("c")]);
+    h.docker.listContainers.mockResolvedValue([
+      { Mounts: [{ Name: projectBuildCacheVolume("a"), Source: "/cache/a" }] },
+    ]);
+    await pruneManagedBuildCaches(h.docker as never, h.executor, {
+      keepBytes: GIB, protectedProjectIds: new Set(["b"]),
+    });
+    expect(h.exec.mock.calls.filter(([command]) => command.startsWith("du ")))
+      .toEqual([["du -sk -- '/cache/c'", { timeout: 15_000 }]]);
+    expect(h.removed).toEqual([]);
+    h.exec.mockClear();
+    await pruneManagedBuildCaches(h.docker as never, h.executor, { protectAll: true, keepBytes: 0 });
+    expect(h.exec.mock.calls.some(([command]) => command.startsWith("du "))).toBe(false);
+  });
   it("protects durable pending commands even before a worker appears", async () => {
     const h = fixture();
     await pruneManagedBuildCaches(h.docker as never, h.executor, {
@@ -130,6 +145,8 @@ describe("bounded project build cache", () => {
     const h = fixture();
     await pruneManagedBuildCaches(h.docker as never, h.executor, { projectId: "b" });
     expect(h.removed).toEqual([projectBuildCacheVolume("b")]);
+    expect(h.exec.mock.calls.filter(([command]) => command.startsWith("du ")))
+      .toEqual([["du -sk -- '/cache/b'", { timeout: 15_000 }]]);
     h.docker.listContainers.mockResolvedValue([
       { Mounts: [{ Name: projectBuildCacheVolume("a"), Source: "/cache/a" }] },
     ]);

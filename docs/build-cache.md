@@ -7,7 +7,7 @@ be deleted. Release retention still protects active, pinned and rollback images.
 ## Generated builds
 
 On compatible BuildKit hosts with supported stock build images, generated Dockerfiles mount package download caches
-for npm, Bun, pnpm, Yarn Classic, pip, pipenv, Poetry, uv, Composer, Bundler, Cargo,
+for npm, Bun, pnpm, pip, pipenv, Poetry, uv, Composer, Bundler, Cargo,
 Go, Maven, Gradle, NuGet and Hex. Known pure framework caches and Turborepo's local
 cache use the same mechanism. These mounts do not become application image layers.
 
@@ -32,6 +32,9 @@ Repository Dockerfiles remain the source of truth and can declare their own cach
 mounts. Native/bare builds are unchanged.
 Custom build images retain layer caching without automatic cache mounts, preserving
 their configured users, home directories and any preseeded offline dependencies.
+Yarn package archives also stay in image layers: both Classic and modern
+Plug'n'Play loaders can need the global cache at runtime. Yarn builds still reuse
+Docker layers and supported framework/Turborepo build-only caches.
 
 Legacy Docker builders use the original recipes. Engine-API builds with explicit
 CPU/RAM limits also retain their original builder behavior; enabling cache mounts
@@ -82,6 +85,9 @@ filesystem. Disk pressure triggers unused-cache cleanup; a build is refused when
 free storage remains below 10% of the filesystem, capped at a 2 GiB reserve, or
 when filesystem inodes are exhausted. Cloud state collection sizes only recognized
 cache volumes, avoiding scans of application/database volumes.
+Attached or command-protected caches are not walked for size while their files
+can change. They enter the reclaimable retention budget after confirmed exit;
+project deletion sizes only the requested project's idle state.
 
 These are GC targets and admission checks, not filesystem quotas: active builds,
 images and application data can exceed the cache target. Concurrent builds and

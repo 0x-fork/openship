@@ -183,17 +183,23 @@ export async function pruneManagedBuildCaches(
     (inventory.Volumes ?? []).map(async (volume) => {
       const projectId = cacheOwner(volume);
       if (!projectId) return null;
+      if (options.projectId && projectId !== options.projectId) return null;
+      const references = attached.filter((container) =>
+        container.Mounts?.some(
+          (mount) => mount.Name === volume.Name || mount.Source === volume.Mountpoint,
+        ),
+      ).length;
+      // Running BuildKit workers can delete files while du walks their state.
+      // Protected state is outside this pass's reclaimable budget; size it only
+      // after the worker and durable issuing commands have confirmed exit.
+      if (references || options.protectAll || options.protectedProjectIds?.has(projectId))
+        return { ...volume, UsageData: { Size: 0, RefCount: references } };
       if (!volume.Mountpoint?.startsWith("/"))
         throw new Error("Build-cache volume has no host storage path");
       const raw = await executor.exec(`du -sk -- ${sq(volume.Mountpoint)}`, { timeout: 15_000 });
       const kb = Number(raw.trim().split(/\s+/)[0]);
       if (!Number.isSafeInteger(kb) || kb < 0 || !raw.trim())
         throw new Error("Could not measure build-cache volume size");
-      const references = attached.filter((container) =>
-        container.Mounts?.some(
-          (mount) => mount.Name === volume.Name || mount.Source === volume.Mountpoint,
-        ),
-      ).length;
       return { ...volume, UsageData: { Size: kb * 1024, RefCount: references } };
     }),
   );

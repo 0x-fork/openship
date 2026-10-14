@@ -4,12 +4,13 @@ import type { BuildConfig } from "../../types";
 import { normalizeDockerRootDirectory } from "../docker-paths";
 
 /** Cache-only paths. Installed packages and final binaries stay in image layers.
- * Mounting node_modules, target/, .nuxt, etc. would hide required build outputs. */
+ * Mounting node_modules, target/, .nuxt, etc. would hide required build outputs.
+ * Yarn is omitted: Classic and modern PnP loaders can reference global package
+ * archives at runtime, so those dependencies must stay in image layers. */
 const PACKAGE_CACHES: Readonly<Record<string, readonly string[]>> = {
   npm: ["/root/.npm"],
   bun: ["/root/.bun/install/cache"],
   pnpm: ["/root/.local/share/pnpm/store"],
-  yarn: ["/usr/local/share/.cache/yarn", "/root/.yarn/berry/cache"],
   pip: ["/root/.cache/pip"],
   pipenv: ["/root/.cache/pip"],
   poetry: ["/root/.cache/pypoetry/cache", "/root/.cache/pypoetry/artifacts"],

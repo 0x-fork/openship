@@ -54,6 +54,14 @@ describe("generated build cache mounts", () => {
     );
   });
 
+  it("keeps Yarn PnP package archives in image layers while caching build-only outputs", () => {
+    const prefix = cachedRunPrefix({ ...config, packageManager: "yarn" });
+    expect(prefix).not.toContain("target=/root/.yarn");
+    expect(prefix).not.toContain("target=/usr/local/share/.cache/yarn");
+    expect(prefix).toContain("target=/workspace/apps/web/.next/cache");
+    expect(prefix).toContain("target=/workspace/.turbo/cache");
+  });
+
   it("mounts package and framework caches at the correct monorepo paths without hiding build outputs", () => {
     const output = generateDockerfile(config);
     expect(output).toContain("ARG TARGETPLATFORM");
