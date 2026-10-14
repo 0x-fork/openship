@@ -1,5 +1,6 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Oblien, DomainRoute, RoutesInput } from "oblien";
+import { OblienError } from "oblien";
 import { posix } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { AppError, SYSTEM } from "@repo/core";
@@ -26,10 +27,11 @@ interface PageDomainInfo {
 const normalizeHostname = (hostname: string) => hostname.trim().toLowerCase();
 const httpStatus = (error: unknown) => error instanceof AppError
   ? error.statusCode : (error as { status?: number } | null)?.status;
-// Linked server RPCs return AppError. A missing provider Page is recoverable;
-// an ownership denial must never trigger creation or a hostname claim.
+// Direct SDK errors preserve the provider status; either Cloud relay transport
+// identifies provider errors by code. Ownership and endpoint 404s stay failures.
 const notFound = (error: unknown) => httpStatus(error) === 404 &&
-  (!(error instanceof AppError) || error.code === "CLOUD_PROVIDER_ERROR");
+  (error instanceof OblienError ||
+    (error as { code?: unknown } | null)?.code === "CLOUD_PROVIDER_ERROR");
 const disconnected = () =>
   new AppError(
     "This domain has no Cloud route for this project. Retry routing from Domains & Routes, then verify HTTPS.",
