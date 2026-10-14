@@ -45,7 +45,10 @@ const docker = async (...args: string[]) => {
     // Docker errors embed argv, which can contain the disposable test credentials.
     const stderr =
       (error as { stderr?: string }).stderr?.replace(/[a-f0-9]{64}/g, "[redacted]") ?? "";
-    const failurePath = join(tmpdir(), "openship-catalog-smoke-" + operation.split("/")[0] + "-docker-failure.log");
+    const failurePath = join(
+      tmpdir(),
+      "openship-catalog-smoke-" + operation.split("/")[0] + "-docker-failure.log",
+    );
     if (stderr && !operation.endsWith("/cleanup"))
       await writeFile(failurePath, stderr, {
         mode: 0o600,
@@ -278,7 +281,19 @@ async function smokeApp(app: AppTemplate) {
       }
       return;
     }
-    for (const s of [...app.services!].reverse()) await docker("rm", "-f", names.get(s.name)!);
+    for (const s of [...app.services!].reverse()) {
+      if (["paperless-ngx", "wiki-js", "homepage", "immich", "jellyfin"].includes(app.id)) {
+        await docker("stop", "--time", "60", names.get(s.name)!);
+        const state = JSON.parse(
+          await docker("inspect", "--format", "{{json .State}}", names.get(s.name)!),
+        );
+        assert(
+          state.ExitCode !== 137 && !state.OOMKilled,
+          app.id + "/" + s.name + " did not stop gracefully",
+        );
+      }
+      await docker("rm", "-f", names.get(s.name)!);
+    }
     await start();
   };
   try {
@@ -525,7 +540,7 @@ async function smokeApp(app: AppTemplate) {
         assert(owner?.accessToken && owner.isAdmin, "Immich administrator login failed");
         const headers = { Authorization: "Bearer " + owner.accessToken };
         const photo = Buffer.from(
-          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lX8AAAAASUVORK5CYII=",
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=",
           "base64",
         );
         const form = new FormData();
@@ -600,10 +615,11 @@ async function smokeApp(app: AppTemplate) {
         const objects = [
           "<< /Type /Catalog /Pages 2 0 R >>",
           "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-          "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 100] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+          "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 160] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
           "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
         ];
-        const stream = `BT /F1 12 Tf 20 50 Td (${marker}) Tj ET`;
+        const documentText = "Openship catalog verification";
+        const stream = `BT /F1 20 Tf 30 80 Td (${documentText}) Tj ET`;
         objects.push(`<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`);
         let pdf = "%PDF-1.4\n";
         const offsets: number[] = [0];
@@ -634,15 +650,15 @@ async function smokeApp(app: AppTemplate) {
         );
         let document: any;
         for (let i = 0; i < 120; i++) {
-          const response = await request("paperless", "/api/documents/?query=" + marker, {
+          const response = await request("paperless", "/api/documents/?query=" + encodeURIComponent("catalog verification"), {
             headers,
           });
           const result = (await response.json()) as any;
           document = result.results?.find((doc: any) => doc.title === marker);
-          if (document?.content?.includes(marker)) break;
+          if (document?.content?.toLowerCase().includes("catalog verification")) break;
           await pause(2000);
         }
-        assert(document?.content?.includes(marker), "Paperless document consumption/search failed");
+        assert(document?.content?.toLowerCase().includes("catalog verification"), "Paperless document consumption/search failed");
         const changedPassword = randomBytes(32).toString("hex");
         await exec(
           "paperless",

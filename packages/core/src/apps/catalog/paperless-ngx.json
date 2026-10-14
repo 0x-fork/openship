@@ -20,10 +20,17 @@
         "POSTGRES_USER": "app",
         "POSTGRES_DB": "app"
       },
-      "secretEnv": ["POSTGRES_PASSWORD"],
-      "volumes": ["paperless_db_data:/var/lib/postgresql"],
+      "secretEnv": [
+        "POSTGRES_PASSWORD"
+      ],
+      "volumes": [
+        "paperless_db_data:/var/lib/postgresql"
+      ],
       "healthcheck": {
-        "test": ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""],
+        "test": [
+          "CMD-SHELL",
+          "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""
+        ],
         "interval": "5s",
         "timeout": "5s",
         "retries": 30,
@@ -39,9 +46,15 @@
       "name": "paperless-broker",
       "image": "valkey/valkey:9.0.4-alpine",
       "restart": "unless-stopped",
-      "volumes": ["paperless_broker_data:/data"],
+      "volumes": [
+        "paperless_broker_data:/data"
+      ],
       "healthcheck": {
-        "test": ["CMD", "valkey-cli", "ping"],
+        "test": [
+          "CMD",
+          "valkey-cli",
+          "ping"
+        ],
         "interval": "5s",
         "timeout": "3s",
         "retries": 30
@@ -56,7 +69,10 @@
       "name": "paperless",
       "image": "ghcr.io/paperless-ngx/paperless-ngx:3.3.1",
       "restart": "unless-stopped",
-      "dependsOn": ["paperless-db", "paperless-broker"],
+      "dependsOn": [
+        "paperless-db",
+        "paperless-broker"
+      ],
       "environment": {
         "PAPERLESS_REDIS": "redis://paperless-broker:6379",
         "PAPERLESS_DBENGINE": "postgresql",
@@ -67,9 +83,14 @@
         "PAPERLESS_TIME_ZONE": "UTC",
         "PAPERLESS_OCR_LANGUAGE": "eng",
         "PAPERLESS_TASK_WORKERS": "1",
-        "PAPERLESS_THREADS_PER_WORKER": "2"
+        "PAPERLESS_THREADS_PER_WORKER": "2",
+        "PAPERLESS_BIND_ADDR": "0.0.0.0"
       },
-      "secretEnv": ["PAPERLESS_DBPASS", "PAPERLESS_SECRET_KEY", "PAPERLESS_ADMIN_PASSWORD"],
+      "secretEnv": [
+        "PAPERLESS_DBPASS",
+        "PAPERLESS_SECRET_KEY",
+        "PAPERLESS_ADMIN_PASSWORD"
+      ],
       "volumes": [
         "paperless_data:/usr/src/paperless/data",
         "paperless_media:/usr/src/paperless/media",
@@ -77,7 +98,10 @@
         "paperless_export:/usr/src/paperless/export"
       ],
       "healthcheck": {
-        "test": ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/ >/dev/null"],
+        "test": [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:8000/ >/dev/null"
+        ],
         "interval": "10s",
         "timeout": "5s",
         "retries": 30,
@@ -105,7 +129,11 @@
       "label": "Documents",
       "kind": "http",
       "defaultMode": "domain",
-      "allowedModes": ["domain", "publish", "internal"]
+      "allowedModes": [
+        "domain",
+        "publish",
+        "internal"
+      ]
     },
     {
       "service": "paperless-db",
@@ -113,7 +141,9 @@
       "label": "Database",
       "kind": "tcp",
       "defaultMode": "internal",
-      "allowedModes": ["internal"],
+      "allowedModes": [
+        "internal"
+      ],
       "scope": "internal"
     },
     {
@@ -122,7 +152,9 @@
       "label": "Queue",
       "kind": "tcp",
       "defaultMode": "internal",
-      "allowedModes": ["internal"],
+      "allowedModes": [
+        "internal"
+      ],
       "scope": "internal"
     }
   ],
@@ -130,7 +162,11 @@
     "cpuCores": 2,
     "memoryMb": 2304
   },
-  "tags": ["documents", "ocr", "archive"],
+  "tags": [
+    "documents",
+    "ocr",
+    "archive"
+  ],
   "management": {
     "kind": "schema"
   },
