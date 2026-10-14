@@ -199,6 +199,7 @@ import {
   normalizeComposeGpuRequests,
   ValidationError,
   validateComposeGpuConfig,
+  parseComposeShmSize,
   type ComposeGpuConfig,
   type ComposeHealthcheck,
 } from "@repo/core";
@@ -4570,6 +4571,7 @@ export class DockerRuntime implements RuntimeAdapter {
         : undefined,
       resources: inspectResourceLimits(data.HostConfig),
       gpu,
+      ...(data.HostConfig?.ShmSize && { shmSize: data.HostConfig.ShmSize }),
       ...(gpuImportError && { gpuImportError }),
       composeProject: labels["com.docker.compose.project"] || undefined,
       composeService: labels["com.docker.compose.service"] || undefined,
@@ -5878,6 +5880,7 @@ export class DockerRuntime implements RuntimeAdapter {
     const healthcheck = toDockerHealthcheck(config.advanced?.healthcheck);
     const stopConfig = toStopConfig(config.advanced);
     validateComposeGpuConfig(config.advanced);
+    const shmSize = parseComposeShmSize(config.advanced?.shmSize);
     const deviceRequests = toDeviceRequests(config.advanced?.gpus);
 
     // Acquire an external image BEFORE touching the running container. This is
@@ -5998,6 +6001,7 @@ export class DockerRuntime implements RuntimeAdapter {
         // toolkit is never handed a request it would reject.
         ...(deviceRequests ? { DeviceRequests: deviceRequests } : {}),
         ...(config.advanced?.runtime ? { Runtime: config.advanced.runtime } : {}),
+        ...(shmSize !== undefined ? { ShmSize: shmSize } : {}),
         ...(ownsProjectEndpoint ? { PortBindings: portBindings } : {}),
         Binds: binds,
         // The project network is the default; a compose `network_mode` replaces it.

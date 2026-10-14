@@ -131,7 +131,8 @@
         "analytics": "التحليلات",
         "automation": "الأتمتة",
         "mail": "البريد",
-        "other": "أدوات"
+        "other": "أدوات",
+        "ai": "الذكاء الاصطناعي والنماذج"
       },
       "addCustom": "إضافة مخصصة",
       "howToAddApp": "كيفية إضافة تطبيق",
@@ -140,7 +141,18 @@
       "needsUpdateBadge": "يتطلب التحديث",
       "needsVersionBadge": "يتطلب الإصدار {version}",
       "removedToast": "تمت إزالة \"{name}\".",
-      "removeFailedToast": "تعذر إزالة التطبيق."
+      "removeFailedToast": "تعذر إزالة التطبيق.",
+      "gpu": {
+        "recommended": "يُنصح باستخدام GPU",
+        "required": "يتطلب NVIDIA GPU",
+        "mode": "المعالجة",
+        "cpu": "المعالج فقط",
+        "nvidia": "بطاقة NVIDIA",
+        "hint": "يتطلب وضع NVIDIA برنامج تشغيل متوافقًا وNVIDIA Container Toolkit على خادمك.",
+        "cloudUnsupported": "هذا التطبيق للاستضافة الذاتية فقط. اختر خادمًا متصلًا تستضيفه بنفسك.",
+        "selfHostedOnly": "استضافة ذاتية فقط",
+        "noGpu": "لم يتم اكتشاف GPU. تحقق من برنامج تشغيل NVIDIA وContainer Toolkit أو اختر وضع CPU."
+      }
     },
     "projects": {
       "title": "المشاريع",
