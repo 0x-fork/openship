@@ -486,15 +486,16 @@ function normalizeRoutePort(port?: number | string | null): number | null {
 }
 
 /** Normalize a wire/UI public-endpoint array into stored {@link ServicePublicEndpoint}s:
- *  drop entries missing a valid port or their domain value, dedupe by port. */
+ *  drop entries missing a valid port or domain, dedupe by normalized hostname.
+ *  Distinct hostnames may share one container port. */
 export function normalizeServicePublicEndpoints(
   endpoints?: PublicEndpointInputLike[] | null,
 ): ServicePublicEndpoint[] {
   const out: ServicePublicEndpoint[] = [];
-  const seenPorts = new Set<number>();
+  const seenHostnames = new Set<string>();
   for (const endpoint of endpoints ?? []) {
     const port = normalizeRoutePort(endpoint.port);
-    if (port === null || seenPorts.has(port)) continue;
+    if (port === null) continue;
     const domainType = endpoint.domainType === "custom" ? "custom" : "free";
     const domain = domainType === "free" ? endpoint.domain?.trim() || undefined : undefined;
     const customDomain =
@@ -503,7 +504,9 @@ export function normalizeServicePublicEndpoints(
         : undefined;
     if (domainType === "free" && !domain) continue;
     if (domainType === "custom" && !customDomain) continue;
-    seenPorts.add(port);
+    const identity = `${domainType}:${(domain ?? customDomain)!.toLowerCase()}`;
+    if (seenHostnames.has(identity)) continue;
+    seenHostnames.add(identity);
     out.push({
       port,
       domainType,
