@@ -201,6 +201,7 @@ import {
   validateComposeGpuConfig,
   type ComposeGpuConfig,
   type ComposeHealthcheck,
+  type StackRole,
 } from "@repo/core";
 import {
   dockerResourceLimits,
@@ -1138,7 +1139,8 @@ function deploymentContainerEnv(config: DeployConfig): { env: string[]; dropped:
 
 export class DockerRuntime implements RuntimeAdapter {
   readonly name: string = "docker";
-  readonly capabilities: ReadonlySet<RuntimeCapability> = new Set<RuntimeCapability>([
+  /** Declared as a list so a subclass can narrow it (see CloudDockerRuntime). */
+  static readonly CAPABILITIES: readonly RuntimeCapability[] = [
     "build",
     "prebuiltImage",
     "deploy",
@@ -1169,7 +1171,9 @@ export class DockerRuntime implements RuntimeAdapter {
     "isolatedExec",
     "dockerHost",
     "releaseCommand",
-  ]);
+    "roles",
+  ];
+  readonly capabilities: ReadonlySet<RuntimeCapability> = new Set(DockerRuntime.CAPABILITIES);
 
   /** Docker honors every extended compose key we currently support. */
   readonly unsupportedComposeKeys: ReadonlySet<keyof ComposeAdvanced> = new Set();
@@ -3969,6 +3973,136 @@ export class DockerRuntime implements RuntimeAdapter {
       containerId: container.id,
       status: "running",
     };
+    });
+  }
+
+  /**
+   * Start ONE replica of a runtime role (a worker or scheduler process) from the
+   * deployment's image, next to the web container `deploy` starts.
+   *
+   * Mirrors `deploy` above: the image and its entrypoint (the role command runs
+   * as `sh -c` exactly like a web start command), the env, the persistent
+   * mounts, the restart policy, the resource caps, the log config and
+   * membership of the project network, so a role reaches the same database and
+   * volumes as the app it ships with.
+   *
+   * Deliberately NOT mirrored: any port (no PORT env, nothing exposed or
+   * published, whatever `config.port` says: a role listens on nothing the edge
+   * could route to) and the network identity (no alias, no hostname, no
+   * `openship.service` label), so a role never answers to the web app's DNS
+   * name and `reconcileNetworkMembership` never re-aliases it as the app. The
+   * role's stop signal and grace period are set on the container itself so
+   * Docker's own stop and remove honor them.
+   */
+  async deployRole(
+    config: DeployConfig,
+    role: Pick<StackRole, "name" | "command" | "stopSignal" | "stopGracePeriod">,
+    replica: number,
+    onLog?: LogCallback,
+    opts?: { beforeStart?: (containerId: string) => Promise<void> },
+  ): Promise<{ containerId: string }> {
+    const log = onLog ?? (() => {});
+    const imageRef = config.imageRef;
+    if (!imageRef) {
+      throw new Error("Docker role containers require an imageRef (built image tag)");
+    }
+    if (!Number.isInteger(replica) || replica < 1) {
+      throw new Error(`Role replica must be an integer >= 1, got ${replica}`);
+    }
+
+    const containerName =
+      `openship-${config.runtimeName || config.projectId}-${config.deploymentId}-${role.name}-${replica}`;
+
+    // The web container's env, minus PORT: a role binds no port.
+    const { env, dropped } = deploymentContainerEnv({ ...config, portless: true });
+    if (dropped.length > 0) {
+      log({
+        timestamp: new Date().toISOString(),
+        level: "warn",
+        message: droppedRuntimeEnvMessage(dropped),
+      });
+    }
+
+    const scopedBinds = await this.deploymentVolumeBinds(config);
+    const binds = scopedBinds.length > 0 ? scopedBinds : undefined;
+
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Creating ${role.name} container ${containerName} (replica ${replica}) from ${imageRef}...\n`,
+      level: "info",
+    });
+    if (binds) {
+      log({
+        timestamp: new Date().toISOString(),
+        message: `Persistent storage: ${binds.join(", ")}\n`,
+        level: "info",
+      });
+    }
+    log({
+      timestamp: new Date().toISOString(),
+      message: `Resource limits: ${describeResourceLimits(config.resources)}\n`,
+      level: "info",
+    });
+
+    // Join the project network so the role reaches what the app reaches, but
+    // with no alias: only the web container answers to the network alias.
+    // Best-effort, like deploy.
+    let networkId: string | undefined;
+    if (config.networkAlias) {
+      try {
+        networkId = await this.ensureNetwork(config.slug || config.runtimeName || config.projectId);
+      } catch (err) {
+        observeCaughtError(err, "adapters/runtime/docker");
+        log({
+          timestamp: new Date().toISOString(),
+          message: `Warning: internal network setup failed for role ${role.name}: ${
+            err instanceof Error ? err.message : String(err)
+          }\n`,
+          level: "warn",
+        });
+      }
+    }
+
+    return this.withDeploymentLock(async () => {
+      const container = await this.docker.createContainer({
+        name: containerName,
+        Image: imageRef,
+        Cmd: ["sh", "-c", role.command],
+        Env: env,
+        Labels: {
+          ...this.labels({ deploymentId: config.deploymentId, projectId: config.projectId }),
+          [OPENSHIP_LABEL.role]: role.name,
+        },
+        ...toStopConfig({ stopSignal: role.stopSignal, stopGracePeriod: role.stopGracePeriod }),
+        HostConfig: {
+          RestartPolicy: resolveRestartPolicy(config.restartPolicy),
+          LogConfig: DEFAULT_CONTAINER_LOG_CONFIG,
+          Binds: binds,
+          ...(networkId ? { NetworkMode: networkId } : {}),
+          ...dockerResourceLimits(config.resources),
+        },
+      });
+
+      try {
+        // Joins linked networks before the process starts, like a release container.
+        await opts?.beforeStart?.(container.id);
+        await container.start();
+      } catch (error) {
+        // Nobody holds this id yet, so a container left here would be orphaned.
+        try {
+          await container.remove({ force: true });
+        } catch (removeError) {
+          observeCaughtError(removeError, "adapters/runtime/docker");
+        }
+        throw error;
+      }
+
+      log({
+        timestamp: new Date().toISOString(),
+        message: `Container ${container.id.slice(0, 12)} started.\n`,
+        level: "info",
+      });
+      return { containerId: container.id };
     });
   }
 

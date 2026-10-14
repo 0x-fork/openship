@@ -24,6 +24,7 @@ import type {
   MultiServiceDeployConfig,
   MultiServiceDeployResult,
   MultiServiceGroupHandle,
+  RuntimeCapability,
 } from "../types";
 import { CloudWorkspaceExecutor } from "./workspace-executor";
 import { CLOUD_DOCKER_BRIDGE_PORT } from "./docker-bridge-source";
@@ -68,6 +69,10 @@ function notFound(error: unknown): boolean {
  * stays explicit: container IDs identify containers; workspaceId identifies the
  * shared host. Inherited retention/rollback never stop or delete that host. */
 export class CloudDockerRuntime extends DockerRuntime {
+  // Managed cloud refuses role containers for now; every other Docker capability is kept.
+  override readonly capabilities: ReadonlySet<RuntimeCapability> = new Set(
+    DockerRuntime.CAPABILITIES.filter(cap => cap !== "roles"),
+  );
   readonly workspaceId: string;
   readonly projectId: string;
   readonly executor: CloudWorkspaceExecutor;
