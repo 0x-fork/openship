@@ -44,6 +44,11 @@ const BRAND_LOGO: Record<
   // Grafana's mark stays colored; Gitea's tea-cup mark is fine as-is.
   grafana: { slug: "grafana" },
   gitea: { slug: "gitea" },
+  "paperless-ngx": { src: "/app-logos/paperless-ngx.svg" },
+  "wiki-js": { src: "/app-logos/wiki-js.png", fill: true },
+  homepage: { src: "/app-logos/homepage.png", fill: true },
+  immich: { src: "/app-logos/immich.svg" },
+  jellyfin: { src: "/app-logos/jellyfin.svg" },
   wordpress: { slug: "wordpress" },
   odoo: { slug: "odoo" },
   postgresql: { slug: "postgresql" },

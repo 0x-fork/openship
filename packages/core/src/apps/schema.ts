@@ -108,6 +108,8 @@ const serviceSpec = z.object({
    * (`a && b`), `commandArgv` when the image needs exact argv.
    */
   commandArgv: z.array(z.string()).optional(),
+  /** Exact image entrypoint override. An empty array clears the image default. */
+  entrypointArgv: z.array(z.string()).optional(),
   /**
    * How long Docker waits after SIGTERM before SIGKILL (compose duration, e.g.
    * "10m"). The engine has always honored `advanced.stopGracePeriod`; only the
@@ -360,7 +362,19 @@ export const appTemplateSchema = z.object({
   updatedAt: z.string().optional(),
   repository: z.string().url().optional(),
 }).superRefine((data, ctx) => {
-  // Referential integrity — catch dangling references at the gate rather than at
+  for (const [index, service] of (data.services ?? []).entries()) {
+      if (
+        service.entrypointArgv !== undefined &&
+        (!data.minEngine || !templateEngineOk("0.9.2", data.minEngine))
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["services", index, "entrypointArgv"],
+          message: "entrypointArgv requires minEngine >= 0.9.2",
+        });
+      }
+    }
+    // Referential integrity — catch dangling references at the gate rather than at
   // deploy time. Only enforced when the template declares services (flow apps
   // have none). `template:` sources aren't a direct service ref (they embed
   // {{env:svc:KEY}} placeholders), so only env:/publicUrl: sources are checked.
