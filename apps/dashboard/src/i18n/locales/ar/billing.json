@@ -101,6 +101,7 @@
     }
   },
   "plansRoute": {
+    "requestedPlanUnavailable": "الخطة المحددة لم تعد متاحة. اختر خطة أخرى أدناه.",
     "loadError": "تعذّر تحميل الخطط",
     "genericError": "حدث خطأ ما",
     "tryAgain": "حاول مرة أخرى",

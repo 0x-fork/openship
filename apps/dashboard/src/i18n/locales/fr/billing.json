@@ -101,6 +101,7 @@
     }
   },
   "plansRoute": {
+    "requestedPlanUnavailable": "L’offre sélectionnée n’est plus disponible. Choisissez une autre offre ci-dessous.",
     "loadError": "Échec du chargement des forfaits",
     "genericError": "Une erreur s'est produite",
     "tryAgain": "Réessayer",

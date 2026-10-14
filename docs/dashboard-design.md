@@ -446,6 +446,10 @@ check retryable before starting the move.
   Do not call today's catalog terms the current plan if they differ from the saved purchase,
   or offer a preset that would shrink an existing disk. New-server purchases have their own
   explicit entry and never inherit the selected server's billing scope.
+  A preset chosen on the public Pricing page continues to Cloud checkout after
+  sign-in without a second plan-selection click. Validate it against the live
+  catalog and bind the retry identity to the authenticated organization. Reloads
+  reuse the same server and payment; generic Get server links remain browse-only.
   Unscoped billing opens an existing subscription directly; never
   auto-switch a checkout return or an explicitly selected server. New customers see only
   Monthly server and Pay as you go in the existing top tab bar, without empty billing-history
