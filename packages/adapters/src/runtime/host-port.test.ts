@@ -47,6 +47,24 @@ describe("pickHostPort", () => {
     expect(pickHostPort(new Set([30000]), { rangeStart: 30000, rangeEnd: 30002 })).toBe(30001);
   });
 
+  it("does not reuse a preferred port inside the target's ephemeral range", () => {
+    // A publish pinned there can lose its port to an outbound connection while the
+    // container is stopped; the restart then fails with "address already in use".
+    const ephemeralRange = { start: 32768, end: 60999 };
+    expect(pickHostPort(new Set(), { preferred: 32769, ephemeralRange })).toBe(20000);
+    expect(pickHostPort(new Set(), { preferred: 25000, ephemeralRange })).toBe(25000);
+  });
+
+  it("moves an ephemeral pin even when the current workload owns it", () => {
+    expect(
+      pickHostPort(new Set([32769]), {
+        preferred: 32769,
+        reuseOccupiedPreferred: true,
+        ephemeralRange: { start: 32768, end: 60999 },
+      }),
+    ).toBe(20000);
+  });
+
   it("throws when the range is exhausted", () => {
     expect(() =>
       pickHostPort(new Set([30000, 30001]), { rangeStart: 30000, rangeEnd: 30001 }),
@@ -81,5 +99,21 @@ describe("allocateHostPort", () => {
     const allocation = await allocateHostPort(listening);
     expect(allocation.scanned).toBe(true);
     expect(allocation.port).toBe(20001);
+  });
+
+  it("reads the target's ephemeral range rather than assuming one", async () => {
+    const narrowed = fakeExecutor(async (cmd) =>
+      cmd.includes("ip_local_port_range") ? "40000\t50000\n" : "",
+    );
+    expect((await allocateHostPort(narrowed, { preferred: 32769 })).port).toBe(32769);
+    expect((await allocateHostPort(narrowed, { preferred: 41000 })).port).toBe(20000);
+  });
+
+  it("assumes Linux's default ephemeral range when the target can't say", async () => {
+    const unreachable = fakeExecutor(async () => {
+      throw new Error("Host control is disabled on this instance.");
+    });
+    expect((await allocateHostPort(unreachable, { preferred: 32769 })).port).toBe(20000);
+    expect((await allocateHostPort(unreachable, { preferred: 25000 })).port).toBe(25000);
   });
 });
