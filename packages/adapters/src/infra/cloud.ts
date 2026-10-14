@@ -24,7 +24,12 @@ interface PageDomainInfo {
 }
 
 const normalizeHostname = (hostname: string) => hostname.trim().toLowerCase();
-const notFound = (error: unknown) => (error as { status?: number })?.status === 404;
+const httpStatus = (error: unknown) => error instanceof AppError
+  ? error.statusCode : (error as { status?: number } | null)?.status;
+// Linked server RPCs return AppError. A missing provider Page is recoverable;
+// an ownership denial must never trigger creation or a hostname claim.
+const notFound = (error: unknown) => httpStatus(error) === 404 &&
+  (!(error instanceof AppError) || error.code === "CLOUD_PROVIDER_ERROR");
 const disconnected = () =>
   new AppError(
     "This domain has no Cloud route for this project. Retry routing from Domains & Routes, then verify HTTPS.",
@@ -160,7 +165,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
     try {
       page = (await this.pages.get(matches[0].slug)).page;
     } catch (error) {
-      if ((error as { status?: number }).status === 404) return undefined;
+      if (notFound(error)) return undefined;
       throw error;
     }
     if (
@@ -413,7 +418,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
             domain: this.publicDomain,
           });
         } catch (error) {
-          if ((error as { status?: number }).status !== 409) throw error;
+          if (httpStatus(error) !== 409) throw error;
         }
         page = (await this.pages.get(slug)).page;
         assertPage();
