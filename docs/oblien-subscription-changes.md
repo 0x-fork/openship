@@ -13,27 +13,27 @@ Checked against the published API docs and npm SDK on October 3, 2026.
 Checked against `oblien@2.10.0` and the provider billing documentation on
 October 14, 2026. This is separate from changing an existing subscription.
 
-Openship can cancel a hosted capacity payment when
-`billing.capacity(namespace).pendingCheckout` identifies its exact checkout
-and Stripe quote. It persists the quote and retry key before calling
-`billing.cancelCapacityChange`, then reads the original checkout again. Only
-confirmed expiry releases an unpaid payment for another purchase. A concurrent
-payment or unknown outcome keeps the original purchase tracked.
+When the provider catalog advertises `reseller.checkoutCancellation`, Openship
+cancels the original checkout through
+`POST /billing/checkout/:checkoutId/cancel`. It saves the checkout ID and stable
+retry key before dispatch, then re-reads that original checkout. Confirmed expiry
+allows another plan; paid or uncertain outcomes retain the purchase until its
+status is verified. No customer-supplied namespace, owner, quote, or payment URL
+controls the cancellation.
 
-The SDK has no general cancellation operation by checkout ID. A successful
-capacity read without a matching quote returns
-`cancelUnavailableReason: "unsupported"`; a failed capacity read returns
-`"provider_unavailable"`. The dashboard offers Refresh for the latter. Neither
-case clears the purchase locally, and the optional reason preserves compatibility
-with older clients and Cloud APIs.
+Older providers still use their existing exact capacity-quote cancellation.
+Saved quote cancellations continue through that path after an upgrade. A saved
+checkout cancellation retries its original ID and key even if capability
+discovery is unavailable; it never switches payment identity after dispatch.
+The provider SDK adds `billing.cancelCheckout(namespace, checkoutId, input)`;
+until that SDK release is adopted, Openship uses its existing authenticated,
+bounded billing transport and shared checkout-response validator.
 
-To enable cancellation for every unfinished payment, Oblien needs an
-authenticated operation bound to the owner, namespace, opaque checkout ID and
-stable idempotency key. It must invalidate the custom payment link and any
-underlying Stripe session, preserve reservations while cancellation is uncertain,
-and expose the result through checkout status. If payment wins the race, it must
-report that payment instead of promising cancellation. Subscription cancellation
-is not a substitute: it stops renewal of an existing paid subscription.
+A provider without either capability returns
+`cancelUnavailableReason: "unsupported"`. Failed capability or capacity reads
+return `"provider_unavailable"`, for which the dashboard offers Refresh. Neither
+case clears the purchase locally. Subscription cancellation is separate: it
+stops renewal of an existing paid subscription.
 
 ## Customer flow
 
