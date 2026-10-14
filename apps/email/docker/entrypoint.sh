@@ -200,18 +200,10 @@ chown -R iredapd:iredapd /var/log/iredapd 2>/dev/null || true
 #       nftables syntax errors when generating banning rules.
 sed -i -E 's/port=",,/port="/g' /etc/fail2ban/jail.d/*.local 2>/dev/null || true
 
-#    c) configure ~/.pgpass and TCP connection for fail2ban_banned_db so it can
-#       connect to the PostgreSQL sidecar on 127.0.0.1:5432.
-if [ -n "${VMAIL_DB_BIND_PASSWD:-}" ]; then
-  mkdir -p /root
-  printf '127.0.0.1:%s:fail2ban:fail2ban:%s\n' "${OPENSHIP_MAIL_DB_PORT:-5432}" "$VMAIL_DB_BIND_PASSWD" > /root/.pgpass
-  chmod 600 /root/.pgpass
-  # Also update default fallback /var/lib/postgresql/.pgpass if present
-  if [ -d /var/lib/postgresql ]; then
-    printf '*:*:%s:fail2ban:%s\n' "fail2ban" "$VMAIL_DB_BIND_PASSWD" > /var/lib/postgresql/.pgpass
-    chmod 600 /var/lib/postgresql/.pgpass
-  fi
-fi
+#    c) configure the helper's TCP endpoint AND credentials. A .pgpass entry
+#       alone cannot select a host/port. The dedicated files are also used by
+#       cron/manual invocations that do not inherit the container environment.
+python3 /opt/openship-mail/configure-fail2ban-db.py
 
 # 6. DKIM: reuse the key on the mount, else generate one (per domain).
 if [ -n "$FIRST_DOMAIN" ] && [ ! -s "/var/lib/dkim/${FIRST_DOMAIN}.pem" ]; then
