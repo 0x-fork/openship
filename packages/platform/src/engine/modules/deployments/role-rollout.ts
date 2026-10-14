@@ -19,9 +19,16 @@
  *     role NAME are stopped and RETAINED (not destroyed), then the new one
  *     starts. A new and an old scheduler must never run together, or every cron
  *     tick fires twice.
- *  4. Any failure destroys what this deployment started (newest first), THEN
- *     restarts the retained singletons. Destroy comes first so the old and new
- *     singleton are never both up during the unwind either.
+ *  4. Any failure destroys what this deployment started, THEN restarts the
+ *     retained singletons. Destroy comes first so the old and new singleton are
+ *     never both up during the unwind either: every destroy settles before the
+ *     first restart.
+ *
+ * Teardown is CONCURRENT: commit destroys every previous container at once, and
+ * the unwind destroys every started container at once (then restarts every
+ * retained one at once). Docker's stop waits up to each container's grace
+ * period, so one at a time would make a deploy wait N grace periods while the
+ * not-yet-stopped old replicas keep taking jobs.
  *
  * Teardown follows the web pipeline's rule (see `bestEffortTeardown` in
  * deploy-pipeline.ts): every unwind and cleanup call is bounded, because a
@@ -139,24 +146,31 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
     }
   };
 
-  /** Destroy what this deployment started (newest first), then restart the retained singletons. */
+  /**
+   * Destroy everything this deployment started concurrently, and only once ALL
+   * of those settled restart the retained singletons concurrently.
+   */
   const unwind = async (): Promise<void> => {
     if (started.length > 0) {
       log(`Removing ${started.length} role container${started.length === 1 ? "" : "s"} started by this deploy...`);
     }
-    for (const ref of [...started].reverse()) {
-      await bestEffort(`failed to remove role container ${ref.role} ${ref.replica}`, () =>
-        deps.destroyStarted(ref.containerId),
-      );
-    }
+    await Promise.all(
+      started.map((ref) =>
+        bestEffort(`failed to remove role container ${ref.role} ${ref.replica}`, () =>
+          deps.destroyStarted(ref.containerId),
+        ),
+      ),
+    );
     if (retained.length > 0) {
       log(`Restarting ${retained.length} previous role container${retained.length === 1 ? "" : "s"}...`);
     }
-    for (const ref of retained) {
-      await bestEffort(`failed to restart previous role container ${ref.role} ${ref.replica}`, () =>
-        deps.startPrevious(ref.containerId),
-      );
-    }
+    await Promise.all(
+      retained.map((ref) =>
+        bestEffort(`failed to restart previous role container ${ref.role} ${ref.replica}`, () =>
+          deps.startPrevious(ref.containerId),
+        ),
+      ),
+    );
   };
 
   const verifyContainers = async (containers: readonly RoleContainerRef[]): Promise<void> => {
@@ -230,11 +244,13 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
       if (previous.length > 0) {
         log(`Removing ${previous.length} previous role container${previous.length === 1 ? "" : "s"}...`);
       }
-      for (const ref of previous) {
-        await bestEffort(`failed to remove previous role container ${ref.role} ${ref.replica}`, () =>
-          deps.destroyPrevious(ref.containerId),
-        );
-      }
+      await Promise.all(
+        previous.map((ref) =>
+          bestEffort(`failed to remove previous role container ${ref.role} ${ref.replica}`, () =>
+            deps.destroyPrevious(ref.containerId),
+          ),
+        ),
+      );
     },
     async abort() {
       if (settled) return;

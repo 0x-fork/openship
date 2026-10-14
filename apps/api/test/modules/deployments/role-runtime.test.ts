@@ -4,6 +4,7 @@ import type { BuildLogger, DeployConfig, RuntimeAdapter } from "@repo/adapters";
 import {
   rolesUnsupportedReason,
   roleTeardownTimeoutMs,
+  retirePreviousRoleContainers,
   runtimeRoleRolloutDeps,
 } from "@repo/platform/engine/modules/deployments/role-runtime";
 import type { StabilityFinding } from "@repo/platform/engine/modules/deployments/stability-audit.service";
@@ -124,6 +125,7 @@ interface Harness {
 function harness(
   over: {
     roles?: readonly StackRole[];
+    previousRoles?: readonly StackRole[];
     findings?: StabilityFinding[];
     runtime?: Record<string, unknown>;
     previousRuntime?: Record<string, unknown>;
@@ -157,6 +159,7 @@ function harness(
   const config = { deploymentId: "dep-1" } as unknown as DeployConfig;
   const deps = runtimeRoleRolloutDeps({
     roles: over.roles ?? [worker()],
+    previousRoles: over.previousRoles,
     previous: [],
     runtime: asRuntime(runtime),
     previousRuntime: asRuntime(previousRuntime),
@@ -360,11 +363,194 @@ describe("runtimeRoleRolloutDeps: log, signal and timeouts", () => {
     expect(harness({ roles: [scheduler("s", { stopGracePeriod: "90s" })] }).deps.teardownTimeoutMs).toBe(120_000);
   });
 
+  it("an old role with a longer grace period than every new role sets the bound", () => {
+    const h = harness({
+      roles: [worker("w", { stopGracePeriod: "5s" })],
+      previousRoles: [scheduler("s", { stopGracePeriod: "90s" })],
+    });
+    expect(h.deps.teardownTimeoutMs).toBe(120_000);
+  });
+
+  it("a new role with the longer grace period still wins over shorter previous roles", () => {
+    const h = harness({
+      roles: [scheduler("s", { stopGracePeriod: "60s" })],
+      previousRoles: [worker("w", { stopGracePeriod: "5s" })],
+    });
+    expect(h.deps.teardownTimeoutMs).toBe(90_000);
+  });
+
   it("keepProvisionedOnCancel reflects the input function's CURRENT value", () => {
     let keep = false;
     const h = harness({ keepProvisionedOnCancel: () => keep });
     expect(h.deps.keepProvisionedOnCancel).toBe(false);
     keep = true;
     expect(h.deps.keepProvisionedOnCancel).toBe(true);
+  });
+});
+
+describe("retirePreviousRoleContainers", () => {
+  const roleRefs = [
+    { role: "worker", replica: 1, containerId: "old-w1" },
+    { role: "worker", replica: 2, containerId: "old-w2" },
+    { role: "sched", replica: 1, containerId: "old-sched" },
+  ];
+  const previous = (over: Record<string, unknown> = {}) =>
+    ({ id: "dep-old", organizationId: "org-1", meta: null, roleContainers: roleRefs, ...over }) as never;
+
+  function setup(destroy: (id: string) => Promise<void> = async () => {}) {
+    const logs: { message: string; level: string | undefined }[] = [];
+    const destroyed: string[] = [];
+    const runtime = {
+      destroy: vi.fn(async (id: string) => {
+        destroyed.push(id);
+        await destroy(id);
+      }),
+    };
+    const withRuntime = vi.fn(async (_dep: unknown, fn: (rt: RuntimeAdapter) => Promise<unknown>) =>
+      fn(asRuntime(runtime)),
+    );
+    const log = (message: string, level?: "info" | "warn") => logs.push({ message, level });
+    return { logs, destroyed, runtime, withRuntime, log };
+  }
+
+  it("destroys each previous role container once, concurrently", async () => {
+    let release!: () => void;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const t = setup(() => hold);
+    const done = retirePreviousRoleContainers({
+      previous: previous(),
+      currentDeploymentId: "dep-new",
+      log: t.log,
+      withRuntime: t.withRuntime as never,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Every destroy was called while none had resolved.
+    expect(t.destroyed.sort()).toEqual(["old-sched", "old-w1", "old-w2"]);
+    release();
+    await done;
+    expect(t.runtime.destroy).toHaveBeenCalledTimes(3);
+    expect(t.withRuntime).toHaveBeenCalledTimes(1);
+    expect(t.logs.every((l) => l.level !== "warn")).toBe(true);
+  });
+
+  it("is a no-op with no predecessor", async () => {
+    const t = setup();
+    for (const missing of [null, undefined]) {
+      await retirePreviousRoleContainers({
+        previous: missing,
+        currentDeploymentId: "dep-new",
+        log: t.log,
+        withRuntime: t.withRuntime as never,
+      });
+    }
+    expect(t.withRuntime).not.toHaveBeenCalled();
+    expect(t.logs).toEqual([]);
+  });
+
+  it("is a no-op when the predecessor is the current deployment", async () => {
+    const t = setup();
+    await retirePreviousRoleContainers({
+      previous: previous({ id: "dep-new" }),
+      currentDeploymentId: "dep-new",
+      log: t.log,
+      withRuntime: t.withRuntime as never,
+    });
+    expect(t.withRuntime).not.toHaveBeenCalled();
+    expect(t.destroyed).toEqual([]);
+  });
+
+  it("is a no-op when the predecessor has no role containers", async () => {
+    const t = setup();
+    for (const roleContainers of [null, []]) {
+      await retirePreviousRoleContainers({
+        previous: previous({ roleContainers }),
+        currentDeploymentId: "dep-new",
+        log: t.log,
+        withRuntime: t.withRuntime as never,
+      });
+    }
+    expect(t.withRuntime).not.toHaveBeenCalled();
+  });
+
+  it("a failing destroy only warns and the rest still run", async () => {
+    const t = setup(async (id) => {
+      if (id === "old-w1") throw new Error("rm failed");
+    });
+    await expect(
+      retirePreviousRoleContainers({
+        previous: previous(),
+        currentDeploymentId: "dep-new",
+        log: t.log,
+        withRuntime: t.withRuntime as never,
+      }),
+    ).resolves.toBeUndefined();
+    expect(t.destroyed.sort()).toEqual(["old-sched", "old-w1", "old-w2"]);
+    const warns = t.logs.filter((l) => l.level === "warn");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("rm failed");
+  });
+
+  it("a hanging destroy is bounded and only warns", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup((id) => (id === "old-w2" ? new Promise<void>(() => {}) : Promise.resolve()));
+      const done = retirePreviousRoleContainers({
+        previous: previous(),
+        currentDeploymentId: "dep-new",
+        log: t.log,
+        withRuntime: t.withRuntime as never,
+      });
+      await vi.advanceTimersByTimeAsync(40_000);
+      await expect(done).resolves.toBeUndefined();
+      const warns = t.logs.filter((l) => l.level === "warn");
+      expect(warns).toHaveLength(1);
+      expect(warns[0]!.message).toContain("timed out after 40000ms");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a runtime that cannot be resolved only warns", async () => {
+    const t = setup();
+    const withRuntime = vi.fn(async () => {
+      throw new Error("host unreachable");
+    });
+    await expect(
+      retirePreviousRoleContainers({
+        previous: previous(),
+        currentDeploymentId: "dep-new",
+        log: t.log,
+        withRuntime: withRuntime as never,
+      }),
+    ).resolves.toBeUndefined();
+    const warns = t.logs.filter((l) => l.level === "warn");
+    expect(warns).toHaveLength(1);
+    expect(warns[0]!.message).toContain("host unreachable");
+  });
+
+  it("bounds each destroy by the PREVIOUS roles' grace period", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup(() => new Promise<void>(() => {}));
+      const meta = { roles: [scheduler("sched", { stopGracePeriod: "90s" })] };
+      const done = retirePreviousRoleContainers({
+        previous: previous({ meta }),
+        currentDeploymentId: "dep-new",
+        log: t.log,
+        withRuntime: t.withRuntime as never,
+      });
+      // 30s base plus 90s grace is 120s: nothing has timed out at 119s.
+      await vi.advanceTimersByTimeAsync(119_000);
+      expect(t.logs.filter((l) => l.level === "warn")).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1_000);
+      await done;
+      const warns = t.logs.filter((l) => l.level === "warn");
+      expect(warns).toHaveLength(3);
+      expect(warns[0]!.message).toContain("timed out after 120000ms");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

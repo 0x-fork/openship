@@ -78,6 +78,28 @@ function harness(overrides: Partial<RoleRolloutDeps> = {}): Harness {
 
 const never = () => new Promise<void>(() => {});
 
+/** Teardown is concurrent, so call order among destroys is not an order guarantee; the sorted set is. */
+const calls = (events: string[], prefix: string) => events.filter((e) => e.startsWith(prefix)).sort();
+
+/** Every destroy event must come before the first restart: old and new singletons never overlap. */
+function expectDestroysBeforeRestarts(events: string[]) {
+  const lastDestroy = events.map((e) => e.startsWith("destroyNew")).lastIndexOf(true);
+  const firstRestart = events.findIndex((e) => e.startsWith("startPrev"));
+  if (firstRestart !== -1) expect(lastDestroy).toBeLessThan(firstRestart);
+}
+
+/** A promise the test settles by hand. */
+function gate() {
+  let release!: () => void;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+/** Let every queued microtask run. */
+const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 describe("isSingletonRole", () => {
   it("is true for a scheduler or an explicit singleton, false otherwise", () => {
     expect(isSingletonRole({ kind: "scheduler" })).toBe(true);
@@ -234,7 +256,7 @@ describe("rolloutRoles: scalable and singleton together", () => {
 });
 
 describe("rolloutRoles: failures unwind before rethrowing", () => {
-  it("scalable verify failure: destroys started newest first, never stops a singleton, message has the detail", async () => {
+  it("scalable verify failure: destroys every started container, never stops a singleton, message has the detail", async () => {
     const { deps, events } = harness({
       roles: [worker(2), scheduler("sched")],
       previous: [ref("sched", 1, "old-sched")],
@@ -251,8 +273,8 @@ describe("rolloutRoles: failures unwind before rethrowing", () => {
       "start worker 1",
       "start worker 2",
       "verify worker-1,worker-2",
-      "destroyNew new-worker-2",
       "destroyNew new-worker-1",
+      "destroyNew new-worker-2",
     ]);
     expect(events.some((e) => e.startsWith("stopPrev"))).toBe(false);
     expect(events.some((e) => e.startsWith("startPrev"))).toBe(false);
@@ -275,10 +297,11 @@ describe("rolloutRoles: failures unwind before rethrowing", () => {
       "stopPrev old-sched",
       "start sched 1",
       "verify sched-1",
-      "destroyNew new-sched-1",
       "destroyNew new-worker-1",
+      "destroyNew new-sched-1",
       "startPrev old-sched",
     ]);
+    expectDestroysBeforeRestarts(events);
     // The overlapped worker was never stopped, so it is never restarted either.
     expect(events).not.toContain("startPrev old-w1");
   });
@@ -303,8 +326,8 @@ describe("rolloutRoles: failures unwind before rethrowing", () => {
       "start worker 1",
       "start worker 2",
       "start worker 3",
-      "destroyNew new-worker-2",
       "destroyNew new-worker-1",
+      "destroyNew new-worker-2",
     ]);
   });
 
@@ -498,16 +521,17 @@ describe("rolloutRoles: best-effort teardown", () => {
       },
     });
     await expect(rolloutRoles(deps)).rejects.toThrow("Role startup check failed: sched down");
-    expect(events).toEqual([
+    expect(calls(events, "destroyNew")).toEqual([
       "destroyNew new-sched-1",
-      "destroyNew new-worker-3",
-      "destroyNew new-worker-2",
       "destroyNew new-worker-1",
-      "startPrev old-sched",
+      "destroyNew new-worker-2",
+      "destroyNew new-worker-3",
     ]);
+    expect(events.at(-1)).toBe("startPrev old-sched");
+    expectDestroysBeforeRestarts(events);
     expect(warnings).toHaveLength(2);
-    expect(warnings[0]).toContain("rm failed");
-    expect(warnings[1]).toContain("timed out after 20ms");
+    expect(warnings.some((w) => w.includes("rm failed"))).toBe(true);
+    expect(warnings.some((w) => w.includes("timed out after 20ms"))).toBe(true);
   });
 
   it("unwind: a failed restart of a retained container warns and continues", async () => {
@@ -543,11 +567,11 @@ describe("rolloutRoles: best-effort teardown", () => {
     await expect(rollout.commit()).resolves.toBeUndefined();
     expect(events).toEqual(["destroyPrev old-1", "destroyPrev old-2", "destroyPrev old-3"]);
     expect(warnings).toHaveLength(2);
-    expect(warnings[0]).toContain("rm failed");
-    expect(warnings[1]).toContain("timed out after 20ms");
+    expect(warnings.some((w) => w.includes("rm failed"))).toBe(true);
+    expect(warnings.some((w) => w.includes("timed out after 20ms"))).toBe(true);
   });
 
-  it("abort after success: destroys started newest first then restarts retained, and does not throw on failures", async () => {
+  it("abort after success: destroys every started container, then restarts retained, and does not throw on failures", async () => {
     const { deps, events, warnings } = harness({
       roles: [worker(2), scheduler("sched")],
       previous: [ref("sched", 1, "old-sched")],
@@ -559,12 +583,13 @@ describe("rolloutRoles: best-effort teardown", () => {
     const rollout = await rolloutRoles(deps);
     events.length = 0;
     await expect(rollout.abort()).resolves.toBeUndefined();
-    expect(events).toEqual([
+    expect(calls(events, "destroyNew")).toEqual([
       "destroyNew new-sched-1",
-      "destroyNew new-worker-2",
       "destroyNew new-worker-1",
-      "startPrev old-sched",
+      "destroyNew new-worker-2",
     ]);
+    expect(events.at(-1)).toBe("startPrev old-sched");
+    expectDestroysBeforeRestarts(events);
     expect(warnings).toHaveLength(1);
   });
 });
@@ -609,5 +634,106 @@ describe("rolloutRoles: commit and abort are idempotent and mutually exclusive",
     await rollout.abort();
     await rollout.abort();
     expect(events).toEqual(["destroyNew new-worker-1"]);
+  });
+});
+
+describe("rolloutRoles: concurrent teardown", () => {
+  it("commit calls every destroyPrevious before any of them resolves", async () => {
+    const gates = [gate(), gate(), gate()];
+    const called: string[] = [];
+    const { deps } = harness({
+      roles: [worker(1)],
+      previous: [ref("worker", 1, "old-1"), ref("worker", 2, "old-2"), ref("worker", 3, "old-3")],
+      destroyPrevious: async (id) => {
+        called.push(id);
+        await gates[called.length - 1]!.promise;
+      },
+    });
+    const rollout = await rolloutRoles(deps);
+    let done = false;
+    const committing = rollout.commit().then(() => {
+      done = true;
+    });
+    await tick();
+    expect(called).toEqual(["old-1", "old-2", "old-3"]);
+    expect(done).toBe(false);
+    gates.forEach((g) => g.release());
+    await committing;
+    expect(done).toBe(true);
+  });
+
+  it("the unwind calls every destroyStarted before any resolves, and restarts only after all settle", async () => {
+    const gates = [gate(), gate(), gate()];
+    const events: string[] = [];
+    const { deps } = harness({
+      roles: [worker(2), scheduler("sched")],
+      previous: [ref("sched", 1, "old-sched")],
+      destroyStarted: async (id) => {
+        events.push(`destroyNew ${id}`);
+        await gates[events.filter((e) => e.startsWith("destroyNew")).length - 1]!.promise;
+        events.push(`settled ${id}`);
+      },
+      startPrevious: async (id) => {
+        events.push(`startPrev ${id}`);
+      },
+    });
+    const rollout = await rolloutRoles(deps);
+    events.length = 0;
+    const aborting = rollout.abort();
+    await tick();
+    expect(calls(events, "destroyNew")).toEqual([
+      "destroyNew new-sched-1",
+      "destroyNew new-worker-1",
+      "destroyNew new-worker-2",
+    ]);
+    expect(events.some((e) => e.startsWith("settled"))).toBe(false);
+    // Two of three settled: the restart must still wait for the last one.
+    gates[0]!.release();
+    gates[1]!.release();
+    await tick();
+    expect(events.some((e) => e.startsWith("startPrev"))).toBe(false);
+    gates[2]!.release();
+    await aborting;
+    const firstRestart = events.findIndex((e) => e.startsWith("startPrev"));
+    const lastSettled = events.map((e) => e.startsWith("settled")).lastIndexOf(true);
+    expect(firstRestart).toBeGreaterThan(lastSettled);
+    expect(events.filter((e) => e.startsWith("settled"))).toHaveLength(3);
+  });
+
+  it("restarts every retained container concurrently", async () => {
+    const gates = [gate(), gate()];
+    const called: string[] = [];
+    const { deps } = harness({
+      roles: [scheduler("sched")],
+      previous: [ref("sched", 1, "old-a"), ref("sched", 2, "old-b")],
+      verify: async () => "down",
+      startPrevious: async (id) => {
+        called.push(id);
+        await gates[called.length - 1]!.promise;
+      },
+    });
+    const failing = rolloutRoles(deps).catch((e: unknown) => e);
+    await tick();
+    expect(called).toEqual(["old-a", "old-b"]);
+    gates.forEach((g) => g.release());
+    await failing;
+  });
+
+  it("N hung destroys cost about one timeout, not N", async () => {
+    const N = 6;
+    const timeoutMs = 100;
+    const { deps, warnings } = harness({
+      roles: [worker(1)],
+      previous: Array.from({ length: N }, (_, i) => ref("worker", i + 1, `old-${i + 1}`)),
+      teardownTimeoutMs: timeoutMs,
+      destroyPrevious: () => never(),
+    });
+    const rollout = await rolloutRoles(deps);
+    const startedAt = Date.now();
+    await rollout.commit();
+    const elapsed = Date.now() - startedAt;
+    expect(warnings).toHaveLength(N);
+    // Sequential would take N * timeoutMs = 600ms; leave a wide margin for load.
+    expect(elapsed).toBeLessThan(timeoutMs * 4);
   });
 });

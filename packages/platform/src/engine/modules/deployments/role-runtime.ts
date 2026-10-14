@@ -5,10 +5,12 @@
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { safeErrorMessage, type StackRole } from "@repo/core";
+import { safeErrorMessage, withTimeout, type StackRole } from "@repo/core";
 import { toStopConfig, type BuildLogger, type DeployConfig, type RuntimeAdapter } from "@repo/adapters";
+import type { Deployment } from "@repo/db";
 import type { RoleContainerRef, RoleRolloutDeps } from "./role-rollout";
 import { verifyDeployedContainers } from "./stability-audit.service";
+import { withDeploymentRuntime } from "../../lib/deployment-runtime";
 
 const ROLE_RUNTIME_SOURCE = "platform/engine/modules/deployments/role-runtime";
 
@@ -48,6 +50,8 @@ export function rolesUnsupportedReason(input: {
  * replacement, so a fixed 30s bound would fail every handover of a scheduler
  * with a longer grace period. The bound is 30s plus the longest grace period,
  * never less than Docker's 10s default (the floor also covers no roles at all).
+ * Pass the current AND the previous roles to bound a rollout: the previous
+ * containers carry their own grace periods and are the ones being stopped.
  */
 export function roleTeardownTimeoutMs(roles: readonly StackRole[] | null | undefined): number {
   let longestGraceS = DEFAULT_STOP_GRACE_S;
@@ -62,6 +66,8 @@ export function roleTeardownTimeoutMs(roles: readonly StackRole[] | null | undef
 
 export function runtimeRoleRolloutDeps(input: {
   roles: readonly StackRole[] | null | undefined;
+  /** The previous deployment's frozen roles; their grace periods widen the teardown bound. */
+  previousRoles?: readonly StackRole[] | null;
   previous: readonly RoleContainerRef[] | null | undefined;
   runtime: RuntimeAdapter;
   previousRuntime: RuntimeAdapter;
@@ -152,9 +158,59 @@ export function runtimeRoleRolloutDeps(input: {
     log: (message, level) => logger.log(`${message}\n`, level ?? "info"),
 
     signal: input.signal,
-    teardownTimeoutMs: roleTeardownTimeoutMs(roles),
+    teardownTimeoutMs: roleTeardownTimeoutMs([...(roles ?? []), ...(input.previousRoles ?? [])]),
     get keepProvisionedOnCancel() {
       return input.keepProvisionedOnCancel();
     },
   };
+}
+
+/**
+ * Retire a single-app predecessor's role containers when the new release is a
+ * compose (multi-service) deploy. That path never runs `rolloutRoles`, so
+ * without this the old workers and scheduler would keep running beside the new
+ * stack. Every container is destroyed concurrently through the PREVIOUS
+ * deployment's runtime, each bounded and best-effort. Never throws.
+ */
+export async function retirePreviousRoleContainers(input: {
+  previous: Pick<Deployment, "id" | "roleContainers" | "meta" | "organizationId"> | null | undefined;
+  currentDeploymentId: string;
+  log: (message: string, level?: "info" | "warn") => void;
+  /** Defaults to withDeploymentRuntime. */
+  withRuntime?: <T>(
+    dep: Pick<Deployment, "meta" | "organizationId">,
+    fn: (runtime: RuntimeAdapter) => Promise<T>,
+  ) => Promise<T>;
+}): Promise<void> {
+  const { previous, currentDeploymentId, log } = input;
+  if (!previous || previous.id === currentDeploymentId) return;
+  const containers = previous.roleContainers ?? [];
+  if (containers.length === 0) return;
+
+  const withRuntime = input.withRuntime ?? withDeploymentRuntime;
+  const previousRoles = (previous.meta as { roles?: readonly StackRole[] | null } | null)?.roles;
+  const timeoutMs = roleTeardownTimeoutMs(previousRoles);
+
+  try {
+    log(`Removing ${containers.length} previous role container${containers.length === 1 ? "" : "s"}...`);
+    await withRuntime(previous, (runtime) =>
+      Promise.all(
+        containers.map(async (ref) => {
+          try {
+            await withTimeout(
+              runtime.destroy(ref.containerId),
+              timeoutMs,
+              `timed out after ${timeoutMs}ms (the container runtime never answered)`,
+            );
+          } catch (err) {
+            observeCaughtError(err, ROLE_RUNTIME_SOURCE);
+            log(`Warning: failed to remove previous role container ${ref.role} ${ref.replica}: ${safeErrorMessage(err)}`, "warn");
+          }
+        }),
+      ),
+    );
+  } catch (err) {
+    observeCaughtError(err, ROLE_RUNTIME_SOURCE);
+    log(`Warning: could not remove the previous role containers: ${safeErrorMessage(err)}`, "warn");
+  }
 }

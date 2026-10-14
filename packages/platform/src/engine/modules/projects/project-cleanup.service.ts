@@ -1086,13 +1086,15 @@ export async function collectDeploymentManifest(
     .map((r) => r.containerId)
     .filter((id): id is string => !!id);
   const containerIds = [
-    ...new Set(
-      serviceContainerIds.length > 0
+    ...new Set([
+      ...(serviceContainerIds.length > 0
         ? serviceContainerIds
         : dep.containerId
           ? [dep.containerId]
-          : [],
-    ),
+          : []),
+      // Runtime roles (workers, schedulers) die with the release that owns them.
+      ...(dep.roleContainers ?? []).map((ref) => ref.containerId).filter((id) => !!id),
+    ]),
   ];
 
   // A project-less deployment has no retained releases to protect, so the keep
