@@ -114,6 +114,24 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
 });
 
+it("installs generic Cloud webmail with encrypted client secrets and no managed-mail service", async () => {
+  listServicesMock.mockResolvedValue([{ id: "svc-webmail", name: "webmail" }]);
+  await installApp(ctx, {
+    templateId: "webmail",
+    serverId: "cloud-server",
+    deployTarget: "cloud",
+    routes: [{ service: "webmail", port: 4080, mode: "free" }],
+  });
+  expect(createServiceMock).toHaveBeenCalledOnce();
+  expect(createServiceMock.mock.calls[0]?.[2]).toMatchObject({
+    name: "webmail", image: "ghcr.io/oblien/openship-webmail:latest",
+  });
+  const vars = setEnvMock.mock.calls.find(call => call[2] === "svc-webmail")?.[3].vars;
+  for (const key of ["SESSION_ENCRYPTION_KEY", "BRANDING_ADMIN_TOKEN"]) {
+    expect(vars).toContainEqual({ key, isSecret: true, value: expect.stringMatching(/^[a-f0-9]{64}$/) });
+  }
+});
+
 it.each(["self-hosted", "cloud"] as const)(
   "installs WordPress from its official image with runtime setup and encrypted credentials (%s)",
   async (mode) => {

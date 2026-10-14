@@ -684,6 +684,12 @@ spacing adjustment needs visual verification, not a test that asserts a CSS clas
 
 ## Mail webmail recovery
 
+Cloud's Emails entry connects an existing IMAP/SMTP backend through the standard
+webmail app installer. Keep its client card beside a compact Managed email / Coming
+soon notice. Cloud mail entry points must not mount local server setup, registry or
+administration requests. Desktop and self-hosted instances retain the normal mail
+console and setup flow. Navigation remains Emails across these modes.
+
 When a mail registration has lost its webmail link, the Deploy webmail screen
 shows existing catalog apps that already use that mail hostname on the mail
 server. Suggestions are read-only and require an explicit selection before
