@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PassThrough } from "node:stream";
 import type { Oblien } from "oblien";
+import { NotFoundError } from "oblien";
 import { CloudDockerRuntime } from "./docker";
 import { DockerRuntime } from "../docker";
 import { BuildLogger } from "../build-pipeline";
@@ -43,7 +44,7 @@ beforeEach(async () => {
     list: vi.fn(async () => ({ pages: [...pageRows.values()] })),
     get: vi.fn(async (slug: string) => {
       const page = pageRows.get(slug);
-      if (!page) throw Object.assign(new Error("missing"), { status: 404 });
+      if (!page) throw new NotFoundError("missing");
       return { page };
     }),
     create: vi.fn(async (input: { slug: string; workspace_id: string; path: string }) => {
