@@ -257,7 +257,6 @@ cancellations and unfinished attempts from success rate; count queued attempts a
 Each project retains its own history.
 Old `/deployments` links redirect to Monitoring while preserving filters.
 
-
 Instance relocation has one entry in **Settings → Instance → Instance location**. Keep moving
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress
@@ -658,6 +657,10 @@ not replace its framework artwork.
 Migration retries reuse the shared destination picker after a fresh scan, even when opened
 from an existing run. Keep loading, fetch errors and empty inventory distinct, and preserve
 the selected destination's validation and transfer review before enabling Migrate.
+
+Catalog brand artwork is bundled in both dashboard and website public assets and mapped in
+the shared `AppLogo` renderer. Preserve upstream attribution and keep setup behavior in
+catalog definitions, rather than adding app-specific dashboard branches.
 
 ## Catalog forms
 

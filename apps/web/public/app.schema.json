@@ -198,6 +198,11 @@
           "type": "array",
           "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
         },
+        "entrypointArgv": {
+          "description": "Exact image entrypoint override. Requires Openship 0.9.2 or newer. An empty array clears the image default.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "commandArgv": {
           "description": "Exact container command arguments, without a shell wrapper. Can invoke a mounted startup script through its interpreter.",
           "type": "array",

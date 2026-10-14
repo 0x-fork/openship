@@ -617,6 +617,7 @@ export async function installApp(
       commandArgv: svc.commandArgv ? [...svc.commandArgv] : undefined,
       restart: svc.restart,
       advanced: {
+        ...(svc.entrypointArgv ? { entrypoint: [...svc.entrypointArgv] } : {}),
         ...(svc.healthcheck ? { healthcheck: svc.healthcheck } : {}),
         ...(filesByService.get(svc.name)?.length
           ? { files: filesByService.get(svc.name) }
