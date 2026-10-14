@@ -1599,12 +1599,11 @@ export class DockerRuntime implements RuntimeAdapter {
     // `--force-rm` is a legacy-builder concept (BuildKit keeps no intermediate
     // containers to remove), so it goes when BuildKit is on.
     const buildKit = await this.remoteBuildKitAvailable();
-    // Cloud hosts also run the project's services. Their builder must stay
-    // inside the headroom selected by the engine. The daemon's default
-    // BuildKit driver ignores --memory/--cpu-quota, so bound its worker instead.
+    // Cloud workers remain project-owned for cancellation and crash recovery.
+    // Apply only the user's explicit CPU/RAM caps; zero dimensions stay uncapped.
     const cloudLimits = this.connectionOptions?.transport === "cloud" ? dockerBuildResourceLimits(config.resources) : undefined;
-    const boundedBuildKit = buildKit && cloudLimits && Object.keys(cloudLimits).length > 0;
-    const buildWorker = boundedBuildKit ? projectBuildKitWorker(config.projectId) : undefined;
+    const isolatedBuildKit = buildKit && cloudLimits !== undefined;
+    const buildWorker = isolatedBuildKit ? projectBuildKitWorker(config.projectId) : undefined;
     const builderName = buildWorker?.builderName;
     const removeBuilder = builderName ? `docker buildx rm --force ${sq(builderName)}` : undefined;
     const builderEnv = buildKit ? "DOCKER_BUILDKIT=1 " : "";
@@ -1648,7 +1647,7 @@ export class DockerRuntime implements RuntimeAdapter {
       `cd ${sq(remoteBuildDir)} && ` +
       `${builderEnv}docker build${builderFlags} -t ${sq(tag)}${dockerfileFlag} ` +
       `${labelArgs} ${buildArgs} .`;
-    if (boundedBuildKit) {
+    if (isolatedBuildKit) {
       const driverOptions = [
         ...(cloudLimits.memory ? [`memory=${cloudLimits.memory}`, `memory-swap=${cloudLimits.memory}`] : []),
         ...(cloudLimits.cpuquota ? [`cpu-quota=${cloudLimits.cpuquota}`, `cpu-period=${cloudLimits.cpuperiod}`] : []),
@@ -1662,11 +1661,13 @@ export class DockerRuntime implements RuntimeAdapter {
         "set -e",
         `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
         `${removeBuilder} >/dev/null 2>&1 || true`,
-        `docker buildx create --name ${sq(builderName!)} --node ${sq(buildWorker!.nodeName)} --driver docker-container ${driverOptions} --bootstrap`,
+        `docker buildx create --name ${sq(builderName!)} --node ${sq(buildWorker!.nodeName)} --driver docker-container${driverOptions ? ` ${driverOptions}` : ""} --bootstrap`,
         `cd ${sq(remoteBuildDir)}`,
         `docker buildx build --builder ${sq(builderName!)} --load --progress=plain -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
       ].join("\n");
-      log.log(`Build worker limited to ${describeResourceLimits(config.resources)}.\n`);
+      log.log(Object.keys(cloudLimits!).length > 0
+        ? `Build worker limited to ${describeResourceLimits(config.resources)}.\n`
+        : "Build worker uses the server's resources without additional CPU or memory limits.\n");
     }
 
     log.log(
