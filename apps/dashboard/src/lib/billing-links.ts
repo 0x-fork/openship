@@ -23,8 +23,14 @@ export function scopedBillingHref(path: string, { workspaceId, organizationId }:
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-export function newServerBillingHref(organizationId?: string | null) {
-  return scopedBillingHref("/billing/plans?newServer=1", { organizationId });
+export function newServerBillingHref(organizationId?: string | null, purchase?: {
+  planId?: string; startCheckout?: boolean; checkoutIntent?: string;
+}) {
+  const params = new URLSearchParams({ newServer: "1" });
+  if (purchase?.planId) params.set("plan", purchase.planId);
+  if (purchase?.startCheckout) params.set("startCheckout", "1");
+  if (purchase?.checkoutIntent) params.set("checkoutIntent", purchase.checkoutIntent);
+  return scopedBillingHref(`/billing/plans?${params}`, { organizationId });
 }
 
 export function workspaceBillingHref(path: string, workspaceId?: string | null) {

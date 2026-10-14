@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CloudWorkspaceSummary } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
 import { CloudPlanPicker } from "@/components/billing/CloudPlanPicker";
@@ -9,10 +9,15 @@ import { Button } from "@/components/ui/button";
 import { useSession } from "@/lib/auth-client";
 import { systemApi } from "@/lib/api/system";
 import { getApiErrorMessage } from "@/lib/api/client";
+import { useCloudResourceKey } from "@/context/CloudResourceContext";
+import { randomUUID } from "@/lib/random-uuid";
+import { isCloudPurchaseIntent } from "@/lib/cloud-purchase-intent";
 
 interface PurchaseProps {
-  /** Marketing can request an offer; the live catalog and explicit click decide checkout. */
+  /** Marketing requests only an offer ID; the API supplies its actual terms. */
   requestedPlanId?: string;
+  autoCheckout?: boolean;
+  checkoutIntent?: string;
   preserveProject?: boolean;
   billingEnabled?: boolean;
   onCheckoutStarted?: (server: CloudWorkspaceSummary, checkoutUrl: string) => void | Promise<void>;
@@ -23,10 +28,25 @@ interface PurchaseProps {
  * Browsing does not create a server; retries reuse the identity just created. */
 export function ManagedServerPurchase(props: PurchaseProps) {
   const { data: session, isPending } = useSession();
-  const contextKey = `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
+  const cloudKey = useCloudResourceKey();
+  const contextKey = `${cloudKey}:${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
+  const [automatic, setAutomatic] = useState<{ owner: string; key: string } | null>(null);
+  useEffect(() => {
+    if (!props.autoCheckout || automatic || isPending || !session?.user.id || !session.session.activeOrganizationId) return;
+    const url = new URL(window.location.href);
+    const saved = props.checkoutIntent ?? url.searchParams.get("checkoutIntent");
+    if (saved && !isCloudPurchaseIntent(saved)) return;
+    const key = saved || randomUUID();
+    url.searchParams.set("checkoutIntent", key);
+    url.searchParams.set("organizationId", session.session.activeOrganizationId);
+    window.history.replaceState(window.history.state, "", url);
+    setAutomatic({ owner: contextKey, key });
+  }, [props.autoCheckout, props.checkoutIntent, automatic, isPending, session, contextKey]);
+  const owned = automatic?.owner === contextKey;
   return (
     <BillingWorkspaceProvider>
-      <Purchase key={contextKey} {...props} sessionPending={isPending} />
+      <Purchase key={`${contextKey}:${owned ? automatic?.key : "manual"}`} {...props} sessionPending={isPending}
+        autoCheckout={Boolean(props.autoCheckout && owned)} checkoutIntent={owned ? automatic?.key : undefined} />
     </BillingWorkspaceProvider>
   );
 }
@@ -38,6 +58,8 @@ function Purchase({
   onCancel,
   sessionPending,
   requestedPlanId,
+  autoCheckout,
+  checkoutIntent,
 }: PurchaseProps & { sessionPending?: boolean }) {
   const { t } = useI18n();
   const created = useRef<CloudWorkspaceSummary | null>(null);
@@ -46,6 +68,7 @@ function Purchase({
   async function prepareWorkspace() {
     created.current ??= await systemApi.createManagedServer({
       name: t.billing.workspaces.defaultName,
+      ...(checkoutIntent ? { idempotencyKey: checkoutIntent } : {}),
     });
     return created.current.id;
   }
@@ -55,6 +78,8 @@ function Purchase({
       <CloudPlanPicker
         currentPlan="free"
         requestedPlanId={requestedPlanId}
+        autoCheckout={autoCheckout}
+        checkoutKey={checkoutIntent}
         subscription={null}
         billingEnabled={billingEnabled}
         prepareWorkspace={prepareWorkspace}

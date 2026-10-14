@@ -692,6 +692,33 @@ describe("subscription-owned Cloud workspace lifecycle", () => {
     }
     expect(h.client.workspaces.create).not.toHaveBeenCalled();
   });
+
+  it("recovers one draft and its server across concurrent native/HTTP creates and scopes retries by organization", async () => {
+    const [native, remote] = await clients();
+    const input = { name: "Pricing purchase", idempotencyKey: randomUUID() };
+    const created = await Promise.all([native!.createManaged(input), remote!.createManaged(input), native!.createManaged(input)]);
+    expect(new Set(created.map(row => row.id)).size).toBe(1);
+    expect(new Set(created.map(row => row.serverId)).size).toBe(1);
+    expect((await repos.cloudWorkspace.listByOrganization(owner.orgId)).filter(row => row.name === input.name)).toHaveLength(1);
+    await remote!.update(created[0]!.serverId, { name: "Keep my renamed server" });
+    expect(await native!.createManaged(input)).toMatchObject({ id: created[0]!.id, name: "Keep my renamed server" });
+    const stranger = await seedOwner();
+    const other = await (await clients(stranger))[0]!.createManaged(input);
+    expect(other.id).not.toBe(created[0]!.id);
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
+
+  it("never recreates a deleted purchase identity or its old provider namespace", async () => {
+    const [native, remote] = await clients();
+    const input = { name: "Removed pricing purchase", idempotencyKey: randomUUID() };
+    const created = await native!.createManaged(input);
+    await remote!.removeManaged(created.serverId, { idempotencyKey: randomUUID(), confirmDelete: true });
+    await drainBackgroundWork();
+    await expect(native!.createManaged(input)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_PURCHASE_REMOVED" });
+    await expect(remote!.createManaged(input)).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_PURCHASE_REMOVED" });
+    expect(await repos.cloudWorkspace.findById(created.id)).toBeUndefined();
+    expect(h.client.workspaces.create).not.toHaveBeenCalled();
+  });
   it("does not provision, stop or change the entitlement mirror when provider billing is unavailable", async () => {
     await syncOblienEntitlement(owner.orgId, { workspaceId: workspace.id });
     h.billing.getEntitlement.mockRejectedValue(new Error("Billing temporarily unavailable"));
