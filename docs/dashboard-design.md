@@ -668,3 +668,15 @@ volume identities. Keep its server and hostname fixed during recovery, and show
 that constraint inline. Never create a second app or grant hostname ownership
 just because an app looks like webmail. A failed status read shows the shared
 error and Retry state; a changed link requires refreshing before another attempt.
+
+## Cloud authorization
+
+Desktop, self-hosted and CLI Cloud consent share a compact identity panel. Show
+the signed-in account (name, email and avatar) and the actual active organization.
+Use explicit Switch controls; expand organization choices inline without leaving
+the request. Never substitute the first organization when the session has none.
+Loading or failed organization reads show a skeleton or retry beside the identity
+and block authorization. Account switching signs out before continuing to login;
+organization switching reloads the same request after the server confirms the
+session change. Preserve callback, device mode, state and PKCE parameters, and
+require another explicit Authorize click after either switch.
