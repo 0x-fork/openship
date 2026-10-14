@@ -179,12 +179,18 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
     for (const { role, replica } of plan.scalable) {
       scalableRefs.push(await startOne(role, replica));
     }
-    if (scalableRefs.length > 0) await verifyContainers(scalableRefs);
+    if (scalableRefs.length > 0) {
+      await verifyContainers(scalableRefs);
+      throwIfDeploymentCancelled(signal);
+    }
 
     // Singleton phase: stop-first, retaining the old container so a failure can restore it.
     const singletonRefs: RoleContainerRef[] = [];
     for (const { role, replica } of plan.singletons) {
       for (const old of previous.filter((ref) => ref.role === role.name)) {
+        // A cancellation must be seen before the old scheduler is stopped, or
+        // keepProvisionedOnCancel would leave no scheduler running at all.
+        throwIfDeploymentCancelled(signal);
         log(`Stopping previous ${role.name} (kept restorable until this deploy is healthy)...`);
         try {
           await withTimeout(
@@ -202,7 +208,10 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
       }
       singletonRefs.push(await startOne(role, replica));
     }
-    if (singletonRefs.length > 0) await verifyContainers(singletonRefs);
+    if (singletonRefs.length > 0) {
+      await verifyContainers(singletonRefs);
+      throwIfDeploymentCancelled(signal);
+    }
   } catch (err) {
     const cancelled = err instanceof DeploymentCancelledError || signal?.aborted === true;
     if (cancelled && deps.keepProvisionedOnCancel) throw err;

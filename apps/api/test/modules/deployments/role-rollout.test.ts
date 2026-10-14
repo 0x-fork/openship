@@ -429,6 +429,46 @@ describe("rolloutRoles: cancellation", () => {
     expect(events).toEqual(["start worker 1", "verify worker-1", "stopPrev old-sched"]);
   });
 
+  it("a cancellation during the scalable verify is seen before the old singleton is stopped", async () => {
+    const controller = new AbortController();
+    const { deps, events } = harness({
+      roles: [worker(1), scheduler("sched")],
+      previous: [ref("sched", 1, "old-sched")],
+      signal: controller.signal,
+      keepProvisionedOnCancel: true,
+      verify: async (containers) => {
+        events.push(`verify ${containers.map((c) => `${c.role}-${c.replica}`).join(",")}`);
+        controller.abort();
+        return null;
+      },
+    });
+    await expect(rolloutRoles(deps)).rejects.toBeInstanceOf(DeploymentCancelledError);
+    expect(events).toEqual(["start worker 1", "verify worker-1"]);
+    expect(events).not.toContain("stopPrev old-sched");
+  });
+
+  it("a cancellation during the singleton verify unwinds instead of reporting success", async () => {
+    const controller = new AbortController();
+    const { deps, events } = harness({
+      roles: [scheduler("sched")],
+      previous: [ref("sched", 1, "old-sched")],
+      signal: controller.signal,
+      verify: async (containers) => {
+        events.push(`verify ${containers.map((c) => `${c.role}-${c.replica}`).join(",")}`);
+        controller.abort();
+        return null;
+      },
+    });
+    await expect(rolloutRoles(deps)).rejects.toBeInstanceOf(DeploymentCancelledError);
+    expect(events).toEqual([
+      "stopPrev old-sched",
+      "start sched 1",
+      "verify sched-1",
+      "destroyNew new-sched-1",
+      "startPrev old-sched",
+    ]);
+  });
+
   it("keepProvisionedOnCancel does not suppress the unwind for an ordinary failure", async () => {
     const { deps, events } = harness({
       roles: [worker(1)],
