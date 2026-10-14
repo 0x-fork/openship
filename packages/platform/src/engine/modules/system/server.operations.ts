@@ -431,7 +431,10 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
     after: auditAfter,
   });
 
-  return serializeServer(updated);
+  // Re-read the probe (cache was just invalidated) so the response carries the GPU annotation the
+  // client renders; without it a manual mark would flash "could not check this server".
+  const capacity = updated?.workspaceId ? null : await probeServerCapacity(id, ctx.organizationId);
+  return serializeServer(updated, null, capacity);
 }
 
 /**

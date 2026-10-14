@@ -43,7 +43,7 @@ describe("serverGpu (API annotation)", () => {
     expect(serverGpu("no", t4)).toEqual({
       available: false,
       detected: true,
-      count: null,
+      count: 1,
       override: "no",
       probed: true,
     });

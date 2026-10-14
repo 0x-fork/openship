@@ -15,11 +15,14 @@ export function serverGpu(
 ): ServerGpu {
   const probed = !!capacity && capacity.source !== "unknown";
   const eff = effectiveGpu(probed ? capacity : null, override ?? null);
-  const detected = probed ? effectiveGpu(capacity, null).hasGpu : false;
+  const seen = probed ? effectiveGpu(capacity, null) : null;
+  const detected = seen?.hasGpu ?? false;
   return {
     available: eff.hasGpu,
     detected,
-    count: eff.count,
+    // The probed card count is a fact about the machine; a manual "no" hides the card from
+    // scheduling but must not erase how many the daemon reported.
+    count: eff.count ?? seen?.count ?? null,
     override: override ?? null,
     probed,
   };
