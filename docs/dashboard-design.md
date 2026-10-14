@@ -330,7 +330,9 @@ check retryable before starting the move.
   same layout in Cloud and self-hosted mode; do not hide it in an Advanced accordion.
 - Machine power defaults to the full available server capacity. Project settings and
   deployment setup share the resource editor and tier labels. Optional limits apply to
-  containers; the managed server's purchased allocation stays separate.
+  containers; the managed server's purchased allocation stays separate. Catalog
+  sizing is advisory. Unset build and service dimensions receive no additional Docker
+  limits; Cloud admission reservations must not appear as user-configured caps.
   In destination settings, offer Full capacity and Customized as peer selection cards;
   Customized keeps the presets visible below. Keep a Back action in the page header.
 - Project Settings presents curated app fields and project-wide controls in one flow.

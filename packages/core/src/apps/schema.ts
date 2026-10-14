@@ -67,6 +67,7 @@ const serviceSpec = z.object({
   image: z.string().optional(),
   /** Exact retired defaults eligible for an explicit operator repair. Never auto-upgrade. */
   replacesImages: z.array(z.string().min(1)).optional(),
+  /** Advisory sizing recommendation, never an installed container limit. */
   resources: z
     .object({
       cpuCores: z.number().min(MIN_CPU_CORES),
