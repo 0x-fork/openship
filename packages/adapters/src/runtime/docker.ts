@@ -3618,6 +3618,11 @@ export class DockerRuntime implements RuntimeAdapter {
     );
   }
 
+  /** Resolve service mounts before stopping the existing workload. */
+  protected async serviceVolumeBinds(config: MultiServiceDeployConfig): Promise<string[]> {
+    return scopeVolumeBinds(config.slug, config.volumes, config.namespaceVolumes);
+  }
+
   /** A managed host can narrow container operations to its project. Local and
    * operator-owned Docker hosts retain their existing discovery semantics. */
   protected async assertContainerAccess(containerId: string): Promise<void> {
@@ -5675,7 +5680,7 @@ export class DockerRuntime implements RuntimeAdapter {
     if (!config.namespaceVolumes) {
       await this.assertNoForeignNamedVolumeCollision(config);
     }
-    const scopedBinds = scopeVolumeBinds(config.slug, config.volumes, config.namespaceVolumes);
+    const scopedBinds = await this.serviceVolumeBinds(config);
     const binds = scopedBinds.length > 0 ? scopedBinds : undefined;
     const restartPolicy = resolveRestartPolicy(config.restart);
     const healthcheck = toDockerHealthcheck(config.advanced?.healthcheck);

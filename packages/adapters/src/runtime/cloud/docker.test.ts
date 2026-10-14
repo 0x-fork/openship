@@ -77,7 +77,11 @@ beforeEach(async () => {
       NetworkSettings: { Ports: {} },
     }) }),
     getImage: () => ({ inspect: async () => ({ Config: { Volumes: { "/image-data": {} } } }) }),
-    getVolume: () => ({ inspect: async () => ({ Labels: { "openship.project": "project-a" } }) }),
+    getVolume: (name: string) => ({ inspect: async () => {
+      if (!name.startsWith("openship-project-a-"))
+        throw Object.assign(new Error("missing volume"), { statusCode: 404 });
+      return { Labels: { "openship.project": "project-a" } };
+    } }),
   } as never);
   vi.spyOn(DockerRuntime.prototype, "deployServiceWorkload").mockImplementation(async (_group, input) => {
     captures.push(input);
@@ -355,6 +359,73 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(captures[0]!.volumes.some(volume => volume.endsWith(":/image-data"))).toBe(true);
     expect(captures[1]!.volumes).toEqual(captures[0]!.volumes);
     expect(ws.delete).not.toHaveBeenCalled();
+  });
+  it("isolates a new WordPress installation from a previous project's volumes and keeps backup identities stable", async () => {
+    vi.mocked(DockerRuntime.prototype.deployServiceWorkload).mockRestore();
+    const legacy = "openship-wordpress-wordpress_db_data";
+    const stored = new Map<string, { Labels: Record<string, string> }>([
+      [legacy, { Labels: { "openship.project": "deleted-project" } }],
+    ]);
+    const createVolume = vi.fn(async (input: { Name: string; Labels: Record<string, string> }) => {
+      stored.set(input.Name, { Labels: input.Labels });
+    });
+    const docker = {
+      ...runtime.docker,
+      getContainer: () => ({
+        inspect: async () => {
+          throw Object.assign(new Error("missing container"), { statusCode: 404 });
+        },
+        stop: async () => {
+          throw Object.assign(new Error("missing container"), { statusCode: 404 });
+        },
+        remove: async () => {
+          throw Object.assign(new Error("missing container"), { statusCode: 404 });
+        },
+      }),
+      createContainer: vi.fn(async (_input: { HostConfig: { Binds: string[] } }) => ({
+        id: "wordpress-container",
+        start: async () => {},
+        inspect: async () => ({ NetworkSettings: { Networks: {}, Ports: {} } }),
+      })),
+      getVolume: (name: string) => ({
+        inspect: async () => {
+          const volume = stored.get(name);
+          if (!volume) throw Object.assign(new Error("missing volume"), { statusCode: 404 });
+          return volume;
+        },
+      }),
+      createVolume,
+    };
+    vi.spyOn(runtime, "docker", "get").mockReturnValue(docker as never);
+    const wordpress = {
+      ...config,
+      slug: "wordpress",
+      serviceName: "wordpress-db",
+      volumes: ["wordpress_db_data:/var/lib/mysql"],
+    };
+    await runtime.deployServiceWorkload(group, wordpress);
+    await runtime.deployServiceWorkload(group, { ...wordpress, deploymentId: "d2" });
+    const binds = docker.createContainer.mock.calls.map(([input]) => input.HostConfig.Binds);
+    const source = binds[0]!.find((volume) => volume.endsWith(":/var/lib/mysql"))!.split(":")[0]!;
+    expect(source).toMatch(/^openship-project-[a-f0-9]{32}-wordpress_db_data$/);
+    expect(binds[1]).toEqual(binds[0]);
+    expect(stored.get(legacy)).toEqual({ Labels: { "openship.project": "deleted-project" } });
+    expect(stored.get(source)).toEqual({ Labels: { "openship.project": "project-a" } });
+    const creates = createVolume.mock.calls.length;
+    const backup = new DockerBackupExecutor(runtime);
+    const sources = await backup.listSources({
+      id: "wordpress-db",
+      projectId: "project-a",
+      projectSlug: "wordpress",
+      name: "wordpress-db",
+      image: "test:1",
+      env: {},
+      volumes: wordpress.volumes,
+      containerId: null,
+      namespaceVolumes: true,
+    });
+    expect(sources.map((volume) => volume.source)).toEqual([source]);
+    expect(createVolume).toHaveBeenCalledTimes(creates);
   });
   it("reserves a stopped sibling's ports and restores them when that service is redeployed", async () => {
     const first = await runtime.deployServiceWorkload(group, config);
