@@ -339,6 +339,12 @@ check retryable before starting the move.
   Keep shared environment, machine power and rollback settings there, including for
   Compose and monorepo projects. Apps & Services owns the service list and per-service
   editors; do not embed that page or add App settings / Deployment modes inside Settings.
+- Ready native databases use the existing **Use in a project** connection modal.
+  Preselect the opened database, keep its credentials masked, and offer writable
+  consumers on the same native cluster. Explain incompatible placement inline;
+  never expose a public connection option for a native database or copy its ownership.
+  Other outputs from a source project keep their existing target choices when no
+  native database is selected. Connection errors must remain visible and allow retry.
 - Destination, runtime and resource choices share [OptionCard](../apps/dashboard/src/components/shared/OptionCard.tsx),
   including its selected border and radio marker. Do not introduce a separate switch style.
   New single-app setups default to Direct on servers with less than 2 GiB RAM, using
