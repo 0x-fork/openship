@@ -262,6 +262,15 @@ Instance relocation has one entry in **Settings → Instance → Instance locati
 the control plane, connecting a Desktop, and backup/archive recovery distinct. Reuse the
 shared server selector and option cards for API-only versus API + dashboard. Show progress
 and recovery in the same card; do not add another direct-transfer or Team migration wizard.
+Keep **Connect to an existing instance** and **Move to a server** visible on Desktop.
+A connected Desktop shows **Reconnect** and **Move back to Desktop**. An active server
+shows **Connect a Desktop**, **Move to another server**, and **Move to Desktop**.
+Reserve More options for receiving an instance, returning to the local instance, and
+previous-server recovery; do not repeat visible actions in that menu. Stack the shared
+buttons on narrow containers. Distinguish connection, move, and receive codes by name,
+and show where to generate and paste each one. Receiving offers explicit choices to
+paste a move code or create a receive code; never interpret a blank field as consent
+to generate a code. Changing the destination or receive method requires fresh consent.
 Choose the destination before asking a fresh Desktop user to create an account. Keep that
 account form inside the same dialog, retain the server and address, and return to explicit
 move confirmation after account setup. Team and push-to-deploy prerequisites link directly
