@@ -69,7 +69,8 @@ it.each(["cloud", "local", "linked"])("keeps MinIO's entrypoint argv and generat
     environment: expect.objectContaining({ MINIO_ROOT_PASSWORD: expect.stringMatching(/^[a-f0-9]{48}$/) }),
   }));
 });
-it.each(["Ollama (NVIDIA GPU)", "vLLM (NVIDIA GPU)"])("sends the GPU request of %s", async name => {
+it("sends the GPU request of Ollama (NVIDIA GPU)", async () => {
+  const name = "Ollama (NVIDIA GPU)";
   await render();
   await pick(name);
   await act(async () => { submit(); });
@@ -85,7 +86,7 @@ it("sends no GPU request for plain Ollama or a replacement image", async () => {
 });
 it("does not carry a catalog GPU request onto a user-selected replacement image", async () => {
   await render();
-  await pick("vLLM (NVIDIA GPU)");
+  await pick("Ollama (NVIDIA GPU)");
   await edit("postgres:16-alpine", "example/other:v1");
   await act(async () => { submit(); });
   expect(h.submit.mock.calls[0]![0]).not.toHaveProperty("advanced");

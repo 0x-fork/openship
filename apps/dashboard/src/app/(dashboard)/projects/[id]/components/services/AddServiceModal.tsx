@@ -140,7 +140,7 @@ const CATEGORIES: CategoryDef[] = [
     id: "vector",
     label: "Vector & AI",
     icon: "sparkles",
-    match: ["vector", "qdrant", "weaviate", "milvus", "chroma", "pgvector", "embedding", "llm", "ollama", "vllm"],
+    match: ["vector", "qdrant", "weaviate", "milvus", "chroma", "pgvector", "embedding", "llm", "ollama"],
   },
   {
     id: "queue",
@@ -404,7 +404,7 @@ export function AddServiceModal({ open, projectId, projectName, isCloudProject, 
       ...(trimmedImage === selected?.image && selected.commandArgv
         ? { commandArgv: [...selected.commandArgv] }
         : {}),
-      // A catalog entry that needs a GPU (Ollama / vLLM GPU variants) carries its
+      // A catalog entry that needs a GPU (the Ollama GPU variant) carries its
       // request; a replacement image keeps nothing, like commandArgv above.
       ...(trimmedImage === selected?.image && isGpuRequest(selected.gpus)
         ? { advanced: { gpus: { ...selected.gpus } } }
