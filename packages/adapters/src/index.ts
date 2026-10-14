@@ -91,6 +91,7 @@ export {
   type DockerConnectionOptions,
 } from "./runtime/docker";
 export { containerInfoFromDockerSummary } from "./runtime/docker-container-info";
+export { DEFAULT_BUILD_CACHE_KEEP_BYTES } from "./runtime/docker-build-cache";
 // The pull-auth shape, so the API can type the credential resolver it injects (#581).
 export type { DockerRegistryAuth } from "./runtime/docker-auth";
 export {

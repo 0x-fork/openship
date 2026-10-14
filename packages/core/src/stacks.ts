@@ -271,6 +271,9 @@ export interface StackDefinition {
    * Only framework-specific caches - generic ones (.git) are always excluded.
    */
   cacheDirs?: readonly string[];
+  /** Pure build caches, safe to mount outside the application image. Unlike
+   * transfer exclusions, these must never contain required build outputs. */
+  buildCacheDirs?: readonly string[];
   /**
    * Paths (relative to the app root) this framework WRITES at runtime and would
    * lose on redeploy. Declared here so a stock app keeps its data with no
@@ -312,7 +315,8 @@ export const STACKS = {
     defaultBuildCommand: "next build",
     defaultStartCommand: "next start",
     requiredToolVersions: { node: "20.9.0" },
-    cacheDirs: [".next/cache"],    detection: {
+    cacheDirs: [".next/cache"],
+    buildCacheDirs: [".next/cache"],    detection: {
       rootMarkers: ["next.config.js", "next.config.mjs", "next.config.ts"],
       deps: ["next"],
     },
@@ -456,7 +460,8 @@ export const STACKS = {
     defaultPort: 8000,
     defaultBuildCommand: "gatsby build",
     defaultStartCommand: "gatsby serve",
-    cacheDirs: [".cache"],    detection: {
+    cacheDirs: [".cache"],
+    buildCacheDirs: [".cache"],    detection: {
       rootMarkers: ["gatsby-config.js", "gatsby-config.ts"],
       deps: ["gatsby"],
     },

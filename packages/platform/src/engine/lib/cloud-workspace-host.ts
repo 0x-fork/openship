@@ -93,7 +93,11 @@ export async function openCloudWorkspaceDockerRuntime(organizationId: string, id
       transport: "cloud", executor: connection.executor,
       cloudConnection: () => connection.connectDocker(),
       resolveRegistryAuth: registryAuthResolver(organizationId),
-    });
+      buildCacheProtection: async () => {
+        const { buildCacheProtection } = await import("./build-cache-protection");
+        return buildCacheProtection(organizationId, id);
+      },
+    }, null, createProvisionLock(`cloud:server:${binding.workspaceId}`));
     const dispose = runtime.dispose.bind(runtime);
     runtime.dispose = async () => {
       try { await dispose(); } finally { await connection.dispose(); }
