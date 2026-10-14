@@ -385,7 +385,7 @@ export class DockerBackupExecutor implements BackupExecutor {
           // rather than a green run, via the empty-source gate) and a restore into a
           // volume nothing reads.
           const source =
-            parsed.type !== "volume"
+            parsed.type !== "volume" || !service.namespaceVolumes
               ? parsed.source
               : this.runtime.transport?.kind === "cloud"
                 ? await resolveCloudProjectVolumeName(
@@ -394,9 +394,7 @@ export class DockerBackupExecutor implements BackupExecutor {
                     service.projectSlug,
                     parsed.source,
                   )
-                : service.namespaceVolumes
-                  ? ensureScopedVolumeName(service.projectSlug, parsed.source)
-                  : parsed.source;
+                : ensureScopedVolumeName(service.projectSlug, parsed.source);
           return {
             id: `${source}-${i}`,
             source,

@@ -427,6 +427,36 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(sources.map((volume) => volume.source)).toEqual([source]);
     expect(createVolume).toHaveBeenCalledTimes(creates);
   });
+  it.each(["project-a", "project-b"])(
+    "preserves explicit backup source identity and checks its owner (%s)",
+    async (owner) => {
+      const source = "openship-project-00000000000000000000000000000000-data";
+      vi.spyOn(runtime, "docker", "get").mockReturnValue({
+        ...runtime.docker,
+        getVolume: (name: string) => ({
+          inspect: async () => {
+            if (name !== source)
+              throw Object.assign(new Error("missing volume"), { statusCode: 404 });
+            return { Labels: { "openship.project": owner } };
+          },
+        }),
+      } as never);
+      const pending = new DockerBackupExecutor(runtime).listSources({
+        id: "db",
+        projectId: "project-a",
+        projectSlug: "project-a",
+        name: "db",
+        image: "test:1",
+        env: {},
+        volumes: [`${source}:/data`],
+        containerId: null,
+        namespaceVolumes: false,
+      });
+      if (owner === "project-a")
+        expect((await pending).map((volume) => volume.source)).toEqual([source]);
+      else await expect(pending).rejects.toMatchObject({ code: "CLOUD_STORAGE_FORBIDDEN" });
+    },
+  );
   it("reserves a stopped sibling's ports and restores them when that service is redeployed", async () => {
     const first = await runtime.deployServiceWorkload(group, config);
     const reservedPort = first.hostPortByContainerPort![8080];
