@@ -3601,6 +3601,12 @@
       "section": "Project integration",
       "route": "GET /api/actions/repository-checks",
       "description": "Read the connected GitHub account and verify repository Checks access without starting a workflow or publishing a Check."
+    },
+    "issues.clearHistory": {
+      "page": "issues",
+      "description": "Permanently clear resolved incident history in the current organization; preserves active incidents and later recoveries. Owner/admin only.",
+      "route": "DELETE /api/issues/history",
+      "section": "Operations"
     }
   },
   "http": {

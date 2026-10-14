@@ -308,7 +308,8 @@
     "cancelNotice": "Renewal will stop at the end of your paid period. Your subscription stays in place until then.",
     "confirmCancel": "Stop renewal",
     "keepPlan": "Keep subscription",
-    "error": "Unable to update your subscription. Please retry."
+    "error": "Unable to update your subscription. Please retry.",
+    "manage": "Manage subscription"
   },
   "deployGate": {
     "title": "Choose a plan to deploy",
@@ -637,7 +638,7 @@
     "save": "Save",
     "delete": "Delete server",
     "confirmDelete": "Delete this empty server",
-    "deleteHint": "Remove every project first and end the subscription. This permanently removes the empty server and its remaining disk data.",
+    "deleteHint": "Removing projects does not cancel a subscription. Stop renewal in Billing and wait for the paid period to end before deleting a subscribed server. Deletion permanently removes the empty server and its remaining disk data.",
     "buildCapacityTitle": "Server capacity needs attention",
     "buildCapacityHint": "Builds use free capacity on this server. Stop an idle service or increase the server’s capacity, then retry.",
     "openWorkspace": "Open server",

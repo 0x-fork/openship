@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **494 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **495 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -247,6 +247,7 @@ The current API has **494 unique tools**. Permission tags below describe the rou
 
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
+| `delete_issues_history`<br />`DELETE /api/issues/history` | Clear resolved monitoring incident history in the caller's organization. Requires an organization owner/admin with unrestricted access. Preserves open incidents, other organizations and incidents resolving after the server-side cutoff. Does not clear audit logs, notifications or workloads. | `project:admin`<br />Self-hosted |
 | `get_issues`<br />`GET /api/issues` | THE place to answer "what is broken right now?" across the whole installation — start here before per-project tools. One org-wide feed that merges every check Openship already runs: container health incidents (unhealthy / crash_loop / down, plus a server-level `server_unreachable` row when a whole box is offline), managed edge/mail container state, deploy blockers and held prompts, partial-release decisions, unsynced routing, port advisories, unverified domains, certificate errors, and available updates. Each item carries `severity` (`outage` = not being served right now, `action_required`, `advisory`), a `target` with a dashboard href, and `resolveWith` — concrete &#123;method, path&#125; calls that fix it, callable as-is. Items whose fix is a managed container carry `infraFix` instead (a UI flow, not an API call). `?status=resolved` returns incident HISTORY (the only source with a lifecycle; up to 30 days), so a resolved-tab absence never means "nothing else ever broke". Infrastructure rows require server read access and are absent in cloud mode. | `project:list` |
 | `get_issues_health`<br />`GET /api/issues/health` | Latest health-watch snapshot for every expected workload in the organization. Cached only: this read performs no Docker polling. Includes healthy, unhealthy, crash-looping, down and unknown states plus watcher enabled status. | `project:list` |
 | `get_issues_rescan_status`<br />`GET /api/issues/rescan/status` | Read the current or most recent issue-rescan session, including stage status, errors and completion. Start once with the rescan tool, then poll this tool instead of launching repeated scans. | `job:read`<br />Self-hosted |

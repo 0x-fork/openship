@@ -1191,6 +1191,11 @@
         "action": "失敗したジョブを実行しました",
         "actionWithoutResource": "失敗したジョブを実行しました",
         "label": "ジョブ失敗"
+      },
+      "issues.history.clear": {
+        "action": "解決済みの監視履歴を消去しました",
+        "actionWithoutResource": "解決済みの監視履歴を消去しました",
+        "label": "監視履歴を消去"
       }
     },
     "resourceLabels": {

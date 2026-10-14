@@ -141,7 +141,21 @@
     "dnsOtherServer": "DNS が別のサーバーを指しています",
     "txtMissing": "所有権確認 TXT レコードがありません",
     "mailCertExpired": "メール証明書の期限が切れました。",
-    "certEdgeFailed": "証明書を確認できませんでした ({detail})。ドメインがこのサーバーを指し、ポート 80/443 が到達可能であることを確認してください。"
+    "certEdgeFailed": "証明書を確認できませんでした ({detail})。ドメインがこのサーバーを指し、ポート 80/443 が到達可能であることを確認してください。",
+    "certDnsUnresolved": "{domain} はまだこのサーバーを指していません。DNS A レコードが存在しないか、伝播が完了していません。伝播を待ってから「ドメイン」タブで再試行してください。",
+    "certPort80Unreachable": "{domain} のポート 80 がインターネットからアクセスできません。ファイアウォールまたはセキュリティグループがブロックしているか、ドメインがこのサーバーを指していないか、別のプロキシが :80 を使用しています。",
+    "certCloudflareProxy": "Cloudflare プロキシがこのサーバーへ転送せずに {domain} の証明書チャレンジに応答しています: HTTP を HTTPS へリダイレクトした後にオリジンの TLS を拒否しています。最初の証明書が発行されるまで SSL/TLS → Overview を \"Full\" に設定するか、オレンジの雲をオフにするか、Cloudflare Origin CA 証明書をアップロードしてください。",
+    "certRedirect404": "{domain} のチャレンジが HTTP から HTTPS にリダイレクトされ、404 で応答しました。Cloudflare の背後にある場合は「Always Use HTTPS」を無効化または SSL/TLS を \"Full\" に設定してください。それ以外の場合は A レコードを確認してください。",
+    "certPort80NotAcme": "ポート 80 は応答しましたが ACME チャレンジではありませんでした。別の Web サーバーがポート 80 を占有しています。再実行して引き継ぎ/移行を選択してください。",
+    "certRateLimited": "{domain} の Let's Encrypt レート制限に達しました。時間を置いてから再試行してください。",
+    "certPortBindFailure": "{domain} のポート {port} で証明書リスナーを開始できませんでした。他のプロセスがポートを保持しています。再試行するか、 でプロセスを停止してください。",
+    "certFailedGeneric": "certbot は {domain} の証明書を発行できませんでした",
+    "requestTimeout": "リクエストがタイムアウトしました。サーバーの応答に時間がかかりすぎています。",
+    "requestCancelled": "リクエストがキャンセルされました。",
+    "requestFailed": "リクエストが失敗しました。",
+    "networkUnreachable": "Openship に接続できません。接続とサーバーの状態を確認してください。",
+    "hostUnreachable": "ホストに到達できません",
+    "sshConnectionRefused": "SSH 接続が拒否されました"
   },
   "monitoring": {
     "autoCard": {
@@ -239,5 +253,15 @@
       "coverageErrorsOne": "{n}件のチェックが失敗しました",
       "coverageErrorsOther": "{n}件のチェックが失敗しました"
     }
+  },
+  "history": {
+    "clear": "履歴を消去",
+    "confirm": "解決済みの監視履歴を消去しますか？",
+    "hint": "このワークスペースの解決済みインシデントを完全に削除します。未解決の問題、監査ログ、通知は保持されます。",
+    "confirmClear": "解決済み履歴を消去",
+    "clearing": "消去中…",
+    "cancel": "キャンセル",
+    "cleared": "監視履歴を消去しました。",
+    "failed": "履歴を消去できませんでした。もう一度お試しください。"
   }
 }

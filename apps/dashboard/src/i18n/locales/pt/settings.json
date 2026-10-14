@@ -1191,6 +1191,11 @@
         "action": "executou a tarefa com falha",
         "actionWithoutResource": "executou a tarefa com falha",
         "label": "Falha na tarefa"
+      },
+      "issues.history.clear": {
+        "action": "limpou o histórico de incidentes resolvidos",
+        "actionWithoutResource": "limpou o histórico de incidentes resolvidos",
+        "label": "Histórico de monitoramento limpo"
       }
     },
     "resourceLabels": {

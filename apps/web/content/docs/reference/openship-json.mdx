@@ -250,8 +250,12 @@ release command and app use the same database on both Docker and Bare.
 
 <Callout title="Runtime support" type="warn">
 Release commands currently require a **single-app Docker or Bare deployment**, including
-portless workers. The app may use attached or connected database services without changing
-its single-app deployment mode.
+portless workers. A database deployed as its own app and connected to this project keeps it
+single-app: the connection is injected as an environment variable, and the release command
+reaches the database over the network. Adding any enabled service to the **same project**,
+a database included, makes it a multi-service deployment instead, so a deploy with release
+commands fails before it builds. To run migrations against a database, deploy the database
+as its own app and connect it.
 
 Full Compose/monorepo deployments, static sites, and runtimes without one-off command
 support **fail before activation** when commands are configured. Per-service release

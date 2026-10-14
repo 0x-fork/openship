@@ -1191,6 +1191,11 @@
         "action": "hat den fehlgeschlagenen Job ausgeführt",
         "actionWithoutResource": "hat den fehlgeschlagenen Job ausgeführt",
         "label": "Job fehlgeschlagen"
+      },
+      "issues.history.clear": {
+        "action": "löschte den Verlauf behobener Überwachungsprobleme",
+        "actionWithoutResource": "löschte den Verlauf behobener Überwachungsprobleme",
+        "label": "Überwachungsverlauf gelöscht"
       }
     },
     "resourceLabels": {

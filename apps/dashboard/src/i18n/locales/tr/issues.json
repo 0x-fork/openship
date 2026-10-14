@@ -141,7 +141,21 @@
     "dnsOtherServer": "DNS başka bir sunucuyu işaret ediyor",
     "txtMissing": "Sahiplik TXT kaydı eksik",
     "mailCertExpired": "Posta sertifikasının süresi doldu.",
-    "certEdgeFailed": "Sertifika doğrulanamadı ({detail}). Alan adının bu sunucuyu işaret ettiğinden ve 80/443 bağlantı noktalarının açık olduğundan emin olun."
+    "certEdgeFailed": "Sertifika doğrulanamadı ({detail}). Alan adının bu sunucuyu işaret ettiğinden ve 80/443 bağlantı noktalarının açık olduğundan emin olun.",
+    "certDnsUnresolved": "{domain} henüz bu sunucuya yönlendirilmiyor — DNS A kaydı eksik veya henüz yayılmadı. Yayılmayı bekleyin, ardından Alan Adları sekmesinden tekrar deneyin.",
+    "certPort80Unreachable": "{domain} için 80 numaralı bağlantı noktasına internetten erişilemiyor — bir güvenlik duvarı veya bulut güvenlik grubu engelliyor, alan adı bu sunucuyu göstermiyor ya da başka bir proxy :80 bağlantı noktasını kullanıyor.",
+    "certCloudflareProxy": "Cloudflare proxy'si sertifika doğrulamasını bu sunucuya iletmek yerine kendisi yanıtlıyor: isteği HTTPS'ye yönlendiriyor ve ardından kaynak TLS'sini reddediyor. İlk sertifika verilene kadar SSL/TLS → Overview ayarını \"Full\" yapın, turuncu bulutu kapatın ya da Alan Adları sekmesinden bir Cloudflare Origin CA sertifikası yükleyin.",
+    "certRedirect404": "{domain} doğrulaması HTTP'den HTTPS'ye yönlendirildi ve 404 yanıtı verdi. {domain} Cloudflare arkasındaysa \"Always Use HTTPS\" yönlendirme yapıyor olabilir: SSL/TLS ayarını \"Full\" yapın veya proxy'yi kapatın. Aksi takdirde A kaydını kontrol edin.",
+    "certPort80NotAcme": "Port 80 yanıt verdi ancak ACME doğrulamamızla değil — başka bir web sunucusu hala :80'i kullanıyor. Yeniden çalıştırın ve devral/taşı seçeneğini belirleyin.",
+    "certRateLimited": "{domain} için Let's Encrypt istek sınırına ulaşıldı — tekrar denemeden önce bekleyin.",
+    "certPortBindFailure": "{domain} için {port} portunda sertifika dinleyicisi başlatılamadı: sunucudaki başka bir işlem bu portu tutuyor. Tekrar deneyin veya  ile işlemi durdurun.",
+    "certFailedGeneric": "certbot {domain} için sertifika veremedi",
+    "requestTimeout": "İstek zaman aşımına uğradı. Sunucunun yanıt vermesi çok uzun sürdü.",
+    "requestCancelled": "İstek iptal edildi.",
+    "requestFailed": "İstek başarısız oldu.",
+    "networkUnreachable": "Openship'e ulaşılamıyor. Bağlantınızı ve sunucu durumunu kontrol edin.",
+    "hostUnreachable": "Ana makineye ulaşılamıyor",
+    "sshConnectionRefused": "SSH bağlantısı reddedildi"
   },
   "monitoring": {
     "autoCard": {
@@ -239,5 +253,15 @@
       "coverageErrorsOne": "{n} kontrol başarısız oldu",
       "coverageErrorsOther": "{n} kontrol başarısız oldu"
     }
+  },
+  "history": {
+    "clear": "Geçmişi temizle",
+    "confirm": "Çözülen izleme olaylarının geçmişi temizlensin mi?",
+    "hint": "Bu çalışma alanındaki çözülen olaylar kalıcı olarak silinir. Etkin sorunlar, denetim kayıtları ve bildirimler korunur.",
+    "confirmClear": "Çözülen geçmişi temizle",
+    "clearing": "Temizleniyor…",
+    "cancel": "İptal",
+    "cleared": "İzleme geçmişi temizlendi.",
+    "failed": "Geçmiş temizlenemedi. Tekrar deneyin."
   }
 }

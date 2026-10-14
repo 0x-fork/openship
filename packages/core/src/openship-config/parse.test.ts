@@ -647,6 +647,12 @@ describe("parseOpenshipConfig", () => {
         "100us",
         "100µs",
         "5ns",
+        "+90s",
+        ".5s",
+        "1.s",
+        "1d",
+        "1w",
+        "100μs",
       ]) {
         const { errors, config } = parseOpenshipConfig({
           roles: [{ name: "jobs", kind: "worker", command: "bin/jobs", stopGracePeriod }],

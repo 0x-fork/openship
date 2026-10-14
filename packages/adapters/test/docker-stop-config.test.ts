@@ -51,6 +51,13 @@ describe("toStopConfig (#388)", () => {
     expect(toStopConfig({ stopGracePeriod: "0s" })).toEqual({ StopTimeout: 0 });
   });
 
+  it("preserves valid Compose signs and fractional shutdown durations", () => {
+    expect(toStopConfig({ stopGracePeriod: "+90s" })).toEqual({ StopTimeout: 90 });
+    expect(toStopConfig({ stopGracePeriod: ".5s" })).toEqual({ StopTimeout: 1 });
+    expect(toStopConfig({ stopGracePeriod: "1.s" })).toEqual({ StopTimeout: 1 });
+    expect(toStopConfig({ stopGracePeriod: "1d" })).toEqual({ StopTimeout: 86400 });
+  });
+
   // "1m30" is not a whole duration. Scanning it for unit groups read one minute
   // and dropped the 30, a grace period shorter than the one written, applied
   // without a word. It now counts as unset, like any other unreadable value.

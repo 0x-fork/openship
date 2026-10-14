@@ -13,6 +13,9 @@ import { ManagedServerNetwork } from "./ManagedServerNetwork";
 import { ManagedServerOutbound } from "./ManagedServerOutbound";
 import { ManagedServerSettings } from "./ManagedServerSettings";
 import { ManagedServerConnectionNotice } from "./ManagedServerConnectionNotice";
+import { ManagedServerActionFeedback } from "./ManagedServerActionFeedback";
+import type { CloudWorkspaceSummary } from "@repo/contracts";
+import type { ManagedServerActions } from "./useManagedServerActions";
 
 const cloud = vi.hoisted(() => ({ connecting: false, loading: false, startConnect: vi.fn() }));
 vi.mock("@/context/CloudContext", () => ({ useCloud: () => cloud }));
@@ -116,6 +119,63 @@ async function fill(node: HTMLInputElement | HTMLTextAreaElement, value: string)
 }
 const submit = async (form: HTMLFormElement) =>
   act(async () => form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+it("offers the selected server's subscription management before deletion", async () => {
+  const server: CloudWorkspaceSummary = {
+    id: "cws-production",
+    serverId: "server-production",
+    name: "Production",
+    planTierId: "hobby",
+    subscriptionStatus: "active",
+    projectCount: 0,
+    state: "running",
+    resources: null,
+    operation: null,
+    createdAt: "2026-10-01T00:00:00Z",
+  };
+  const remove = vi.fn();
+  const actions = {
+    busy: false,
+    error: null,
+    preview: null,
+    remove,
+  } as unknown as ManagedServerActions;
+  await render(
+    <ManagedServerActionFeedback
+      server={server}
+      actions={actions}
+      deleting
+      onCancelDelete={vi.fn()}
+    />,
+  );
+  const link = host.querySelector<HTMLAnchorElement>(
+    'a[href="/billing/overview?workspaceId=cws-production"]',
+  );
+  expect(link?.textContent).toBe(baseDictionary.billing.subscription.manage);
+  expect(host.textContent).toContain(
+    baseDictionary.billing.workspaces.deleteHint,
+  );
+  expect(remove).not.toHaveBeenCalled();
+  await render(
+    <ManagedServerActionFeedback
+      server={{ ...server, id: "cws-staging", projectCount: 1 }}
+      actions={actions}
+      deleting
+      onCancelDelete={vi.fn()}
+    />,
+  );
+  expect(
+    host.querySelector(
+      'a[href="/billing/overview?workspaceId=cws-production"]',
+    ),
+  ).toBeNull();
+  expect(
+    host.querySelector('a[href="/billing/overview?workspaceId=cws-staging"]'),
+  ).not.toBeNull();
+  expect(button(baseDictionary.billing.workspaces.confirmDelete).disabled).toBe(
+    true,
+  );
+});
+
 it("starts the existing Cloud sign-in flow and labels an account mismatch separately", async () => {
   const refresh = vi.fn();
   await render(<ManagedServerConnectionNotice issue="not_connected" refresh={refresh} />);

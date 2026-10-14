@@ -1,14 +1,19 @@
 import { reportCaughtError } from "@repo/core/diagnostics";
 import Link from "next/link";
-import { resourcesSource, type ResourceFrontmatter } from "@/lib/source";
+import { blogSource, type BlogFrontmatter } from "@/lib/source";
 import type { Metadata } from "next";
 
 const SITE_URL = "https://openship.io";
 
-type RPage = { url: string; data: ResourceFrontmatter };
+type RPage = { url: string; data: BlogFrontmatter };
+type SearchParams = Promise<{ category?: string | string[] }>;
+
+function selectedCategory(value: string | string[] | undefined): string {
+  return (Array.isArray(value) ? value[0] : value)?.toLowerCase() || "all";
+}
 
 function getPages(): RPage[] {
-  return resourcesSource.getPages() as unknown as RPage[];
+  return blogSource.getPages() as unknown as RPage[];
 }
 
 function getCategories() {
@@ -31,7 +36,7 @@ function formatDate(raw: string): string {
       year: "numeric",
     });
   } catch (error) {
-    reportCaughtError(error, "web/app/(site)/resources/page");
+    reportCaughtError(error, "web/app/(site)/blog/page");
     return raw;
   }
 }
@@ -39,15 +44,15 @@ function formatDate(raw: string): string {
 export async function generateMetadata({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string }>;
+  searchParams: SearchParams;
 }): Promise<Metadata> {
   const search = await searchParams;
-  const category = search?.category;
+  const category = selectedCategory(search.category);
 
   const pageTitle =
     category && category !== "all"
-      ? `${category.charAt(0).toUpperCase() + category.slice(1)} – Openship Resources`
-      : "Resources – Openship";
+      ? `${category.charAt(0).toUpperCase() + category.slice(1)} – Openship Blog`
+      : "Blog – Openship";
 
   const pageDescription =
     category && category !== "all"
@@ -60,7 +65,7 @@ export async function generateMetadata({
     openGraph: {
       title: pageTitle,
       description: pageDescription,
-      url: `${SITE_URL}/resources${category && category !== "all" ? `?category=${category}` : ""}`,
+      url: `${SITE_URL}/blog${category && category !== "all" ? `?category=${encodeURIComponent(category)}` : ""}`,
       siteName: "Openship",
       type: "website",
     },
@@ -70,26 +75,20 @@ export async function generateMetadata({
       description: pageDescription,
     },
     alternates: {
-      canonical: `${SITE_URL}/resources`,
+      canonical: `${SITE_URL}/blog`,
     },
   };
 }
 
-export default async function ResourcesPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ category?: string }>;
-}) {
+export default async function BlogPage({ searchParams }: { searchParams: SearchParams }) {
   const search = await searchParams;
-  const category = search?.category || "all";
+  const category = selectedCategory(search.category);
 
   let pages = getPages();
   const categories = getCategories();
 
   if (category !== "all") {
-    pages = pages.filter(
-      (p) => (p.data?.category?.toLowerCase() || "") === category.toLowerCase()
-    );
+    pages = pages.filter((p) => (p.data?.category?.toLowerCase() || "") === category.toLowerCase());
   }
 
   pages.sort((a, b) => {
@@ -104,10 +103,9 @@ export default async function ResourcesPage({
   const blogStructuredData = {
     "@context": "https://schema.org",
     "@type": "Blog",
-    name: "Openship Resources",
-    description:
-      "Engineering deep-dives, product updates, and guides from the Openship team",
-    url: `${SITE_URL}/resources`,
+    name: "Openship Blog",
+    description: "Engineering deep-dives, product updates, and guides from the Openship team",
+    url: `${SITE_URL}/blog`,
     publisher: {
       "@type": "Organization",
       name: "Openship",
@@ -131,18 +129,21 @@ export default async function ResourcesPage({
 
       <main className="res-main">
         <section className="res-hero">
-          <span className="res-eyebrow">Resources</span>
+          <span className="res-eyebrow">The Openship blog</span>
           <h1 className="res-title">Notes from the build.</h1>
           <p className="res-sub">
-            Engineering deep-dives, product updates, and guides from the
-            Openship team - straight from the source.
+            Engineering deep-dives, product updates, and guides from the Openship team - straight
+            from the source.
           </p>
+          <Link href="/blog/rss.xml" className="res-feed">
+            Follow via RSS <span aria-hidden="true">↗</span>
+          </Link>
         </section>
 
         <nav className="res-tabs" aria-label="Categories">
           {categories.map((cat) => {
             const href =
-              cat.slug === "all" ? "/resources" : `/resources?category=${cat.slug}`;
+              cat.slug === "all" ? "/blog" : `/blog?category=${encodeURIComponent(cat.slug)}`;
             const active = category === cat.slug;
             return (
               <Link
@@ -161,9 +162,7 @@ export default async function ResourcesPage({
         {featured && (
           <Link href={featured.url} className="res-featured">
             <div className="res-featured-flag">Featured</div>
-            <span className="res-featured-tag">
-              {featured.data.category || "Post"}
-            </span>
+            <span className="res-featured-tag">{featured.data.category || "Post"}</span>
             <h2 className="res-featured-title">{featured.data.title}</h2>
             {featured.data.description && (
               <p className="res-featured-desc">{featured.data.description}</p>
@@ -172,15 +171,11 @@ export default async function ResourcesPage({
               <div className="res-avatar" aria-hidden="true">
                 {(featured.data.author || "O")[0].toUpperCase()}
               </div>
-              <span className="res-meta-name">
-                {featured.data.author || "Openship Team"}
-              </span>
+              <span className="res-meta-name">{featured.data.author || "Openship Team"}</span>
               {featured.data.date && (
                 <>
                   <span className="res-meta-dot" aria-hidden="true" />
-                  <time dateTime={featured.data.date}>
-                    {formatDate(featured.data.date)}
-                  </time>
+                  <time dateTime={featured.data.date}>{formatDate(featured.data.date)}</time>
                 </>
               )}
             </div>
@@ -192,9 +187,7 @@ export default async function ResourcesPage({
             {rest.map((post) => (
               <Link key={post.url} href={post.url} className="res-card">
                 <div className="res-card-top">
-                  <span className="res-card-tag">
-                    {post.data.category || "Post"}
-                  </span>
+                  <span className="res-card-tag">{post.data.category || "Post"}</span>
                   {post.data.date && (
                     <time className="res-card-date" dateTime={post.data.date}>
                       {formatDate(post.data.date)}
@@ -202,9 +195,7 @@ export default async function ResourcesPage({
                   )}
                 </div>
                 <h3 className="res-card-title">{post.data.title}</h3>
-                {post.data.description && (
-                  <p className="res-card-desc">{post.data.description}</p>
-                )}
+                {post.data.description && <p className="res-card-desc">{post.data.description}</p>}
                 <div className="res-card-foot">
                   <div className="res-avatar" aria-hidden="true">
                     {(post.data.author || "O")[0].toUpperCase()}
@@ -216,9 +207,7 @@ export default async function ResourcesPage({
           </div>
         )}
 
-        {pages.length === 0 && (
-          <p className="res-empty">No posts found in this category yet.</p>
-        )}
+        {pages.length === 0 && <p className="res-empty">No posts found in this category yet.</p>}
       </main>
     </>
   );

@@ -78,6 +78,22 @@ describe("toDockerHealthcheck", () => {
     expect(hc).toEqual({ Test: ["CMD", "pg_isready"], Timeout: 3_000_000_000 });
   });
 
+  it("preserves valid Compose signs and decimal forms across all timings", () => {
+    expect(
+      toDockerHealthcheck({
+        test: ["CMD", "true"],
+        interval: "+90s",
+        timeout: ".5s",
+        startPeriod: "1.s",
+      }),
+    ).toEqual({
+      Test: ["CMD", "true"],
+      Interval: 90_000_000_000,
+      Timeout: 500_000_000,
+      StartPeriod: 1_000_000_000,
+    });
+  });
+
   it("returns undefined when there is no usable test", () => {
     expect(toDockerHealthcheck({})).toBeUndefined();
     expect(toDockerHealthcheck({ test: "" })).toBeUndefined();

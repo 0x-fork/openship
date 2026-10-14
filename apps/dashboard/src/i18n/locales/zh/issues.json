@@ -141,7 +141,21 @@
     "dnsOtherServer": "DNS 解析指向了其他服务器",
     "txtMissing": "缺少所有权验证 TXT 记录",
     "mailCertExpired": "邮件证书已过期。",
-    "certEdgeFailed": "无法确认证书 ({detail})。请确保域名指向此服务器且 80/443 端口可达，然后再次验证。"
+    "certEdgeFailed": "无法确认证书 ({detail})。请确保域名指向此服务器且 80/443 端口可达，然后再次验证。",
+    "certDnsUnresolved": "{domain} 尚未指向此服务器 — DNS A 记录缺失或尚未生效。请等待解析生效，然后从“域名”选项卡重试。",
+    "certPort80Unreachable": "{domain} 的端口 80 无法从互联网访问 — 防火墙或云安全组阻止了连接，域名未指向此服务器，或者另一个代理占用了 :80 端口。",
+    "certCloudflareProxy": "Cloudflare 代理正在响应 {domain} 的证书质询，而不是转发到此服务器：它将请求重定向到 HTTPS，然后拒绝了源站的 TLS。在颁发首张证书前，请将 SSL/TLS → Overview 设置为“Full”（非“Full (strict)”），或关闭橙色云朵，或上传 Cloudflare Origin CA 证书。",
+    "certRedirect404": "{domain} 的质询已从 HTTP 重定向到 HTTPS 并返回 404。如果使用了 Cloudflare，请检查“始终使用 HTTPS”设置并调整 SSL/TLS 为“Full”模式或暂时关闭代理。否则请检查 A 记录是否正确指向此服务器。",
+    "certPort80NotAcme": "端口 80 已响应，但并非我们的 ACME 质询 — 另一个 Web 服务器仍在占用端口 80。请重新运行并选择接管/迁移。",
+    "certRateLimited": "已达到 {domain} 的 Let's Encrypt 请求频率限制 — 请稍后再试。",
+    "certPortBindFailure": "无法在端口 {port} 上启动 {domain} 的证书质询监听器：服务器上的其他进程已占用该端口。请重试，或使用  停止该进程。",
+    "certFailedGeneric": "certbot 为 {domain} 颁发证书失败",
+    "requestTimeout": "请求超时。服务器响应耗时过长。",
+    "requestCancelled": "请求已取消。",
+    "requestFailed": "请求失败。",
+    "networkUnreachable": "无法连接到 Openship。请检查网络连接及服务器可用性。",
+    "hostUnreachable": "主机不可达",
+    "sshConnectionRefused": "SSH 连接被拒绝"
   },
   "monitoring": {
     "autoCard": {
@@ -239,5 +253,15 @@
       "coverageErrorsOne": "{n} 项检查失败",
       "coverageErrorsOther": "{n} 项检查失败"
     }
+  },
+  "history": {
+    "clear": "清除历史记录",
+    "confirm": "清除已解决的监控事件历史？",
+    "hint": "这会永久删除此工作区中已解决的事件。当前问题、审计日志和通知将被保留。",
+    "confirmClear": "清除已解决的历史",
+    "clearing": "正在清除…",
+    "cancel": "取消",
+    "cleared": "监控历史已清除。",
+    "failed": "无法清除历史记录。请重试。"
   }
 }

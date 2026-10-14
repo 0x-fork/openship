@@ -292,7 +292,8 @@
     "cancelNotice": "Die Verlängerung endet nach dem bezahlten Zeitraum. Dein Abonnement bleibt bis dahin bestehen.",
     "confirmCancel": "Verlängerung stoppen",
     "keepPlan": "Abonnement behalten",
-    "error": "Dein Abonnement konnte nicht aktualisiert werden. Bitte versuche es erneut."
+    "error": "Dein Abonnement konnte nicht aktualisiert werden. Bitte versuche es erneut.",
+    "manage": "Abonnement verwalten"
   },
   "checkout": {
     "checking": "Checkout wird bestätigt…",
@@ -583,7 +584,7 @@
     "save": "Speichern",
     "delete": "Server löschen",
     "confirmDelete": "Diesen leeren Server löschen",
-    "deleteHint": "Entfernen Sie zuerst alle Projekte und beenden Sie das Abonnement. Dadurch werden der leere Server und die verbleibenden Festplattendaten dauerhaft gelöscht.",
+    "deleteHint": "Das Löschen von Projekten kündigt kein Abonnement. Beende die Verlängerung unter Abrechnung und warte auf das Ende des bezahlten Zeitraums, bevor du einen Server mit Abonnement löschst. Beim Löschen werden der leere Server und seine verbleibenden Festplattendaten dauerhaft entfernt.",
     "buildCapacityTitle": "Server-Kapazität prüfen",
     "buildCapacityHint": "Builds nutzen freie Kapazität dieses Server. Stoppen Sie einen ungenutzten Dienst oder erhöhen Sie die Kapazität und versuchen Sie es erneut.",
     "openWorkspace": "Server öffnen",
