@@ -276,31 +276,40 @@ describe("STACKS.laravel.defaultRoles", () => {
 
 describe("resolveWebCommand", () => {
   const laravelWeb = STACKS.laravel.defaultStartCommand;
+  const laravel = { command: laravelWeb, optimizeCommand: STACKS.laravel.optimizeCommand };
 
   it("leaves the command byte-identical when optimize is absent", () => {
-    expect(resolveWebCommand({ stack: "laravel", command: laravelWeb })).toBe(laravelWeb);
+    expect(resolveWebCommand(laravel)).toBe(laravelWeb);
   });
 
   it("leaves the command byte-identical when optimize is false", () => {
-    expect(resolveWebCommand({ stack: "laravel", command: laravelWeb, optimize: false })).toBe(
-      laravelWeb,
-    );
+    expect(resolveWebCommand({ ...laravel, optimize: false })).toBe(laravelWeb);
   });
 
   it("prefixes the Laravel web command when optimize is true", () => {
-    const resolved = resolveWebCommand({ stack: "laravel", command: laravelWeb, optimize: true });
+    const resolved = resolveWebCommand({ ...laravel, optimize: true });
     expect(resolved).toBe(`php artisan optimize && ${laravelWeb}`);
   });
 
   it("keeps the exec/PID-1 frankenphp invocation at the end when warmed", () => {
-    const resolved = resolveWebCommand({ stack: "laravel", command: laravelWeb, optimize: true });
+    const resolved = resolveWebCommand({ ...laravel, optimize: true });
     expect(resolved.startsWith("php artisan optimize && ")).toBe(true);
     expect(resolved.endsWith(laravelWeb)).toBe(true);
     expect(resolved).toContain("exec frankenphp run");
   });
 
-  it("does not warm a non-Laravel stack even when optimize is true", () => {
+  it("leaves stacks without an optimization command unchanged even when enabled", () => {
     const nextWeb = STACKS.nextjs.defaultStartCommand;
-    expect(resolveWebCommand({ stack: "nextjs", command: nextWeb, optimize: true })).toBe(nextWeb);
+    expect(resolveWebCommand({ command: nextWeb, optimize: true })).toBe(nextWeb);
+  });
+
+  it("supports another stack's optimization command without framework branching", () => {
+    expect(
+      resolveWebCommand({
+        command: "exec node server.js",
+        optimize: true,
+        optimizeCommand: "node scripts/warm-cache.mjs",
+      }),
+    ).toBe("node scripts/warm-cache.mjs && exec node server.js");
   });
 });

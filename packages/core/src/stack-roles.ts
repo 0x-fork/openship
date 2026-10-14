@@ -1,29 +1,24 @@
 // Pure: detection (reading the Gemfile, walking the tree) is the caller's job.
 
-import type { StackId, StackRole } from "./stacks";
+import type { StackDefinition, StackRole } from "./stacks";
 
 /**
- * Opt-in Laravel cache-warming prefix (issue #19). `php artisan optimize` warms
- * Laravel's config/route/event/view caches. The `&&` chains the original web
- * command so the server process still becomes PID 1 and receives SIGTERM.
- */
-const LARAVEL_WARMUP_PREFIX = "php artisan optimize && ";
-
-/**
- * Apply the opt-in Laravel cache-warming prefix to a resolved WEB command.
+ * Apply a stack's optional startup optimization to its resolved web command.
  *
- * Returns the command unchanged unless the stack is `laravel` AND `optimize` is
- * `true`. A project that does not opt in keeps a byte-identical web command, so
- * the shared stack presets in `stacks.ts` stay untouched. This resolver prefixes
- * the web command only. Workers and schedulers are never warmed here.
+ * Stack definitions supply the command; the resolver has no framework policy.
+ * Without opt-in or a configured optimization, return the web command unchanged.
+ * `&&` prevents server startup if optimization fails. Preserve any existing
+ * `exec` in the web command, which lets the server replace its shell and receive
+ * signals directly. Worker and scheduler commands do not pass through here.
  */
-export function resolveWebCommand(input: {
-  stack: StackId;
-  command: string;
-  optimize?: boolean;
-}): string {
-  if (input.stack !== "laravel" || input.optimize !== true) return input.command;
-  return `${LARAVEL_WARMUP_PREFIX}${input.command}`;
+export function resolveWebCommand(
+  input: Pick<StackDefinition, "optimizeCommand"> & {
+    command: string;
+    optimize?: boolean;
+  },
+): string {
+  if (input.optimize !== true || !input.optimizeCommand) return input.command;
+  return `${input.optimizeCommand} && ${input.command}`;
 }
 
 export interface ResolveStackRolesInput {

@@ -246,6 +246,11 @@ export interface StackDefinition {
   defaultBuildCommand: string;
   /** Default start command */
   defaultStartCommand: string;
+  /**
+   * Optional web startup optimization, enabled by openship.json `optimize`.
+   * Runs with the runtime environment before the resolved start command.
+   */
+  optimizeCommand?: string;
   /** Minimum tool versions required by this stack on bare metal. */
   requiredToolVersions?: Readonly<Record<string, string>>;
   /**
@@ -819,6 +824,9 @@ export const STACKS = {
     defaultBuildCommand: "",
     defaultStartCommand:
       'SERVER_NAME=":$PORT" exec frankenphp run --config /etc/frankenphp/Caddyfile --adapter caddyfile',
+    // Opt-in web cache warming after runtime environment injection. Keep the
+    // normal start command separate so existing projects stay unchanged.
+    optimizeCommand: "php artisan optimize",
     // Everything a stock Laravel app writes lives here: uploads
     // (storage/app), sessions + cache when the drivers are `file`, and the
     // framework's own scratch space. `database/` is deliberately NOT persisted —

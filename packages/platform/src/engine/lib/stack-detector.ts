@@ -666,18 +666,14 @@ export function applyMetadataOverrides(
     out = classifyAsStaticOutput(out);
   }
 
-  // Opt-in Laravel web-role cache warming (#19). Applied ONCE, last, on the
-  // FINAL web command and the FINAL stack classification — not per metadata
-  // iteration (the framework override that decides `out.stack` lands first) and
-  // not in the openship projection (which runs before detection knows the
-  // stack). `optimize` rides in on the authoritative openship metadata; a
-  // nonLocal file's flag describes another directory, so it is ignored like its
-  // build-shaping fields. resolveWebCommand is a no-op unless the stack is
-  // laravel AND optimize is true, so every other project stays byte-identical.
+  // Resolve the selected stack's opt-in startup optimization once, after the
+  // final web command and stack classification. A nonLocal file describes a
+  // different directory, so its flag is ignored like its build-shaping fields.
   const optimize = metadataList.some((m) => !m.nonLocal && m.optimize === true);
+  const { optimizeCommand } = STACKS[out.stack] as StackDefinition;
   out = {
     ...out,
-    startCommand: resolveWebCommand({ stack: out.stack, command: out.startCommand, optimize }),
+    startCommand: resolveWebCommand({ command: out.startCommand, optimize, optimizeCommand }),
   };
 
   return out;

@@ -62,6 +62,19 @@ describe("Laravel opt-in cache warming (#19) — real detectStack path", () => {
     expect(absent.startCommand).not.toContain(WARMUP_PREFIX);
   });
 
+  it("uses the detected stack's optimization when the config only opts in", () => {
+    const warmed = detectLaravelWith({ optimize: true });
+    expect(warmed.stack).toBe("laravel");
+    expect(warmed.startCommand).toBe(`${WARMUP_PREFIX}${STACKS.laravel.defaultStartCommand}`);
+  });
+
+  it("warms once before the final custom web command", () => {
+    const custom = "exec php artisan octane:start --host=0.0.0.0 --port=$PORT";
+    const warmed = detectLaravelWith({ optimize: true, startCommand: custom });
+    expect(warmed.stack).toBe("laravel");
+    expect(warmed.startCommand).toBe(`${WARMUP_PREFIX}${custom}`);
+  });
+
   it("does not warm a non-laravel stack even when optimize is true", () => {
     const node = detectStack(
       [
