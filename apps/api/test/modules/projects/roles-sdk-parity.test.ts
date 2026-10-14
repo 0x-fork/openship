@@ -13,21 +13,28 @@ import { projectRoutes } from "../../../src/modules/projects/project.routes";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
 
-const app = new Hono().onError(handleApiError)
-  .route("/api/health", healthRoutes).route("/api/projects", projectRoutes);
+const app = new Hono()
+  .onError(handleApiError)
+  .route("/api/health", healthRoutes)
+  .route("/api/projects", projectRoutes);
 async function setup() {
   const owner = await seedOwner();
   const user = (await repos.user.findById(owner.userId))!;
   const ship = createShip({
     platform: getPlatformKernel(),
-    identity: { resolve: async () => ({
-      user: { id: user.id, email: user.email, name: user.name }, sessionId: "roles-test",
-    }) },
+    identity: {
+      resolve: async () => ({
+        user: { id: user.id, email: user.email, name: user.name },
+        sessionId: "roles-test",
+      }),
+    },
   });
   const clients = [
     await ship.scope({ identity: "verified", organizationId: owner.orgId }),
     new OpenshipClient({
-      baseUrl: "http://openship.test", token: owner.token, organizationId: owner.orgId,
+      baseUrl: "http://openship.test",
+      token: owner.token,
+      organizationId: owner.orgId,
       fetch: ((url, init) => app.request(url as string, init)) as typeof fetch,
     }),
   ];
@@ -35,8 +42,19 @@ async function setup() {
 }
 const clients = async () => (await setup()).clients;
 
-const worker = { name: "jobs", kind: "worker", command: "bin/jobs", replicas: 2, stopGracePeriod: "90s" } as const;
-const scheduler = { name: "cron", kind: "scheduler", command: "bin/cron", health: { kind: "process" } } as const;
+const worker = {
+  name: "jobs",
+  kind: "worker",
+  command: "bin/jobs",
+  replicas: 2,
+  stopGracePeriod: "90s",
+} as const;
+const scheduler = {
+  name: "cron",
+  kind: "scheduler",
+  command: "bin/cron",
+  health: { kind: "process" },
+} as const;
 
 const invalidRoles: Record<string, unknown>[] = [
   { name: "web", kind: "web", command: "bin/web" },
@@ -50,7 +68,10 @@ describe("runtime roles through native SDK and HTTP", () => {
   it("persists roles, freezes them on snapshots, preserves omission and supports replacing and clearing", async () => {
     for (const [index, client] of (await clients()).entries()) {
       const project = await client.projects.create({
-        name: `Roles ${index}`, framework: "node", publicEndpoints: [], roles: [worker, scheduler],
+        name: `Roles ${index}`,
+        framework: "node",
+        publicEndpoints: [],
+        roles: [worker, scheduler],
       });
       // The scheduler is a singleton by definition; the parser makes that explicit.
       const expected = [worker, { ...scheduler, singleton: true }];
@@ -61,26 +82,39 @@ describe("runtime roles through native SDK and HTTP", () => {
       await client.projects.setOptions(project.id, { startCommand: "node app.js" });
       expect((await client.projects.get(project.id)).roles).toEqual(expected);
 
-      await client.projects.setOptions(project.id, { roles: [{ name: "queue", kind: "worker", command: "bin/queue" }] });
-      expect((await client.projects.get(project.id)).roles).toEqual([{ name: "queue", kind: "worker", command: "bin/queue" }]);
+      await client.projects.setOptions(project.id, {
+        roles: [{ name: "queue", kind: "worker", command: "bin/queue" }],
+      });
+      expect((await client.projects.get(project.id)).roles).toEqual([
+        { name: "queue", kind: "worker", command: "bin/queue" },
+      ]);
       expect(snapshot.roles).toEqual(expected);
 
       await client.projects.setOptions(project.id, { roles: [] });
       expect((await client.projects.get(project.id)).roles).toEqual([]);
-      expect("roles" in buildConfigSnapshot((await repos.project.findById(project.id))!)).toBe(false);
+      expect("roles" in buildConfigSnapshot((await repos.project.findById(project.id))!)).toBe(
+        false,
+      );
 
       await client.projects.setOptions(project.id, { roles: [worker] });
       await client.projects.setOptions(project.id, { roles: null });
       expect((await client.projects.get(project.id)).roles).toBeNull();
-      expect("roles" in buildConfigSnapshot((await repos.project.findById(project.id))!)).toBe(false);
+      expect("roles" in buildConfigSnapshot((await repos.project.findById(project.id))!)).toBe(
+        false,
+      );
     }
   });
 
   it("leaves a project created without roles NULL and out of its snapshot", async () => {
     for (const [index, client] of (await clients()).entries()) {
-      const project = await client.projects.create({ name: `No roles ${index}`, publicEndpoints: [] });
+      const project = await client.projects.create({
+        name: `No roles ${index}`,
+        publicEndpoints: [],
+      });
       expect((await repos.project.findById(project.id))!.roles).toBeNull();
-      expect("roles" in buildConfigSnapshot((await repos.project.findById(project.id))!)).toBe(false);
+      expect("roles" in buildConfigSnapshot((await repos.project.findById(project.id))!)).toBe(
+        false,
+      );
     }
   });
 
@@ -88,16 +122,26 @@ describe("runtime roles through native SDK and HTTP", () => {
     const { clients, orgId } = await setup();
     for (const [index, client] of clients.entries()) {
       const project = await client.projects.create({
-        name: `Roles validation ${index}`, publicEndpoints: [], roles: [worker],
+        name: `Roles validation ${index}`,
+        publicEndpoints: [],
+        roles: [worker],
       });
       const before = (await repos.project.listByOrganization(orgId, { perPage: 100 })).total;
       for (const role of invalidRoles) {
-        await expect(client.projects.setOptions(project.id, { roles: [role] } as never)).rejects.toThrow();
+        await expect(
+          client.projects.setOptions(project.id, { roles: [role] } as never),
+        ).rejects.toThrow();
         expect((await repos.project.findById(project.id))!.roles).toEqual([worker]);
-        await expect(client.projects.create({
-          name: `Roles rejected ${index} ${String(role.name)} ${String(role.kind)}`, publicEndpoints: [], roles: [role],
-        } as never)).rejects.toThrow();
-        expect((await repos.project.listByOrganization(orgId, { perPage: 100 })).total).toBe(before);
+        await expect(
+          client.projects.create({
+            name: `Roles rejected ${index} ${String(role.name)} ${String(role.kind)}`,
+            publicEndpoints: [],
+            roles: [role],
+          } as never),
+        ).rejects.toThrow();
+        expect((await repos.project.listByOrganization(orgId, { perPage: 100 })).total).toBe(
+          before,
+        );
       }
     }
   });
@@ -105,11 +149,17 @@ describe("runtime roles through native SDK and HTTP", () => {
   it("ensure on an existing project replaces, preserves and validates roles", async () => {
     for (const [index, client] of (await clients()).entries()) {
       const project = await client.projects.create({
-        name: `Roles ensure ${index}`, framework: "node", publicEndpoints: [], roles: [worker],
+        name: `Roles ensure ${index}`,
+        framework: "node",
+        publicEndpoints: [],
+        roles: [worker],
       });
-      const ensure = (extra: Record<string, unknown>) => client.projects.ensure({
-        name: `Roles ensure ${index}`, projectId: project.id, ...extra,
-      } as never);
+      const ensure = (extra: Record<string, unknown>) =>
+        client.projects.ensure({
+          name: `Roles ensure ${index}`,
+          projectId: project.id,
+          ...extra,
+        } as never);
       const stored = async () => (await repos.project.findById(project.id))!.roles;
 
       const queue = { name: "queue", kind: "worker", command: "bin/queue" } as const;
@@ -135,32 +185,53 @@ describe("runtime roles through native SDK and HTTP", () => {
   it("imports openship.json roles from a local source while honoring explicit opt-outs", async () => {
     const source = await mkdtemp(join(tmpdir(), "openship-roles-import-"));
     try {
-      await writeFile(join(source, "package.json"), JSON.stringify({ name: "demo", scripts: { start: "node app.js" } }));
-      await writeFile(join(source, "openship.json"), JSON.stringify({ roles: [{ name: "jobs", kind: "worker", command: "bin/jobs" }] }));
+      await writeFile(
+        join(source, "package.json"),
+        JSON.stringify({ name: "demo", scripts: { start: "node app.js" } }),
+      );
+      await writeFile(
+        join(source, "openship.json"),
+        JSON.stringify({ roles: [{ name: "jobs", kind: "worker", command: "bin/jobs" }] }),
+      );
       for (const [index, client] of (await clients()).entries()) {
         for (const [caseIndex, override] of [undefined, [], null].entries()) {
           const imported = await client.projects.importLocal({
-            name: `Local roles ${index}-${caseIndex}`, localPath: source, publicEndpoints: [],
+            name: `Local roles ${index}-${caseIndex}`,
+            localPath: source,
+            publicEndpoints: [],
             ...(override !== undefined ? { roles: override } : {}),
           });
-          expect(imported.roles).toEqual(override === undefined ? [{ name: "jobs", kind: "worker", command: "bin/jobs" }] : override);
+          expect(imported.roles).toEqual(
+            override === undefined
+              ? [{ name: "jobs", kind: "worker", command: "bin/jobs" }]
+              : override,
+          );
         }
       }
-    } finally { await rm(source, { recursive: true, force: true }); }
+    } finally {
+      await rm(source, { recursive: true, force: true });
+    }
   });
 
   it("keeps a declared empty roles list from openship.json as [] rather than dropping it", async () => {
     const source = await mkdtemp(join(tmpdir(), "openship-roles-empty-"));
     try {
-      await writeFile(join(source, "package.json"), JSON.stringify({ name: "demo", scripts: { start: "node app.js" } }));
+      await writeFile(
+        join(source, "package.json"),
+        JSON.stringify({ name: "demo", scripts: { start: "node app.js" } }),
+      );
       await writeFile(join(source, "openship.json"), JSON.stringify({ roles: [] }));
       for (const [index, client] of (await clients()).entries()) {
         const imported = await client.projects.importLocal({
-          name: `Local empty roles ${index}`, localPath: source, publicEndpoints: [],
+          name: `Local empty roles ${index}`,
+          localPath: source,
+          publicEndpoints: [],
         });
         expect(imported.roles).toEqual([]);
         expect((await repos.project.findById(imported.id))!.roles).toEqual([]);
       }
-    } finally { await rm(source, { recursive: true, force: true }); }
+    } finally {
+      await rm(source, { recursive: true, force: true });
+    }
   });
 });

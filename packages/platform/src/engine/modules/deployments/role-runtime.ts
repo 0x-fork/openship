@@ -6,7 +6,12 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { safeErrorMessage, withTimeout, type StackRole } from "@repo/core";
-import { toStopConfig, type BuildLogger, type DeployConfig, type RuntimeAdapter } from "@repo/adapters";
+import {
+  toStopConfig,
+  type BuildLogger,
+  type DeployConfig,
+  type RuntimeAdapter,
+} from "@repo/adapters";
 import type { Deployment } from "@repo/db";
 import type { RoleContainerRef, RoleRolloutDeps } from "./role-rollout";
 import { verifyDeployedContainers } from "./stability-audit.service";
@@ -57,8 +62,8 @@ export function roleTeardownTimeoutMs(roles: readonly StackRole[] | null | undef
   let longestGraceS = DEFAULT_STOP_GRACE_S;
   for (const role of roles ?? []) {
     const graceS =
-      toStopConfig({ stopSignal: role.stopSignal, stopGracePeriod: role.stopGracePeriod }).StopTimeout ??
-      DEFAULT_STOP_GRACE_S;
+      toStopConfig({ stopSignal: role.stopSignal, stopGracePeriod: role.stopGracePeriod })
+        .StopTimeout ?? DEFAULT_STOP_GRACE_S;
     longestGraceS = Math.max(longestGraceS, graceS);
   }
   return BASE_TEARDOWN_TIMEOUT_MS + 1000 * longestGraceS;
@@ -103,7 +108,10 @@ export function runtimeRoleRolloutDeps(input: {
       // previous version running.
       const findings = await verifyStability(
         runtime,
-        containers.map((c) => ({ serviceName: `${c.role}-${c.replica}`, containerId: c.containerId })),
+        containers.map((c) => ({
+          serviceName: `${c.role}-${c.replica}`,
+          containerId: c.containerId,
+        })),
         logger,
         {
           windowMs: input.stabilizationWindowMs,
@@ -173,7 +181,10 @@ export function runtimeRoleRolloutDeps(input: {
  * deployment's runtime, each bounded and best-effort. Never throws.
  */
 export async function retirePreviousRoleContainers(input: {
-  previous: Pick<Deployment, "id" | "roleContainers" | "meta" | "organizationId"> | null | undefined;
+  previous:
+    | Pick<Deployment, "id" | "roleContainers" | "meta" | "organizationId">
+    | null
+    | undefined;
   currentDeploymentId: string;
   log: (message: string, level?: "info" | "warn") => void;
   /** Defaults to withDeploymentRuntime. */
@@ -192,7 +203,9 @@ export async function retirePreviousRoleContainers(input: {
   const timeoutMs = roleTeardownTimeoutMs(previousRoles);
 
   try {
-    log(`Removing ${containers.length} previous role container${containers.length === 1 ? "" : "s"}...`);
+    log(
+      `Removing ${containers.length} previous role container${containers.length === 1 ? "" : "s"}...`,
+    );
     await withRuntime(previous, (runtime) =>
       Promise.all(
         containers.map(async (ref) => {
@@ -204,7 +217,10 @@ export async function retirePreviousRoleContainers(input: {
             );
           } catch (err) {
             observeCaughtError(err, ROLE_RUNTIME_SOURCE);
-            log(`Warning: failed to remove previous role container ${ref.role} ${ref.replica}: ${safeErrorMessage(err)}`, "warn");
+            log(
+              `Warning: failed to remove previous role container ${ref.role} ${ref.replica}: ${safeErrorMessage(err)}`,
+              "warn",
+            );
           }
         }),
       ),

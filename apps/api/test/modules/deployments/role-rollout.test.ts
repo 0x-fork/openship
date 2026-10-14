@@ -79,7 +79,8 @@ function harness(overrides: Partial<RoleRolloutDeps> = {}): Harness {
 const never = () => new Promise<void>(() => {});
 
 /** Teardown is concurrent, so call order among destroys is not an order guarantee; the sorted set is. */
-const calls = (events: string[], prefix: string) => events.filter((e) => e.startsWith(prefix)).sort();
+const calls = (events: string[], prefix: string) =>
+  events.filter((e) => e.startsWith(prefix)).sort();
 
 /** Every destroy event must come before the first restart: old and new singletons never overlap. */
 function expectDestroysBeforeRestarts(events: string[]) {
@@ -120,7 +121,13 @@ describe("planRoleReplicas", () => {
   });
 
   it("gives `singleton: true` exactly one replica", () => {
-    const role: StackRole = { name: "leader", kind: "worker", command: "x", singleton: true, replicas: 3 };
+    const role: StackRole = {
+      name: "leader",
+      kind: "worker",
+      command: "x",
+      singleton: true,
+      replicas: 3,
+    };
     const plan = planRoleReplicas([role]);
     expect(plan.scalable).toEqual([]);
     expect(plan.singletons).toEqual([{ role, replica: 1 }]);
@@ -143,7 +150,12 @@ describe("planRoleReplicas", () => {
   });
 
   it("keeps declared order within each group", () => {
-    const plan = planRoleReplicas([worker(2, "b"), scheduler("s1"), worker(1, "a"), scheduler("s2")]);
+    const plan = planRoleReplicas([
+      worker(2, "b"),
+      scheduler("s1"),
+      worker(1, "a"),
+      scheduler("s2"),
+    ]);
     expect(plan.scalable.map((s) => `${s.role.name}${s.replica}`)).toEqual(["b1", "b2", "a1"]);
     expect(plan.singletons.map((s) => s.role.name)).toEqual(["s1", "s2"]);
   });
@@ -238,7 +250,11 @@ describe("rolloutRoles: scalable and singleton together", () => {
     events.length = 0;
     await rollout.commit();
     // Commit retires every previous container, including a role no longer declared.
-    expect(events).toEqual(["destroyPrev old-w1", "destroyPrev old-sched", "destroyPrev old-billing"]);
+    expect(events).toEqual([
+      "destroyPrev old-w1",
+      "destroyPrev old-sched",
+      "destroyPrev old-billing",
+    ]);
   });
 
   it("stops every previous container of the singleton's name, one at a time", async () => {
@@ -290,7 +306,9 @@ describe("rolloutRoles: failures unwind before rethrowing", () => {
         return ++call === 2 ? "sched keeps crashing" : null;
       },
     });
-    await expect(rolloutRoles(deps)).rejects.toThrow("Role startup check failed: sched keeps crashing");
+    await expect(rolloutRoles(deps)).rejects.toThrow(
+      "Role startup check failed: sched keeps crashing",
+    );
     expect(events).toEqual([
       "start worker 1",
       "verify worker-1",

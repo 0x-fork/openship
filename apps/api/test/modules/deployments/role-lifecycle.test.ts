@@ -23,12 +23,10 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", async (importOriginal) =
 });
 
 const { deploymentContainerIds } = await import("@repo/platform/engine/lib/deployment-runtime");
-const { collectDeploymentManifest } = await import(
-  "@repo/platform/engine/modules/projects/project-cleanup.service"
-);
-const { computeCleanupKeepSet } = await import(
-  "@repo/platform/engine/modules/projects/cleanup-keep-set"
-);
+const { collectDeploymentManifest } =
+  await import("@repo/platform/engine/modules/projects/project-cleanup.service");
+const { computeCleanupKeepSet } =
+  await import("@repo/platform/engine/modules/projects/cleanup-keep-set");
 const { seedDeployment, seedOrg, seedProject, seedService, seedServiceDeployment, setActive } =
   await import("../../helpers/seed");
 
@@ -109,7 +107,9 @@ describe("collectDeploymentManifest with role containers", () => {
   it("lists a deployment's role containers as container resources", async () => {
     const manifest = await collectDeploymentManifest(target, project, { protectRetained: true });
     const containers = manifest.resources.filter((r) => r.type === "container").map((r) => r.ref);
-    expect(containers).toEqual(expect.arrayContaining(["target-web", "role-worker-1", "role-sched-1"]));
+    expect(containers).toEqual(
+      expect.arrayContaining(["target-web", "role-worker-1", "role-sched-1"]),
+    );
   });
 
   it("skips a role container that is in the keep set", async () => {
@@ -151,9 +151,7 @@ describe("computeCleanupKeepSet with role containers", () => {
     project = (await repos.project.findById(project.id))!;
 
     const keep = await computeCleanupKeepSet(project, { excludeDeploymentId: excluded.id });
-    expect(keep.containers).toEqual(
-      new Set(["live-web", "live-worker-1", "live-sched-1"]),
-    );
+    expect(keep.containers).toEqual(new Set(["live-web", "live-worker-1", "live-sched-1"]));
     expect(keep.containers.has("role-worker-1")).toBe(false);
   });
 });

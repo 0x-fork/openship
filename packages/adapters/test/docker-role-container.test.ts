@@ -37,7 +37,9 @@ function baseConfig(overrides: Partial<DeployConfig> = {}): DeployConfig {
 
 /** A daemon that records every create payload and hands back a controllable container. */
 async function fakeDaemon(opts: { startError?: Error; removeError?: Error } = {}) {
-  const runtime = await DockerRuntime.create({ dockerSocketPath: "/tmp/openship-test-absent.sock" });
+  const runtime = await DockerRuntime.create({
+    dockerSocketPath: "/tmp/openship-test-absent.sock",
+  });
   const creates: Array<Record<string, any>> = [];
   const start = vi.fn(async () => {
     if (opts.startError) throw opts.startError;
@@ -51,7 +53,9 @@ async function fakeDaemon(opts: { startError?: Error; removeError?: Error } = {}
   });
   (runtime as unknown as { _docker: unknown })._docker = { createContainer };
   const logs: LogEntry[] = [];
-  const onLog = (entry: LogEntry) => { logs.push(entry); };
+  const onLog = (entry: LogEntry) => {
+    logs.push(entry);
+  };
   return { runtime, creates, createContainer, start, remove, logs, onLog };
 }
 
@@ -82,14 +86,16 @@ describe("DockerRuntime.deployRole: container shape", () => {
     await runtime.deployRole(config, ROLE, 1, onLog);
 
     const env: string[] = creates[0]!.Env;
-    expect(env.some(e => e.startsWith("PORT="))).toBe(false);
+    expect(env.some((e) => e.startsWith("PORT="))).toBe(false);
     expect(env).toContain("APP_NAME=demo");
     expect(env).toContain("NODE_ENV=production");
-    expect(env.some(e => e.startsWith("PATH="))).toBe(false);
-    expect(logs).toContainEqual(expect.objectContaining({
-      level: "warn",
-      message: droppedRuntimeEnvMessage(["PATH"]),
-    }));
+    expect(env.some((e) => e.startsWith("PATH="))).toBe(false);
+    expect(logs).toContainEqual(
+      expect.objectContaining({
+        level: "warn",
+        message: droppedRuntimeEnvMessage(["PATH"]),
+      }),
+    );
   });
 
   it("labels project, deployment and role, never service or build", async () => {
@@ -135,19 +141,25 @@ describe("DockerRuntime.deployRole: network and ports", () => {
 
   it("warns and still creates the container when the network cannot be set up", async () => {
     const { runtime, creates, logs, onLog } = await fakeDaemon();
-    runtime.ensureNetwork = vi.fn(async () => { throw new Error("network boom"); });
+    runtime.ensureNetwork = vi.fn(async () => {
+      throw new Error("network boom");
+    });
     await runtime.deployRole(baseConfig({ networkAlias: "web" }), ROLE, 1, onLog);
 
     expect(creates).toHaveLength(1);
     expect(creates[0]!.HostConfig).not.toHaveProperty("NetworkMode");
-    expect(logs.some(l => l.level === "warn" && l.message.includes("network boom"))).toBe(true);
+    expect(logs.some((l) => l.level === "warn" && l.message.includes("network boom"))).toBe(true);
   });
 });
 
 describe("DockerRuntime.deployRole: stop config", () => {
   it("carries the role's stop signal and grace period on the container", async () => {
     const { runtime, creates } = await fakeDaemon();
-    await runtime.deployRole(baseConfig(), { ...ROLE, stopSignal: "SIGQUIT", stopGracePeriod: "90s" }, 1);
+    await runtime.deployRole(
+      baseConfig(),
+      { ...ROLE, stopSignal: "SIGQUIT", stopGracePeriod: "90s" },
+      1,
+    );
     expect(creates[0]!.StopSignal).toBe("SIGQUIT");
     expect(creates[0]!.StopTimeout).toBe(90);
   });
@@ -209,7 +221,10 @@ describe("DockerRuntime.deployRole: start failure and input validation", () => {
 
   it("still rethrows the original start error when the cleanup remove also fails", async () => {
     const startError = new Error("start boom");
-    const { runtime, remove } = await fakeDaemon({ startError, removeError: new Error("remove boom") });
+    const { runtime, remove } = await fakeDaemon({
+      startError,
+      removeError: new Error("remove boom"),
+    });
     await expect(runtime.deployRole(baseConfig(), ROLE, 1)).rejects.toBe(startError);
     expect(remove).toHaveBeenCalledWith({ force: true });
   });
@@ -222,7 +237,9 @@ describe("DockerRuntime.deployRole: start failure and input validation", () => {
     const { runtime, createContainer } = await fakeDaemon();
     const ensureNetwork = vi.fn(async () => "net_123");
     runtime.ensureNetwork = ensureNetwork;
-    await expect(runtime.deployRole({ ...config, networkAlias: "web" }, ROLE, replica)).rejects.toThrow();
+    await expect(
+      runtime.deployRole({ ...config, networkAlias: "web" }, ROLE, replica),
+    ).rejects.toThrow();
     expect(createContainer).not.toHaveBeenCalled();
     expect(ensureNetwork).not.toHaveBeenCalled();
   });
@@ -237,16 +254,22 @@ describe("DockerRuntime.deployRole: beforeStart hook", () => {
     expect(beforeStart).toHaveBeenCalledTimes(1);
     expect(beforeStart).toHaveBeenCalledWith("c".repeat(64));
     expect(start).toHaveBeenCalledTimes(1);
-    expect(beforeStart.mock.invocationCallOrder[0]!).toBeLessThan(start.mock.invocationCallOrder[0]!);
+    expect(beforeStart.mock.invocationCallOrder[0]!).toBeLessThan(
+      start.mock.invocationCallOrder[0]!,
+    );
     expect(remove).not.toHaveBeenCalled();
   });
 
   it("removes the container, never starts it, and rethrows when the hook rejects", async () => {
     const hookError = new Error("attach boom");
     const { runtime, start, remove } = await fakeDaemon();
-    await expect(runtime.deployRole(baseConfig(), ROLE, 1, undefined, {
-      beforeStart: async () => { throw hookError; },
-    })).rejects.toBe(hookError);
+    await expect(
+      runtime.deployRole(baseConfig(), ROLE, 1, undefined, {
+        beforeStart: async () => {
+          throw hookError;
+        },
+      }),
+    ).rejects.toBe(hookError);
     expect(start).not.toHaveBeenCalled();
     expect(remove).toHaveBeenCalledTimes(1);
     expect(remove).toHaveBeenCalledWith({ force: true });
@@ -255,9 +278,13 @@ describe("DockerRuntime.deployRole: beforeStart hook", () => {
   it("still rethrows the hook error when the cleanup remove also fails", async () => {
     const hookError = new Error("attach boom");
     const { runtime, start, remove } = await fakeDaemon({ removeError: new Error("remove boom") });
-    await expect(runtime.deployRole(baseConfig(), ROLE, 1, undefined, {
-      beforeStart: async () => { throw hookError; },
-    })).rejects.toBe(hookError);
+    await expect(
+      runtime.deployRole(baseConfig(), ROLE, 1, undefined, {
+        beforeStart: async () => {
+          throw hookError;
+        },
+      }),
+    ).rejects.toBe(hookError);
     expect(start).not.toHaveBeenCalled();
     expect(remove).toHaveBeenCalledWith({ force: true });
   });
@@ -268,22 +295,26 @@ describe("DockerRuntime.deployRole: storage log", () => {
     const { runtime, creates, logs, onLog } = await fakeDaemon();
     await runtime.deployRole(baseConfig({ volumes: ["data:/app/data"] }), ROLE, 1, onLog);
     const binds: string[] = creates[0]!.HostConfig.Binds;
-    expect(logs).toContainEqual(expect.objectContaining({
-      level: "info",
-      message: `Persistent storage: ${binds.join(", ")}\n`,
-    }));
+    expect(logs).toContainEqual(
+      expect.objectContaining({
+        level: "info",
+        message: `Persistent storage: ${binds.join(", ")}\n`,
+      }),
+    );
   });
 
   it("logs no persistent storage line without volumes", async () => {
     const { runtime, logs, onLog } = await fakeDaemon();
     await runtime.deployRole(baseConfig(), ROLE, 1, onLog);
-    expect(logs.some(l => l.message.startsWith("Persistent storage:"))).toBe(false);
+    expect(logs.some((l) => l.message.startsWith("Persistent storage:"))).toBe(false);
   });
 });
 
 describe("roles capability", () => {
   it("is declared by DockerRuntime", async () => {
-    const runtime = await DockerRuntime.create({ dockerSocketPath: "/tmp/openship-test-absent.sock" });
+    const runtime = await DockerRuntime.create({
+      dockerSocketPath: "/tmp/openship-test-absent.sock",
+    });
     expect(runtime.supports("roles")).toBe(true);
   });
 
@@ -291,18 +322,21 @@ describe("roles capability", () => {
     // The real class, built through its private constructor so its own field
     // initializers run. The constructor only wires the connection (no I/O), so
     // an empty client is enough; `forWorkspace` would also dial the workspace.
-    const Ctor = CloudDockerRuntime as unknown as new (client: Oblien, options: CloudDockerOptions) => CloudDockerRuntime;
+    const Ctor = CloudDockerRuntime as unknown as new (
+      client: Oblien,
+      options: CloudDockerOptions,
+    ) => CloudDockerRuntime;
     const cloud = new Ctor({} as Oblien, {
       workspaceId: "ws_1",
       projectId: "proj_1",
       ownerWorkspaceId: "owner_1",
       namespace: "ns_1",
-      provisionLock: { run: fn => fn() },
+      provisionLock: { run: (fn) => fn() },
       resolveRegistryAuth: async () => undefined,
     });
     expect(cloud.supports("roles")).toBe(false);
     expect([...cloud.capabilities].sort()).toEqual(
-      DockerRuntime.CAPABILITIES.filter(cap => cap !== "roles").sort(),
+      DockerRuntime.CAPABILITIES.filter((cap) => cap !== "roles").sort(),
     );
   });
 

@@ -152,7 +152,9 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
    */
   const unwind = async (): Promise<void> => {
     if (started.length > 0) {
-      log(`Removing ${started.length} role container${started.length === 1 ? "" : "s"} started by this deploy...`);
+      log(
+        `Removing ${started.length} role container${started.length === 1 ? "" : "s"} started by this deploy...`,
+      );
     }
     await Promise.all(
       started.map((ref) =>
@@ -162,7 +164,9 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
       ),
     );
     if (retained.length > 0) {
-      log(`Restarting ${retained.length} previous role container${retained.length === 1 ? "" : "s"}...`);
+      log(
+        `Restarting ${retained.length} previous role container${retained.length === 1 ? "" : "s"}...`,
+      );
     }
     await Promise.all(
       retained.map((ref) =>
@@ -242,7 +246,9 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
       if (settled) return;
       settled = true;
       if (previous.length > 0) {
-        log(`Removing ${previous.length} previous role container${previous.length === 1 ? "" : "s"}...`);
+        log(
+          `Removing ${previous.length} previous role container${previous.length === 1 ? "" : "s"}...`,
+        );
       }
       await Promise.all(
         previous.map((ref) =>

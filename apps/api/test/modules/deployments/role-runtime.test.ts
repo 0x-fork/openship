@@ -30,7 +30,11 @@ const scheduler = (name = "sched", extra: Partial<StackRole> = {}): StackRole =>
 const asRuntime = (fake: object) => fake as unknown as RuntimeAdapter;
 
 describe("rolesUnsupportedReason", () => {
-  const dockerLike = { name: "docker", supports: (cap: string) => cap === "roles", deployRole: async () => ({ containerId: "x" }) };
+  const dockerLike = {
+    name: "docker",
+    supports: (cap: string) => cap === "roles",
+    deployRole: async () => ({ containerId: "x" }),
+  };
   const bareLike = { name: "bare", supports: () => false };
   const input = (over: Record<string, unknown> = {}) => ({
     roles: [worker()],
@@ -43,7 +47,11 @@ describe("rolesUnsupportedReason", () => {
   it("is null for null, [] and undefined roles, even on a runtime without the capability", () => {
     for (const roles of [null, [], undefined]) {
       expect(rolesUnsupportedReason(input({ roles, runtime: bareLike }))).toBeNull();
-      expect(rolesUnsupportedReason(input({ roles, multiService: true, deployMode: "static-file-serve" }))).toBeNull();
+      expect(
+        rolesUnsupportedReason(
+          input({ roles, multiService: true, deployMode: "static-file-serve" }),
+        ),
+      ).toBeNull();
     }
   });
 
@@ -73,7 +81,9 @@ describe("rolesUnsupportedReason", () => {
 
   it("checks multi-service first, then static, then the runtime", () => {
     expect(
-      rolesUnsupportedReason(input({ multiService: true, deployMode: "static-file-serve", runtime: bareLike })),
+      rolesUnsupportedReason(
+        input({ multiService: true, deployMode: "static-file-serve", runtime: bareLike }),
+      ),
     ).toContain("multi-service");
     expect(
       rolesUnsupportedReason(input({ deployMode: "static-file-serve", runtime: bareLike })),
@@ -106,7 +116,9 @@ describe("roleTeardownTimeoutMs", () => {
   });
 
   it("counts a role without a grace period as 10s", () => {
-    expect(roleTeardownTimeoutMs([worker("a", { stopGracePeriod: "5s" }), worker("b")])).toBe(40_000);
+    expect(roleTeardownTimeoutMs([worker("a", { stopGracePeriod: "5s" }), worker("b")])).toBe(
+      40_000,
+    );
     expect(roleTeardownTimeoutMs([worker("a")])).toBe(40_000);
   });
 });
@@ -210,7 +222,11 @@ describe("runtimeRoleRolloutDeps: verify", () => {
     const h = harness({
       roles: [worker("worker", { health: { kind: "exec", command: "true" } })],
       runtime: { inContainerExecutor: vi.fn(async () => ({ exec })) },
-      findings: [finding("worker-1", true, "fine"), finding("worker-2", false, "worker-2 crashed"), finding("sched-1", false, "later")],
+      findings: [
+        finding("worker-1", true, "fine"),
+        finding("worker-2", false, "worker-2 crashed"),
+        finding("sched-1", false, "later"),
+      ],
     });
     expect(await h.deps.verify(refs)).toBe("worker-2 crashed");
     expect(exec).not.toHaveBeenCalled();
@@ -263,9 +279,17 @@ describe("runtimeRoleRolloutDeps: verify", () => {
   it("returns the health failure message when exec throws", async () => {
     const h = harness({
       roles: [worker("worker", { health: { kind: "exec", command: "check" } })],
-      runtime: { inContainerExecutor: vi.fn(async () => ({ exec: async () => { throw new Error("exit 1"); } })) },
+      runtime: {
+        inContainerExecutor: vi.fn(async () => ({
+          exec: async () => {
+            throw new Error("exit 1");
+          },
+        })),
+      },
     });
-    expect(await h.deps.verify([refs[1]!])).toBe('Role "worker" replica 2 health command failed: exit 1');
+    expect(await h.deps.verify([refs[1]!])).toBe(
+      'Role "worker" replica 2 health command failed: exit 1',
+    );
   });
 
   it("warns and passes when the runtime has no inContainerExecutor", async () => {
@@ -274,7 +298,9 @@ describe("runtimeRoleRolloutDeps: verify", () => {
       runtime: { inContainerExecutor: undefined },
     });
     expect(await h.deps.verify([refs[0]!])).toBeNull();
-    expect(h.logs.some((l) => l.level === "warn" && l.message.includes('role "worker"'))).toBe(true);
+    expect(h.logs.some((l) => l.level === "warn" && l.message.includes('role "worker"'))).toBe(
+      true,
+    );
   });
 
   it("returns null when stability and health both pass", async () => {
@@ -294,21 +320,28 @@ describe("runtimeRoleRolloutDeps: stopPrevious", () => {
     expect(h.previousRuntime.getContainerInfo).not.toHaveBeenCalled();
   });
 
-  it.each(["stopped", "missing"])("resolves when stop rejects but the status is %s", async (status) => {
-    const h = harness({
-      previousRuntime: {
-        stop: vi.fn(async () => { throw new Error("already stopped"); }),
-        getContainerInfo: vi.fn(async () => ({ containerId: "old", status })),
-      },
-    });
-    await expect(h.deps.stopPrevious("old")).resolves.toBeUndefined();
-  });
+  it.each(["stopped", "missing"])(
+    "resolves when stop rejects but the status is %s",
+    async (status) => {
+      const h = harness({
+        previousRuntime: {
+          stop: vi.fn(async () => {
+            throw new Error("already stopped");
+          }),
+          getContainerInfo: vi.fn(async () => ({ containerId: "old", status })),
+        },
+      });
+      await expect(h.deps.stopPrevious("old")).resolves.toBeUndefined();
+    },
+  );
 
   it("rejects with the ORIGINAL error when the container is still running", async () => {
     const original = new Error("daemon timeout");
     const h = harness({
       previousRuntime: {
-        stop: vi.fn(async () => { throw original; }),
+        stop: vi.fn(async () => {
+          throw original;
+        }),
         getContainerInfo: vi.fn(async () => ({ containerId: "old", status: "running" })),
       },
     });
@@ -319,8 +352,12 @@ describe("runtimeRoleRolloutDeps: stopPrevious", () => {
     const original = new Error("daemon timeout");
     const h = harness({
       previousRuntime: {
-        stop: vi.fn(async () => { throw original; }),
-        getContainerInfo: vi.fn(async () => { throw new Error("inspect failed"); }),
+        stop: vi.fn(async () => {
+          throw original;
+        }),
+        getContainerInfo: vi.fn(async () => {
+          throw new Error("inspect failed");
+        }),
       },
     });
     await expect(h.deps.stopPrevious("old")).rejects.toBe(original);
@@ -360,7 +397,9 @@ describe("runtimeRoleRolloutDeps: log, signal and timeouts", () => {
   });
 
   it("derives the teardown timeout from the roles", () => {
-    expect(harness({ roles: [scheduler("s", { stopGracePeriod: "90s" })] }).deps.teardownTimeoutMs).toBe(120_000);
+    expect(
+      harness({ roles: [scheduler("s", { stopGracePeriod: "90s" })] }).deps.teardownTimeoutMs,
+    ).toBe(120_000);
   });
 
   it("an old role with a longer grace period than every new role sets the bound", () => {
@@ -395,7 +434,13 @@ describe("retirePreviousRoleContainers", () => {
     { role: "sched", replica: 1, containerId: "old-sched" },
   ];
   const previous = (over: Record<string, unknown> = {}) =>
-    ({ id: "dep-old", organizationId: "org-1", meta: null, roleContainers: roleRefs, ...over }) as never;
+    ({
+      id: "dep-old",
+      organizationId: "org-1",
+      meta: null,
+      roleContainers: roleRefs,
+      ...over,
+    }) as never;
 
   function setup(destroy: (id: string) => Promise<void> = async () => {}) {
     const logs: { message: string; level: string | undefined }[] = [];
