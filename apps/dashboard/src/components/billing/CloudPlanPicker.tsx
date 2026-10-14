@@ -57,10 +57,12 @@ function PlanPicker({
   requestedPlanId,
   autoCheckout = false,
   checkoutKey,
+  onCheckoutSettled,
 }: {
   requestedPlanId?: string;
   autoCheckout?: boolean;
   checkoutKey?: string;
+  onCheckoutSettled?: () => void;
   /** Existing server's saved terms, supplied by the billing route. */
   billingState?: BillingState;
   workspaceId?: string;
@@ -196,6 +198,7 @@ function PlanPicker({
     prepareWorkspace,
     onWorkspaceRemoved,
     idempotencyKey: checkoutKey,
+    onCheckoutSettled,
   });
   const autoStarted = useRef(false);
   useEffect(() => {

@@ -41,6 +41,7 @@ export default async function BillingTabPage({
   const requestedPlanId = typeof query.plan === "string" ? query.plan : undefined;
   const autoCheckout = query.startCheckout === "1" && (query.checkoutIntent === undefined || isCloudPurchaseIntent(query.checkoutIntent));
   const checkoutIntent = isCloudPurchaseIntent(query.checkoutIntent) ? query.checkoutIntent : undefined;
+  const checkoutAttempt = isCloudPurchaseIntent(query.checkoutAttempt) ? query.checkoutAttempt : undefined;
   const session = await getSession();
   const view: BillingView = {
     contextKey: `${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`,
@@ -51,7 +52,7 @@ export default async function BillingTabPage({
   };
   if (organizationId && session?.session.activeOrganizationId !== organizationId) {
     return <BillingPageView view={view}><CloudBillingLink organizationId={organizationId} tab={activeTab} workspaceId={workspaceId} newServer={newServer}
-      purchase={newServer ? { planId: requestedPlanId, startCheckout: autoCheckout, checkoutIntent } : undefined} embedded /></BillingPageView>;
+      purchase={newServer ? { planId: requestedPlanId, startCheckout: autoCheckout, checkoutIntent, checkoutAttempt } : undefined} embedded /></BillingPageView>;
   }
   // Buying another server is separate from inspecting an existing subscription.
   // The shared purchase component creates an explicitly scoped identity on selection.
@@ -61,6 +62,7 @@ export default async function BillingTabPage({
         requestedPlanId={requestedPlanId}
         autoCheckout={autoCheckout}
         checkoutIntent={checkoutIntent}
+        checkoutAttempt={checkoutAttempt}
       /></BillingContent>
     </BillingWorkspaceProvider>
   </BillingPageView>;

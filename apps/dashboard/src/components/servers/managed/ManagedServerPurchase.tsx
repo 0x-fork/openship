@@ -18,6 +18,7 @@ interface PurchaseProps {
   requestedPlanId?: string;
   autoCheckout?: boolean;
   checkoutIntent?: string;
+  checkoutAttempt?: string;
   preserveProject?: boolean;
   billingEnabled?: boolean;
   onCheckoutStarted?: (server: CloudWorkspaceSummary, checkoutUrl: string) => void | Promise<void>;
@@ -30,23 +31,37 @@ export function ManagedServerPurchase(props: PurchaseProps) {
   const { data: session, isPending } = useSession();
   const cloudKey = useCloudResourceKey();
   const contextKey = `${cloudKey}:${session?.user.id ?? "local"}:${session?.session.activeOrganizationId ?? ""}`;
-  const [automatic, setAutomatic] = useState<{ owner: string; key: string } | null>(null);
+  const [intent, setIntent] = useState<{ owner: string; key: string; paymentKey: string; automatic: boolean } | null>(null);
   useEffect(() => {
-    if (!props.autoCheckout || automatic || isPending || !session?.user.id || !session.session.activeOrganizationId) return;
+    if (intent || isPending || !session?.user.id || !session.session.activeOrganizationId) return;
     const url = new URL(window.location.href);
     const saved = props.checkoutIntent ?? url.searchParams.get("checkoutIntent");
-    if (saved && !isCloudPurchaseIntent(saved)) return;
+    if ((!props.autoCheckout && !saved) || (saved && !isCloudPurchaseIntent(saved))) return;
     const key = saved || randomUUID();
+    const attempt = props.checkoutAttempt ?? url.searchParams.get("checkoutAttempt");
     url.searchParams.set("checkoutIntent", key);
     url.searchParams.set("organizationId", session.session.activeOrganizationId);
     window.history.replaceState(window.history.state, "", url);
-    setAutomatic({ owner: contextKey, key });
-  }, [props.autoCheckout, props.checkoutIntent, automatic, isPending, session, contextKey]);
-  const owned = automatic?.owner === contextKey;
+    setIntent({ owner: contextKey, key, paymentKey: attempt && isCloudPurchaseIntent(attempt) ? attempt : key, automatic: Boolean(props.autoCheckout) });
+  }, [props.autoCheckout, props.checkoutIntent, props.checkoutAttempt, intent, isPending, session, contextKey]);
+  const owned = intent?.owner === contextKey;
+  function settleIntent(removed = false) {
+    if (!owned || !intent) return;
+    const key = removed ? randomUUID() : intent.key;
+    const paymentKey = randomUUID();
+    const url = new URL(window.location.href);
+    url.searchParams.delete("startCheckout");
+    url.searchParams.set("checkoutIntent", key);
+    url.searchParams.set("checkoutAttempt", paymentKey);
+    window.history.replaceState(window.history.state, "", url);
+    setIntent(current => current?.key === intent.key && current.paymentKey === intent.paymentKey
+      ? { ...current, key, paymentKey, automatic: false } : current);
+  }
   return (
     <BillingWorkspaceProvider>
-      <Purchase key={`${contextKey}:${owned ? automatic?.key : "manual"}`} {...props} sessionPending={isPending}
-        autoCheckout={Boolean(props.autoCheckout && owned)} checkoutIntent={owned ? automatic?.key : undefined} />
+      <Purchase key={`${contextKey}:${owned ? intent?.key : "manual"}`} {...props} sessionPending={isPending}
+        autoCheckout={Boolean(owned && intent?.automatic)} checkoutIntent={owned ? intent?.key : undefined}
+        checkoutAttempt={owned ? intent?.paymentKey : undefined} onCheckoutSettled={() => settleIntent()} onIntentRemoved={() => settleIntent(true)} />
     </BillingWorkspaceProvider>
   );
 }
@@ -60,7 +75,10 @@ function Purchase({
   requestedPlanId,
   autoCheckout,
   checkoutIntent,
-}: PurchaseProps & { sessionPending?: boolean }) {
+  checkoutAttempt,
+  onCheckoutSettled,
+  onIntentRemoved,
+}: PurchaseProps & { sessionPending?: boolean; onCheckoutSettled?: () => void; onIntentRemoved?: () => void }) {
   const { t } = useI18n();
   const created = useRef<CloudWorkspaceSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,11 +97,12 @@ function Purchase({
         currentPlan="free"
         requestedPlanId={requestedPlanId}
         autoCheckout={autoCheckout}
-        checkoutKey={checkoutIntent}
+        checkoutKey={checkoutAttempt}
+        onCheckoutSettled={onCheckoutSettled}
         subscription={null}
         billingEnabled={billingEnabled}
         prepareWorkspace={prepareWorkspace}
-        onWorkspaceRemoved={id => { if (created.current?.id === id) created.current = null; }}
+        onWorkspaceRemoved={id => { if (created.current?.id === id) { created.current = null; onIntentRemoved?.(); } }}
         purchaseDisabled={sessionPending}
         preserveProject={preserveProject}
         onCheckoutStarted={(checkoutUrl) => {

@@ -43,7 +43,7 @@ export function useCloudPlans() {
 }
 
 /** Shared hosted checkout, including duplicate-click and uncertain-payment retries. */
-export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId, prepareWorkspace, onWorkspaceRemoved, idempotencyKey }: {
+export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutStarted, workspaceId: selectedWorkspaceId, prepareWorkspace, onWorkspaceRemoved, idempotencyKey, onCheckoutSettled }: {
   enabled: boolean;
   workspaceId?: string;
   preserveProject?: boolean;
@@ -51,6 +51,7 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
   prepareWorkspace?: () => Promise<string>;
   onWorkspaceRemoved?: (workspaceId: string) => void;
   idempotencyKey?: string;
+  onCheckoutSettled?: () => void;
 }) {
   const { t } = useI18n();
   const { workspaceId: billingWorkspaceId, organizationId } = useBillingScope();
@@ -73,7 +74,8 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     attempts.current.clear();
     setSubscribing(null); setCheckoutUrl(null); setError(null); setUnavailable(null); setPending(null);
     return () => { generation.current++; };
-  }, [workspaceId, ownerKey, idempotencyKey]);
+  }, [workspaceId, ownerKey]);
+  useEffect(() => { attempts.current.clear(); }, [idempotencyKey]);
 
   async function startCheckout(planTierId: PlanTierId, interval: "monthly" | "annual", custom?: CustomSubscriptionSelection) {
     if (!enabled || busy.current || planTierId === "free" || planTierId === "enterprise") return;
@@ -127,7 +129,7 @@ export function useCloudCheckout({ enabled, preserveProject = false, onCheckoutS
     recovery: {
       isOpen: pending !== null, workspaceId: pending?.workspaceId, preserveProject,
       onClose: () => setPending(null),
-      onCleared: () => { attempts.current.clear(); setError(null); },
+      onCleared: () => { attempts.current.clear(); setError(null); onCheckoutSettled?.(); },
       onCheckoutStarted: (url: string) => { setCheckoutUrl(url); onCheckoutStarted?.(url); },
       onServerRemoved: (id: string) => {
         attempts.current.clear(); setCheckoutUrl(null); onWorkspaceRemoved?.(id);

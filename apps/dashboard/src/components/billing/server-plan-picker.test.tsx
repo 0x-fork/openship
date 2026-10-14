@@ -525,6 +525,55 @@ describe("buying another managed server", () => {
     expect(h.post.mock.calls[1]).toEqual(originalCheckout);
   });
 
+  it("requires a new choice after confirmed cancellation and keeps the server on refresh", async () => {
+    const key = "72e918ec-8d9c-4b81-bf43-7a5790ca239a";
+    window.location.href = `http://localhost:3000/billing/plans?newServer=1&plan=starter&startCheckout=1&checkoutIntent=${key}`;
+    h.get.mockImplementation(async path => path === "billing/checkouts" ? { data: { items: [{
+      id: "a".repeat(64), checkoutId: "cs_pending", server, kind: "subscription", name: "Starter", amountCents: 2000,
+      currency: "usd", interval: "monthly", state: "open", canResume: true, canCancel: true,
+    }] } } : catalog);
+    h.post.mockRejectedValueOnce(new ApiError(409, "Already pending", { code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" }));
+    await render(<ManagedServerPurchase requestedPlanId="starter" autoCheckout checkoutIntent={key} />);
+    const first = h.post.mock.calls[0][1].idempotencyKey;
+    await click(copy.pendingPayments.cancel);
+    h.post.mockResolvedValueOnce({ data: { status: "expired", checkoutId: "cs_pending", checkoutUrl: null } });
+    await click(copy.pendingPayments.confirmCancel);
+    const url = new URL(window.location.href);
+    expect(url.searchParams.has("startCheckout")).toBe(false);
+    expect(url.searchParams.get("checkoutIntent")).toBe(key);
+    expect(url.searchParams.get("checkoutAttempt")).not.toBe(key);
+    expect(h.post).toHaveBeenCalledTimes(2);
+    await act(async () => root.unmount()); root = createRoot(host);
+    await render(<ManagedServerPurchase requestedPlanId="starter" checkoutIntent={key} />);
+    expect(h.post).toHaveBeenCalledTimes(2);
+    await click("Choose Starter");
+    expect(h.create.mock.calls[1]).toEqual(h.create.mock.calls[0]);
+    expect(h.post.mock.calls[2][1].idempotencyKey).not.toBe(first);
+    expect(h.post.mock.calls[2][1].workspaceId).toBe(server.id);
+  });
+
+  it("starts a fresh explicit purchase after removing the cancelled draft", async () => {
+    const key = "72e918ec-8d9c-4b81-bf43-7a5790ca239a";
+    window.location.href = `http://localhost:3000/billing/plans?newServer=1&startCheckout=1&checkoutIntent=${key}`;
+    h.get.mockImplementation(async path => path === "billing/checkouts" ? { data: { items: [{
+      id: "a".repeat(64), checkoutId: "cs_pending", server, kind: "subscription", name: "Starter", amountCents: 2000,
+      currency: "usd", interval: "monthly", state: "open", canResume: true, canCancel: true,
+    }] } } : catalog);
+    h.post.mockRejectedValueOnce(new ApiError(409, "Already pending", { code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" }));
+    await render(<ManagedServerPurchase requestedPlanId="starter" autoCheckout checkoutIntent={key} />);
+    await click(copy.pendingPayments.cancel);
+    h.post.mockResolvedValueOnce({ data: { status: "expired", checkoutId: "cs_pending", checkoutUrl: null } });
+    await click(copy.pendingPayments.confirmCancel);
+    h.remove.mockResolvedValueOnce({ data: { accepted: true } });
+    await click(copy.pendingPayments.deleteServer);
+    await click(copy.workspaces.confirmDelete);
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(new URL(window.location.href).searchParams.get("checkoutIntent")).not.toBe(key);
+    expect(new URL(window.location.href).searchParams.has("startCheckout")).toBe(false);
+    await click("Choose Starter");
+    expect(h.create.mock.calls[1][0].idempotencyKey).not.toBe(key);
+  });
+
   it("does not continue a pending pricing purchase in another account or organization", async () => {
     let finish!: (value: CloudWorkspaceSummary) => void;
     h.create.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
