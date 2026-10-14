@@ -491,6 +491,9 @@ check retryable before starting the move.
   name, with Resume and provider-supported cancellation. Never present a pending or
   unknown cancellation as complete. After confirmed cancellation, offer another plan
   and reuse the existing delete confirmation for an unused, unpaid server.
+  Distinguish failed cancellation checks (Refresh) from payments without provider-supported
+  cancellation (complete the payment or wait for expiry). Show the support link once;
+  neither condition may clear a payable checkout or allow a competing subscription.
 - Monthly servers show purchased resources, paid-through coverage and measured CPU time;
   they have no compute-credit donut, exhaustion alert or credit top-up action. Keep optional
   managed proxy transfer and retained-storage charges distinct from compute coverage, with
@@ -680,6 +683,12 @@ Use focused behavior tests for changes to field selection, validation, or payloa
 spacing adjustment needs visual verification, not a test that asserts a CSS class string.
 
 ## Mail webmail recovery
+
+Cloud's Emails entry connects an existing IMAP/SMTP backend through the standard
+webmail app installer. Keep its client card beside a compact Managed email / Coming
+soon notice. Cloud mail entry points must not mount local server setup, registry or
+administration requests. Desktop and self-hosted instances retain the normal mail
+console and setup flow. Navigation remains Emails across these modes.
 
 When a mail registration has lost its webmail link, the Deploy webmail screen
 shows existing catalog apps that already use that mail hostname on the mail
