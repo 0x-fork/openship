@@ -185,14 +185,33 @@ if ! bash /opt/openship-mail/db-bootstrap.sh; then
   exit 1
 fi
 
-# 5. pre-create the log files the fail2ban jails tail, so a jail never starts
-#    against a missing path (rsyslog populates them as the daemons log).
+# 5. fail2ban setup:
+#    a) pre-create the log files the fail2ban jails tail, so a jail never starts
+#       against a missing path (rsyslog populates them as the daemons log).
 mkdir -p /var/log/dovecot /var/log/iredapd /var/log/supervisor
 touch /var/log/mail.log \
       /var/log/dovecot/dovecot.log /var/log/dovecot/imap.log \
       /var/log/dovecot/pop3.log /var/log/dovecot/lda.log /var/log/dovecot/sieve.log \
       /var/log/iredapd/iredapd.log
 chown -R iredapd:iredapd /var/log/iredapd 2>/dev/null || true
+
+#    b) fix leading commas in jail port lists (e.g. `,,25,587,...` -> `25,587,...`)
+#       because HTTP/HTTPS ports are absent in the container image and cause
+#       nftables syntax errors when generating banning rules.
+sed -i -E 's/port=",,/port="/g' /etc/fail2ban/jail.d/*.local 2>/dev/null || true
+
+#    c) configure ~/.pgpass and TCP connection for fail2ban_banned_db so it can
+#       connect to the PostgreSQL sidecar on 127.0.0.1:5432.
+if [ -n "${VMAIL_DB_BIND_PASSWD:-}" ]; then
+  mkdir -p /root
+  printf '127.0.0.1:%s:fail2ban:fail2ban:%s\n' "${OPENSHIP_MAIL_DB_PORT:-5432}" "$VMAIL_DB_BIND_PASSWD" > /root/.pgpass
+  chmod 600 /root/.pgpass
+  # Also update default fallback /var/lib/postgresql/.pgpass if present
+  if [ -d /var/lib/postgresql ]; then
+    printf '*:*:%s:fail2ban:%s\n' "fail2ban" "$VMAIL_DB_BIND_PASSWD" > /var/lib/postgresql/.pgpass
+    chmod 600 /var/lib/postgresql/.pgpass
+  fi
+fi
 
 # 6. DKIM: reuse the key on the mount, else generate one (per domain).
 if [ -n "$FIRST_DOMAIN" ] && [ ! -s "/var/lib/dkim/${FIRST_DOMAIN}.pem" ]; then

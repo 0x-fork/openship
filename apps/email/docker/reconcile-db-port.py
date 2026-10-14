@@ -93,6 +93,15 @@ def main():
         for cached in [settings.with_suffix(".pyc"), *(settings.parent / "__pycache__").glob("settings.*.pyc")]:
             if cached.resolve().is_relative_to(root):
                 cached.unlink(missing_ok=True)
+    pgpass = root / "root/.pgpass"
+    try:
+        if pgpass.is_file() and pgpass.resolve().is_relative_to(root):
+            content = pgpass.read_text()
+            updated = re.sub(r"^(127\.0\.0\.1|localhost):[0-9]+(:fail2ban:)", rf"\g<1>:{port}\2", content, flags=re.MULTILINE)
+            if updated != content:
+                pgpass.write_text(updated)
+    except OSError:
+        pass
     print(f"[openship-mail] reconciled daemon SQL connections to port {port}")
 
 
