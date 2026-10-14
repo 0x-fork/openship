@@ -140,4 +140,11 @@ describe("mail database port reconciliation", () => {
     await expect(stat(bytecode)).rejects.toMatchObject({ code: "ENOENT" });
     expect(await readdir(join(directory, "opt/iredapd"))).toEqual(["__pycache__", "settings.py"]);
   });
+
+  it("reconciles fail2ban .pgpass port if present", async () => {
+    const directory = await root();
+    const pgpassPath = await file(directory, "root/.pgpass", "127.0.0.1:5432:fail2ban:fail2ban:secret123\n");
+    run(directory, "5433");
+    expect(await readFile(pgpassPath, "utf8")).toBe("127.0.0.1:5433:fail2ban:fail2ban:secret123\n");
+  });
 });
