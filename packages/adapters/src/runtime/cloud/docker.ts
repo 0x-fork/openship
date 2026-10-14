@@ -53,6 +53,7 @@ export interface CloudDockerOptions {
   /** Explicit opt-in for a desktop/self-hosted source transfer; SaaS denies it. */
   allowHostSource?: boolean;
   provisionLock: ProvisionLock;
+  buildCacheProtection?: import("../docker").DockerConnectionOptions["buildCacheProtection"];
   bridgeLock?: ProvisionLock;
   resolveRegistryAuth: (ref: string) => Promise<DockerRegistryAuth | undefined>;
 }
@@ -86,6 +87,7 @@ export class CloudDockerRuntime extends DockerRuntime {
         executor,
         cloudConnection: () => connection.connectDocker(),
         resolveRegistryAuth: options.resolveRegistryAuth,
+        buildCacheProtection: options.buildCacheProtection,
       },
       null,
       options.provisionLock,
@@ -862,6 +864,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     this.assertProject(projectId);
     if ((await this.listProjectContainerIds(projectId)).length)
       throw new Error("Remove the project's containers before cleaning its storage");
+    await this.clearManagedProjectBuildCache(projectId);
     if (options?.wipeVolumes) {
       // Include detached volumes left by interrupted deployments. Inventory is
       // label-scoped; retained data is removed only on the explicit wipe path.
