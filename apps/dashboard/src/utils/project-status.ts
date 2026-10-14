@@ -83,6 +83,10 @@ export type ProjectStatusSource = {
    *  didn't sync — also surfaced as "Action Required", with a Retry routing
    *  action (distinct from the keep/reject decision above). */
   routingUnsynced?: boolean | null;
+  /** True when the live release reported ready, then the background watch saw
+   *  one of its services keep restarting (GH-672) — "Action Required", since a
+   *  crash-looping release must never read as a green "Live". */
+  restartLooping?: boolean | null;
   /** True when the LATEST deploy is blocked on a named, clearable cause (status
    *  `action_required` — today a port conflict). Unlike the two flags above this
    *  is not a property of the live release: a blocked deploy never becomes the
@@ -156,6 +160,8 @@ export type ProjectAttentionReason =
   | "routing"
   /** Newest deploy is blocked on a named, clearable cause (port conflict). */
   | "blocked"
+  /** Live release reported ready, then a service started restart-looping. */
+  | "restartLoop"
   /** A migration run is parked waiting for the operator to confirm the cutover or roll
    *  back (or to resolve a partial transfer). Nothing advances until they do. */
   | "migrationCutover";
@@ -203,6 +209,7 @@ export function getProjectAttentionReason(
   if (project.enabled === false) return null;
   if (project.awaitingDecision) return "decision";
   if (project.routingUnsynced) return "routing";
+  if (project.restartLooping) return "restartLoop";
   if (project.latestDeploymentBlocked) return "blocked";
   if (project.latestDeploymentStatus === "action_required") return "blocked";
   return null;
@@ -269,6 +276,7 @@ export function getProjectStatus(project: ProjectStatusSource): ProjectStatus {
   if (
     project.awaitingDecision ||
     project.routingUnsynced ||
+    project.restartLooping ||
     project.latestDeploymentBlocked ||
     project.latestDeploymentStatus === "action_required"
   ) {
@@ -325,6 +333,8 @@ export function projectStatusHint(project: ProjectStatusSource, t: Dictionary): 
       return `${p.routingRetry.title} — ${p.routingRetry.retry}`;
     case "blocked":
       return `${p.draft.headingFailed} — ${p.redeploy.reviewDeployment}`;
+    case "restartLoop":
+      return p.restartLoopHint;
     // Its own sentence rather than a compose of two halves: unlike the deploy states above,
     // neither half of "a parked migration and what to do about it" existed anywhere to reuse.
     case "migrationCutover":
@@ -360,6 +370,7 @@ export function projectActionHref(project: ProjectStatusSource): string | null {
     case "routing":
       return `/projects/${project.id}/domains`;
     case "blocked":
+    case "restartLoop":
       return `/projects/${project.id}/deployments`;
     case "migrationCutover":
       return `/projects/${project.id}/advanced`;
