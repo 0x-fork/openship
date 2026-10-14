@@ -1204,5 +1204,24 @@
       "title": "Kontrol kullanılamıyor",
       "description": "Bu kontrol, bağlı Cloud API sürümünde henüz kullanılamıyor. Kullanılabilmesi için Openship Cloud güncellenmelidir."
     }
+  },
+  "gpu": {
+    "title": "GPU",
+    "subtitle": "Bu sunucudaki konteynerlerin bir ekran kartı kullanıp kullanamayacağı.",
+    "notDetected": "GPU algılanmadı",
+    "notProbed": "Bu sunucu şu anda kontrol edilemedi",
+    "countOne": "1 GPU kartı",
+    "countMany": "{count} GPU",
+    "runtimeOnly": "NVIDIA runtime bulundu, kart sayısı bilinmiyor",
+    "modeLabel": "Bu sunucuyu işaretle",
+    "modeAuto": "Otomatik algıla",
+    "modeYes": "GPU var",
+    "modeNo": "GPU yok (GPU hizmetlerini uzak tut)",
+    "modeHint": "Algılama Docker daemon'unu okur. Bu sunucu için yanlışsa elle işaretleyin; işaretiniz algılamadan önceliklidir.",
+    "mismatchYes": "\"GPU var\" olarak işaretlendi, ancak hiçbiri algılanmadı. GPU hizmetleri yine de buraya gönderilecek.",
+    "mismatchNo": "\"GPU yok\" olarak işaretlendi, ancak bir GPU algılandı. Bu sunucuda GPU hizmetleri için uyarı verilecek.",
+    "saved": "GPU ayarı kaydedildi",
+    "saveFailed": "GPU ayarı kaydedilemedi",
+    "badge": "GPU"
   }
 }

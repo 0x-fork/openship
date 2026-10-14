@@ -177,6 +177,22 @@ async function seedRow(client: PGlite, table: string, id: string): Promise<void>
       col.column_name === "id" ? `'${id}'` : fillerFor(table, col.column_name, col.data_type),
     );
   }
+  // `servers` has a row-level CHECK (0156 `servers_connection_check`) that a SSH row needs
+  // `ssh_host`, a nullable column the NOT NULL introspection above never fills. The recent
+  // window slides forward with every new migration, so the first one added after 0156 moved
+  // the window's start past it and this seed began failing for a reason unrelated to the new
+  // migration. Fill it whenever the column exists at this point in the chain.
+  if (table === "servers" && !names.includes(`"ssh_host"`)) {
+    const hasSshHost = await client.query<{ n: number }>(
+      `select count(*)::int as n from information_schema.columns
+        where table_schema = 'public' and table_name = 'servers' and column_name = 'ssh_host'`,
+    );
+    if ((hasSshHost.rows[0]?.n ?? 0) > 0) {
+      names.push(`"ssh_host"`);
+      values.push(`'192.0.2.1'`);
+    }
+  }
+
   // `id` may carry a default (so it's excluded above) — force ours in anyway, because
   // the assertions find the row by it.
   if (!names.includes(`"id"`)) {
@@ -499,6 +515,7 @@ describe("migration chain applies to an existing, populated database", () => {
         workspace_id: null,
         purpose: "deployment",
         ssh_host_key: null,
+        gpu_override: null,
       })));
       // Repeated startup retains execution IDs and cannot detach a managed project.
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });

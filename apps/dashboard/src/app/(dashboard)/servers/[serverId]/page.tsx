@@ -35,6 +35,7 @@ import {
 } from "./_components/connection-banner";
 
 import { RateLimitSettings } from "./_components/rate-limit-settings";
+import { GpuCard } from "./_components/gpu-card";
 import { ExposedPortsCard } from "./_components/exposed-ports-card";
 import { PortForwardingCard } from "./_components/port-forwarding-card";
 import { ServerGitHubConnect } from "@/components/github/ServerGitHubConnect";
@@ -760,6 +761,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
                 onReconnectMonitor={monitor.reconnect}
                 showComponents={canInspect}
               />}
+              {server.gpu && <GpuCard key={`${serverId}:${server.gpu.override ?? "auto"}`} server={server} onChanged={updated => setServer(current => current ? { ...current, ...updated } : updated)} />}
               <ServerUsage key={`${serverId}:${managed?.state ?? "connected"}`} serverId={serverId} resources={managed?.resources} showProjects metrics={!canMonitor} />
             </>}
 

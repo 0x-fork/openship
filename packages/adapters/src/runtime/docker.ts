@@ -196,6 +196,10 @@ import {
   withTimeout,
   SYSTEM,
   type ComposeAdvanced,
+  normalizeComposeGpuRequests,
+  ValidationError,
+  validateComposeGpuConfig,
+  type ComposeGpuConfig,
   type ComposeHealthcheck,
 } from "@repo/core";
 import {
@@ -817,6 +821,56 @@ export function toStopConfig(advanced?: ComposeAdvanced): {
     out.StopTimeout = graceNs <= 0 ? 0 : Math.max(1, Math.round(graceNs / 1_000_000_000));
   }
   return out;
+}
+
+/** Compose device groups map one-for-one to Docker requests. Invalid requests fail before create. */
+export function toDeviceRequests(
+  gpus?: ComposeGpuConfig["gpus"] | null,
+): NonNullable<Dockerode.ContainerCreateOptions["HostConfig"]>["DeviceRequests"] {
+  const requests = normalizeComposeGpuRequests(gpus);
+  if (requests.length === 0) return undefined;
+  return requests.map((request) => ({
+    Driver: "nvidia",
+    ...(request.deviceIds
+      ? { DeviceIDs: request.deviceIds }
+      : { Count: request.count === undefined || request.count === "all" ? -1 : request.count }),
+    Capabilities: [[...new Set([...(request.capabilities ?? []), "gpu"])]],
+    ...(request.options && { Options: request.options }),
+  }));
+}
+
+/** Capture live GPU settings for adoption. Absence is recorded, not filled from a stale Compose file. */
+export function inspectGpuConfig(
+  host: Dockerode.ContainerInspectInfo["HostConfig"] | null | undefined,
+): ComposeGpuConfig {
+  const gpu: ComposeGpuConfig = {};
+  if (!host) return gpu;
+  if (host.Runtime === "nvidia") gpu.runtime = "nvidia";
+  const requests = (host.DeviceRequests ?? []).filter(
+    (request) =>
+      request.Driver?.startsWith("nvidia") ||
+      request.Capabilities?.some((group) => group.includes("gpu")),
+  );
+  if (requests.length) {
+    gpu.gpus = normalizeComposeGpuRequests(
+      requests.map((request) => {
+        if ((request.Capabilities?.length ?? 0) > 1)
+          throw new ValidationError(
+            "GPU requests with alternative capability groups cannot be imported safely",
+          );
+        return {
+          driver: request.Driver || "nvidia",
+          ...(request.DeviceIDs?.length
+            ? { deviceIds: request.DeviceIDs }
+            : { count: request.Count === -1 ? "all" : (request.Count ?? 0) }),
+          ...(request.Capabilities?.[0]?.length && { capabilities: request.Capabilities[0] }),
+          ...(request.Options && { options: request.Options }),
+        };
+      }),
+    );
+    if (gpu.gpus.length === 1) gpu.gpus = gpu.gpus[0];
+  }
+  return gpu;
 }
 
 /**
@@ -4478,6 +4532,15 @@ export class DockerRuntime implements RuntimeAdapter {
     const hc = data.Config?.Healthcheck;
     const rp = data.HostConfig?.RestartPolicy;
     const configFiles = labels["com.docker.compose.project.config_files"];
+    let gpu: ComposeGpuConfig | undefined;
+    let gpuImportError: string | undefined;
+    try {
+      gpu = inspectGpuConfig(data.HostConfig);
+    } catch (error) {
+      // diagnostics-ignore: a replay limitation is metadata for adoption, not a failed inspection.
+      if (!(error instanceof ValidationError)) throw error;
+      gpuImportError = error.message;
+    }
     return {
       id: data.Id,
       name: (data.Name ?? "").replace(/^\//, ""),
@@ -4506,6 +4569,8 @@ export class DockerRuntime implements RuntimeAdapter {
           }
         : undefined,
       resources: inspectResourceLimits(data.HostConfig),
+      gpu,
+      ...(gpuImportError && { gpuImportError }),
       composeProject: labels["com.docker.compose.project"] || undefined,
       composeService: labels["com.docker.compose.service"] || undefined,
       composeConfigFiles: configFiles
@@ -5812,6 +5877,8 @@ export class DockerRuntime implements RuntimeAdapter {
     const restartPolicy = resolveRestartPolicy(config.restart);
     const healthcheck = toDockerHealthcheck(config.advanced?.healthcheck);
     const stopConfig = toStopConfig(config.advanced);
+    validateComposeGpuConfig(config.advanced);
+    const deviceRequests = toDeviceRequests(config.advanced?.gpus);
 
     // Acquire an external image BEFORE touching the running container. This is
     // especially important for incoming-webhook redeploys of mutable tags: a
@@ -5926,6 +5993,11 @@ export class DockerRuntime implements RuntimeAdapter {
         RestartPolicy: restartPolicy,
         LogConfig: DEFAULT_CONTAINER_LOG_CONFIG,
         ...dockerResourceLimits(config.resources),
+        // GPU (compose `deploy.resources.reservations.devices` / `gpus` / `runtime: nvidia`).
+        // Conditional spread: no GPU asked = no key sent, so a host without the nvidia
+        // toolkit is never handed a request it would reject.
+        ...(deviceRequests ? { DeviceRequests: deviceRequests } : {}),
+        ...(config.advanced?.runtime ? { Runtime: config.advanced.runtime } : {}),
         ...(ownsProjectEndpoint ? { PortBindings: portBindings } : {}),
         Binds: binds,
         // The project network is the default; a compose `network_mode` replaces it.

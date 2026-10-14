@@ -2207,3 +2207,13 @@ describe("compose deploy — host channel unavailable", () => {
 });
 
 vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ target: "selfhosted" }) }));
+
+it("rejects an invalid GPU request before pulling images or replacing any sibling", async () => {
+  const fixture = imageRefreshFixture();
+  h.services[0]!.updatedAt = new Date(2000);
+  h.services[1]!.advanced = { gpus: { driver: "amd", count: 1 } };
+  await expect(fixture.run()).rejects.toThrow(/only.*NVIDIA/);
+  expect(fixture.pull).not.toHaveBeenCalled();
+  expect(fixture.activate).not.toHaveBeenCalled();
+  expect(fixture.runtime.destroy).not.toHaveBeenCalled();
+});

@@ -1204,5 +1204,24 @@
       "title": "操作を利用できません",
       "description": "接続先の Cloud API バージョンはこの操作にまだ対応していません。利用するには Openship Cloud の更新が必要です。"
     }
+  },
+  "gpu": {
+    "title": "GPU",
+    "subtitle": "このサーバー上のコンテナがグラフィックカードを使用できるかどうか。",
+    "notDetected": "GPUは検出されませんでした",
+    "notProbed": "現在このサーバーを確認できません",
+    "countOne": "GPU 1基",
+    "countMany": "GPU {count}基",
+    "runtimeOnly": "NVIDIAランタイムを検出、カード数は不明",
+    "modeLabel": "このサーバーに印を付ける",
+    "modeAuto": "自動で検出",
+    "modeYes": "GPUあり",
+    "modeNo": "GPUなし(GPUサービスを近づけない)",
+    "modeHint": "検出はDockerデーモンを読み取ります。このサーバーで誤っている場合は手動で印を付けてください。手動の指定が検出より優先されます。",
+    "mismatchYes": "「GPUあり」に設定されていますが、検出されませんでした。GPUサービスはそれでもここに送られます。",
+    "mismatchNo": "「GPUなし」に設定されていますが、GPUが検出されました。このサーバーでGPUサービスを使うと警告されます。",
+    "saved": "GPU設定を保存しました",
+    "saveFailed": "GPU設定を保存できませんでした",
+    "badge": "GPU"
   }
 }

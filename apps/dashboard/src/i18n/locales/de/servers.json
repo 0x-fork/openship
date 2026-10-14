@@ -1204,5 +1204,24 @@
       "title": "Steuerung nicht verfügbar",
       "description": "Diese Steuerung ist in der verbundenen Cloud-API-Version noch nicht verfügbar. Openship Cloud muss vor der Nutzung aktualisiert werden."
     }
+  },
+  "gpu": {
+    "title": "GPU",
+    "subtitle": "Ob Container auf diesem Server eine Grafikkarte nutzen können.",
+    "notDetected": "Keine GPU erkannt",
+    "notProbed": "Dieser Server konnte gerade nicht geprüft werden",
+    "countOne": "1 Grafikkarte",
+    "countMany": "{count} Grafikkarten",
+    "runtimeOnly": "NVIDIA-Runtime gefunden, Anzahl der Karten unbekannt",
+    "modeLabel": "Diesen Server markieren",
+    "modeAuto": "Automatisch erkennen",
+    "modeYes": "Hat eine GPU",
+    "modeNo": "Keine GPU (GPU-Dienste fernhalten)",
+    "modeHint": "Die Erkennung liest den Docker-Daemon. Ist sie für diesen Server falsch, markieren Sie ihn manuell; Ihre Markierung hat Vorrang vor der Erkennung.",
+    "mismatchYes": "Als „Hat eine GPU“ markiert, aber keine erkannt. GPU-Dienste werden trotzdem hierher geschickt.",
+    "mismatchNo": "Als „Keine GPU“ markiert, aber eine GPU erkannt. Bei GPU-Diensten wird für diesen Server gewarnt.",
+    "saved": "GPU-Einstellung gespeichert",
+    "saveFailed": "GPU-Einstellung konnte nicht gespeichert werden",
+    "badge": "GPU"
   }
 }

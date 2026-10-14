@@ -279,6 +279,18 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
     ports: [11434],
     defaultVolumes: ["ollama_data:/root/.ollama"],
   },
+  {
+    id: "ollama-gpu",
+    name: "Ollama (NVIDIA GPU)",
+    image: "ollama/ollama:latest",
+    logo: si("ollama"),
+    category: "vector",
+    description:
+      "Ollama with every NVIDIA GPU on the server. Needs a GPU server with the NVIDIA Container Toolkit.",
+    ports: [11434],
+    defaultVolumes: ["ollama_data:/root/.ollama"],
+    gpus: { driver: "nvidia", count: "all", capabilities: ["gpu"] },
+  },
 
   /* ── Queues & Streams ─────────────────────────────────────────────── */
   {

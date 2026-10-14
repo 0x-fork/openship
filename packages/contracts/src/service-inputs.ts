@@ -57,6 +57,27 @@ const HealthcheckSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const GpuRequestSchema = Type.Object(
+  {
+    driver: Type.Optional(Type.Literal("nvidia")),
+    count: Type.Optional(
+      Type.Union([Type.Literal("all"), Type.Integer({ minimum: 0, maximum: 64 })]),
+    ),
+    deviceIds: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 1, maxItems: 64 }),
+    ),
+    capabilities: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 64 }), { minItems: 1, maxItems: 16 }),
+    ),
+    options: Type.Optional(
+      Type.Record(Type.String({ minLength: 1, maxLength: 64 }), Type.String({ maxLength: 1000 }), {
+        maxProperties: 16,
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+
 /**
  * Extended compose fields stored in the `advanced` JSONB blob (mirrors
  * ComposeAdvanced in @repo/core). Strict: new keys must be added here as they
@@ -140,6 +161,14 @@ const AdvancedSchema = Type.Object(
         Type.Null(),
       ]),
     ),
+    /** GPU request (compose `deploy.resources.reservations.devices` / `gpus` /
+     *  `runtime: nvidia`). Compose-owned like `entrypoint`: here so a client that
+     *  reads a service and PATCHes the whole `advanced` blob back does not 400
+     *  against this strict object. `null` clears it. */
+    gpus: Type.Optional(
+      Type.Union([GpuRequestSchema, Type.Array(GpuRequestSchema, { maxItems: 16 }), Type.Null()]),
+    ),
+    runtime: Type.Optional(Type.Union([Type.Literal("nvidia"), Type.Null()])),
     /** Custom east-west DNS alias resolving ALONGSIDE the service name on the
      *  project network. Free-form here (normalized + collision-checked by
      *  validateServiceAlias); `null`/`""` clears it. */
