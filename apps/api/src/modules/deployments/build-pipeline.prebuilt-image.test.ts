@@ -907,7 +907,7 @@ describe("single-app prebuilt release-image pipeline", () => {
         ? { cpuCores: 0.5, memoryMb: 512, diskMb: 0 }
         : { cpuCores: 0, memoryMb: 0, diskMb: 0 };
       const row = source();
-      row.meta!.buildResources = configured ? workerResources : null;
+      Object.assign(row.meta!, { buildResources: configured ? workerResources : null });
       vi.mocked(resolveBuildResources).mockReturnValue(workerResources);
       mocks.admitQueue.mockImplementation(async (_project, _dep, start) => start(reservation));
       mocks.build.mockImplementationOnce(async () => {
@@ -933,7 +933,7 @@ describe("single-app prebuilt release-image pipeline", () => {
           cloudBuildReservation: { workspaceId: "workspace-1", resources: reservation, exclusivePreparation: false },
         }));
         expect(mocks.build.mock.calls[0]?.[0].resources).toEqual(workerResources);
-        expect(row.meta!.buildResources).toEqual(configured ? workerResources : null);
+        expect(row.meta).toMatchObject({ buildResources: configured ? workerResources : null });
         expect(releaseCloudBuildSlot).not.toHaveBeenCalled();
         finishBuild();
         await vi.waitFor(() => expect(mocks.deploy).toHaveBeenCalledOnce());
