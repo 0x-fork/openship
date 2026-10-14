@@ -159,8 +159,10 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       buildImageOnRemote(config: BuildConfig, directory: string, dockerfile: string,
         tag: string, logger: BuildLogger): Promise<void>;
     };
+    let attemptedTag = "";
     const attempt = async (version: string, fail = false) => {
       const tag = `openship/cache-e2e:${randomUUID()}`;
+      attemptedTag = tag;
       images.add(tag);
       const logs: string[] = [];
       await remote.buildImageOnRemote({ projectId, sessionId: randomUUID(), resources,
@@ -173,7 +175,8 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     const second = await attempt("second");
     expect(second.logs).toContain("CACHE_REUSED");
     expect((await docker("run", "--rm", second.tag)).stdout.trim()).toBe("second");
-    await expect(attempt("failed", true)).rejects.toThrow(/docker build exited/);
+    await expect(attempt("failed", true)).rejects.toThrow(/exit code: 1/);
+    await expect(docker("image", "inspect", attemptedTag)).rejects.toThrow();
     expect((await docker("run", "--rm", first.tag)).stdout.trim()).toBe("first");
     expect((await docker("ps", "-aq", "--filter", `name=^/${worker}$`)).stdout.trim()).toBe("");
     const state = JSON.parse((await docker("volume", "inspect", `${worker}_state`)).stdout)[0];
