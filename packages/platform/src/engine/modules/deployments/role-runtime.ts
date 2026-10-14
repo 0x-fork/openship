@@ -152,8 +152,9 @@ export function runtimeRoleRolloutDeps(input: {
         let running = true;
         try {
           running = (await previousRuntime.getContainerInfo(containerId)).status === "running";
-        } catch {
+        } catch (infoErr) {
           // Cannot tell, so the stop failure stands.
+          observeCaughtError(infoErr, ROLE_RUNTIME_SOURCE);
         }
         if (running) throw stopErr;
       }
