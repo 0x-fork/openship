@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DockerRuntime } from "./docker";
 import { BuildLogger } from "./build-pipeline";
 import { projectBuildCacheVolume } from "./docker-build-cache";
+import { currentManagedCommandTracking, withManagedCommandTracking } from "./cloud/command-tracking";
 import type { BuildConfig, LogCallback, LogEntry } from "../types";
 
 const config = {
@@ -49,6 +50,27 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
 }
 
 describe("Cloud Docker build execution limits", () => {
+  it("waits for the current build acknowledgement before checking retained cache protection", async () => {
+    const h = fixture();
+    let pending = false;
+    let acknowledge!: () => void;
+    const acknowledgement = new Promise<void>(resolve => { acknowledge = resolve; });
+    Object.assign(h.runtime.connectionOptions, {
+      buildCacheProtection: async () => ({ projectIds: pending ? [config.projectId] : [], all: false }),
+    });
+    const streamExec = h.executor.streamExec.getMockImplementation()!;
+    h.executor.streamExec.mockImplementation(async (...args) => {
+      const result = await streamExec(...args);
+      pending = true;
+      currentManagedCommandTracking()!.defer(acknowledgement.then(() => { pending = false; }));
+      setImmediate(acknowledge);
+      return result;
+    });
+    await expect(withManagedCommandTracking({ record: async () => {}, complete: async () => {} }, h.run))
+      .resolves.toBeUndefined();
+    expect(pending).toBe(false);
+    expect(h.commands()).toContain("buildx build");
+  });
   it("blocks a new worker when a prior command's exit remains unconfirmed", async () => {
     const h = fixture();
     Object.assign(h.runtime.connectionOptions, { buildCacheProtection: async () => ({ projectIds: [config.projectId], all: false }) });
