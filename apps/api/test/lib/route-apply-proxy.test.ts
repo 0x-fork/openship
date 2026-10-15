@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@repo/db", () => ({ repos: {
+  domain: {listByProject:vi.fn(async()=>[])},
   deployment: { findById: vi.fn(async () => ({
     id: "dep-1", projectId: "proj-1", organizationId: "org-1", meta: { deployTarget: "local" },
   })) },
 } }));
 
+import { repos } from "@repo/db";
 import { reconcileProjectRoutes } from "@repo/platform/engine/lib/route-apply.service";
 
 /**
@@ -131,4 +133,11 @@ describe("reconcileProjectRoutes — project request limits", () => {
       proxy: { clientMaxBodySize: "50m" },
     });
   });
+});
+
+it("serves externally terminated domains over HTTP without an origin HTTPS redirect",async()=>{
+ vi.mocked(repos.domain.listByProject).mockResolvedValueOnce([{hostname:"app.example.com",externalIngress:true}] as never);
+ const {routing,registerRoute}=fakeRouting();
+ await reconcileProjectRoutes(project(),{routing,registers:[{...REGISTER[0],isCustomDomain:true}]});
+ expect(registerRoute).toHaveBeenCalledWith(expect.objectContaining({domain:"app.example.com",tls:false,terminatesTlsLocally:false}));
 });
