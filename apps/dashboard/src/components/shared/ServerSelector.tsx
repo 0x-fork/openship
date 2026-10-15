@@ -267,12 +267,13 @@ export function ServerSelectorView({
     restrictedSource, removeSource, removing, actionError,
   } = selection;
   const effective = selectedId ?? "";
+  const fieldLabel = label ?? (!selfHosted && !restrictedSource ? t.servers.resources.selectPool : copy.serverLabel);
   const addLabel = restrictedSource ? t.migration.sources.connect : !selfHosted && forDeployment ? managedCopy.newProjectServer : copy.addNewServer;
   return (
     <div className={compact ? "space-y-2" : "mb-5 space-y-2"}>
       {!compact && (
         <label className="block text-sm font-medium text-foreground">
-          {label ?? copy.serverLabel}
+          {fieldLabel}
         </label>
       )}
       {readOnly ? (
@@ -303,7 +304,7 @@ export function ServerSelectorView({
             </div>
           ) : (
             <ServerPicker
-              label={label ?? copy.serverLabel}
+              label={fieldLabel}
               showLabel={false}
               selectedId={effective}
               servers={rows}
@@ -327,7 +328,7 @@ export function ServerSelectorView({
             onClick={addServer}
           >
             <Icon name="plus" className="size-3.5" aria-hidden />
-            {restrictedSource ? addLabel : copy.addServer}
+            {selfHosted && !restrictedSource ? copy.addServer : addLabel}
           </Button>
         </div>
       )}
