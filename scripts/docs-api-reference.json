@@ -3607,6 +3607,18 @@
       "description": "Permanently clear resolved incident history in the current organization; preserves active incidents and later recoveries. Owner/admin only.",
       "route": "DELETE /api/issues/history",
       "section": "Operations"
+    },
+    "settings.getAppearance": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Read the authenticated user’s saved appearance and portable theme library.",
+      "route": "GET /api/settings/appearance"
+    },
+    "settings.setAppearance": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Save or reset personal appearance, validated tokens and embedded WOFF2 fonts.",
+      "route": "PUT /api/settings/appearance"
     }
   },
   "http": {
