@@ -93,6 +93,7 @@ export function runtimeRoleRolloutDeps(input: {
 
   return {
     roles,
+    previousRoles: input.previousRoles,
     previous: input.previous,
 
     async startReplica(role, replica) {
