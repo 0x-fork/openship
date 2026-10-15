@@ -9,6 +9,7 @@ import type { StackRole } from "@repo/core";
 import {
   rolloutRoles,
   type RoleRollout,
+  type RoleRolloutDeps,
 } from "@repo/platform/engine/modules/deployments/role-rollout";
 import { runtimeRoleRolloutDeps } from "@repo/platform/engine/modules/deployments/role-runtime";
 import { describeDockerE2E, requireDocker, dockerSocketPath } from "../helpers/docker-e2e";
@@ -67,9 +68,14 @@ const scheduler = (command?: string): StackRole => ({
       'echo "start-$E2E_DEPLOYMENT" >> /data/sched.log; while :; do sleep 1 & wait $!; done',
 });
 
-function rollout(deploymentId: string, roles: StackRole[], previous?: RoleRollout) {
-  return rolloutRoles(
-    runtimeRoleRolloutDeps({
+function rollout(
+  deploymentId: string,
+  roles: StackRole[],
+  previous?: RoleRollout,
+  overrides: Partial<Pick<RoleRolloutDeps, "destroyStarted" | "teardownTimeoutMs" | "log">> = {},
+) {
+  return rolloutRoles({
+    ...runtimeRoleRolloutDeps({
       roles,
       previous: previous?.started,
       runtime,
@@ -84,7 +90,8 @@ function rollout(deploymentId: string, roles: StackRole[], previous?: RoleRollou
       stabilizationWindowMs: 5000,
       keepProvisionedOnCancel: () => false,
     }),
-  );
+    ...overrides,
+  });
 }
 
 /** `id state` for every container of one deployment, running or not. */
@@ -135,7 +142,14 @@ describeDockerE2E("runtime roles against Docker", () => {
     await docker("pull", baseImage);
     const source = await mkdtemp(join(tmpdir(), "openship-roles-image-"));
     try {
-      await writeFile(join(source, "Dockerfile"), `FROM ${baseImage}\n`);
+      await writeFile(
+        join(source, "Dockerfile"),
+        [
+          `FROM ${baseImage}`,
+          "HEALTHCHECK --interval=1s --timeout=1s --retries=1 CMD wget -qO- http://127.0.0.1:8080/ > /dev/null || exit 1",
+          "",
+        ].join("\n"),
+      );
       await docker("build", "-t", image, source);
     } finally {
       await rm(source, { recursive: true, force: true });
@@ -172,6 +186,31 @@ describeDockerE2E("runtime roles against Docker", () => {
     }
   });
 
+  it("keeps the image's HTTP healthcheck working for the web process", async () => {
+    const name = `${slug}-web-health`;
+    try {
+      await docker(
+        "run",
+        "-d",
+        "--name",
+        name,
+        "--label",
+        `openship.project=${projectId}`,
+        image,
+        "sh",
+        "-c",
+        "mkdir -p /www; printf web-ready > /www/index.html; exec httpd -f -p 8080 -h /www",
+      );
+      await expect
+        .poll(() => docker("inspect", "--format", "{{.State.Health.Status}}", name), {
+          timeout: 15_000,
+        })
+        .toBe("healthy");
+    } finally {
+      await docker("rm", "-f", name);
+    }
+  });
+
   it("starts the first release's roles portless, labeled and without PORT", async () => {
     a = await rollout(dep("a"), [worker(), scheduler()]);
     await a.commit();
@@ -188,6 +227,9 @@ describeDockerE2E("runtime roles against Docker", () => {
       );
       expect(env.some((entry) => entry.startsWith("PORT="))).toBe(false);
       expect(env).toContain(`E2E_DEPLOYMENT=${dep("a")}`);
+      expect(
+        JSON.parse(await docker("inspect", "--format", "{{json .Config.Healthcheck.Test}}", id)),
+      ).toEqual(["NONE"]);
     }
     expect(await schedulerLog()).toBe(`start-${dep("a")}`);
   });
@@ -238,6 +280,57 @@ describeDockerE2E("runtime roles against Docker", () => {
     expect(log.at(-1)).toBe(`start-${dep("b")}`);
     expect(log).toContain(`stop-${dep("b")}`);
   });
+
+  it.each(["reject", "timeout"] as const)(
+    "does not restart the previous scheduler when replacement removal ends in %s",
+    async (failure) => {
+      const warnings: string[] = [];
+      let releaseCleanup!: () => void;
+      const cleanupGate = new Promise<void>((resolve) => {
+        releaseCleanup = resolve;
+      });
+      let pendingCleanup: Promise<void> | undefined;
+      const next = await rollout(dep(`uncertain-${failure}`), [scheduler()], b, {
+        teardownTimeoutMs: 2_000,
+        destroyStarted(id) {
+          if (failure === "reject") return Promise.reject(new Error("Docker removal failed"));
+          pendingCleanup = cleanupGate.then(() => runtime.destroy(id));
+          return pendingCleanup;
+        },
+        log(message, level) {
+          if (level === "warn") warnings.push(message);
+        },
+      });
+      const replacementId = next.started[0]!.containerId;
+      const previousId = b.started.find((ref) => ref.role === "scheduler")!.containerId;
+      try {
+        await next.abort();
+        expect(await stateOf(previousId)).toBe("exited");
+        expect(await stateOf(replacementId)).toBe("running");
+        const schedulers = await docker(
+          "ps",
+          "-q",
+          "--filter",
+          `label=openship.project=${projectId}`,
+          "--filter",
+          "label=openship.role=scheduler",
+        );
+        expect(schedulers.split("\n").filter(Boolean)).toHaveLength(1);
+        const warning = warnings.find((line) => line.includes("Rollback incomplete"));
+        expect(warning).toContain(previousId);
+        expect(warning).toContain(replacementId);
+      } finally {
+        // A late removal may finish after the timeout. Confirm removal before
+        // restoring the previous scheduler for the next test.
+        releaseCleanup();
+        if (pendingCleanup) await pendingCleanup;
+        else await runtime.destroy(replacementId);
+        expect(await stateOf(previousId)).toBe("exited");
+        await runtime.start(previousId);
+      }
+      await expectAllRunning(b);
+    },
+  );
 
   it("retires every role container when the release declares none", async () => {
     const e = await rollout(dep("e"), [], b);

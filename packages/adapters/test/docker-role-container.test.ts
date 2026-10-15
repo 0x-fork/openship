@@ -79,6 +79,12 @@ describe("DockerRuntime.deployRole: container shape", () => {
     expect(creates[0]!.name).toBe("openship-proj_1-dep_1-worker-1");
   });
 
+  it("disables the web image's inherited healthcheck for portless roles", async () => {
+    const { runtime, creates } = await fakeDaemon();
+    await runtime.deployRole(baseConfig({ imageRef: "web-with-http-healthcheck:1" }), ROLE, 1);
+    expect(creates[0]!.Healthcheck).toEqual({ Test: ["NONE"] });
+  });
+
   it("injects no PORT even for a web config with a port, keeps user env, and warns on a dropped var", async () => {
     const { runtime, creates, logs, onLog } = await fakeDaemon();
     const config = baseConfig({ envVars: { APP_NAME: "demo", PATH: "/usr/bin" } });

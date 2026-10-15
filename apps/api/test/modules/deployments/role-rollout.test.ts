@@ -82,7 +82,7 @@ const never = () => new Promise<void>(() => {});
 const calls = (events: string[], prefix: string) =>
   events.filter((e) => e.startsWith(prefix)).sort();
 
-/** Every destroy event must come before the first restart: old and new singletons never overlap. */
+/** Every removal is attempted before restoration; state assertions cover failed removals below. */
 function expectDestroysBeforeRestarts(events: string[]) {
   const lastDestroy = events.map((e) => e.startsWith("destroyNew")).lastIndexOf(true);
   const firstRestart = events.findIndex((e) => e.startsWith("startPrev"));
@@ -545,11 +545,12 @@ describe("rolloutRoles: best-effort teardown", () => {
       "destroyNew new-worker-2",
       "destroyNew new-worker-3",
     ]);
-    expect(events.at(-1)).toBe("startPrev old-sched");
+    expect(calls(events, "startPrev")).toEqual([]);
     expectDestroysBeforeRestarts(events);
-    expect(warnings).toHaveLength(2);
+    expect(warnings).toHaveLength(3);
     expect(warnings.some((w) => w.includes("rm failed"))).toBe(true);
     expect(warnings.some((w) => w.includes("timed out after 20ms"))).toBe(true);
+    expect(warnings.some((w) => w.includes("Rollback incomplete"))).toBe(true);
   });
 
   it("unwind: a failed restart of a retained container warns and continues", async () => {
@@ -589,7 +590,7 @@ describe("rolloutRoles: best-effort teardown", () => {
     expect(warnings.some((w) => w.includes("timed out after 20ms"))).toBe(true);
   });
 
-  it("abort after success: destroys every started container, then restarts retained, and does not throw on failures", async () => {
+  it("abort after success: attempts every removal and keeps a previous singleton stopped if its replacement survives", async () => {
     const { deps, events, warnings } = harness({
       roles: [worker(2), scheduler("sched")],
       previous: [ref("sched", 1, "old-sched")],
@@ -606,10 +607,95 @@ describe("rolloutRoles: best-effort teardown", () => {
       "destroyNew new-worker-1",
       "destroyNew new-worker-2",
     ]);
-    expect(events.at(-1)).toBe("startPrev old-sched");
+    expect(calls(events, "startPrev")).toEqual([]);
     expectDestroysBeforeRestarts(events);
-    expect(warnings).toHaveLength(1);
+    expect(warnings).toHaveLength(2);
+    expect(warnings[1]).toContain("old-sched");
+    expect(warnings[1]).toContain("new-sched-1");
   });
+});
+
+describe("rolloutRoles: uncertain replacement removal", () => {
+  it.each([
+    ["abort", "reject"],
+    ["abort", "timeout"],
+    ["startup failure", "reject"],
+    ["startup failure", "timeout"],
+  ] as const)(
+    "preserves singleton exclusivity on %s when removal ends in %s",
+    async (outcome, failure) => {
+      const running = new Set(["old-sched"]);
+      const cleanup = gate();
+      let pendingCleanup: Promise<void> | undefined;
+      const { deps, warnings } = harness({
+        roles: [scheduler()],
+        previous: [ref("sched", 1, "old-sched")],
+        teardownTimeoutMs: 20,
+        stopPrevious: async (id) => {
+          running.delete(id);
+        },
+        startReplica: async () => {
+          running.add("new-sched");
+          return "new-sched";
+        },
+        verify: async () => (outcome === "startup failure" ? "health command failed" : null),
+        destroyStarted: (id) => {
+          if (failure === "reject") return Promise.reject(new Error("removal failed"));
+          pendingCleanup = cleanup.promise.then(() => {
+            running.delete(id);
+          });
+          return pendingCleanup;
+        },
+        startPrevious: async (id) => {
+          running.add(id);
+        },
+      });
+      try {
+        if (outcome === "abort") {
+          const rollout = await rolloutRoles(deps);
+          expect([...running]).toEqual(["new-sched"]);
+          await rollout.abort();
+          await rollout.abort();
+          await rollout.commit();
+        } else {
+          await expect(rolloutRoles(deps)).rejects.toThrow("health command failed");
+        }
+        expect([...running]).toEqual(["new-sched"]);
+        const recoveryWarning = warnings.find((warning) => warning.includes("Rollback incomplete"));
+        expect(recoveryWarning).toContain("old-sched");
+        expect(recoveryWarning).toContain("new-sched");
+        expect(recoveryWarning).toContain("before restarting");
+      } finally {
+        cleanup.release();
+        await pendingCleanup;
+      }
+      // A timeout does not cancel removal. Its eventual completion must not
+      // trigger a delayed restart after the deployment has already failed.
+      expect([...running]).toEqual(failure === "timeout" ? [] : ["new-sched"]);
+    },
+  );
+
+  it.each(["worker", "sched-a"])(
+    "restores independent singletons when removing %s fails",
+    async (failedRole) => {
+      const { deps, events } = harness({
+        roles: [worker(), scheduler("sched-a"), scheduler("sched-b")],
+        previous: [ref("sched-a", 1, "old-a"), ref("sched-b", 1, "old-b")],
+        destroyStarted: async (id) => {
+          events.push(`destroyNew ${id}`);
+          if (id === `new-${failedRole}-1`) throw new Error("removal failed");
+        },
+      });
+      const rollout = await rolloutRoles(deps);
+      events.length = 0;
+      await rollout.abort();
+      expect(calls(events, "destroyNew")).toHaveLength(3);
+      expect(calls(events, "startPrev")).toEqual(
+        failedRole === "worker" ? ["startPrev old-a", "startPrev old-b"] : ["startPrev old-b"],
+      );
+      expectDestroysBeforeRestarts(events);
+    },
+  );
 });
 
 describe("rolloutRoles: commit and abort are idempotent and mutually exclusive", () => {

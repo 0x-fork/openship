@@ -142,24 +142,10 @@ export function runtimeRoleRolloutDeps(input: {
       return null;
     },
 
-    async stopPrevious(containerId) {
-      try {
-        await previousRuntime.stop(containerId);
-      } catch (stopErr) {
-        // Docker rejects stopping an already-stopped container, and a recorded
-        // container may have been removed by hand. Neither may wedge every
-        // future deploy: when it is not running, the goal is met.
-        let running = true;
-        try {
-          running = (await previousRuntime.getContainerInfo(containerId)).status === "running";
-        } catch (infoErr) {
-          // Cannot tell, so the stop failure stands.
-          observeCaughtError(infoErr, ROLE_RUNTIME_SOURCE);
-        }
-        if (running) throw stopErr;
-      }
-    },
-
+    // Docker stop handles already-stopped/absent responses itself. A coarse
+    // inventory status cannot confirm shutdown: unhealthy processes can still
+    // be running, and paused/restarting processes may resume.
+    stopPrevious: (containerId) => previousRuntime.stop(containerId),
     startPrevious: (containerId) => previousRuntime.start(containerId),
     destroyPrevious: (containerId) => previousRuntime.destroy(containerId),
     destroyStarted: (containerId) => runtime.destroy(containerId),

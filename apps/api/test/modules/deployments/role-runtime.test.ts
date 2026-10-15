@@ -320,48 +320,22 @@ describe("runtimeRoleRolloutDeps: stopPrevious", () => {
     expect(h.previousRuntime.getContainerInfo).not.toHaveBeenCalled();
   });
 
-  it.each(["stopped", "missing"])(
-    "resolves when stop rejects but the status is %s",
+  it.each(["running", "stopped", "deploying", "failed", "missing"])(
+    "propagates an unconfirmed stop even when the inventory status is %s",
     async (status) => {
+      const original = new Error("daemon timeout");
       const h = harness({
         previousRuntime: {
           stop: vi.fn(async () => {
-            throw new Error("already stopped");
+            throw original;
           }),
           getContainerInfo: vi.fn(async () => ({ containerId: "old", status })),
         },
       });
-      await expect(h.deps.stopPrevious("old")).resolves.toBeUndefined();
+      await expect(h.deps.stopPrevious("old")).rejects.toBe(original);
+      expect(h.previousRuntime.getContainerInfo).not.toHaveBeenCalled();
     },
   );
-
-  it("rejects with the ORIGINAL error when the container is still running", async () => {
-    const original = new Error("daemon timeout");
-    const h = harness({
-      previousRuntime: {
-        stop: vi.fn(async () => {
-          throw original;
-        }),
-        getContainerInfo: vi.fn(async () => ({ containerId: "old", status: "running" })),
-      },
-    });
-    await expect(h.deps.stopPrevious("old")).rejects.toBe(original);
-  });
-
-  it("rejects with the ORIGINAL error when getContainerInfo itself throws", async () => {
-    const original = new Error("daemon timeout");
-    const h = harness({
-      previousRuntime: {
-        stop: vi.fn(async () => {
-          throw original;
-        }),
-        getContainerInfo: vi.fn(async () => {
-          throw new Error("inspect failed");
-        }),
-      },
-    });
-    await expect(h.deps.stopPrevious("old")).rejects.toBe(original);
-  });
 
   it("uses previousRuntime, never runtime", async () => {
     const runtimeStop = vi.fn(async () => {});

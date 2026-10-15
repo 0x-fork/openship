@@ -4068,6 +4068,9 @@ export class DockerRuntime implements RuntimeAdapter {
         name: containerName,
         Image: imageRef,
         Cmd: ["sh", "-c", role.command],
+        // The image's probe targets the web process. Roles are portless and
+        // receive their process/exec startup checks from the role rollout.
+        Healthcheck: { Test: ["NONE"] },
         Env: env,
         Labels: {
           ...this.labels({ deploymentId: config.deploymentId, projectId: config.projectId }),
@@ -4263,7 +4266,7 @@ export class DockerRuntime implements RuntimeAdapter {
   async stop(containerId: string): Promise<void> {
     await this.assertContainerAccess(containerId);
     const container = this.docker.getContainer(containerId);
-    await container.stop();
+    await gracefulStopBeforeRemoval(container);
   }
 
   async start(containerId: string): Promise<void> {

@@ -21,8 +21,10 @@
  *     tick fires twice.
  *  4. Any failure destroys what this deployment started, THEN restarts the
  *     retained singletons. Destroy comes first so the old and new singleton are
- *     never both up during the unwind either: every destroy settles before the
- *     first restart.
+ *     never both up during the unwind either: a retained singleton is restored
+ *     only after every replacement for its role was successfully removed.
+ *     A failed or timed-out removal leaves that role stopped and logs the IDs
+ *     requiring recovery; settling a request does not prove the process exited.
  *
  * Teardown is CONCURRENT: commit destroys every previous container at once, and
  * the unwind destroys every started container at once (then restarts every
@@ -86,11 +88,11 @@ export interface RoleRolloutDeps {
   startReplica(role: StackRole, replica: number): Promise<string>;
   /** Startup check across the given containers: null when every one stayed up, else a failure detail. */
   verify(containers: readonly RoleContainerRef[]): Promise<string | null>;
-  /** The previous deployment's runtime. */
+  /** Stop must confirm shutdown (or absence), not just a non-running UI status. */
   stopPrevious(containerId: string): Promise<void>;
   startPrevious(containerId: string): Promise<void>;
   destroyPrevious(containerId: string): Promise<void>;
-  /** The current deployment's runtime. */
+  /** Resolve only once the replacement is gone; reject if removal is uncertain. */
   destroyStarted(containerId: string): Promise<void>;
   log(message: string, level?: "info" | "warn"): void;
   signal?: AbortSignal;
@@ -133,22 +135,25 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
   const retained: RoleContainerRef[] = [];
 
   /** One bounded teardown call; a rejection or a timeout is a warning, never a failure. */
-  const bestEffort = async (what: string, run: () => Promise<void>): Promise<void> => {
+  const bestEffort = async (what: string, run: () => Promise<void>): Promise<boolean> => {
     try {
       await withTimeout(
         run(),
         teardownTimeoutMs,
         `timed out after ${teardownTimeoutMs}ms (the container runtime never answered)`,
       );
+      return true;
     } catch (err) {
       observeCaughtError(err, ROLE_ROLLOUT_SOURCE);
       log(`Warning: ${what}: ${safeErrorMessage(err)}`, "warn");
+      return false;
     }
   };
 
   /**
    * Destroy everything this deployment started concurrently, and only once ALL
-   * of those settled restart the retained singletons concurrently.
+   * of those settled restart only the retained roles whose replacements are
+   * confirmed removed. Unrelated cleanup failures must not block safe restores.
    */
   const unwind = async (): Promise<void> => {
     if (started.length > 0) {
@@ -156,20 +161,37 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
         `Removing ${started.length} role container${started.length === 1 ? "" : "s"} started by this deploy...`,
       );
     }
-    await Promise.all(
+    const removed = await Promise.all(
       started.map((ref) =>
-        bestEffort(`failed to remove role container ${ref.role} ${ref.replica}`, () =>
-          deps.destroyStarted(ref.containerId),
+        bestEffort(
+          `failed to remove role container ${ref.role} ${ref.replica} (${ref.containerId})`,
+          () => deps.destroyStarted(ref.containerId),
         ),
       ),
     );
-    if (retained.length > 0) {
+    const uncertainByRole = new Map<string, string[]>();
+    started.forEach((ref, index) => {
+      if (removed[index]) return;
+      const ids = uncertainByRole.get(ref.role) ?? [];
+      ids.push(ref.containerId);
+      uncertainByRole.set(ref.role, ids);
+    });
+    const restorable = retained.filter((ref) => {
+      const uncertain = uncertainByRole.get(ref.role);
+      if (!uncertain) return true;
       log(
-        `Restarting ${retained.length} previous role container${retained.length === 1 ? "" : "s"}...`,
+        `Rollback incomplete: previous role "${ref.role}" container ${ref.containerId} remains stopped because replacement container(s) ${uncertain.join(", ")} could not be removed. Remove those replacements before restarting the previous container.`,
+        "warn",
+      );
+      return false;
+    });
+    if (restorable.length > 0) {
+      log(
+        `Restarting ${restorable.length} previous role container${restorable.length === 1 ? "" : "s"}...`,
       );
     }
     await Promise.all(
-      retained.map((ref) =>
+      restorable.map((ref) =>
         bestEffort(`failed to restart previous role container ${ref.role} ${ref.replica}`, () =>
           deps.startPrevious(ref.containerId),
         ),
