@@ -42,7 +42,7 @@ export interface AllocateHostPortOptions {
   rangeStart?: number;
   rangeEnd?: number;
   /**
-   * The target's ephemeral port range. A preferred port inside it is not reused:
+   * The target's ephemeral port range. No port inside it may be allocated or reused:
    * the kernel hands those numbers to outbound connections, so a publish pinned
    * there can find its port taken when the container restarts ("address already
    * in use"), and Docker's restart policy then gives up. Such a pin can come from
@@ -51,16 +51,16 @@ export interface AllocateHostPortOptions {
   ephemeralRange?: PortRange | null;
 }
 
-/** Pure: pick the first port in [start,end] that's neither occupied nor avoided,
- *  reusing `preferred` when it's free. Exported for testing. */
+/** Pure: pick the first safe port in [start,end] outside the ephemeral range,
+ *  reusing `preferred` when it's safe and free. Exported for testing. */
 export function pickHostPort(occupied: Set<number>, opts: AllocateHostPortOptions = {}): number {
   const start = opts.rangeStart ?? DEFAULT_RANGE_START;
   const end = opts.rangeEnd ?? DEFAULT_RANGE_END;
   const avoid = new Set<number>(opts.avoid ?? []);
-  const free = (p: number) => !occupied.has(p) && !avoid.has(p);
 
   const ephemeral = opts.ephemeralRange;
   const inEphemeral = (p: number) => !!ephemeral && p >= ephemeral.start && p <= ephemeral.end;
+  const free = (p: number) => !inEphemeral(p) && !occupied.has(p) && !avoid.has(p);
 
   // Reuse the persisted port if still free — keeps redeploys on the same target
   // (even if it predates the current range), unless it is an ephemeral port.
@@ -74,7 +74,10 @@ export function pickHostPort(occupied: Set<number>, opts: AllocateHostPortOption
   }
 
   for (let p = start; p <= end; p++) if (free(p)) return p;
-  throw new Error(`No free host port available in ${start}-${end}`);
+  const excludedRange = ephemeral
+    ? ` outside ephemeral range ${ephemeral.start}-${ephemeral.end}`
+    : "";
+  throw new Error(`No free host port available in ${start}-${end}${excludedRange}`);
 }
 
 export interface HostPortAllocation {
