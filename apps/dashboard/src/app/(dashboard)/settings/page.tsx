@@ -28,7 +28,7 @@ import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
 
 import { BuildPreferences } from "./_components/BuildPreferences";
-import { AppearanceSetting } from "./_components/AppearanceSetting";
+import { AppearanceEditor } from "@/components/appearance/AppearanceEditor";
 import { RoutePreferences } from "./_components/RoutePreferences";
 import { DeployDefaults } from "./_components/DeployDefaults";
 import { CloudConnection } from "./_components/CloudConnection";
@@ -136,7 +136,6 @@ function SettingsPageInner() {
         <div className="space-y-6 min-w-0">
           {activeTab === "general" && (
             <>
-              <AppearanceSetting />
               {/* Deploy Defaults + Routing hidden for now — advanced/rarely-needed,
                   reduces general-settings noise. The edge defaults to loopback-port
                   and both keep a per-project override; re-enable by uncommenting. */}
@@ -150,6 +149,8 @@ function SettingsPageInner() {
               <PreferencesSetting />
             </>
           )}
+
+          {activeTab === "appearance" && <AppearanceEditor />}
 
           {activeTab === "security" && authMode === "local" && (
             <>
@@ -208,7 +209,11 @@ function SettingsPageInner() {
                   onMoveOpened={() => {
                     const url = new URL(window.location.href);
                     url.searchParams.delete("move");
-                    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+                    window.history.replaceState(
+                      window.history.state,
+                      "",
+                      `${url.pathname}${url.search}${url.hash}`,
+                    );
                   }}
                 />
               )}

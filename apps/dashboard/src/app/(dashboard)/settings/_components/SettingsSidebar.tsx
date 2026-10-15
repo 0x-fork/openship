@@ -52,7 +52,7 @@ function useInfraIssuesCount(): number {
   return enabled ? count : 0;
 }
 
-export type SettingsTabId = "general" | "security" | "git" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
+export type SettingsTabId = "general" | "appearance" | "security" | "git" | "tokens" | "mcp" | "team" | "notifications" | "email" | "credentials" | "dns" | "cloud" | "infrastructure" | "instance";
 
 export interface SettingsTab {
   id: SettingsTabId;
@@ -70,7 +70,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
   const searchParams = useSearchParams();
   const raw = (searchParams.get("tab") ?? "general") as SettingsTabId;
   // Keep old DNS bookmarks working now that tokens live in Credentials.
-  const allowedTabs: SettingsTabId[] = ["general", "security", "git", "tokens", "mcp", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
+  const allowedTabs: SettingsTabId[] = ["general", "appearance", "security", "git", "tokens", "mcp", "team", "notifications", "email", "credentials", "dns", "cloud", "infrastructure", "instance"];
   const requested: SettingsTabId = allowedTabs.includes(raw) ? raw : "general";
   // DNS credentials moved into Credentials — one screen for every third-party secret
   // instead of three. The old link lands on the screen that now owns them.
@@ -79,6 +79,7 @@ export function useSettingsTabs(): { tabs: SettingsTab[]; activeTab: SettingsTab
 
   const tabs: SettingsTab[] = [
     { id: "general", label: t.settings.sidebar.tabs.general, icon: "settings", visible: true },
+    { id: "appearance", label: t.settings.sidebar.tabs.appearance, icon: "sun-moon", visible: true },
     { id: "security", label: t.settings.sidebar.tabs.security, icon: "shield-check", visible: authMode === "local" },
     // Git sources, as their own domain rather than a card on General: the App install, the
     // clone PAT and per-server auth are one subject with several shapes, and more providers
