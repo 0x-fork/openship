@@ -166,7 +166,7 @@ describe("rolloutRoles: nothing to do", () => {
     const { deps, events, warnings } = harness({ roles: [], previous: [] });
     const rollout = await rolloutRoles(deps);
     expect(rollout.started).toEqual([]);
-    await rollout.commit();
+    expect(await rollout.commit()).toBeNull();
     await rollout.abort();
     expect(events).toEqual([]);
     expect(warnings).toEqual([]);
@@ -185,7 +185,7 @@ describe("rolloutRoles: nothing to do", () => {
     const rollout = await rolloutRoles(deps);
     expect(rollout.started).toEqual([]);
     expect(events).toEqual([]);
-    await rollout.commit();
+    expect(await rollout.commit()).toBeNull();
     expect(events).toEqual(["destroyPrev old-w1", "destroyPrev old-sched"]);
   });
 
@@ -846,11 +846,32 @@ describe("rolloutRoles: best-effort teardown", () => {
       },
     });
     const rollout = await rolloutRoles(deps);
-    await expect(rollout.commit()).resolves.toBeUndefined();
+    // Resolves (never throws) to the deploy's warning, naming only the failed removals.
+    await expect(rollout.commit()).resolves.toBe(
+      "2 previous role containers could not be removed: worker replica 1 (old-1), worker replica 2 (old-2). " +
+        "They may still be running the previous release's code. Remove them manually.",
+    );
     expect(events).toEqual(["destroyPrev old-1", "destroyPrev old-2", "destroyPrev old-3"]);
     expect(warnings).toHaveLength(2);
     expect(warnings.some((w) => w.includes("rm failed"))).toBe(true);
     expect(warnings.some((w) => w.includes("timed out after 20ms"))).toBe(true);
+  });
+
+  it("commit: names a single failed removal by role, replica and short container id", async () => {
+    const id = `0123456789ab${"c".repeat(52)}`;
+    const { deps } = harness({
+      roles: [scheduler("cron")],
+      previous: [ref("scheduler", 1, id)],
+      destroyPrevious: async () => {
+        throw new Error("rm failed");
+      },
+    });
+    const rollout = await rolloutRoles(deps);
+    expect(await rollout.commit()).toBe(
+      "Previous role container scheduler replica 1 (0123456789ab) could not be removed. " +
+        "It may still be running the previous release's code. Remove it manually.",
+    );
+    expect(await rollout.commit()).toBeNull();
   });
 
   it("abort after success: attempts every removal and keeps a previous singleton stopped if its replacement survives", async () => {

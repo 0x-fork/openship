@@ -249,10 +249,13 @@ declared there. Prefix its command with `php artisan optimize && ` and keep the
 {
   "roles": [
     { "name": "queue", "kind": "worker", "command": "php artisan optimize && exec php artisan queue:work", "stopGracePeriod": "90s" },
-    { "name": "scheduler", "kind": "scheduler", "command": "php artisan optimize && exec php artisan schedule:work", "stopGracePeriod": "90s", "singleton": true }
+    { "name": "scheduler", "kind": "scheduler", "command": "php artisan optimize && exec php artisan schedule:work", "stopSignal": "SIGTERM", "stopGracePeriod": "10s", "singleton": true }
   ]
 }
 ```
+
+These are example shutdown budgets. Longer scheduled runs may need a larger grace period on
+a Laravel version verified to drain.
 
 ## Custom runtime images
 

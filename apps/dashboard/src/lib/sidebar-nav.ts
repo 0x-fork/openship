@@ -80,7 +80,6 @@ export function getNavSections(
   supportAvailable = isSaaS,
 ): NavSection[] {
   const settingsItems: NavItem[] = [
-    { key: "backups", href: "/backups", icon: "database-backup" },
     { key: "settings", href: "/settings", icon: "settings" },
   ];
   // Billing is available on Cloud and on installations linked to a Cloud account.
@@ -97,8 +96,9 @@ export function getNavSections(
       ? { key: "servers", href: "/servers", icon: "server" }
       : { key: "resources", href: "/resources", icon: "cloud", alsoAt: ["/servers"] },
     { key: "emails", href: "/emails", icon: "mail" },
+    { key: "jobs", href: "/jobs", icon: "clock" },
+    { key: "backups", href: "/backups", icon: "database-backup" },
   ];
-  infraItems.push({ key: "jobs", href: "/jobs", icon: "clock" });
   // infraItems.push(
   //   { key: "monitoring", href: "/monitoring", icon: Activity },
   //   { key: "domains",    href: "/domains",    icon: Globe },
