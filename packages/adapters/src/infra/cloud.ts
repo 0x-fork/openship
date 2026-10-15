@@ -10,6 +10,7 @@ import type { CloudAdminProxy } from "./cloud-admin";
 import { cloudPageHostnames } from "../runtime/cloud/page-hostnames";
 import { sq } from "../runtime/git-clone";
 import { compileResolvedRoutingToOblien } from "../runtime/oblien-routing";
+import { staticExportCopyCommand } from "./static-export";
 import { probeStaticOutput, type StaticProbeOptions } from "../system/output-exists";
 import { CLOUD_DOCKER_BRIDGE_PORT } from "../runtime/cloud/docker-bridge-source";
 import { probePublicTlsCertificate } from "../system/tls-probe";
@@ -395,7 +396,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
         // Retain the previous export through domain, ingress and route-table
         // publication too. An acknowledgement from Pages alone is not enough.
         await this.scope.executor.exec(
-          `set -eu\nmkdir -p ${sq(next)}\ncp -a ${sq(real)}/. ${sq(next)}/\nif [ -e ${sq(path)} ]; then mv ${sq(path)} ${sq(staged.previous)}; fi\nif ! mv ${sq(next)} ${sq(path)}; then if [ -e ${sq(staged.previous)} ]; then mv ${sq(staged.previous)} ${sq(path)}; fi; exit 1; fi`,
+          `set -eu\n${staticExportCopyCommand(real, next)}\nif [ -e ${sq(path)} ]; then mv ${sq(path)} ${sq(staged.previous)}; fi\nif ! mv ${sq(next)} ${sq(path)}; then if [ -e ${sq(staged.previous)} ]; then mv ${sq(staged.previous)} ${sq(path)}; fi; exit 1; fi`,
         );
         if (page) {
           const deployed = await this.pages.deploy(slug, {
