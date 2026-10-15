@@ -2,7 +2,7 @@
 
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import React, { useCallback } from "react";
-import { isValidCustomHostname } from "@repo/core";
+import { isValidCustomHostname, withKeyedMutex } from "@repo/core";
 import { getApiErrorMessage, projectsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
 import { useI18n } from "@/components/i18n-provider";
@@ -10,6 +10,7 @@ import { RoutingModePicker, type RoutingMode } from "@/components/routing/Routin
 import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import { validatedPublicEndpointPayload } from "@/lib/public-endpoint-payload";
 import { normalizeSubdomain } from "@/utils/subdomain";
+import { getApiRequestScopeVersion } from "@/lib/api/client";
 
 interface DomainSettingsProps {
   projectId?: string;
@@ -25,6 +26,14 @@ interface DomainSettingsProps {
 
 /** Shared with the project Domains tab — see lib/public-endpoint-payload. */
 const buildPublicEndpointPayload = validatedPublicEndpointPayload;
+
+function saveDomains(projectId: string, fields: Record<string, unknown>) {
+  const scope = getApiRequestScopeVersion();
+  return withKeyedMutex(`deploy-domain-save:${scope}:${projectId}`, async () => {
+    if (scope !== getApiRequestScopeVersion()) return;
+    return projectsApi.update(projectId, fields);
+  });
+}
 
 const DomainSettings: React.FC<DomainSettingsProps> = ({
   projectId,
@@ -76,7 +85,7 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
     const primaryPort = hasServer ? payload.find((endpoint) => !endpoint.redirectTo)?.port : undefined;
 
     try {
-      await projectsApi.update(projectId, {
+      await saveDomains(projectId, {
         publicEndpoints: payload,
         ...(typeof primaryPort === "number" ? { port: primaryPort } : {}),
       });
@@ -108,15 +117,13 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
         //     (undefined would make it auto-derive the free subdomain again).
         setEndpoints([]);
         if (projectId) {
-          void projectsApi
-            .update(projectId, { publicEndpoints: [] })
-            .catch((error) => {
-              showToast(
-                getApiErrorMessage(error, t.deploy.domainSettings.saveFailed),
-                "error",
-                t.deploy.domainSettings.toastTitle,
-              );
-            });
+          void saveDomains(projectId, { publicEndpoints: [] }).catch((error) => {
+            showToast(
+              getApiErrorMessage(error, t.deploy.domainSettings.saveFailed),
+              "error",
+              t.deploy.domainSettings.toastTitle,
+            );
+          });
         }
         return;
       }

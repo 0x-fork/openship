@@ -724,3 +724,9 @@ collapsed domain row and hide app port/static-path fields for redirect domains.
 Choose a serving hostname for primary metadata. Offer the same choices for Cloud
 projects opened in Desktop and for projects managed directly in Cloud. Provider
 implementation details belong in engineering documentation.
+
+Deploy-domain autosaves preserve edit order, including switching to None. Queued
+writes are discarded when the account or organization changes. Reuse the shared
+keyed mutex and API scope generation. Project route edits share the existing
+project runtime lock across preparation, persistence and live application, keeping
+a primary-direction change together across concurrent requests.
