@@ -341,14 +341,14 @@ it("reconciles failed teardown with the durable cleanup error instead of returni
     }),
   );
   h.info.mockResolvedValue({
-    project: { id: "project-a", deletionInProgress: true, deletionError: "cache in use" },
+    project: { id: "project-a", deletionInProgress: true, lifecycleOperation: { kind: "delete", status: "failed", error: "cache in use" } },
   });
   await renderProject("project-a");
   await startDelete();
   expect(settings.projectData).toMatchObject({
     deletedAt: null,
     deletionInProgress: true,
-    deletionError: "cache in use",
+    lifecycleOperation: { kind: "delete", status: "failed", error: "cache in use" },
   });
   expect(host.textContent).toContain(baseDictionary.projects.delete.retryCleanup);
   expect(host.textContent).toContain("cache in use");
@@ -363,9 +363,9 @@ it("keeps an unconfirmed deletion pending after connection loss and reconciles w
   await startDelete();
   expect(settings.projectData.deletedAt).toBeTruthy();
   expect(host.textContent).toContain(baseDictionary.projects.delete.retryCleanup);
-  h.info.mockResolvedValue({ project: { id: "project-a", deletionInProgress: true, deletionError: "cache in use" } });
+  h.info.mockResolvedValue({ project: { id: "project-a", deletionInProgress: true, lifecycleOperation: { kind: "delete", status: "failed", error: "cache in use" } } });
   await act(async () => vi.advanceTimersByTimeAsync(3000));
-  expect(settings.projectData).toMatchObject({ deletedAt: null, deletionInProgress: true, deletionError: "cache in use" });
+  expect(settings.projectData).toMatchObject({ deletedAt: null, deletionInProgress: true, lifecycleOperation: { kind: "delete", status: "failed", error: "cache in use" } });
 });
 
 it("recognizes a completed deletion when its response was lost", async () => {

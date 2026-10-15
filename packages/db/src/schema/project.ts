@@ -20,6 +20,7 @@ import type {
   OpenshipReadiness,
   ClusterWorkloadConfig,
   GitHubDeploymentChecks,
+  ProjectLifecycleOperation,
 } from "@repo/core";
 import { organization } from "./organization";
 import { service } from "./service";
@@ -504,8 +505,8 @@ export const project = pgTable(
      * execution, so a failed/interrupted teardown can always be retried.
      */
     deletionInProgress: boolean("deletion_in_progress").notNull().default(false),
-    /** Retryable cleanup failure; never reopen a partially destroyed project. */
-    deletionError: text("deletion_error"),
+    /** Set after workers quiesce, before destruction. Retained through cleanup retries. */
+    lifecycleOperation: jsonb("lifecycle_operation").$type<ProjectLifecycleOperation | null>(),
     /** Internal transfer journal; never accepted as a project setting. */
     cloudPromotion: jsonb("cloud_promotion").$type<ProjectCloudPromotion | null>(),
 

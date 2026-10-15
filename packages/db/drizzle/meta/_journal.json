@@ -1343,7 +1343,7 @@
       "idx": 191,
       "version": "7",
       "when": 1792022400000,
-      "tag": "0191_project_deletion_error",
+      "tag": "0191_project_lifecycle_operation",
       "breakpoints": true
     }
   ]

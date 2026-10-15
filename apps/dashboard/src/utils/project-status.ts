@@ -1,3 +1,4 @@
+import type { ProjectLifecycleOperation } from "@repo/core";
 import type { Dictionary } from "@/i18n";
 
 export type ProjectStatus =
@@ -93,7 +94,7 @@ export type ProjectStatusSource = {
   /** Deletion admission fence, retained after cleanup fails. A cleanup error
    *  makes this awaiting retry; successful teardown hard-deletes the row. */
   deletionInProgress?: boolean | null;
-  deletionError?: string | null;
+  lifecycleOperation?: ProjectLifecycleOperation | null;
   /** Marks the Openship control-plane self-app. It IS the running host service and
    *  has no deployment behind it, so it must never fall through to "draft". */
   appTemplateId?: string | null;
@@ -188,7 +189,7 @@ export function getProjectAttentionReason(
   project: ProjectStatusSource,
 ): ProjectAttentionReason | null {
   if (project.appTemplateId === "openship") return null;
-  if (project.deletionInProgress && project.deletionError) return "deletion";
+  if (project.deletionInProgress && project.lifecycleOperation?.status === "failed") return "deletion";
   if (project.deletedAt || project.deletionInProgress) return null;
   // Before every deploy-derived reason: a parked migration is about the WORKLOAD's location,
   // and it outranks anything the deployment row has to say — the target's own deploy is
@@ -212,7 +213,7 @@ export function getProjectAttentionReason(
 }
 
 export function getProjectStatus(project: ProjectStatusSource): ProjectStatus {
-  if (project.deletionInProgress && project.deletionError) return "attention";
+  if (project.deletionInProgress && project.lifecycleOperation?.status === "failed") return "attention";
   if (project.deletedAt || project.deletionInProgress) {
     return "deleting";
   }

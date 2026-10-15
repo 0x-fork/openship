@@ -1,4 +1,4 @@
-import type { ReleaseSource } from "@repo/core";
+import type { ReleaseSource, ProjectLifecycleOperation } from "@repo/core";
 
 /**
  * Shared domain types used across the dashboard.
@@ -75,7 +75,7 @@ export interface Project {
   /** Retained until teardown succeeds; failed cleanup stays fenced and retryable.
    *  The row remains visible because deletedAt is null. */
   deletionInProgress?: boolean | null;
-  deletionError?: string | null;
+  lifecycleOperation?: ProjectLifecycleOperation | null;
 
   /* ── Hosting info (enriched by API) ─────────────────────── */
   favicon?: string | null;

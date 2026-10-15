@@ -158,6 +158,9 @@ export interface TeardownOptions {
   /** Protect configuration writes and validate a confirmed transfer snapshot
    * after the deletion claim, before any destructive cleanup. */
   validateConfiguration?: () => Promise<void>;
+  /** Receipt-managed transfers can release their claim for source review on failure.
+   * Ordinary deletion retains its intent once cleanup starts. */
+  failurePolicy?: "retain_intent" | "release_claim";
   /**
    * Record-only ("soft") delete: drop just the Openship DB record and LEAVE the
    * server workload + data + on-server manifest intact, so the project can be
@@ -404,6 +407,12 @@ async function teardownProjectLocked(
 
     await opts.validateConfiguration?.();
 
+    if (!(await repos.project.beginDeletionCleanup(projectId)))
+      throw new AppError(
+        "Could not fence project cleanup. No resources were removed.",
+        409,
+        "PROJECT_CLEANUP_NOT_CLAIMED",
+      );
     destructiveStarted = true;
 
     // ── Step 2: Unregister GitHub webhook (unless preserving it). ────────
@@ -532,16 +541,18 @@ async function teardownProjectLocked(
       // release that operation's transient configuration fence on failure.
       // It must not reopen a prior ordinary deletion, including after a crash.
       const retainIntent =
-        (destructiveStarted && !opts.validateConfiguration) ||
+        (destructiveStarted && opts.failurePolicy !== "release_claim") ||
         (preload?.organizationId === ctx.organizationId && preload.deletionInProgress &&
-          (Boolean(preload.deletionError) || !preload.cloudPromotion?.cleanupInProgress));
+          (preload.lifecycleOperation?.kind === "delete" || !preload.cloudPromotion?.cleanupInProgress));
       const failure =
         unexpectedFailure ||
         steps
           .filter((step) => step.status === "failed")
           .map((step) => step.error || step.details || step.step)
           .join("; ") ||
-        preload?.deletionError ||
+        (preload?.lifecycleOperation?.status === "failed"
+          ? preload.lifecycleOperation.error
+          : undefined) ||
         "Cleanup was interrupted. Retry deletion to finish removing this project.";
       const persist = retainIntent
         ? repos.project.markDeletionFailed(projectId, failure.slice(0, 4000))

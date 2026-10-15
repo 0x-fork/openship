@@ -638,7 +638,6 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
         .update(project)
         .set({
           deletionInProgress: true,
-          deletionError: null,
           updatedAt: new Date(),
           ...(opts?.protectConfiguration && {
             cloudPromotion: sql`jsonb_set(${project.cloudPromotion}, '{cleanupInProgress}', 'true'::jsonb)`,
@@ -656,18 +655,34 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
         .update(project)
         .set({
           deletionInProgress: false,
-          deletionError: null,
+          lifecycleOperation: null,
           cloudPromotion: sql`${project.cloudPromotion} - 'cleanupInProgress'`,
           updatedAt: new Date(),
         })
         .where(eq(project.id, id));
     },
 
-    /** Caller holds the project runtime lock. A retry reclaims this fence. */
+    /** Workers have quiesced. Fence configuration before reading cleanup manifests. */
+    async beginDeletionCleanup(id: string): Promise<boolean> {
+      const rows = await db
+        .update(project)
+        .set({ lifecycleOperation: { kind: "delete", status: "running" }, updatedAt: new Date() })
+        .where(
+          and(eq(project.id, id), eq(project.deletionInProgress, true), isNull(project.deletedAt)),
+        )
+        .returning();
+      return rows.length > 0;
+    },
+
+    /** Caller holds the project runtime lock. A retry preserves this operation's fence. */
     async markDeletionFailed(id: string, error: string) {
       await db
         .update(project)
-        .set({ deletionInProgress: true, deletionError: error, updatedAt: new Date() })
+        .set({
+          deletionInProgress: true,
+          lifecycleOperation: { kind: "delete", status: "failed", error },
+          updatedAt: new Date(),
+        })
         .where(and(eq(project.id, id), isNull(project.deletedAt)));
     },
 

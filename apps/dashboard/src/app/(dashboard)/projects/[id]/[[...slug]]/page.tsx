@@ -624,14 +624,14 @@ const ProjectSettingsContent = () => {
       inFlight = true;
       try {
         const response = await projectsApi.getInfo(id);
-        if (active && response.project && (response.project.deletionError || unconfirmedDeletionFor === id)) {
+        if (active && response.project && (response.project.lifecycleOperation?.status === "failed" || unconfirmedDeletionFor === id)) {
           setProjectData((prev) =>
             prev.id === id
               ? {
                   ...prev,
                   deletedAt: response.project.deletedAt ?? null,
                   deletionInProgress: response.project.deletionInProgress ?? false,
-                  deletionError: response.project.deletionError ?? null,
+                  lifecycleOperation: response.project.lifecycleOperation ?? null,
                 }
               : prev,
           );
@@ -681,7 +681,7 @@ const ProjectSettingsContent = () => {
           ? {
               ...prev,
               deletedAt,
-              ...(deletedAt ? { deletionError: null } : {}),
+              ...(deletedAt ? { lifecycleOperation: null } : {}),
             }
           : prev,
       );
@@ -697,7 +697,7 @@ const ProjectSettingsContent = () => {
                   ...prev,
                   deletedAt: current.deletedAt ?? null,
                   deletionInProgress: current.deletionInProgress ?? false,
-                  deletionError: current.deletionError ?? null,
+                  lifecycleOperation: current.lifecycleOperation ?? null,
                 }
               : prev,
           );
@@ -1045,6 +1045,8 @@ const ProjectSettingsContent = () => {
   // otherwise render empty. In-flight first builds (queued/building/
   // deploying) and live projects fall through to the normal layout.
   const status = getProjectStatus(projectData);
+  const cleanupFailure =
+    projectData.lifecycleOperation?.status === "failed" ? projectData.lifecycleOperation : null;
   const deletionNotice = projectData.deletionInProgress || unconfirmedDeletionFor === id ? (
     <>
       <div
@@ -1053,13 +1055,13 @@ const ProjectSettingsContent = () => {
       >
         <div className="min-w-0 flex-1 space-y-1">
           <p className="font-medium text-danger">
-            {projectData.deletionError
+            {cleanupFailure
               ? t.projects.delete.cleanupFailedTitle
               : t.projects.delete.deletionInProgressTitle}
           </p>
           <p className="text-muted-foreground">{t.projects.delete.cleanupPending}</p>
-          {projectData.deletionError && (
-            <p className="break-words text-danger">{projectData.deletionError}</p>
+          {cleanupFailure?.error && (
+            <p className="break-words text-danger">{cleanupFailure.error}</p>
           )}
         </div>
         <Button

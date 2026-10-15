@@ -31,7 +31,7 @@ const h = {
     disabledAt: new Date(),
     deletedAt: null,
     deletionInProgress: false,
-    deletionError: "Previous cleanup failure",
+    lifecycleOperation: { kind: "delete", status: "failed", error: "Previous cleanup failure" },
     favicon: "https://clincai.example/favicon.ico",
     faviconCheckedAt: new Date(),
     compositeRoutes: [{ host: "clincai.example" }],
@@ -231,7 +231,7 @@ describe("what it deliberately does NOT copy", () => {
     const p = clonedProject();
     // `id`/`groupId` are the insert's, and name/slug/serverId/workspaceId/activeDeploymentId are set
     // explicitly above — the rest must simply be absent.
-    for (const field of ["deletedAt", "deletionInProgress", "deletionError", "disabledAt", "favicon", "faviconCheckedAt", "compositeRoutes", "cloudPromotion", "id", "groupId", "createdAt", "updatedAt"]) {
+    for (const field of ["deletedAt", "deletionInProgress", "lifecycleOperation", "disabledAt", "favicon", "faviconCheckedAt", "compositeRoutes", "cloudPromotion", "id", "groupId", "createdAt", "updatedAt"]) {
       expect(p, field).not.toHaveProperty(field);
     }
   });

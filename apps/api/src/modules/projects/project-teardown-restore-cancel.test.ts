@@ -43,6 +43,7 @@ vi.mock("@repo/db", () => ({
     project: {
       findById: vi.fn(async () => h.project),
       claimDeletion: vi.fn(async () => true),
+      beginDeletionCleanup: vi.fn(async () => true),
       deleteHard: vi.fn(async () => {}),
       clearDeletionInProgress: vi.fn(async () => {}),
       markDeletionFailed: vi.fn(async () => {}),

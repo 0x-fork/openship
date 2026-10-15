@@ -291,6 +291,17 @@ describe("project promotion configuration admission", () => {
     expect((await repos.project.findById(rows.project.id))?.disabledAt).toBeInstanceOf(Date);
   });
 
+  it.each(writes)(
+    "refuses %s once workers are quiescent, before any cleanup failure exists",
+    async (_name, write) => {
+      await repos.project.claimDeletion(rows.project.id);
+      expect(await repos.project.beginDeletionCleanup(rows.project.id)).toBe(true);
+      const before = await snapshot();
+      await expect(write()).rejects.toMatchObject({ code: "PROJECT_DELETION_PENDING" });
+      expect(await snapshot()).toEqual(before);
+    },
+  );
+
   it("refuses a protected claim without a promotion receipt", async () => {
     expect(await repos.project.claimDeletion(rows.sibling.id, { protectConfiguration: true })).toBe(
       false,
@@ -396,7 +407,7 @@ it("keeps partial deletion closed to new work, while allowing a locked cleanup r
   await repos.project.markDeletionFailed(id, "Cache cleanup interrupted");
   expect(await repos.project.findById(id)).toMatchObject({
     deletionInProgress: true,
-    deletionError: "Cache cleanup interrupted",
+    lifecycleOperation: { kind: "delete", status: "failed", error: "Cache cleanup interrupted" },
   });
   await expect(
     repos.service.create({ projectId: id, name: "new", image: "node:22" }),
@@ -412,8 +423,18 @@ it("keeps partial deletion closed to new work, while allowing a locked cleanup r
   expect(await repos.project.claimDeletion(id)).toBe(true);
   expect(await repos.project.findById(id)).toMatchObject({
     deletionInProgress: true,
-    deletionError: null,
+    lifecycleOperation: { kind: "delete", status: "failed", error: "Cache cleanup interrupted" },
   });
+  await expect(
+    repos.service.create({ projectId: id, name: "during-retry", image: "node:22" }),
+  ).rejects.toMatchObject({ code: "PROJECT_DELETION_PENDING" });
+  expect(await repos.project.beginDeletionCleanup(id)).toBe(true);
+  expect(await repos.project.findById(id)).toMatchObject({
+    lifecycleOperation: { kind: "delete", status: "running" },
+  });
+  await expect(
+    repos.project.update(id, { buildCommand: "edit during cleanup" }),
+  ).rejects.toMatchObject({ code: "PROJECT_DELETION_PENDING" });
   await repos.project.deleteHard(id);
   expect(await repos.project.findById(id)).toBeUndefined();
 });
