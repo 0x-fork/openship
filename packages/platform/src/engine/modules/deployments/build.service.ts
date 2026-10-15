@@ -57,7 +57,7 @@ import {
 import type { LogEntry, ResourceConfig } from "@repo/adapters";
 import { decodeResources } from "../../lib/resources";
 import { resolveEnvDirtyServiceIds } from "./env-drift";
-import { withProjectRuntimeLock } from "../../lib/project-runtime-lock";
+import { withProjectStateLock } from "../../lib/project-runtime-lock";
 import { resolveDeploymentEnvironment } from "./deployment-environment";
 import type { TBuildAccessBody } from "@repo/contracts";
 import { platform } from "../../lib/platform-config";
@@ -1314,7 +1314,8 @@ export async function createQueuedDeployment(opts: Parameters<typeof createQueue
   // A service env apply owns the same lock until its replacement is durable.
   // Once a queued row exists, apply refuses it via listInFlightByProject, so
   // neither ordering can replace the same container concurrently.
-  return withProjectRuntimeLock(opts.projectId, () => createQueuedDeploymentUnlocked(opts));
+  // Submission only changes DB state; the worker owns shared host admission.
+  return withProjectStateLock(opts.projectId, () => createQueuedDeploymentUnlocked(opts));
 }
 
 async function createQueuedDeploymentUnlocked(opts: {
