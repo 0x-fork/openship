@@ -58,7 +58,9 @@
         "scales": "Оттенки"
       },
       "libraryLimit": "Удалите личную тему, прежде чем добавить новую."
-    }
+    },
+    "customize": "Настроить",
+    "backToGeneral": "Назад к общим настройкам"
   },
   "language": {
     "title": "Язык",
@@ -141,8 +143,7 @@
       "credentials": "Учетные данные",
       "cloud": "Cloud",
       "infrastructure": "Инфраструктура",
-      "instance": "Инстанс",
-      "appearance": "Внешний вид"
+      "instance": "Инстанс"
     }
   },
   "email": {

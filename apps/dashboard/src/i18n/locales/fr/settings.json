@@ -58,7 +58,9 @@
         "scales": "Échelles"
       },
       "libraryLimit": "Supprimez un thème personnel avant d’en ajouter un autre."
-    }
+    },
+    "customize": "Personnaliser",
+    "backToGeneral": "Retour aux paramètres généraux"
   },
   "language": {
     "title": "Langue",
@@ -120,8 +122,7 @@
       "infrastructure": "Infrastructure",
       "instance": "Instance",
       "email": "E-mail",
-      "systemSender": "Expéditeur système",
-      "appearance": "Apparence"
+      "systemSender": "Expéditeur système"
     }
   },
   "github": {

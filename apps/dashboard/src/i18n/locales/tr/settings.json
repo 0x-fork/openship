@@ -58,7 +58,9 @@
         "scales": "Tonlar"
       },
       "libraryLimit": "Yeni bir tema eklemeden önce özel bir temayı kaldırın."
-    }
+    },
+    "customize": "Özelleştir",
+    "backToGeneral": "Genel ayarlara dön"
   },
   "language": {
     "title": "Dil",
@@ -120,8 +122,7 @@
       "cloud": "Bulut",
       "infrastructure": "Altyapı",
       "instance": "Kurulum",
-      "systemSender": "Sistem göndericisi",
-      "appearance": "Görünüm"
+      "systemSender": "Sistem göndericisi"
     }
   },
   "email": {

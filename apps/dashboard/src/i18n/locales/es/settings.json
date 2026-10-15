@@ -58,7 +58,9 @@
         "scales": "Escalas"
       },
       "libraryLimit": "Elimina un tema personalizado antes de añadir otro."
-    }
+    },
+    "customize": "Personalizar",
+    "backToGeneral": "Volver a General"
   },
   "language": {
     "title": "Idioma",
@@ -120,8 +122,7 @@
       "infrastructure": "Infraestructura",
       "instance": "Instancia",
       "email": "Email",
-      "systemSender": "Remitente del sistema",
-      "appearance": "Apariencia"
+      "systemSender": "Remitente del sistema"
     }
   },
   "github": {

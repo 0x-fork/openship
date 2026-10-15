@@ -58,7 +58,9 @@
         "scales": "درجات اللون"
       },
       "libraryLimit": "احذف سمة مخصصة قبل إضافة سمة أخرى."
-    }
+    },
+    "customize": "تخصيص",
+    "backToGeneral": "العودة إلى الإعدادات العامة"
   },
   "language": {
     "title": "اللغة",
@@ -120,8 +122,7 @@
       "infrastructure": "البنية التحتية",
       "instance": "النسخة",
       "systemSender": "مرسل النظام",
-      "email": "البريد الإلكتروني",
-      "appearance": "المظهر"
+      "email": "البريد الإلكتروني"
     }
   },
   "github": {

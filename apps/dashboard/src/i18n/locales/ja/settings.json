@@ -58,7 +58,9 @@
         "scales": "階調"
       },
       "libraryLimit": "別のテーマを追加する前にカスタムテーマを削除してください。"
-    }
+    },
+    "customize": "カスタマイズ",
+    "backToGeneral": "一般設定に戻る"
   },
   "language": {
     "title": "言語",
@@ -120,8 +122,7 @@
       "infrastructure": "インフラ",
       "instance": "インスタンス",
       "email": "メール",
-      "systemSender": "システム送信者",
-      "appearance": "外観"
+      "systemSender": "システム送信者"
     }
   },
   "github": {

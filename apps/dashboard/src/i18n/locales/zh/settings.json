@@ -58,7 +58,9 @@
         "scales": "色阶"
       },
       "libraryLimit": "请先删除一个自定义主题再添加新主题。"
-    }
+    },
+    "customize": "自定义",
+    "backToGeneral": "返回常规设置"
   },
   "language": {
     "title": "语言",
@@ -120,8 +122,7 @@
       "infrastructure": "基础设施",
       "instance": "实例",
       "email": "邮件",
-      "systemSender": "系统发件人",
-      "appearance": "外观"
+      "systemSender": "系统发件人"
     }
   },
   "github": {

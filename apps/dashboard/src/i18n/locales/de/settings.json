@@ -58,7 +58,9 @@
         "scales": "Abstufungen"
       },
       "libraryLimit": "Entferne ein eigenes Design, bevor du ein weiteres hinzufügst."
-    }
+    },
+    "customize": "Anpassen",
+    "backToGeneral": "Zurück zu Allgemein"
   },
   "language": {
     "title": "Sprache",
@@ -120,8 +122,7 @@
       "infrastructure": "Infrastruktur",
       "instance": "Instanz",
       "email": "E-Mail",
-      "systemSender": "Systemabsender",
-      "appearance": "Darstellung"
+      "systemSender": "Systemabsender"
     }
   },
   "github": {

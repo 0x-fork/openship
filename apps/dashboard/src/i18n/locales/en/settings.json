@@ -58,7 +58,9 @@
         "scales": "Scales"
       },
       "libraryLimit": "Remove a custom theme before adding another."
-    }
+    },
+    "customize": "Customize",
+    "backToGeneral": "Back to General"
   },
   "language": {
     "title": "Language",
@@ -141,8 +143,7 @@
       "credentials": "Credentials",
       "cloud": "Cloud",
       "infrastructure": "Infrastructure",
-      "instance": "Instance",
-      "appearance": "Appearance"
+      "instance": "Instance"
     }
   },
   "email": {
