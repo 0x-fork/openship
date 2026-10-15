@@ -1786,7 +1786,7 @@ export class DockerRuntime implements RuntimeAdapter {
     if (isolatedBuildKit) {
       const software = await readSoftwareCache(executor, `${remoteBuildDir}/${dockerfileName || "Dockerfile"}`, signal);
       if (software.args) log.log("Shared public build images are available; private build cache remains project-owned.\n");
-      else if (software.unavailable) log.log("Shared build images are unavailable; using the normal build cache.\n", "warn");
+      else if (software.unavailable) log.log("Shared base images are unavailable on this Cloud space; uncached image layers will download from the registry. Project build cache remains enabled.\n", "warn");
       const driverOptions = [
         ...(cloudLimits.memory ? [`memory=${cloudLimits.memory}`, `memory-swap=${cloudLimits.memory}`] : []),
         ...(cloudLimits.cpuquota ? [`cpu-quota=${cloudLimits.cpuquota}`, `cpu-period=${cloudLimits.cpuperiod}`] : []),
@@ -2844,6 +2844,7 @@ export class DockerRuntime implements RuntimeAdapter {
         force: config.forcePull,
         refreshMutableTag: config.refreshMutableTag,
         signal: abort.signal,
+        logger: log,
       });
 
       // A pull cannot currently be interrupted through every Docker transport,
@@ -4640,7 +4641,8 @@ export class DockerRuntime implements RuntimeAdapter {
    * followProgress hangs forever (this was the cross-server migration stall).
    * A local socket has no such issue, so it keeps the native dockerode pull.
    */
-  async pullImage(ref: string, opts?: { force?: boolean }): Promise<void> {
+  async pullImage(ref: string, opts?: { force?: boolean; signal?: AbortSignal; logger?: BuildLogger }): Promise<void> {
+    opts?.signal?.throwIfAborted();
     if (!opts?.force) {
       try {
         await this.docker.getImage(ref).inspect();
@@ -4654,7 +4656,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // mutable tag (:latest/:1) rolls forward on an "update" deploy.
     const executor = this.connectionOptions?.executor;
     if (executor) {
-      await this.runRemoteRegistryCommand("pull", ref);
+      await this.runRemoteRegistryCommand("pull", ref, opts?.signal, opts?.logger);
       return;
     }
     // dockerode does not read `~/.docker/config.json` the way the CLI does, so this pull
@@ -4697,7 +4699,10 @@ export class DockerRuntime implements RuntimeAdapter {
   async prepareDeploymentImage(ref: string, options: DockerImagePreparationOptions = {}) {
     return prepareDockerImage(ref, options, {
       inspect: image => this.inspectDeploymentImage(image),
-      pull: (image, intent) => this.pullImage(image, intent),
+      pull: (image, intent) => this.pullImage(image, { ...intent,
+        ...(options.signal ? { signal: options.signal } : {}),
+        ...(options.logger ? { logger: options.logger } : {}),
+      }),
     });
   }
 
@@ -4806,32 +4811,38 @@ export class DockerRuntime implements RuntimeAdapter {
 
   /** The same bounded host path for pulls and pushes, with one disposable
    * registry credential. Docker progress streams over SSH may never end. */
-  private async runRemoteRegistryCommand(action: "pull" | "push", ref: string, signal?: AbortSignal): Promise<string> {
+  private async runRemoteRegistryCommand(action: "pull" | "push", ref: string, signal?: AbortSignal, logger?: BuildLogger): Promise<string> {
     const executor = this.connectionOptions!.executor!;
     const auth = await this.connectionOptions?.resolveRegistryAuth?.(ref);
     const config = auth ? dockerConfigJsonFor(auth) : null;
     const dir = `/tmp/openship-${action}-${randomUUID()}`;
     let ownsDirectory = false;
+    const bounded = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(10 * 60_000)]);
+    const execute = async (command: string) => {
+      if (!logger || typeof executor.streamExec !== "function")
+        return executor.exec(command, { timeout: 10 * 60_000 });
+      const result = await executor.streamExec(command, logger.callback, { signal: bounded });
+      if (result.code !== 0) throw new Error(`Docker ${action} failed (exit ${result.code}): ${result.output.slice(-2000)}`);
+      return result.output;
+    };
     const run = async () => {
-      signal?.throwIfAborted();
-      const timeout = 10 * 60_000;
+      bounded.throwIfAborted();
       // Without a saved credential, preserve the target's own Docker login.
-      if (!config) return executor.exec(`docker ${action} ${sq(ref)}`, { timeout });
+      if (!config) return execute(`docker ${action} ${sq(ref)}`);
       // Credentials go through file writes, never process arguments. Creation
       // is exclusive and private; cleanup also runs after interruption.
       await executor.exec(`mkdir -m 700 ${sq(dir)}`);
       ownsDirectory = true;
       await executor.writeFile(`${dir}/config.json`, config);
       await executor.exec(`chmod 600 ${sq(dir)}/config.json`);
-      signal?.throwIfAborted();
-      return executor.exec(
+      bounded.throwIfAborted();
+      return execute(
         `DOCKER_CONFIG=${sq(dir)} docker ${action} ${sq(ref)}; rc=$?; rm -rf ${sq(dir)}; exit $rc`,
-        { timeout },
       );
     };
     try {
-      return signal && executor.runWithAbortSignal
-        ? await executor.runWithAbortSignal(signal, run)
+      return executor.runWithAbortSignal
+        ? await executor.runWithAbortSignal(bounded, run)
         : await run();
     } finally {
       if (ownsDirectory) {
