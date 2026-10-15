@@ -50,6 +50,18 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
 }
 
 describe("Cloud Docker build execution limits", () => {
+  it("passes verified public OCI images to the real build command without sharing writable state", async () => {
+    const h = fixture();
+    const original = h.executor.exec.getMockImplementation()!;
+    const digest = `sha256:${"a".repeat(64)}`;
+    h.executor.exec.mockImplementation(async command => command.startsWith("python3")
+      ? JSON.stringify({ platform: "linux/amd64", dockerfile: "FROM oven/bun:1.3.14", pack: { version: 2, platform: "linux/amd64", images: [{ image: "oven/bun:1.3.14", path: "images/bun", digest, sourceDigest: digest }] } })
+      : command.includes("imagetools inspect") ? digest : original(command));
+    await h.run();
+    expect(h.commands()).toContain("--build-context 'oven/bun:1.3.14=oci-layout:///opt/oblien/build-cache/images/bun@");
+    expect(h.commands()).not.toContain("--cache-to");
+    expect(h.commands()).toContain("--keep-state");
+  });
   it("waits for the current build acknowledgement before checking retained cache protection", async () => {
     const h = fixture();
     let pending = false;
