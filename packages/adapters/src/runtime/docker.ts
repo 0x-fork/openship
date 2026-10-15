@@ -30,6 +30,7 @@
 // `.d.ts` files (#448).
 /// <reference path="./tar-fs.d.ts" />
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { currentManagedCommandTracking } from "./cloud/command-tracking";
 import Dockerode from "dockerode";
 import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
@@ -1642,6 +1643,7 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   private async assertBuildCacheCommandsStopped(projectId: string): Promise<void> {
+    await currentManagedCommandTracking()?.flush();
     const protection = await this.connectionOptions?.buildCacheProtection?.();
     if (protection?.all || protection?.projectIds.includes(projectId))
       throw new AppError("A build command has not confirmed exit. Recover it before starting or completing this build.",
