@@ -584,13 +584,31 @@ plan changes, provisioning, edits or deletion. Reconnect refreshes the same link
 create another server. A missing control route on an older Cloud API shows **Control unavailable**
 with upgrade guidance; structured resource and permission 404s retain their original meaning.
 
-Managed server navigation leads with Overview, Terminal and SSH access. Group listener inspection
-under Networking, and component health and Runtime API under Settings; preserve existing tab links.
-The managed terminal uses the full content width. Other views keep the shared 340px plan sidebar.
-Network controls separate the outbound connection from internet policy, with one explicit save per
-operation. Show the current connection separately from the draft, use filled controls and responsive
-field pairs, and keep private address/ingress diagnostics in a disclosure. Failed reads retain a
-status retry; they must not appear as an empty pool or trigger a mutation.
+Cloud navigation and the page heading use **Cloud spaces**. Each independently purchased allocation
+is presented as a **Cloud space**: show measured CPU, memory and storage usage
+and assigned projects in Overview, with lifecycle progress in Activity. Put the compact Cloud space
+dropdown in the 340px right column above plan capacity. The picker shows the selected name,
+plan, project count and state; other choices appear only when opened. On narrow screens,
+place the picker before usage and keep plan capacity below the main content. Spaces are deployment destinations using existing purchased workspace identities,
+not organization workspaces or combined capacity. Keep resource and billing actions on the existing billing flow.
+
+Cloud spaces uses the read-only provider metrics stream through Openship's authenticated monitor
+endpoint. Title the card Resource usage, and show Live only after a valid sample; pause hidden pages and cancel subscriptions when
+the space, account or tab changes. Retain and label the last reading on disconnect with Retry.
+Recent charts contain at most 60 samples from the open page, not billed usage or historical analytics.
+Project storage inventory uses the existing snapshot request and is not scanned on every live tick.
+Cloud spaces and Billing reuse the shared destination picker rows, project counts and catalog plan names.
+Keep instant resource readings and project storage on Cloud spaces. Billing retains subscription,
+payment, billing-period usage and entitlement counters, with selected-space links instead of another
+host-usage snapshot. Show actual allocated capacity on Cloud spaces; pending plan changes remain
+in Billing's existing confirmation and resize flow.
+Unfinished Cloud setup shows a calm Cloud space notice and does not subscribe to live metrics.
+
+Managed resources do not expose host terminals, SSH, provider networking, Runtime API credentials,
+listener inspection or manual process controls, including when opened through Desktop or an old
+server link. Project logs and service consoles remain available from their project. Connected
+self-hosted servers retain host administration. Failed reads show a retry and unknown usage;
+never substitute zero usage or an empty project list for an unavailable observation.
 
 Account protection lives in **Settings → Security**, using the existing settings
 navigation and section cards. Keep authenticator setup, recovery codes, and
