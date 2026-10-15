@@ -42,7 +42,8 @@ function config(deploymentId: string): DeployConfig {
     environment: "production",
     port: 8080,
     startCommand: "exec httpd -f -p 8080 -h /tmp",
-    envVars: { E2E_DEPLOYMENT: deploymentId },
+    // PORT is set by both the project and the image (ENV below); a role must see neither.
+    envVars: { E2E_DEPLOYMENT: deploymentId, PORT: "9999" },
     resources: { cpuCores: 0, memoryMb: 0, diskMb: 0 },
     volumes: ["data:/data"],
     restartPolicy: "always",
@@ -146,6 +147,7 @@ describeDockerE2E("runtime roles against Docker", () => {
         join(source, "Dockerfile"),
         [
           `FROM ${baseImage}`,
+          "ENV PORT=3000",
           "HEALTHCHECK --interval=1s --timeout=1s --retries=1 CMD wget -qO- http://127.0.0.1:8080/ > /dev/null || exit 1",
           "",
         ].join("\n"),
@@ -227,6 +229,10 @@ describeDockerE2E("runtime roles against Docker", () => {
       );
       expect(env.some((entry) => entry.startsWith("PORT="))).toBe(false);
       expect(env).toContain(`E2E_DEPLOYMENT=${dep("a")}`);
+      // What the role process itself sees, after Docker merged the image's ENV.
+      const processEnv = (await docker("exec", id, "cat", "/proc/1/environ")).split("\0");
+      expect(processEnv).toContain(`E2E_DEPLOYMENT=${dep("a")}`);
+      expect(processEnv.some((entry) => entry.startsWith("PORT="))).toBe(false);
       expect(
         JSON.parse(await docker("inspect", "--format", "{{json .Config.Healthcheck.Test}}", id)),
       ).toEqual(["NONE"]);
