@@ -27,6 +27,8 @@ import { useDialogFocus } from "@/hooks/useDialogFocus";
 import { importAppearance, fetchAppearanceJson, downloadTheme } from "@/lib/appearance-import";
 import { getApiErrorMessage } from "@/lib/api/client";
 
+const PRESET_ICONS = { light: "sun", dim: "sun-moon", dark: "moon", system: "monitor" } as const;
+
 export function AppearanceEditor() {
   const { owner } = useTheme();
   return <Editor key={owner} />;
@@ -203,12 +205,32 @@ function Editor() {
         disabled={context.loading || context.saving}
         className="min-w-0 space-y-5 disabled:opacity-60"
       >
-        <section className="rounded-2xl bg-card p-5">
+        <section className="rounded-2xl bg-card p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h3 className="font-medium">{c.presets}</h3>
+            <div
+              role="group"
+              aria-label={c.presets}
+              className="grid w-full grid-cols-2 gap-1 rounded-xl bg-background/60 p-1 sm:flex sm:w-auto sm:flex-wrap"
+            >
+              {(["light", "dim", "dark", "system"] as const).map((mode) => (
+                <Button
+                  key={mode}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-pressed={draft.active === mode}
+                  onClick={() => update({ ...draft, active: mode })}
+                  className={`h-9 px-3 ${draft.active === mode ? "bg-foreground/[0.08] text-foreground hover:bg-foreground/[0.08]" : "text-muted-foreground"}`}
+                >
+                  <Icon name={PRESET_ICONS[mode]} className="size-4 shrink-0" />
+                  {t.settings.appearance.themes[mode]}
+                </Button>
+              ))}
+            </div>
             <Button
               variant="ghost"
               size="sm"
+              className="ms-auto"
               disabled={draft.themes.length >= APPEARANCE_MAX_THEMES}
               title={draft.themes.length >= APPEARANCE_MAX_THEMES ? c.libraryLimit : undefined}
               onClick={duplicate}
@@ -216,23 +238,6 @@ function Editor() {
               <Icon name="plus" />
               {custom ? c.duplicate : c.newTheme}
             </Button>
-          </div>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {(["light", "dim", "dark", "system"] as const).map((mode) => (
-              <button
-                type="button"
-                key={mode}
-                aria-pressed={draft.active === mode}
-                onClick={() => update({ ...draft, active: mode })}
-                className={`rounded-xl p-2.5 text-start focus-visible:ring-2 focus-visible:ring-ring ${draft.active === mode ? "bg-foreground/[0.08]" : "hover:bg-muted"}`}
-              >
-                <PresetSwatch mode={mode === "system" ? "light" : mode} split={mode === "system"} />
-                <span className="mt-2 flex items-center justify-between text-sm">
-                  {t.settings.appearance.themes[mode]}
-                  {draft.active === mode && <Icon name="check" className="size-4" />}
-                </span>
-              </button>
-            ))}
           </div>
           {draft.themes.length > 0 && (
             <div className="mt-4 flex flex-wrap gap-2">
@@ -608,23 +613,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <span>{label}</span>
       {children}
     </label>
-  );
-}
-function PresetSwatch({ mode, split }: { mode: ThemeMode; split: boolean }) {
-  const values = APPEARANCE_DEFAULTS[mode];
-  return (
-    <div
-      className="relative flex h-16 gap-1.5 overflow-hidden rounded-lg p-2"
-      style={{ background: values["--th-bg-page"] }}
-    >
-      <span className="w-1/4 rounded" style={{ background: values["--th-card-bg"] }} />
-      <span className="flex-1 rounded" style={{ background: values["--th-card-bg"] }} />
-      {split && (
-        <div className="absolute inset-y-0 end-0 w-1/2 bg-[#141414] p-2">
-          <div className="h-full rounded bg-white/10" />
-        </div>
-      )}
-    </div>
   );
 }
 function ThemePreview({ theme, base }: { theme?: ThemeDocument; base: ThemeMode }) {
