@@ -713,3 +713,20 @@ and block authorization. Account switching signs out before continuing to login;
 organization switching reloads the same request after the server confirms the
 session change. Preserve callback, device mode, state and PKCE parameters, and
 require another explicit Authorize click after either switch.
+
+In the deployment wizard, Include www keeps the two hostnames as normal public
+endpoints. On Cloud and self-hosted destinations, adding the sibling keeps the typed
+hostname primary and redirects the other with HTTP 301. A filled
+Domain behavior selector offers either hostname as primary or Serve both. Derive
+that selection from the endpoint redirect fields; do not persist a parallel mode.
+Keep existing choices until explicitly edited. Show the redirect target in the
+collapsed domain row and hide app port/static-path fields for redirect domains.
+Choose a serving hostname for primary metadata. Offer the same choices for Cloud
+projects opened in Desktop and for projects managed directly in Cloud. Provider
+implementation details belong in engineering documentation.
+
+Deploy-domain autosaves preserve edit order, including switching to None. Queued
+writes are discarded when the account or organization changes. Reuse the shared
+keyed mutex and API scope generation. Project route edits share the existing
+project runtime lock across preparation, persistence and live application, keeping
+a primary-direction change together across concurrent requests.
