@@ -1081,6 +1081,19 @@ async function sweepServerGroup(ctx: GroupContext): Promise<void> {
       GROUP_DEADLINE_MS,
       GROUP_DEADLINE_REASON,
     );
+
+    // Only a completed read can forgive a miss or announce recovery. A container
+    // list can succeed while an inspect still hangs; timed-out reads keep running
+    // detached and must never reach this transition. Snapshot-only reads do not
+    // change the continuous watcher's confirmation state.
+    if (handle.listed && !ctx.currentOnly) {
+      SERVER_MISSES.delete(watchGroupKey(serverId, organizationId));
+      const target = await incidentServerId(serverId, organizationId);
+      if (target) {
+        const existing = await repos.serviceIncident.findOpenForServer(target);
+        if (existing && (await resolveServerIncident(existing))) summary.resolved++;
+      }
+    }
   } catch (err) {
     const reason = safeErrorMessage(err);
     // Set before anything else: from here the group's verdict is decided WITHOUT
@@ -1123,9 +1136,9 @@ async function sweepServerGroup(ctx: GroupContext): Promise<void> {
     // came back. PAST that point the daemon has demonstrably answered, so a failure
     // is ours — a rejected incident write, a bug — and reporting it as an unreachable
     // box tells every project on a healthy machine that it can't be monitored, with
-    // a Postgres error for a message. This tick may even have just announced the box
-    // answering again (`readServerGroup` closes that incident before the loop), so
-    // the pair would read "is answering again" followed by "can't reach Docker".
+    // a Postgres error for a message. Server recovery writes also happen only after
+    // the bounded daemon read completes, so a slow recovery write cannot be
+    // mistaken for a daemon deadline.
     //
     // The DEADLINE is exempt: an inspect that hangs after the list came back is a
     // wedged daemon or a dead bridge, which is precisely what gate 3 is for. A
@@ -1247,25 +1260,6 @@ async function readServerGroup(
     // and resolving here is what mailed "answering again after 0s".
     if (handle.abandoned) return;
     handle.listed = true;
-
-    // The box answered — close its unreachable incident if it had one. Through the
-    // same resolver the open path uses, so a LOCAL group can close the incident it
-    // opened: that one hangs on the self-server row, which keying this off `serverId`
-    // alone (null, here) could never reach.
-    if (!ctx.currentOnly) {
-      const incidentTarget = await incidentServerId(serverId, organizationId);
-      // The deadline can land on this lookup. By then the catch has counted the
-      // miss and may have opened the incident; a late success must not undo either.
-      if (handle.abandoned) return;
-      SERVER_MISSES.delete(watchGroupKey(serverId, organizationId));
-      if (incidentTarget) {
-        const stale = await repos.serviceIncident.findOpenForServer(incidentTarget);
-        if (handle.abandoned) return;
-        if (stale && (await resolveServerIncident(stale))) summary.resolved++;
-      }
-    } else {
-      SERVER_MISSES.delete(watchGroupKey(serverId, organizationId));
-    }
 
     const byContainerId = new Map(live.map((c) => [c.id, c]));
     const sampler = runtime.supports("stabilityProbe") ? runtime.sampleStability?.bind(runtime) : undefined;

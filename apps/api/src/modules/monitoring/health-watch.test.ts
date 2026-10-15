@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ContainerStabilitySample } from "@repo/adapters";
+import type { ServiceIncident } from "@repo/db";
 
 /**
  * The health watch's contract is a NOISE contract, and it is not expressible in
@@ -1875,6 +1876,144 @@ describe("unreachable server", () => {
       vi.useFakeTimers({ toFake: ["Date"], now: START });
     }
   });
+
+  it("confirms repeated inspect deadlines and waits for a complete read before recovery", async () => {
+    seedApp({ serverId: "srvInspectDeadline" });
+    h.sampleHangs = true;
+    vi.useFakeTimers({
+      toFake: ["Date", "setTimeout", "clearTimeout"],
+      now: Date.now(),
+    });
+    try {
+      const { runHealthWatch } =
+        await import("@repo/platform/engine/modules/monitoring/health-watch");
+      const firstRun = runHealthWatch();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await firstRun).toMatchObject({
+        unreachable: 1,
+        opened: 0,
+        pending: 1,
+      });
+
+      const secondRun = runHealthWatch();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await secondRun).toMatchObject({ unreachable: 1, opened: 1 });
+      expect(emitted("server.unreachable")).toHaveLength(1);
+
+      // A successful list is still not recovery if the following inspects hang.
+      const thirdRun = runHealthWatch();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await thirdRun).toMatchObject({
+        unreachable: 1,
+        opened: 0,
+        resolved: 0,
+      });
+      expect(emitted("server.unreachable")).toHaveLength(1);
+      expect(emitted("server.reachable")).toHaveLength(0);
+      expect(
+        h.incidents.filter(
+          (row) => row.kind === "server_unreachable" && row.status === "open",
+        ),
+      ).toHaveLength(1);
+
+      h.sampleHangs = false;
+      expect(await tick()).toMatchObject({ unreachable: 0, resolved: 1 });
+      expect(emitted("server.reachable")).toHaveLength(1);
+      expect(payloads("server.reachable")[0]?.downtime).not.toBe("0s");
+    } finally {
+      h.sampleHangs = false;
+      vi.useFakeTimers({ toFake: ["Date"], now: START });
+    }
+  });
+
+  it("keeps snapshot-only reads out of daemon confirmation and recovery", async () => {
+    seedApp({ serverId: "srvReadOnlyConfirmation" });
+    h.listThrows = "connect ECONNREFUSED 10.0.0.9:22";
+    expect(await tick()).toMatchObject({ unreachable: 1, opened: 0, pending: 1 });
+
+    h.listThrows = null;
+    expect((await checkCurrent()).summary).toMatchObject({
+      unreachable: 0,
+      opened: 0,
+      resolved: 0,
+    });
+
+    h.listThrows = "connect ECONNREFUSED 10.0.0.9:22";
+    expect(await tick()).toMatchObject({ unreachable: 1, opened: 1 });
+    expect(emitted("server.unreachable")).toHaveLength(1);
+
+    h.listThrows = null;
+    expect((await checkCurrent()).summary).toMatchObject({
+      unreachable: 0,
+      opened: 0,
+      resolved: 0,
+    });
+    expect(
+      h.incidents.filter(
+        (row) => row.kind === "server_unreachable" && row.status === "open",
+      ),
+    ).toHaveLength(1);
+    expect(emitted("server.reachable")).toHaveLength(0);
+
+    expect(await tick()).toMatchObject({ unreachable: 0, resolved: 1 });
+    expect(emitted("server.reachable")).toHaveLength(1);
+  });
+
+  it("does not classify a slow recovery write as a daemon deadline", async () => {
+    seedApp({ serverId: "srvRecoveryWrite" });
+    h.listThrows = "connect ECONNREFUSED 10.0.0.9:22";
+    await tick();
+    await tick();
+    const incident = h.incidents.find(
+      (row) => row.kind === "server_unreachable" && row.status === "open",
+    )!;
+    expect(incident).toBeDefined();
+    h.emit.mockClear();
+    h.listThrows = null;
+
+    const { repos } = await import("@repo/db");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(repos.serviceIncident.findOpenForServer).mockImplementationOnce(
+      async () => {
+        await gate;
+        return incident as unknown as ServiceIncident;
+      },
+    );
+    vi.useFakeTimers({
+      toFake: ["Date", "setTimeout", "clearTimeout"],
+      now: Date.now(),
+    });
+    try {
+      const { runHealthWatch } =
+        await import("@repo/platform/engine/modules/monitoring/health-watch");
+      let completed = false;
+      const run = runHealthWatch().then((summary) => {
+        completed = true;
+        return summary;
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(completed).toBe(false);
+      expect(h.emit).not.toHaveBeenCalled();
+      expect(incident.status).toBe("open");
+
+      release();
+      expect(await run).toMatchObject({
+        unreachable: 0,
+        opened: 0,
+        resolved: 1,
+        errors: 0,
+      });
+      expect(emitted("server.reachable")).toHaveLength(1);
+      expect(emitted("server.unreachable")).toHaveLength(0);
+    } finally {
+      release();
+      vi.useFakeTimers({ toFake: ["Date"], now: START });
+    }
+  });
+
 });
 
 // ─── One group, one daemon ───────────────────────────────────────────────────
