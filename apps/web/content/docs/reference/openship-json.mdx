@@ -240,9 +240,9 @@ repos without a JavaScript workspace at the root, are unaffected.
 ### Warm a worker or scheduler
 
 Warming a worker gives a small, one-time benefit, so prefer warming the web role
-only. To warm a worker anyway, re-declare the roles. A `roles` array replaces
-every preset, so list each role you want to keep. Prefix each command with
-`php artisan optimize && ` and keep the `exec` form. The fields and rules are in
+only. To warm a worker anyway, declare it in `roles`, and keep any other roles you
+declared there. Prefix its command with `php artisan optimize && ` and keep the
+`exec` form. The fields and rules are in
 [Runtime roles](#runtime-roles).
 
 ```json
@@ -399,8 +399,8 @@ keeps the roles it has saved, so change those through the project API/SDK (`role
 | `replicas`        | Optional, workers only. An integer from 1 to 100. Defaults to 1. Cannot be above 1 on a singleton.                                                                     |
 | `singleton`       | Optional. Run exactly one instance. A `scheduler` is always a singleton, so `replicas` above 1 on a scheduler is an error.                                              |
 | `health`          | Optional. `{ "kind": "process" }` or `{ "kind": "exec", "command": "..." }`. `exec` requires a non-empty `command`. `http` is rejected, because roles have no port.   |
-| `stopSignal`      | Optional. A signal name such as `SIGQUIT`, or a positive integer. Defaults to `SIGTERM`.                                                                               |
-| `stopGracePeriod` | Optional. How long to wait after the stop signal before the process is killed: `90s`, `1m30s`, `10m`, or a bare number of seconds. Defaults to Docker's 10 seconds.    |
+| `stopSignal`      | Optional. A signal name such as `SIGQUIT`, or a positive integer. When omitted, the image's `STOPSIGNAL` applies, or `SIGTERM` if the image sets none.                 |
+| `stopGracePeriod` | Optional. How long to wait after the stop signal before the process is killed: `90s`, `1m30s`, `10m`, or a bare number of seconds. When omitted, the Docker daemon's default stop timeout applies. |
 
 ### Where roles run
 
@@ -439,24 +439,36 @@ its first instruction.
 **Workers** start beside the previous version's workers. The old ones keep running, and
 are removed only once the new web container is live.
 
-**Singletons** (schedulers, or `singleton: true`) hand over stop-first: the old container
-is stopped and kept, then the new one starts. If anything fails, the new containers are
-removed and the old singleton is started again. Two schedulers never run at once, so a
-cron tick never fires twice.
+**Singletons** (schedulers, or `singleton: true`) hand over stop-first when the role keeps
+its name: the old container is stopped and retained before its replacement starts. When
+unwinding a failed deploy, Openship attempts to remove the new containers and restore
+retained singletons. Restoration is attempted only after all started replacements for that
+role are confirmed removed.
+
+This covers a normal handover where the singleton keeps its name. Runtime failures or an
+interrupted deploy can leave containers unresolved. Reconcile them, and restart the
+scheduler if needed, before redeploying. A handover does not guarantee exactly-once
+scheduled execution, so keep application-level guards such as Laravel's `onOneServer()`.
 
 ### Startup check
 
 Every role container must stay up through the stabilization window, **15 seconds** by
 default. This check always runs for roles, whatever the project's readiness settings,
 because a role has no port to probe. If the role declares an `exec` health command, it
-runs once, after the window. Any failure fails the deploy, and the previous version keeps
-running.
+runs once, after the window. A failed startup check fails the deploy and triggers the
+rollback attempt described above. The startup check runs only during a deploy. It does not
+continuously monitor role containers afterward.
 
 <Callout title="Use exec so the stop signal reaches your process" type="warn">
 The command runs under `sh -c`. Without `exec`, the shell stays as the main process and
 the stop signal never reaches your worker, so it is killed after the grace period instead
 of finishing its job. Write `exec php artisan queue:work`, not `php artisan queue:work`,
 and set `stopSignal` and `stopGracePeriod` to match how long a job can run.
+
+`exec` lets the stop signal reach your process. Whether the process exits depends on the
+command. For example, Laravel 12.70.0's `schedule:work`, running as PID 1, kept ticking after
+SIGTERM until it was killed at the end of the grace period. A longer grace period only delayed
+scheduler replacement there.
 </Callout>
 
 ### Lifecycle
