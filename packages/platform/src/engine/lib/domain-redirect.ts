@@ -14,9 +14,9 @@
  *   • status restricted to the four redirect codes that make sense here.
  *
  * Self-hosted only. On Openship Cloud the managed edge owns routing, and its
- * redirect primitive can't be shown to preserve the original path + query, so
- * `assertRedirectSupported` refuses instead of silently shipping a redirect that
- * drops half the URL.
+ * redirect primitive currently decodes escaped paths in wildcard captures.
+ * `assertRedirectSupported` refuses canonical redirects until the provider can
+ * preserve the raw request URI (see docs/oblien-edge-routing-requirements.md).
  */
 
 import {

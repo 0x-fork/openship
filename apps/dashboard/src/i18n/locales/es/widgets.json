@@ -354,7 +354,16 @@
       "addDomain": "Añadir dominio",
       "primaryDomain": "Dominio principal",
       "domainN": "Dominio {n}",
-      "remove": "Eliminar"
+      "remove": "Eliminar",
+      "domainBehavior": "Comportamiento del dominio",
+      "primaryHost": "{hostname} como principal",
+      "redirectHostDescription": "{from} redirige a {to}.",
+      "serveBoth": "Servir en ambos",
+      "serveBothDescription": "Ambos nombres de host sirven la app.",
+      "customRouting": "Enrutamiento personalizado",
+      "redirectDomain": "Dominio de redirección",
+      "redirectSummary": "Redirige a {hostname}.",
+      "cloudRedirectUnavailable": "Las redirecciones a un dominio principal aún no están disponibles en Cloud. Sirve la app en ambos nombres de host."
     },
     "configEditor": {
       "remove": "Eliminar",

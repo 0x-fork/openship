@@ -354,7 +354,16 @@
       "addDomain": "Добавить домен",
       "primaryDomain": "Основной домен",
       "domainN": "Домен {n}",
-      "remove": "Удалить"
+      "remove": "Удалить",
+      "domainBehavior": "Поведение домена",
+      "primaryHost": "{hostname} — основной",
+      "redirectHostDescription": "{from} перенаправляет на {to}.",
+      "serveBoth": "Обслуживать оба",
+      "serveBothDescription": "Приложение доступно по обоим именам хоста.",
+      "customRouting": "Своя маршрутизация",
+      "redirectDomain": "Домен перенаправления",
+      "redirectSummary": "Перенаправляет на {hostname}.",
+      "cloudRedirectUnavailable": "Перенаправления на основной домен пока недоступны в Cloud. Используйте оба имени хоста для приложения."
     },
     "configEditor": {
       "remove": "Удалить",

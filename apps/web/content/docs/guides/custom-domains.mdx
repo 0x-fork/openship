@@ -22,6 +22,22 @@ book. This guide walks you through all of it.
   the two lines Openship gives you.
 </Callout>
 
+## Choose the primary hostname during deployment
+
+In the deployment wizard, **Include www** adds the companion hostname. For
+self-hosted destinations, the hostname you typed stays primary and the companion
+redirects to it with HTTP `301`. Under **Domain behavior**, choose either hostname
+as primary, or **Serve both** to serve the app on both addresses.
+
+The domain list shows which hostname redirects and where it sends visitors.
+Redirect-only hostnames do not need a separate app port or static path. Existing
+projects keep their current choice until you change it. Both hostnames still need
+DNS records, verification and HTTPS.
+
+On **Openship Cloud**, Include www currently serves both hostnames. The wizard
+shows that canonical hostname redirects are not available there yet. This also
+applies when configuring a Cloud deployment through Desktop.
+
 ## Steps
 
 <Steps>

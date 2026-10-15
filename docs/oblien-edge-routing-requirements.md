@@ -178,3 +178,46 @@ the target port closed unless it's in `ingress_ports` (state it at the private-l
 in the firewall concepts page), and (b) document (or provide) internal name resolution so callers
 don't have to hand-roll `/etc/hosts`. Ideally, linking two workspaces for a known service port
 would open that port and register the name in one call.
+
+## Canonical hostname redirects: verified provider gap (2026-10-15)
+
+The wizard offers bare-domain or www primary selection on self-hosted edges.
+Openship Cloud must keep serving both until the managed edge can preserve the
+complete original request URI for a hostname redirect. This is a different issue
+from query-string preservation: live tests confirmed that queries survive today,
+but wildcard captures are taken from a decoded path.
+
+Reproduction using an owned temporary EdgeTunnel hostname and `routes.set`:
+
+```json
+{
+  "routes": [{
+    "match": { "path": "/(.*)", "type": "wildcard" },
+    "action": { "kind": "redirect", "status": 301, "to": "https://primary.example.com/$1" }
+  }]
+}
+```
+
+`/docs/a%2Fb?x=1&x=2&encoded=a%2Bb` currently redirects to
+`https://primary.example.com/docs/a/b?x=1&x=2&encoded=a%2Bb`.
+The encoded slash has changed meaning. Encoded Unicode paths also become raw
+header bytes. `$request_uri`, `${request_uri}`, `{request_uri}` and `$raw_uri`
+are emitted literally, so Nginx variable syntax is not an available workaround.
+The temporary resources used for these checks were deleted; no VM or customer
+route was changed.
+
+The provider needs a documented host-redirect action or an explicit option to
+preserve the raw original request URI. It must append the untouched path and
+query exactly once to the validated destination origin, without decoding,
+normalizing, re-encoding captures, or accepting a user-supplied destination host.
+Existing wildcard/path-redirect behavior should retain its existing semantics.
+Expose the capability in the SDK; Openship can then replace the canonical rule in
+`CloudInfraProvider.registerRoute` and remove `assertRedirectSupported`'s Cloud
+gate after live verification. Keep each hostname's existing project-owned Page
+anchor, DNS ownership verification, TLS lifecycle, and same-project redirect
+validation.
+
+Before enabling Cloud canonical redirects, verify both directions and HTTP
+301/302/307/308 with `/`, `%2F`, `%25`, UTF-8 escapes, repeated query keys,
+encoded query delimiters, empty parameters and trailing slashes. Re-saving and
+retrying routing must remain idempotent; Serve both must remove the redirect.

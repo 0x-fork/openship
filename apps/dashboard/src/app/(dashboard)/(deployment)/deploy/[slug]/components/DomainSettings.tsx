@@ -8,12 +8,13 @@ import { useToast } from "@/context/ToastContext";
 import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { RoutingModePicker, type RoutingMode } from "@/components/routing/RoutingModePicker";
-import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
+import { createPublicEndpoint, type DeployTarget, type PublicEndpoint } from "@/context/deployment/types";
 import { validatedPublicEndpointPayload } from "@/lib/public-endpoint-payload";
 import { normalizeSubdomain } from "@/utils/subdomain";
 
 interface DomainSettingsProps {
   projectId?: string;
+  deployTarget: DeployTarget;
   projectName: string;
   endpoints: PublicEndpoint[];
   hasServer: boolean;
@@ -29,6 +30,7 @@ const buildPublicEndpointPayload = validatedPublicEndpointPayload;
 
 const DomainSettings: React.FC<DomainSettingsProps> = ({
   projectId,
+  deployTarget,
   projectName,
   endpoints,
   hasServer,
@@ -75,7 +77,7 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
       return;
     }
 
-    const primaryPort = hasServer && "port" in payload[0] ? payload[0].port : undefined;
+    const primaryPort = hasServer ? payload.find((endpoint) => !endpoint.redirectTo)?.port : undefined;
 
     try {
       await projectsApi.update(projectId, {
@@ -154,10 +156,9 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
       hasServer={hasServer}
       runtimePort={runtimePort}
       onEndpointsChange={handleChange}
-      // "Include www" creates the sibling as a 301 to the apex, so the control has
-      // to be visible here or that's an invisible redirect. Rendered in the box's
-      // own vhost → self-hosted only (the API refuses it for cloud projects).
-      allowRedirects={selfHosted}
+      // Capability follows the deployment destination, including Cloud projects
+      // edited from Desktop. Cloud currently serves both without a redirect.
+      allowRedirects={selfHosted && deployTarget !== "cloud"}
     />
   );
 };
