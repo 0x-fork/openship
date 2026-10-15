@@ -95,7 +95,7 @@ export function getNavSections(
   const infraItems: NavItem[] = [
     selfHosted
       ? { key: "servers", href: "/servers", icon: "server" }
-      : { key: "resources", href: "/resources", icon: "layers", alsoAt: ["/servers"] },
+      : { key: "resources", href: "/resources", icon: "cloud", alsoAt: ["/servers"] },
     { key: "emails", href: "/emails", icon: "mail" },
   ];
   infraItems.push({ key: "jobs", href: "/jobs", icon: "clock" });
