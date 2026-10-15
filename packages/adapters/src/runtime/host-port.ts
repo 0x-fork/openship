@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor } from "../types";
 import { scanPorts } from "../system/port-scan";
 
@@ -16,6 +17,17 @@ import { scanPorts } from "../system/port-scan";
 const DEFAULT_RANGE_START = 20000;
 const DEFAULT_RANGE_END = 29999;
 
+/**
+ * Linux's default ephemeral (outbound) port range, used when the target's own
+ * `ip_local_port_range` can't be read.
+ */
+const LINUX_EPHEMERAL_RANGE: PortRange = { start: 32768, end: 60999 };
+
+export interface PortRange {
+  start: number;
+  end: number;
+}
+
 export interface AllocateHostPortOptions {
   /** Reuse this port if it's still free (the project's persisted hostPort). */
   preferred?: number | null;
@@ -29,6 +41,14 @@ export interface AllocateHostPortOptions {
   avoid?: Iterable<number>;
   rangeStart?: number;
   rangeEnd?: number;
+  /**
+   * The target's ephemeral port range. A preferred port inside it is not reused:
+   * the kernel hands those numbers to outbound connections, so a publish pinned
+   * there can find its port taken when the container restarts ("address already
+   * in use"), and Docker's restart policy then gives up. Such a pin can come from
+   * an observed Docker-assigned publish, which Docker draws from this range.
+   */
+  ephemeralRange?: PortRange | null;
 }
 
 /** Pure: pick the first port in [start,end] that's neither occupied nor avoided,
@@ -39,10 +59,14 @@ export function pickHostPort(occupied: Set<number>, opts: AllocateHostPortOption
   const avoid = new Set<number>(opts.avoid ?? []);
   const free = (p: number) => !occupied.has(p) && !avoid.has(p);
 
+  const ephemeral = opts.ephemeralRange;
+  const inEphemeral = (p: number) => !!ephemeral && p >= ephemeral.start && p <= ephemeral.end;
+
   // Reuse the persisted port if still free — keeps redeploys on the same target
-  // (even if it predates the current range).
+  // (even if it predates the current range), unless it is an ephemeral port.
   if (
     opts.preferred &&
+    !inEphemeral(opts.preferred) &&
     !avoid.has(opts.preferred) &&
     (opts.reuseOccupiedPreferred || !occupied.has(opts.preferred))
   ) {
@@ -69,6 +93,24 @@ export interface HostPortAllocation {
   scanned: boolean;
 }
 
+/**
+ * The target's ephemeral port range, from `ip_local_port_range`. Falls back to
+ * Linux's default when the file can't be read (an unreachable host, or not Linux).
+ */
+export async function readEphemeralPortRange(executor: CommandExecutor): Promise<PortRange> {
+  const raw = await executor
+    .exec("cat /proc/sys/net/ipv4/ip_local_port_range 2>/dev/null || true")
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/host-port");
+      return "";
+    });
+  const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(raw);
+  if (!match) return LINUX_EPHEMERAL_RANGE;
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  return start >= 1 && start <= end && end <= 65535 ? { start, end } : LINUX_EPHEMERAL_RANGE;
+}
+
 /** Read live occupancy via the target's executor, then pick a free host port. */
 export async function allocateHostPort(
   executor: CommandExecutor,
@@ -79,5 +121,6 @@ export async function allocateHostPort(
   if (scan.scanned) {
     for (const l of scan.listeners) if (l.proto === "tcp") occupied.add(l.port);
   }
-  return { port: pickHostPort(occupied, opts), scanned: scan.scanned };
+  const ephemeralRange = opts.ephemeralRange ?? (await readEphemeralPortRange(executor));
+  return { port: pickHostPort(occupied, { ...opts, ephemeralRange }), scanned: scan.scanned };
 }
