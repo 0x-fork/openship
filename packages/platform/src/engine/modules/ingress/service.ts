@@ -353,6 +353,12 @@ export async function reconcileConnection(snapshot: IngressConnection): Promise<
         try {
           const api = await provider(c);
           if (c.status === "removing") {
+            // Creation may have succeeded before its response or DB receipt was lost.
+            // Recover by the setup's unique name without creating a tunnel during cleanup.
+            if (c.managedTunnel && !c.tunnelId) {
+              const found = await api.findTunnel(c.name);
+              if (found) c = await repos.ingress.update(c.id, { tunnelId: found.id });
+            }
             for (const host of await repos.ingress.hosts(c.id))
               if (host.status !== "removing" || host.nextAttemptAt.getTime() <= Date.now())
                 await reconcileHostname({ ...host, status: "removing" });
@@ -469,6 +475,12 @@ export async function reconcileHostname(snapshot: IngressHostname): Promise<void
             snapshot.status === "removing" ||
             currentConnection.status === "removing" ||
             domain.hostname !== host.hostname;
+          if (
+            !removing &&
+            host.nextAttemptAt.getTime() > Date.now() &&
+            host.updatedAt.getTime() !== snapshot.updatedAt.getTime()
+          )
+            return;
           const ownership = structuredClone(host.ownership);
           const save = async (value: typeof ownership, phase: string) => {
             await repos.ingress.updateHost(host!.id, { ownership: structuredClone(value), phase });

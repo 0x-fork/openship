@@ -153,11 +153,14 @@ export class CloudflareIngress {
       );
     return tunnel;
   }
-  async createTunnel(name: string): Promise<Tunnel> {
+  async findTunnel(name: string): Promise<Tunnel | undefined> {
     const matches = (await this.tunnels()).filter((t) => t.name === name);
     if (matches.length > 1) conflict("Several tunnels match this setup. Select one explicitly.");
+    return matches[0];
+  }
+  async createTunnel(name: string): Promise<Tunnel> {
     return (
-      matches[0] ??
+      (await this.findTunnel(name)) ??
       this.get<Tunnel>("/cfd_tunnel", {
         method: "POST",
         body: JSON.stringify({ name, config_src: "cloudflare" }),
@@ -278,6 +281,23 @@ export class CloudflareIngress {
     remove = false,
   ): Promise<void> {
     const records = await this.records(host, ownership);
+    // A name-filtered list cannot distinguish deletion from a manual rename.
+    // Keep the ownership receipt until a lookup by its saved ID confirms absence.
+    if (ownership.dnsId && !records.some((r) => r.id === ownership.dnsId)) {
+      let existing: DnsRecord | undefined;
+      try {
+        existing = await cloudflareFetch<DnsRecord>(
+          this.token,
+          `/zones/${ownership.zoneId}/dns_records/${encodeURIComponent(ownership.dnsId)}`,
+        );
+      } catch (error) {
+        if (!(error instanceof CloudflareApiError && error.providerStatus === 404)) throw error;
+      }
+      if (existing)
+        conflict(
+          `The DNS record for ${host.hostname} was moved or changed outside Openship. Restore it or remove it before retrying.`,
+        );
+    }
     const marker = this.marker(host),
       content = `${connection.tunnelId}.cfargotunnel.com`;
     const ours = records.filter(
@@ -384,7 +404,12 @@ export class CloudflareIngress {
         app.type !== "self_hosted" ||
         app.destinations?.some((d) => d.uri !== host.hostname || d.overrides?.length) ||
         app.self_hosted_domains?.some((d) => d !== host.hostname) ||
-        policyIds(app).some((id) => id !== ownership.appPolicyId && id !== host.accessPolicyId))
+        policyIds(app).some(
+          (id) =>
+            id !== ownership.appPolicyId &&
+            id !== ownership.appNextPolicyId &&
+            id !== host.accessPolicyId,
+        ))
     )
       conflict(
         `The Access application for ${host.hostname} changed outside Openship. Review it before retrying.`,
@@ -393,11 +418,10 @@ export class CloudflareIngress {
       conflict(
         `An existing Access application covers ${host.hostname}. Openship will not replace or adopt it.`,
       );
-    if (!app) {
-      ownership.appIntent = true;
+    if (!app || canonical(policyIds(app)) !== canonical([host.accessPolicyId])) {
+      if (!app) ownership.appIntent = true;
+      ownership.appNextPolicyId = host.accessPolicyId;
       await save(ownership, "access");
-    }
-    if (!app || canonical(policyIds(app)) !== canonical([host.accessPolicyId]))
       app = await this.get<AccessApp>(`/access/apps${app ? `/${app.id}` : ""}`, {
         method: app ? "PUT" : "POST",
         body: JSON.stringify({
@@ -409,6 +433,7 @@ export class CloudflareIngress {
           policies: [{ id: host.accessPolicyId, precedence: 1 }],
         }),
       });
+    }
     if (app?.id) app = await this.hydrateApp(app);
     if (!app?.id || !app.aud || canonical(policyIds(app)) !== canonical([host.accessPolicyId]))
       throw new CloudflareApiError(
@@ -418,6 +443,7 @@ export class CloudflareIngress {
     ownership.appId = app.id;
     ownership.appAud = app.aud;
     ownership.appPolicyId = host.accessPolicyId;
+    delete ownership.appNextPolicyId;
     ownership.teamName = teamName;
     await save(ownership, "tunnel");
   }
@@ -441,7 +467,12 @@ export class CloudflareIngress {
         app.type !== "self_hosted" ||
         app.destinations?.some((d) => d.uri !== host.hostname || d.overrides?.length) ||
         app.self_hosted_domains?.some((d) => d !== host.hostname) ||
-        policyIds(app).some((id) => id !== ownership.appPolicyId && id !== host.accessPolicyId)
+        policyIds(app).some(
+          (id) =>
+            id !== ownership.appPolicyId &&
+            id !== ownership.appNextPolicyId &&
+            id !== host.accessPolicyId,
+        )
       )
         conflict(
           `The Access application for ${host.hostname} changed outside Openship. It has been retained for review.`,
@@ -453,6 +484,7 @@ export class CloudflareIngress {
     delete ownership.appAud;
     delete ownership.appIntent;
     delete ownership.appPolicyId;
+    delete ownership.appNextPolicyId;
     delete ownership.teamName;
     await save(ownership, "ready");
   }

@@ -58,12 +58,21 @@ beforeEach(() => {
           records.push(result);
         } else result = records.filter((r) => r.name === u.searchParams.get("name"));
       } else if (path.startsWith("/zones/zone/dns_records/")) {
-        records = records.filter((r) => r.id !== path.split("/").at(-1));
-        result = {};
+        if (method === "GET") {
+          result = records.find((r) => r.id === path.split("/").at(-1));
+          if (!result)
+            return new Response(
+              JSON.stringify({ success: false, errors: [{ message: "Not found" }] }),
+              { status: 404 },
+            );
+        } else {
+          records = records.filter((r) => r.id !== path.split("/").at(-1));
+          result = {};
+        }
       } else if (path.endsWith("/access/organizations"))
         result = { auth_domain: "myteam.cloudflareaccess.com" };
-      else if (path.endsWith("/access/policies/policy"))
-        result = { id: "policy", name: "Team", decision: "allow" };
+      else if (path.includes("/access/policies/"))
+        result = { id: path.split("/").at(-1), name: "Team", decision: "allow" };
       else if (path.endsWith("/access/apps")) {
         if (method === "POST") {
           result = { id: `app-${apps.length}`, aud: "audience", ...body };
@@ -328,5 +337,53 @@ describe("named tunnel recovery", () => {
     expect(state.value.rule).toBeUndefined();
     await api.deleteTunnel("tunnel", "Already gone");
     expect(fetch.mock.calls).toHaveLength(2);
+  });
+});
+
+describe("interrupted protection and DNS changes", () => {
+  it("cleans a created Access app after losing its response and disabling protection", async () => {
+    const state = ledger(),
+      api = new CloudflareIngress("secret", "account");
+    failAfterWrite = "/accounts/account/access/apps";
+    await expect(
+      api.access({ ...h, accessPolicyId: "policy" }, state.value, state.save),
+    ).rejects.toThrow();
+    expect(apps).toHaveLength(1);
+    expect(state.value.appNextPolicyId).toBe("policy");
+    await api.removeAccess(h, state.value, state.save);
+    expect(apps).toHaveLength(0);
+    expect(state.value.appNextPolicyId).toBeUndefined();
+  });
+  it("retains both policy receipts when a policy update response is lost", async () => {
+    const state = ledger(),
+      api = new CloudflareIngress("secret", "account");
+    await api.access({ ...h, accessPolicyId: "policy" }, state.value, state.save);
+    failAfterWrite = `/accounts/account/access/apps/${state.value.appId}`;
+    await expect(
+      api.access({ ...h, accessPolicyId: "new-policy" }, state.value, state.save),
+    ).rejects.toThrow();
+    expect(state.value).toMatchObject({ appPolicyId: "policy", appNextPolicyId: "new-policy" });
+    await api.removeAccess(h, state.value, state.save);
+    expect(apps).toHaveLength(0);
+  });
+  it("retains a DNS record renamed outside Openship instead of forgetting its ownership", async () => {
+    const state = ledger({ zoneId: "zone" }),
+      api = new CloudflareIngress("secret", "account");
+    await api.dns(h, c, state.value, state.save);
+    records[0].name = "moved.example.test";
+    await expect(api.dns(h, c, state.value, state.save)).rejects.toThrow(/moved or changed/);
+    await expect(api.dns(h, c, state.value, state.save, true)).rejects.toThrow(/moved or changed/);
+    expect(records).toHaveLength(1);
+    expect(state.value.dnsId).toBe(records[0].id);
+  });
+  it("finishes DNS removal after its delete succeeded but the response was lost", async () => {
+    const state = ledger({ zoneId: "zone" }),
+      api = new CloudflareIngress("secret", "account");
+    await api.dns(h, c, state.value, state.save);
+    failAfterWrite = `/zones/zone/dns_records/${state.value.dnsId}`;
+    await expect(api.dns(h, c, state.value, state.save, true)).rejects.toThrow();
+    expect(records).toHaveLength(0);
+    await api.dns(h, c, state.value, state.save, true);
+    expect(state.value.dnsId).toBeUndefined();
   });
 });

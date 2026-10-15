@@ -8,6 +8,8 @@ export interface IngressOwnership {
   appId?: string;
   appAud?: string;
   appPolicyId?: string;
+  /** Policy write intent survives a lost provider response and later disconnection. */
+  appNextPolicyId?: string;
   teamName?: string;
   /** Last accepted provider state. Write intent is saved BEFORE an external call. */
   rule?: Record<string, unknown>;

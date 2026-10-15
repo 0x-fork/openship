@@ -328,6 +328,11 @@ export async function reconcileProjectRoutes(
       const proxy = sanitizeProxySettings(project.routingConfig?.proxy);
       const successfulPublishes: ObservedLoopbackPublish[] = [];
 
+      const externalHosts = new Set(
+        (registers.length ? await repos.domain.listByProject(project.id) : [])
+          .filter(d => d.externalIngress).map(d => d.hostname),
+      );
+
       for (const r of removes) {
         await routing
           .removeRoute(r.hostname)
@@ -338,10 +343,6 @@ export async function reconcileProjectRoutes(
           );
       }
 
-      const externalHosts = new Set(
-        (registers.length ? await repos.domain.listByProject(project.id) : [])
-          .filter(d => d.externalIngress).map(d => d.hostname),
-      );
       for (const r of registers) {
         // Root routes need an upstream or static files. Explicit path tables
         // deliberately have neither: their unmatched requests return 404.

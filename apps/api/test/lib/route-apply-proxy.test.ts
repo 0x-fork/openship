@@ -141,3 +141,15 @@ it("serves externally terminated domains over HTTP without an origin HTTPS redir
  await reconcileProjectRoutes(project(),{routing,registers:[{...REGISTER[0],isCustomDomain:true}]});
  expect(registerRoute).toHaveBeenCalledWith(expect.objectContaining({domain:"app.example.com",tls:false,terminatesTlsLocally:false}));
 });
+
+it("checks stored ingress mode before removing any live route",async()=>{
+  vi.mocked(repos.domain.listByProject).mockRejectedValueOnce(new Error("domain inventory unavailable"));
+  const removeRoute=vi.fn(),registerRoute=vi.fn();
+  await expect(reconcileProjectRoutes(project(),{
+    routing:{removeRoute,registerRoute} as never,
+    registers:REGISTER,
+    removes:[{hostname:"old.example.com"}],
+  })).rejects.toThrow("domain inventory unavailable");
+  expect(removeRoute).not.toHaveBeenCalled();
+  expect(registerRoute).not.toHaveBeenCalled();
+});

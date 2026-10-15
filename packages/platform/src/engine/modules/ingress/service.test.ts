@@ -184,6 +184,12 @@ beforeEach(async () => {
         return response(records);
       }
       if (path === "/zones/zone/dns_records/record") {
+        if (method === "GET")
+          return records.length
+            ? response(records[0])
+            : new Response(JSON.stringify({ success: false, errors: [{ message: "Not found" }] }), {
+                status: 404,
+              });
         records = [];
         return response({});
       }
@@ -298,5 +304,74 @@ describe("domain lifecycle through the real database and Cloudflare adapter", ()
     expect(calls).toHaveLength(0);
     expect(await h.repos.ingress.list("org")).toEqual([]);
     vi.unstubAllEnvs();
+  });
+});
+
+describe("cancelled and stale reconciliation recovery", () => {
+  it("recovers and deletes a created tunnel when its creation response was lost before disconnect", async () => {
+    let remote: { id: string; name: string; config_src: string } | null = null;
+    const fetch = vi.fn(async (url: string, init: RequestInit = {}) => {
+      const path = new URL(url).pathname,
+        method = init.method ?? "GET";
+      if (path.endsWith("/cfd_tunnel")) {
+        if (method === "POST") {
+          remote = { id: "created-tunnel", ...JSON.parse(init.body as string) };
+          throw new Error("response lost");
+        }
+        return response(remote ? [remote] : []);
+      }
+      if (path.endsWith("/configurations"))
+        return response({ config: { ingress: [{ service: "http_status:404" }] } });
+      if (path.endsWith("/cfd_tunnel/created-tunnel")) {
+        if (method === "DELETE") {
+          remote = null;
+          return response({});
+        }
+        return response(remote);
+      }
+      throw new Error("Unexpected fixture request");
+    });
+    vi.stubGlobal("fetch", fetch);
+    const c = await ingress.connect(ctx, {
+      ...input,
+      tunnelId: undefined,
+      defaultAccessPolicyId: undefined,
+      defaultForDomains: false,
+    });
+    await h.background.shift()!();
+    expect(await h.repos.ingress.get("org", c.id)).toMatchObject({
+      status: "error",
+      tunnelId: null,
+    });
+    expect(remote).not.toBeNull();
+    await ingress.disconnect(ctx, c.id);
+    await h.background.shift()!();
+    expect(remote).toBeNull();
+    expect(await h.repos.ingress.get("org", c.id)).toBeUndefined();
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(h.execute).not.toHaveBeenCalled();
+  });
+  it("does not let a queued old sweep override a newer failure's backoff", async () => {
+    await setup();
+    const d = await h.repos.domain.create({
+      projectId: "project",
+      hostname: "stale.example.test",
+      domainType: "custom",
+    });
+    const snapshot = await h.repos.ingress.forDomain(d.id);
+    await h.repos.ingress.updateHost(snapshot.id, {
+      status: "error",
+      error: "Newer failure",
+      nextAttemptAt: new Date(Date.now() + 60_000),
+    });
+    // Explicit timestamps make the queued-worker ordering independent of clock resolution.
+    snapshot.updatedAt = new Date(0);
+    const count = calls.length;
+    await ingress.reconcileHostname(snapshot);
+    expect(calls).toHaveLength(count);
+    expect(await h.repos.ingress.host(snapshot.id)).toMatchObject({
+      status: "error",
+      error: "Newer failure",
+    });
   });
 });

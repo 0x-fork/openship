@@ -4,6 +4,7 @@ import { createDatabase } from "./connection";
 import { createDomainRepo } from "./repos/domain.repo";
 import { createIngressRepo } from "./repos/ingress.repo";
 import * as s from "./schema";
+import { createTransferReader, selectProjectTransfer } from "./project-transfer";
 let connection: Awaited<ReturnType<typeof createDatabase>>;
 let domains: ReturnType<typeof createDomainRepo>, ingress: ReturnType<typeof createIngressRepo>;
 beforeAll(async () => {
@@ -20,15 +21,13 @@ beforeAll(async () => {
     { id: "manual", organizationId: "org", name: "Manual", sshHost: "192.0.2.2" },
     { id: "foreign", organizationId: "other", sshHost: "192.0.2.3" },
   ]);
-  await db
-    .insert(s.credential)
-    .values({
-      id: "credential",
-      organizationId: "org",
-      provider: "cloudflare",
-      name: "Cloudflare",
-      secretsEnc: "enc1:fake",
-    });
+  await db.insert(s.credential).values({
+    id: "credential",
+    organizationId: "org",
+    provider: "cloudflare",
+    name: "Cloudflare",
+    secretsEnc: "enc1:fake",
+  });
   await db.insert(s.projectGroup).values([
     { id: "group", organizationId: "org", name: "App", slug: "app" },
     { id: "foreign-group", organizationId: "other", name: "Other", slug: "other" },
@@ -173,5 +172,21 @@ describe("managed ingress durable lifecycle", () => {
     expect(row.externalIngress).toBe(false);
     expect(await ingress.forDomain(row.id)).toBeUndefined();
     expect((await ingress.hosts("connection")).length).toBeGreaterThan(0);
+  });
+});
+
+it("blocks a project export through its real domain-to-hostname foreign keys", async () => {
+  await expect(
+    selectProjectTransfer(createTransferReader(connection.db), {
+      scope: "projects",
+      projectIds: ["project"],
+      history: [],
+      includeEnvironments: false,
+      includeLinkedProjects: false,
+      includeIntegrations: false,
+    }),
+  ).rejects.toMatchObject({
+    statusCode: 409,
+    message: expect.stringContaining("Disconnect managed Cloudflare hostnames"),
   });
 });
