@@ -528,9 +528,13 @@ async function teardownProjectLocked(
     throw error;
   } finally {
     if (!rowDeleted) {
+      // Promotion uses its confirmed receipt to preserve/review both copies;
+      // release that operation's transient configuration fence on failure.
+      // It must not reopen a prior ordinary deletion, including after a crash.
       const retainIntent =
-        destructiveStarted ||
-        (preload?.organizationId === ctx.organizationId && preload.deletionInProgress);
+        (destructiveStarted && !opts.validateConfiguration) ||
+        (preload?.organizationId === ctx.organizationId && preload.deletionInProgress &&
+          (Boolean(preload.deletionError) || !preload.cloudPromotion?.cleanupInProgress));
       const failure =
         unexpectedFailure ||
         steps
