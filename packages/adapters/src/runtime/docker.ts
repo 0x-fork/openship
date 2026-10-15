@@ -36,6 +36,7 @@ import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker
 import * as tarFs from "tar-fs";
 import { randomUUID } from "node:crypto";
 import { projectBuildKitWorker, removeProjectBuildKitWorker } from "./docker-buildkit-worker";
+import { readSoftwareCache } from "./docker-software-cache";
 import {
   DEFAULT_BUILD_CACHE_KEEP_BYTES, DOCKER_BUILD_STORAGE_COMMAND, parseBuildStorage,
   assertBuildStorage, buildStorageReserve, buildKitCacheConfig,
@@ -1772,6 +1773,9 @@ export class DockerRuntime implements RuntimeAdapter {
       `${labelArgs} ${buildArgs} .`;
     let bootstrapBuilder: (() => Promise<void>) | undefined;
     if (isolatedBuildKit) {
+      const software = await readSoftwareCache(executor, `${remoteBuildDir}/${dockerfileName || "Dockerfile"}`, signal);
+      if (software.args) log.log("Shared public build images are available; private build cache remains project-owned.\n");
+      else if (software.unavailable) log.log("Shared build images are unavailable; using the normal build cache.\n", "warn");
       const driverOptions = [
         ...(cloudLimits.memory ? [`memory=${cloudLimits.memory}`, `memory-swap=${cloudLimits.memory}`] : []),
         ...(cloudLimits.cpuquota ? [`cpu-quota=${cloudLimits.cpuquota}`, `cpu-period=${cloudLimits.cpuperiod}`] : []),
@@ -1800,7 +1804,7 @@ export class DockerRuntime implements RuntimeAdapter {
         "set -e",
         `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
         `cd ${sq(remoteBuildDir)}`,
-        `docker buildx build --builder ${sq(builderName!)} --load --progress=plain -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
+        `docker buildx build --builder ${sq(builderName!)} --load --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
       ].join("\n");
       log.log(Object.keys(cloudLimits!).length > 0
         ? `Build worker limited to ${describeResourceLimits(config.resources)}.\n`
