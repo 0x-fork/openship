@@ -308,49 +308,69 @@ describe("domain lifecycle through the real database and Cloudflare adapter", ()
 });
 
 describe("cancelled and stale reconciliation recovery", () => {
-  it("recovers and deletes a created tunnel when its creation response was lost before disconnect", async () => {
-    let remote: { id: string; name: string; config_src: string } | null = null;
-    const fetch = vi.fn(async (url: string, init: RequestInit = {}) => {
-      const path = new URL(url).pathname,
-        method = init.method ?? "GET";
-      if (path.endsWith("/cfd_tunnel")) {
-        if (method === "POST") {
-          remote = { id: "created-tunnel", ...JSON.parse(init.body as string) };
-          throw new Error("response lost");
+  it.each(["null", "absent", "empty", "unreadable"] as const)(
+    "recovers cancellation after a lost tunnel create response (%s configuration)",
+    async (configuration) => {
+      let remote: { id: string; name: string; config_src: string } | null = null;
+      const fetch = vi.fn(async (url: string, init: RequestInit = {}) => {
+        const path = new URL(url).pathname,
+          method = init.method ?? "GET";
+        if (path.endsWith("/cfd_tunnel")) {
+          if (method === "POST") {
+            remote = { id: "created-tunnel", ...JSON.parse(init.body as string) };
+            throw new Error("response lost");
+          }
+          return response(remote ? [remote] : []);
         }
-        return response(remote ? [remote] : []);
-      }
-      if (path.endsWith("/configurations"))
-        return response({ config: { ingress: [{ service: "http_status:404" }] } });
-      if (path.endsWith("/cfd_tunnel/created-tunnel")) {
-        if (method === "DELETE") {
-          remote = null;
-          return response({});
+        if (path.endsWith("/configurations")) {
+          if (configuration === "absent")
+            return new Response(
+              JSON.stringify({ success: false, errors: [{ message: "Not found" }] }),
+              { status: 404 },
+            );
+          return response({
+            config:
+              configuration === "null" ? null : configuration === "empty" ? { ingress: [] } : {},
+          });
         }
-        return response(remote);
+        if (path.endsWith("/cfd_tunnel/created-tunnel")) {
+          if (method === "DELETE") {
+            remote = null;
+            return response({});
+          }
+          return response(remote);
+        }
+        throw new Error("Unexpected fixture request");
+      });
+      vi.stubGlobal("fetch", fetch);
+      const c = await ingress.connect(ctx, {
+        ...input,
+        tunnelId: undefined,
+        defaultAccessPolicyId: undefined,
+        defaultForDomains: false,
+      });
+      await h.background.shift()!();
+      expect(await h.repos.ingress.get("org", c.id)).toMatchObject({
+        status: "error",
+        tunnelId: null,
+      });
+      expect(remote).not.toBeNull();
+      await ingress.disconnect(ctx, c.id);
+      await h.background.shift()!();
+      if (configuration === "unreadable") {
+        expect(remote).not.toBeNull();
+        expect(await h.repos.ingress.get("org", c.id)).toMatchObject({
+          status: "removing",
+          error: expect.stringContaining("configuration could not be read"),
+        });
+      } else {
+        expect(remote).toBeNull();
+        expect(await h.repos.ingress.get("org", c.id)).toBeUndefined();
       }
-      throw new Error("Unexpected fixture request");
-    });
-    vi.stubGlobal("fetch", fetch);
-    const c = await ingress.connect(ctx, {
-      ...input,
-      tunnelId: undefined,
-      defaultAccessPolicyId: undefined,
-      defaultForDomains: false,
-    });
-    await h.background.shift()!();
-    expect(await h.repos.ingress.get("org", c.id)).toMatchObject({
-      status: "error",
-      tunnelId: null,
-    });
-    expect(remote).not.toBeNull();
-    await ingress.disconnect(ctx, c.id);
-    await h.background.shift()!();
-    expect(remote).toBeNull();
-    expect(await h.repos.ingress.get("org", c.id)).toBeUndefined();
-    expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
-    expect(h.execute).not.toHaveBeenCalled();
-  });
+      expect(fetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+      expect(h.execute).not.toHaveBeenCalled();
+    },
+  );
   it("does not let a queued old sweep override a newer failure's backoff", async () => {
     await setup();
     const d = await h.repos.domain.create({
@@ -365,7 +385,7 @@ describe("cancelled and stale reconciliation recovery", () => {
       nextAttemptAt: new Date(Date.now() + 60_000),
     });
     // Explicit timestamps make the queued-worker ordering independent of clock resolution.
-    snapshot.updatedAt = new Date(0);
+    snapshot.nextAttemptAt = new Date(0);
     const count = calls.length;
     await ingress.reconcileHostname(snapshot);
     expect(calls).toHaveLength(count);

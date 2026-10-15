@@ -170,25 +170,28 @@ export class CloudflareIngress {
   tokenForTunnel(id: string): Promise<string> {
     return this.get<string>(`/cfd_tunnel/${encodeURIComponent(id)}/token`);
   }
-  async config(id: string): Promise<TunnelConfig> {
-    const response = await this.get<{ config: TunnelConfig }>(
+  private async configuration(id: string): Promise<TunnelConfig | null> {
+    const response = await this.get<{ config: TunnelConfig | null }>(
       `/cfd_tunnel/${encodeURIComponent(id)}/configurations`,
     );
+    if (response?.config === null) return null;
     if (!response?.config || !Array.isArray(response.config.ingress))
       throw new CloudflareApiError(502, "The tunnel configuration could not be read.");
     return response.config;
   }
+  async config(id: string): Promise<TunnelConfig> {
+    const config = await this.configuration(id);
+    if (!config) throw new CloudflareApiError(502, "The tunnel has no configuration yet.");
+    return config;
+  }
   async initializeTunnel(id: string): Promise<void> {
     let config: TunnelConfig | null;
     try {
-      config = (await this.get<{ config: TunnelConfig | null }>(`/cfd_tunnel/${id}/configurations`))
-        .config;
+      config = await this.configuration(id);
     } catch (error) {
       if (error instanceof CloudflareApiError && error.providerStatus === 404) config = null;
       else throw error;
     }
-    if (config && !Array.isArray(config.ingress))
-      throw new CloudflareApiError(502, "The tunnel configuration could not be read.");
     if (config?.ingress.length) return;
     await this.get(`/cfd_tunnel/${id}/configurations`, {
       method: "PUT",
@@ -498,8 +501,14 @@ export class CloudflareIngress {
     }
     if (tunnel.name !== name)
       conflict("This tunnel was renamed outside Openship. It has been retained for review.");
-    const config = await this.config(id);
-    if (config.ingress.some((r) => r.hostname || r.path || r.service !== "http_status:404"))
+    let config: TunnelConfig | null;
+    try {
+      config = await this.configuration(id);
+    } catch (error) {
+      if (error instanceof CloudflareApiError && error.providerStatus === 404) config = null;
+      else throw error;
+    }
+    if (config?.ingress.some((r) => r.hostname || r.path || r.service !== "http_status:404"))
       conflict(
         "The tunnel still contains routes created outside Openship. Remove those routes before disconnecting.",
       );

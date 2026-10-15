@@ -229,7 +229,7 @@ export function createIngressRepo(db: Database) {
           ),
         )
         .orderBy(
-          sql`case when ${ingressHostname.domainId} is null and ${ingressHostname.status} = 'ready' then 0 else 1 end`,
+          sql`case when (${ingressHostname.domainId} is null and ${ingressHostname.status} = 'ready') or ${ingressHostname.status} = 'removing' then 0 when ${ingressHostname.status} = 'ready' then 2 else 1 end`,
           ingressHostname.nextAttemptAt,
         )
         .limit(limit),

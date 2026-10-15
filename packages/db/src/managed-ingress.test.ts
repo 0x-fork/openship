@@ -190,3 +190,28 @@ it("blocks a project export through its real domain-to-hostname foreign keys", a
     message: expect.stringContaining("Disconnect managed Cloudflare hostnames"),
   });
 });
+
+it("prioritizes newly queued setup over old periodic drift checks", async () => {
+  await ingress.update("connection", { status: "ready", defaultForDomains: true });
+  const drift = await domains.create({
+    projectId: "project",
+    hostname: "drift-queue.example.test",
+    domainType: "custom",
+  });
+  const setup = await domains.create({
+    projectId: "project",
+    hostname: "fresh-queue.example.test",
+    domainType: "custom",
+  });
+  const driftHost = (await ingress.forDomain(drift.id))!,
+    setupHost = (await ingress.forDomain(setup.id))!;
+  // Remove earlier fixture work so this is a queue-ordering regression.
+  for (const host of await ingress.hosts("connection"))
+    if (host.id !== driftHost.id && host.id !== setupHost.id)
+      await ingress.updateHost(host.id, {
+        status: "error",
+        nextAttemptAt: new Date(Date.now() + 60_000),
+      });
+  await ingress.updateHost(driftHost.id, { status: "ready", nextAttemptAt: new Date(0) });
+  expect((await ingress.due(1))[0]?.host.id).toBe(setupHost.id);
+});

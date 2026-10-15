@@ -478,7 +478,7 @@ export async function reconcileHostname(snapshot: IngressHostname): Promise<void
           if (
             !removing &&
             host.nextAttemptAt.getTime() > Date.now() &&
-            host.updatedAt.getTime() !== snapshot.updatedAt.getTime()
+            host.nextAttemptAt.getTime() !== snapshot.nextAttemptAt.getTime()
           )
             return;
           const ownership = structuredClone(host.ownership);
