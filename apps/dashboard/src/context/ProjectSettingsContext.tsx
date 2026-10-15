@@ -1070,14 +1070,15 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
       // via the traffic-source resolver (OpenResty mgmt API | Oblien analytics).
       {
         id: "monitoring",
-        label: tl.monitoring,
+        label: tl.monitoringAndLogs,
         icon: "activity",
         // Incidents belong beside metrics. The health watch covers local/SSH
         // workloads; cloud monitoring continues to use its existing adapters.
-        sections: healthAvailable ? [
+        sections: [
           { id: "monitoring", label: tl.monitoring },
-          { id: "health", label: tl.health },
-        ] : undefined,
+          { id: "logs", label: tl.logs },
+          ...(healthAvailable ? [{ id: "health", label: tl.health }] : []),
+        ],
       },
       {
         id: "source",
@@ -1088,7 +1089,6 @@ const ProjectSettingsState: React.FC<ProviderProps> = ({
           { id: "webhooks", label: tl.webhooks },
         ],
       },
-      { id: "logs", label: tl.logs, icon: "file-text" },
       { id: "backup", label: tl.backup, icon: "database-backup" },
       { id: "advanced", label: tl.settings, icon: "wrench" },
     ];

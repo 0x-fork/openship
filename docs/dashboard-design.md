@@ -230,6 +230,11 @@ use their installed tools and physical CPU.
 
 ## Layout and density
 
+Project navigation groups metrics, runtime/request logs and available Health views
+under **Monitoring & Logs**. Reuse the shared project section tabs above the content
+on desktop and mobile. Keep existing section URLs so saved links and log shortcuts
+open the same view, and show Health only where the project already supports it.
+
 GitHub deployment reporting uses the same compact settings card in Project → Source
 and the shared deploy wizard. Lead with one enabled toggle and a short description;
 keep overall/per-service selection and failure-detail sharing under Customize checks.
