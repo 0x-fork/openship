@@ -468,12 +468,12 @@ export function CustomSelect<T extends string>({
       >
         <span
           className={cn(
-            "flex min-w-0 items-center gap-2",
+            "flex min-w-0 flex-1 items-center gap-2",
             variant !== "default" ? "text-foreground" : "text-foreground/70",
           )}
         >
           {selectedOption && renderOption ? (
-            <span id={`${listId}-value`} className="flex min-w-0 items-center gap-3">
+            <span id={`${listId}-value`} className="flex min-w-0 flex-1 items-center gap-3">
               {renderOption(selectedOption, true)}
             </span>
           ) : selectedOption ? (

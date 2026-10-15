@@ -494,10 +494,11 @@ check retryable before starting the move.
   Distinguish failed cancellation checks (Refresh) from payments without provider-supported
   cancellation (complete the payment or wait for expiry). Show the support link once;
   neither condition may clear a payable checkout or allow a competing subscription.
-- Monthly servers show purchased resources, paid-through coverage and measured CPU time;
+- Monthly Cloud spaces show purchased resources, paid-through coverage and measured CPU time;
   they have no compute-credit donut, exhaustion alert or credit top-up action. Keep optional
   managed proxy transfer and retained-storage charges distinct from compute coverage, with
-  details in a compact disclosure. Existing metered subscriptions retain their credit view.
+  details in a compact disclosure. Put Monthly coverage after the main billing overview and
+  usage guide, so plan capacity and usage lead the page. Existing metered subscriptions retain their credit view.
   Prepaid PAYG shows package amounts beside their credit value, using the provider's
   conversion and published resource rates. Keep the Openship resource tiers inside the
   resource card, using compact shared tabs above its inputs. Present the selected tier's
@@ -589,7 +590,11 @@ Cloud navigation and the page heading use **Cloud spaces**. Each independently p
 is presented as a **Cloud space**: show measured CPU, memory and storage usage
 and assigned projects in Overview, with lifecycle progress in Activity. Put the compact Cloud space
 dropdown in the 340px right column above plan capacity. The picker shows the selected name,
-plan, project count and state; other choices appear only when opened. On narrow screens,
+plan and project count, with a compact status ring at the right of the selected row instead
+of a separate badge below. Keep a readable status label for assistive technology and hover.
+Use the shared cloud icon for managed destinations and Cloud spaces navigation. Activity
+explains setup, capacity changes and recovery, with Cloud space wording in its progress logs.
+Other choices appear only when opened. On narrow screens,
 place the picker before usage and keep plan capacity below the main content. Spaces are deployment destinations using existing purchased workspace identities,
 not organization workspaces or combined capacity. Keep resource and billing actions on the existing billing flow.
 
