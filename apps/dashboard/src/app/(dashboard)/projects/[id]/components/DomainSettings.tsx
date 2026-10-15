@@ -34,6 +34,8 @@ import {
 } from "@/hooks/useSystemPrepareModal";
 import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import DropdownMenu, { type MenuAction } from "@/components/ui/DropdownMenu";
+import { CustomSelect } from "@/components/ui/CustomSelect";
+import { ServiceIcon } from "@/components/services/ServiceIcon";
 import {
   createPublicEndpoint,
   ensurePublicEndpoints,
@@ -2582,7 +2584,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
             {renderEdgeControl()}
             <ActionButton
               label={showAddRoute ? t.projectSettings.domains.addRoute.cancel : t.projectSettings.domains.actions.addDomain}
-              icon={"plus"}
+              icon={showAddRoute ? "close" : "plus"}
               disabled={addRouteSaving || servicesLoading || !!servicesData.error}
               onClick={() => {
                 setAddRouteError(null);
@@ -2593,18 +2595,37 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
           {showAddRoute && (
             <form onSubmit={(event) => { event.preventDefault(); void handleAddRoute(); }} className="mb-4 space-y-3 rounded-xl border border-border/50 bg-muted/20 p-4">
               {!serviceScope && (
-                <select aria-label={t.projectDetail.services.detail.networking.service}
-                  value={addRouteServiceId} disabled={addRouteSaving || servicesLoading}
-                  onChange={(event) => {
-                    const service = services.find((item) => item.id === event.target.value);
-                    setAddRouteServiceId(event.target.value);
+                <CustomSelect
+                  aria-label={t.projectDetail.services.detail.networking.service}
+                  variant="filled"
+                  triggerClassName="bg-muted/60 hover:bg-muted"
+                  value={addRouteServiceId}
+                  disabled={addRouteSaving || servicesLoading}
+                  placeholder={t.projectDetail.services.detail.networking.selectService}
+                  options={[
+                    { value: "", label: t.projectDetail.services.detail.networking.selectService },
+                    ...services.map((service) => ({
+                      value: service.id,
+                      label: service.name,
+                      icon: <ServiceIcon service={service} className="size-4 shrink-0" />,
+                      description: [
+                        service.image,
+                        servicePortTargets(service, baseDomain)
+                          .filter((target) => target.port)
+                          .map((target) => `${target.port}/${target.protocol}`)
+                          .join(", "),
+                      ]
+                        .filter(Boolean)
+                        .join(" · "),
+                    })),
+                  ]}
+                  onChange={(value) => {
+                    const service = services.find((item) => item.id === value);
+                    setAddRouteServiceId(value);
                     const port = service && servicePortTargets(service, baseDomain).find((target) => target.protocol === "tcp" && target.port)?.port;
                     setAddRouteDraft((draft) => ({ ...draft, port: port ? String(port) : "" }));
                   }}
-                  className="h-10 w-full rounded-xl border border-border/50 bg-background px-3 text-sm text-foreground outline-none focus:border-primary/40">
-                  <option value="">{t.projectDetail.services.detail.networking.selectService}</option>
-                  {services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
-                </select>
+                />
               )}
               <div className="flex items-center gap-2">
                 {(["free", "custom"] as const).map((type) => (
