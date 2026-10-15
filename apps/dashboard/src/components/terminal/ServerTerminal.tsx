@@ -234,6 +234,13 @@ export const ServerTerminal = forwardRef<ServerTerminalHandle, ServerTerminalPro
         /* WebGL not available → default DOM renderer, still fully works */
       }
 
+      // Unmounted while the WebGL addon loaded: the effect cleanup already
+      // ran, so nothing would dispose this terminal later.
+      if (cancelled || !containerRef.current) {
+        terminal.dispose();
+        return;
+      }
+
       xtermRef.current = terminal;
       fitAddonRef.current = fitAddon;
 
