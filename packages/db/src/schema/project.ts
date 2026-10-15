@@ -499,10 +499,13 @@ export const project = pgTable(
     /**
      * Set true at the start of the atomic teardown flow so concurrent
      * requests refuse to operate on the row. The teardown either succeeds
-     * (row hard-deletes — flag disappears with it) or fails (flag is
-     * cleared so the caller can retry). NEVER stays true at rest.
+     * (row hard-deletes — flag disappears with it) or keeps this admission
+     * fence after destructive cleanup starts. The runtime advisory lock owns
+     * execution, so a failed/interrupted teardown can always be retried.
      */
     deletionInProgress: boolean("deletion_in_progress").notNull().default(false),
+    /** Retryable cleanup failure; never reopen a partially destroyed project. */
+    deletionError: text("deletion_error"),
     /** Internal transfer journal; never accepted as a project setting. */
     cloudPromotion: jsonb("cloud_promotion").$type<ProjectCloudPromotion | null>(),
 

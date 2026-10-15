@@ -1634,10 +1634,21 @@ export class DockerRuntime implements RuntimeAdapter {
   protected async clearManagedProjectBuildCache(projectId: string): Promise<void> {
     const executor = this.connectionOptions?.executor;
     if (!executor) return;
-    await this.withBuildCacheLock(() => this.pruneManagedBuildState(executor, { projectId }));
+    await this.withBuildCacheLock(async () => {
+      // An idle BuildKit container still pins its state volume. Teardown owns
+      // project admission; stop its worker only after durable commands drain,
+      // under the same host lock used to bootstrap it.
+      await this.assertBuildCacheCommandsStopped(projectId);
+      await removeProjectBuildKitWorker(executor, projectId);
+      await this.pruneManagedBuildState(executor, { projectId });
+    });
   }
 
   private async pruneManagedBuildState(executor: CommandExecutor, options: { projectId?: string; keepBytes?: number } = {}) {
+    // Docker/exec replies can precede their durable exit acknowledgements.
+    // Otherwise teardown mistakes its own finished inspection/removal commands
+    // for a live build, even when no cache volume exists.
+    await currentManagedCommandTracking()?.flush();
     const protection = await this.connectionOptions?.buildCacheProtection?.();
     return pruneManagedBuildCaches(this.docker, executor, { ...options,
       protectedProjectIds: new Set(protection?.projectIds), protectAll: protection?.all });

@@ -93,6 +93,7 @@ export type ProjectStatusSource = {
   /** True while an atomic teardown is in flight (the real in-progress flag;
    *  teardown hard-deletes on success, so `deletedAt` is rarely set). */
   deletionInProgress?: boolean | null;
+  deletionError?: string | null;
   /** Marks the Openship control-plane self-app. It IS the running host service and
    *  has no deployment behind it, so it must never fall through to "draft". */
   appTemplateId?: string | null;
@@ -150,6 +151,7 @@ const SETTLED_NON_ACTION_STATUSES = new Set(["ready", "cancelled", "rejected", "
 
 /** Why a project reads "attention". Null when it doesn't. */
 export type ProjectAttentionReason =
+  | "deletion"
   /** Live release is a partial failure awaiting the operator's keep/reject. */
   | "decision"
   /** Live release's free .opsh.io edge route didn't sync (Retry routing). */
@@ -186,6 +188,7 @@ export function getProjectAttentionReason(
   project: ProjectStatusSource,
 ): ProjectAttentionReason | null {
   if (project.appTemplateId === "openship") return null;
+  if (project.deletionInProgress && project.deletionError) return "deletion";
   if (project.deletedAt || project.deletionInProgress) return null;
   // Before every deploy-derived reason: a parked migration is about the WORKLOAD's location,
   // and it outranks anything the deployment row has to say — the target's own deploy is
@@ -209,6 +212,7 @@ export function getProjectAttentionReason(
 }
 
 export function getProjectStatus(project: ProjectStatusSource): ProjectStatus {
+  if (project.deletionInProgress && project.deletionError) return "attention";
   if (project.deletedAt || project.deletionInProgress) {
     return "deleting";
   }
@@ -319,6 +323,8 @@ export function projectStatusHint(project: ProjectStatusSource, t: Dictionary): 
   if (getProjectStatus(project) !== "attention") return null;
   const p = t.projects;
   switch (getProjectAttentionReason(project)) {
+    case "deletion":
+      return `${p.delete.cleanupFailedTitle} — ${p.delete.retryCleanup}`;
     case "decision":
       return `${p.redeploy.actionRequiredTitle} — ${p.redeploy.reviewDeployment}`;
     case "routing":
@@ -353,6 +359,8 @@ export function projectActionHref(project: ProjectStatusSource): string | null {
   if (!project.id || getProjectStatus(project) !== "attention") return null;
 
   switch (getProjectAttentionReason(project)) {
+    case "deletion":
+      return `/projects/${project.id}`;
     case "decision":
       return project.activeDeploymentId
         ? `/build/${project.activeDeploymentId}`

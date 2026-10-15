@@ -427,3 +427,17 @@ describe("a project with a live migration", () => {
     expect(projectStatusLabel("migrating", en as never)).toBe("Migrating");
   });
 });
+
+it("reports failed deletion ahead of a ready live deployment and links back to its retry", () => {
+  const project = {
+    id: "p1",
+    activeDeploymentId: "d1",
+    latestDeploymentStatus: "ready",
+    deletionInProgress: true,
+    deletionError: "Cache cleanup interrupted",
+  };
+  expect(getProjectStatus(project)).toBe("attention");
+  expect(getProjectAttentionReason(project)).toBe("deletion");
+  expect(projectActionHref(project)).toBe("/projects/p1");
+  expect(projectStatusHint(project, en)).toContain(en.projects.delete.retryCleanup);
+});

@@ -638,6 +638,7 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
         .update(project)
         .set({
           deletionInProgress: true,
+          deletionError: null,
           updatedAt: new Date(),
           ...(opts?.protectConfiguration && {
             cloudPromotion: sql`jsonb_set(${project.cloudPromotion}, '{cleanupInProgress}', 'true'::jsonb)`,
@@ -648,13 +649,25 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       return rows.length > 0;
     },
 
-    /** Release the deletion-in-progress flag — call on every failure path so
-     *  ordinary project writes are admitted again after a partial teardown. */
+    /** Release admission only when teardown rejected before destructive work. */
     async clearDeletionInProgress(id: string) {
       await db
         .update(project)
-        .set({ deletionInProgress: false, cloudPromotion: sql`${project.cloudPromotion} - 'cleanupInProgress'`, updatedAt: new Date() })
+        .set({
+          deletionInProgress: false,
+          deletionError: null,
+          cloudPromotion: sql`${project.cloudPromotion} - 'cleanupInProgress'`,
+          updatedAt: new Date(),
+        })
         .where(eq(project.id, id));
+    },
+
+    /** Caller holds the project runtime lock. A retry reclaims this fence. */
+    async markDeletionFailed(id: string, error: string) {
+      await db
+        .update(project)
+        .set({ deletionInProgress: true, deletionError: error, updatedAt: new Date() })
+        .where(and(eq(project.id, id), isNull(project.deletedAt)));
     },
 
     /**

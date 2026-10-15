@@ -57,6 +57,7 @@ const h = vi.hoisted(() => ({
   claimDeletion: vi.fn(async () => true),
   deleteHard: vi.fn(async () => {}),
   clearDeletionInProgress: vi.fn(async () => {}),
+  markDeletionFailed: vi.fn(async (_id: string, _error: string) => {}),
   listByGroup: vi.fn(async () => [{ id: "p1" }]),
   softDeleteGroup: vi.fn(async () => {}),
   orphanCreate: vi.fn(async (_row: Record<string, unknown>) => ({ id: "orphan-created" })),
@@ -91,6 +92,7 @@ vi.mock("@repo/db", () => ({
       claimDeletion: h.claimDeletion,
       deleteHard: h.deleteHard,
       clearDeletionInProgress: h.clearDeletionInProgress,
+      markDeletionFailed: h.markDeletionFailed,
       listByGroup: h.listByGroup,
     },
     projectGroup: { softDelete: h.softDeleteGroup },
@@ -448,7 +450,8 @@ describe("teardownProject — force-orphan contract", () => {
     expect(result.canForceOrphan).toBe(false);
     expect(h.deleteHard).not.toHaveBeenCalled();
     expect(h.orphanCreate).not.toHaveBeenCalled();
-    expect(h.clearDeletionInProgress).toHaveBeenCalled();
+    expect(h.clearDeletionInProgress).not.toHaveBeenCalled();
+    expect(h.markDeletionFailed).toHaveBeenCalled();
     expect(stepOf(result.steps, "runtime_cleanup")?.error).toContain("provider unavailable");
 
     h.collectProjectManifest.mockResolvedValueOnce({
@@ -621,7 +624,8 @@ describe("teardownProject — cluster namespace cleanup", () => {
     expect(result.canForceOrphan).toBe(false);
     expect(stepOf(result.steps, "runtime_cleanup")?.error).toContain("Persistent storage remains");
     expect(h.deleteHard).not.toHaveBeenCalled();
-    expect(h.clearDeletionInProgress).toHaveBeenCalled();
+    expect(h.clearDeletionInProgress).not.toHaveBeenCalled();
+    expect(h.markDeletionFailed).toHaveBeenCalled();
   });
 });
 
@@ -898,6 +902,43 @@ describe("teardownProject — deferred multi-target cleanup", () => {
     );
     expect(h.deleteHard).not.toHaveBeenCalled();
     expect(h.orphanDelete).toHaveBeenCalledWith("tracked-before-failure");
-    expect(h.clearDeletionInProgress).toHaveBeenCalledWith("p1");
+    expect(h.clearDeletionInProgress).not.toHaveBeenCalled();
+    expect(h.markDeletionFailed).toHaveBeenCalled();
+  });
+});
+
+describe("teardownProject — durable deletion intent", () => {
+  it("keeps failed cleanup fenced and a later retry can finish", async () => {
+    h.project = projectFixture({ activeDeploymentId: "ready-release" });
+    h.collectProjectManifest.mockResolvedValueOnce({
+      projectId: "p1",
+      resources: [{ type: "container", ref: "c1", label: "container c1" }],
+    } as never);
+    h.executeCleanup.mockResolvedValueOnce({
+      total: 1,
+      succeeded: 0,
+      failed: [{ label: "Project storage", error: "cache in use" }],
+    } as never);
+    const failed = await teardownProject(ctx, "p1", { force: false });
+    expect(failed.rowDeleted).toBe(false);
+    expect(h.clearDeletionInProgress).not.toHaveBeenCalled();
+    expect(h.markDeletionFailed).toHaveBeenCalledWith(
+      "p1",
+      expect.stringContaining("cache in use"),
+    );
+    h.project = projectFixture({ deletionInProgress: true, deletionError: "cache in use" });
+    const retry = await teardownProject(ctx, "p1", { force: false });
+    expect(retry.rowDeleted).toBe(true);
+    expect(h.deleteHard).toHaveBeenCalledOnce();
+  });
+
+  it("does not reopen an already partially deleted project when a retry preflight fails", async () => {
+    h.project = projectFixture({ deletionInProgress: true, deletionError: "cleanup interrupted" });
+    h.activeDeploymentReadError = new Error("work table unavailable");
+    await expect(teardownProject(ctx, "p1", { force: false })).rejects.toThrow(
+      "work table unavailable",
+    );
+    expect(h.clearDeletionInProgress).not.toHaveBeenCalled();
+    expect(h.markDeletionFailed).toHaveBeenCalledWith("p1", "work table unavailable");
   });
 });

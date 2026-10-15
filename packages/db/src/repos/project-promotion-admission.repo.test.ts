@@ -389,3 +389,31 @@ describe.skipIf(!postgresUrl)("PostgreSQL promotion admission across connections
     },
   );
 });
+
+it("keeps partial deletion closed to new work, while allowing a locked cleanup retry", async () => {
+  const id = rows.project.id;
+  await repos.project.claimDeletion(id);
+  await repos.project.markDeletionFailed(id, "Cache cleanup interrupted");
+  expect(await repos.project.findById(id)).toMatchObject({
+    deletionInProgress: true,
+    deletionError: "Cache cleanup interrupted",
+  });
+  await expect(
+    repos.service.create({ projectId: id, name: "new", image: "node:22" }),
+  ).rejects.toThrow(/delet/i);
+  await expect(
+    repos.deployment.create({
+      projectId: id,
+      organizationId: orgId,
+      branch: "main",
+      status: "queued",
+    }),
+  ).resolves.toBeUndefined();
+  expect(await repos.project.claimDeletion(id)).toBe(true);
+  expect(await repos.project.findById(id)).toMatchObject({
+    deletionInProgress: true,
+    deletionError: null,
+  });
+  await repos.project.deleteHard(id);
+  expect(await repos.project.findById(id)).toBeUndefined();
+});

@@ -75,6 +75,7 @@ export interface Project {
   /** True while an atomic teardown is in flight — drives the "Deleting" status
    *  in the list (the row is still returned because deletedAt is null). */
   deletionInProgress?: boolean | null;
+  deletionError?: string | null;
 
   /* ── Hosting info (enriched by API) ─────────────────────── */
   favicon?: string | null;

@@ -32,6 +32,8 @@ export const ProjectSchema = Type.Object({
   workspaceId: Type.Optional(nullableString()),
   clusterId: Type.Optional(nullableString()),
   activeDeploymentId: Type.Optional(nullableString()),
+  deletionInProgress: Type.Optional(Type.Boolean()),
+  deletionError: Type.Optional(nullableString()),
   runtimeMode: Type.Optional(nullableString()),
   cloudStaticHosting: EnsureProjectBody.properties.cloudStaticHosting,
   deployTarget: Type.Optional(nullableString()),

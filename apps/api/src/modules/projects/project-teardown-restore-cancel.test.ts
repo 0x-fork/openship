@@ -45,6 +45,7 @@ vi.mock("@repo/db", () => ({
       claimDeletion: vi.fn(async () => true),
       deleteHard: vi.fn(async () => {}),
       clearDeletionInProgress: vi.fn(async () => {}),
+      markDeletionFailed: vi.fn(async () => {}),
       listByGroup: vi.fn(async () => [{ id: "p1" }]),
     },
     projectGroup: { softDelete: vi.fn(async () => {}) },
