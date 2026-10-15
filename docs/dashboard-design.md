@@ -715,12 +715,12 @@ session change. Preserve callback, device mode, state and PKCE parameters, and
 require another explicit Authorize click after either switch.
 
 In the deployment wizard, Include www keeps the two hostnames as normal public
-endpoints. On destinations that support canonical redirects, adding the sibling
-keeps the typed hostname primary and redirects the other with HTTP 301. A filled
+endpoints. On Cloud and self-hosted destinations, adding the sibling keeps the typed
+hostname primary and redirects the other with HTTP 301. A filled
 Domain behavior selector offers either hostname as primary or Serve both. Derive
 that selection from the endpoint redirect fields; do not persist a parallel mode.
 Keep existing choices until explicitly edited. Show the redirect target in the
 collapsed domain row and hide app port/static-path fields for redirect domains.
-Choose a serving hostname for primary metadata. Cloud currently serves both and
-explains that canonical redirects await the managed edge update; determine this
-capability from the deployment destination, including Cloud projects in Desktop.
+Choose a serving hostname for primary metadata. Offer the same choices for Cloud
+projects opened in Desktop and for projects managed directly in Cloud. Provider
+implementation details belong in engineering documentation.

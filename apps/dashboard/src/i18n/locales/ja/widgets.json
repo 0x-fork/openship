@@ -362,8 +362,7 @@
       "serveBothDescription": "両方のホスト名でアプリを配信します。",
       "customRouting": "カスタムルーティング",
       "redirectDomain": "リダイレクトドメイン",
-      "redirectSummary": "{hostname} にリダイレクトします。",
-      "cloudRedirectUnavailable": "Cloud では正規ドメインへのリダイレクトはまだ利用できません。両方のホスト名でアプリを配信できます。"
+      "redirectSummary": "{hostname} にリダイレクトします。"
     },
     "configEditor": {
       "remove": "削除",

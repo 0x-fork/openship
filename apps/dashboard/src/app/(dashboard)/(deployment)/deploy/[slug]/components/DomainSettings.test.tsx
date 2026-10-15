@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createPublicEndpoint, type DeployTarget } from "@/context/deployment/types";
+import { createPublicEndpoint } from "@/context/deployment/types";
 import DomainSettings from "./DomainSettings";
 
 const mocks = vi.hoisted(() => ({ selfHosted: true, picker: vi.fn() }));
@@ -32,19 +32,13 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it.each([
-  [true, "local", true],
-  [true, "server", true],
-  [true, "cloud", false],
-  [false, "cloud", false],
-] as const)(
-  "redirect capability follows the destination (selfHosted=%s, target=%s)",
-  async (selfHosted, deployTarget, allowed) => {
+it.each([true, false])(
+  "offers redirect choices in both hosted and self-hosted shells (selfHosted=%s)",
+  async (selfHosted) => {
     mocks.selfHosted = selfHosted;
     await act(async () =>
       root.render(
         <DomainSettings
-          deployTarget={deployTarget as DeployTarget}
           projectName="site"
           endpoints={[
             createPublicEndpoint({
@@ -62,7 +56,7 @@ it.each([
       ),
     );
     expect(mocks.picker).toHaveBeenLastCalledWith(
-      expect.objectContaining({ allowRedirects: allowed }),
+      expect.objectContaining({ allowRedirects: true }),
     );
   },
 );

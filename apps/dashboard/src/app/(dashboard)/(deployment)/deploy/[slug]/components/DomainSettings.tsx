@@ -5,16 +5,14 @@ import React, { useCallback } from "react";
 import { isValidCustomHostname } from "@repo/core";
 import { getApiErrorMessage, projectsApi } from "@/lib/api";
 import { useToast } from "@/context/ToastContext";
-import { usePlatform } from "@/context/PlatformContext";
 import { useI18n } from "@/components/i18n-provider";
 import { RoutingModePicker, type RoutingMode } from "@/components/routing/RoutingModePicker";
-import { createPublicEndpoint, type DeployTarget, type PublicEndpoint } from "@/context/deployment/types";
+import { createPublicEndpoint, type PublicEndpoint } from "@/context/deployment/types";
 import { validatedPublicEndpointPayload } from "@/lib/public-endpoint-payload";
 import { normalizeSubdomain } from "@/utils/subdomain";
 
 interface DomainSettingsProps {
   projectId?: string;
-  deployTarget: DeployTarget;
   projectName: string;
   endpoints: PublicEndpoint[];
   hasServer: boolean;
@@ -30,7 +28,6 @@ const buildPublicEndpointPayload = validatedPublicEndpointPayload;
 
 const DomainSettings: React.FC<DomainSettingsProps> = ({
   projectId,
-  deployTarget,
   projectName,
   endpoints,
   hasServer,
@@ -41,7 +38,6 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
 }) => {
   const { showToast } = useToast();
   const { t } = useI18n();
-  const { selfHosted } = usePlatform();
 
   const handleChange = useCallback(async (
     nextEndpoints: PublicEndpoint[],
@@ -156,9 +152,7 @@ const DomainSettings: React.FC<DomainSettingsProps> = ({
       hasServer={hasServer}
       runtimePort={runtimePort}
       onEndpointsChange={handleChange}
-      // Capability follows the deployment destination, including Cloud projects
-      // edited from Desktop. Cloud currently serves both without a redirect.
-      allowRedirects={selfHosted && deployTarget !== "cloud"}
+      allowRedirects
     />
   );
 };

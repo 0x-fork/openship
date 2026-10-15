@@ -13,10 +13,8 @@
  *     two-field edit, with nothing in the logs to explain it.
  *   • status restricted to the four redirect codes that make sense here.
  *
- * Self-hosted only. On Openship Cloud the managed edge owns routing, and its
- * redirect primitive currently decodes escaped paths in wildcard captures.
- * `assertRedirectSupported` refuses canonical redirects until the provider can
- * preserve the raw request URI (see docs/oblien-edge-routing-requirements.md).
+ * Local and Cloud edges consume the same validated redirect intent. Each edge
+ * must preserve the original escaped path and query when changing hostnames.
  */
 
 import {
@@ -65,20 +63,6 @@ export function normalizeRedirect(input: RedirectInput): {
   }
 
   return { redirectTo: target, redirectStatus: resolveRedirectStatus(input.redirectStatus) };
-}
-
-/**
- * Openship Cloud check. Kept as its own call (rather than folded into
- * `assertRedirectTargets`) so the message names the real reason: it isn't a
- * validation failure, it's an unsupported capability on that runtime.
- */
-export function assertRedirectSupported(opts: { isCloudProject: boolean; hostname: string }): void {
-  if (opts.isCloudProject) {
-    throw new ValidationError(
-      `Redirects aren't available for projects running on Openship Cloud — the managed edge owns routing for ${opts.hostname}. ` +
-        `Point the extra hostname at the same app instead.`,
-    );
-  }
 }
 
 /**

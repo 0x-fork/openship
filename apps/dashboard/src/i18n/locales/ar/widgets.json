@@ -362,8 +362,7 @@
       "serveBothDescription": "يعرض اسما النطاق التطبيق.",
       "customRouting": "توجيه مخصص",
       "redirectDomain": "نطاق إعادة التوجيه",
-      "redirectSummary": "يعيد التوجيه إلى {hostname}.",
-      "cloudRedirectUnavailable": "إعادة التوجيه إلى نطاق أساسي غير متاحة على السحابة بعد. يمكنك عرض التطبيق على كلا النطاقين."
+      "redirectSummary": "يعيد التوجيه إلى {hostname}."
     },
     "configEditor": {
       "remove": "إزالة",

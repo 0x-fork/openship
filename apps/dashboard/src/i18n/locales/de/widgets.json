@@ -362,8 +362,7 @@
       "serveBothDescription": "Beide Hostnamen stellen die App bereit.",
       "customRouting": "Benutzerdefiniertes Routing",
       "redirectDomain": "Weiterleitungsdomain",
-      "redirectSummary": "Leitet auf {hostname} weiter.",
-      "cloudRedirectUnavailable": "Kanonische Domain-Weiterleitungen sind in Cloud noch nicht verfügbar. Stelle die App unter beiden Hostnamen bereit."
+      "redirectSummary": "Leitet auf {hostname} weiter."
     },
     "configEditor": {
       "remove": "Entfernen",

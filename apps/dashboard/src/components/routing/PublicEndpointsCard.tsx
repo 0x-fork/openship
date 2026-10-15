@@ -537,7 +537,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
                   </button>
                 )}
                 {!allowRedirects ? (
-                  <p className="text-xs text-muted-foreground">{w.cloudRedirectUnavailable}</p>
+                  <p className="text-xs text-muted-foreground">{w.serveBothDescription}</p>
                 ) : (
                   wwwToggle.mode != null && (
                     <p className="text-xs text-muted-foreground">

@@ -89,14 +89,12 @@ it("adds a default redirect, displays its role and switches primary or serves bo
   expect(changed).toHaveBeenCalledTimes(3);
 });
 
-it("does not offer Cloud redirects and explains why both hostnames serve the app", async () => {
+it("serves both without provider-specific copy when a caller disables redirect editing", async () => {
   await act(async () => root.render(<Harness allowRedirects={false} />));
   await click('[role="switch"][aria-label="Include www"]');
   expect(endpoints).toHaveLength(2);
   expect(endpoints.every((e) => !e.redirectTo)).toBe(true);
-  expect(container.textContent).toContain(
-    "Canonical hostname redirects are not available on Cloud yet",
-  );
+  expect(container.textContent).toContain("Both hostnames serve the app.");
   expect(container.querySelector('[aria-label="Domain behavior"]')).toBeNull();
 });
 

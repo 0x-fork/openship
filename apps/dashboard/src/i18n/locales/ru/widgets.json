@@ -362,8 +362,7 @@
       "serveBothDescription": "Приложение доступно по обоим именам хоста.",
       "customRouting": "Своя маршрутизация",
       "redirectDomain": "Домен перенаправления",
-      "redirectSummary": "Перенаправляет на {hostname}.",
-      "cloudRedirectUnavailable": "Перенаправления на основной домен пока недоступны в Cloud. Используйте оба имени хоста для приложения."
+      "redirectSummary": "Перенаправляет на {hostname}."
     },
     "configEditor": {
       "remove": "Удалить",

@@ -362,8 +362,7 @@
       "serveBothDescription": "Ambos os nomes de host servem o aplicativo.",
       "customRouting": "Roteamento personalizado",
       "redirectDomain": "Domínio de redirecionamento",
-      "redirectSummary": "Redireciona para {hostname}.",
-      "cloudRedirectUnavailable": "Redirecionamentos para um domínio principal ainda não estão disponíveis no Cloud. Sirva o aplicativo em ambos os nomes de host."
+      "redirectSummary": "Redireciona para {hostname}."
     },
     "configEditor": {
       "remove": "Remover",

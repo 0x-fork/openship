@@ -362,8 +362,7 @@
       "serveBothDescription": "Her iki ana makine adı da uygulamayı sunar.",
       "customRouting": "Özel yönlendirme",
       "redirectDomain": "Yönlendiren alan adı",
-      "redirectSummary": "{hostname} adresine yönlendirir.",
-      "cloudRedirectUnavailable": "Birincil alan adına yönlendirme Cloud üzerinde henüz kullanılamıyor. Uygulamayı her iki ana makine adıyla sunabilirsiniz."
+      "redirectSummary": "{hostname} adresine yönlendirir."
     },
     "configEditor": {
       "remove": "Kaldır",

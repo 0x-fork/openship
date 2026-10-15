@@ -362,8 +362,7 @@
       "serveBothDescription": "两个主机名都提供应用服务。",
       "customRouting": "自定义路由",
       "redirectDomain": "重定向域名",
-      "redirectSummary": "重定向到 {hostname}。",
-      "cloudRedirectUnavailable": "Cloud 暂不支持重定向到主域名。可使用两个主机名同时提供应用服务。"
+      "redirectSummary": "重定向到 {hostname}。"
     },
     "configEditor": {
       "remove": "移除",

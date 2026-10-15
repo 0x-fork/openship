@@ -362,8 +362,7 @@
       "serveBothDescription": "Both hostnames serve the app.",
       "customRouting": "Custom routing",
       "redirectDomain": "Redirect domain",
-      "redirectSummary": "Redirects to {hostname}.",
-      "cloudRedirectUnavailable": "Canonical hostname redirects are not available on Cloud yet. Use both hostnames to serve the app."
+      "redirectSummary": "Redirects to {hostname}."
     },
     "configEditor": {
       "remove": "Remove",
