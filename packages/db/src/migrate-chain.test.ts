@@ -294,7 +294,7 @@ describe("migration chain applies to an existing, populated database", () => {
       expect(await db.select().from(schema.instanceController)).toEqual([]);
       expect(await db.select().from(schema.instanceHandoff)).toEqual([]);
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map((project) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null })),
+        projects.map((project) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null })),
       );
       expect(
         (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(
@@ -497,6 +497,7 @@ describe("migration chain applies to an existing, populated database", () => {
           ...previous,
           runtime_version: null, runtime_image: null,
           cloud_promotion: null,
+          lifecycle_operation: null,
           cloud_static_hosting: "pages",
           github_checks: null,
           server_id: previous.workspace_id
