@@ -104,15 +104,35 @@ export interface RoleRolloutDeps {
 
 export interface RoleRollout {
   readonly started: readonly RoleContainerRef[];
-  commit(): Promise<void>;
+  /**
+   * Retire the previous deployment's containers. Never throws: resolves to a
+   * warning for the deploy naming every container it could not remove, or null.
+   */
+  commit(): Promise<string | null>;
   abort(): Promise<void>;
 }
 
 const NOOP_ROLLOUT: RoleRollout = {
   started: [],
-  commit: async () => {},
+  commit: async () => null,
   abort: async () => {},
 };
+
+/**
+ * The deploy warning for previous containers that commit could not remove. A
+ * failed removal does not prove the container still runs, so it says "may".
+ */
+function retirementWarning(failed: readonly RoleContainerRef[]): string | null {
+  if (failed.length === 0) return null;
+  const names = failed
+    .map((ref) => `${ref.role} replica ${ref.replica} (${ref.containerId.slice(0, 12)})`)
+    .join(", ");
+  return failed.length === 1
+    ? `Previous role container ${names} could not be removed. ` +
+        "It may still be running the previous release's code. Remove it manually."
+    : `${failed.length} previous role containers could not be removed: ${names}. ` +
+        "They may still be running the previous release's code. Remove them manually.";
+}
 
 /**
  * Start the deployment's role containers in the order described in the file
@@ -265,20 +285,21 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
   return {
     started,
     async commit() {
-      if (settled) return;
+      if (settled) return null;
       settled = true;
       if (previous.length > 0) {
         log(
           `Removing ${previous.length} previous role container${previous.length === 1 ? "" : "s"}...`,
         );
       }
-      await Promise.all(
+      const removed = await Promise.all(
         previous.map((ref) =>
           bestEffort(`failed to remove previous role container ${ref.role} ${ref.replica}`, () =>
             deps.destroyPrevious(ref.containerId),
           ),
         ),
       );
+      return retirementWarning(previous.filter((_, index) => !removed[index]));
     },
     async abort() {
       if (settled) return;

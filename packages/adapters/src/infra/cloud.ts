@@ -5,9 +5,15 @@ import { posix } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { AppError, SYSTEM } from "@repo/core";
 import type { ManualCert, RouteConfig, SslResult, CommandExecutor, ProvisionLock } from "../types";
-import type { RoutingProvider, SslProvider, ProvisionCertOptions } from "./types";
+import type {
+  RoutingProvider,
+  SslProvider,
+  ProvisionCertOptions,
+  ProjectRouteCleanupResult,
+} from "./types";
 import type { CloudAdminProxy } from "./cloud-admin";
 import { cloudPageHostnames } from "../runtime/cloud/page-hostnames";
+import { CLOUD_DOCKER_ROUTE_ROOT } from "../runtime/cloud/docker-paths";
 import { sq } from "../runtime/git-clone";
 import { compileResolvedRoutingToOblien } from "../runtime/oblien-routing";
 import { staticExportCopyCommand } from "./static-export";
@@ -573,18 +579,58 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
   }
 
   async removeRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void> {
+    await this.removeScopedRoute(domain, "strict", opts);
+  }
+
+  async removeProjectRoute(domain: string): Promise<ProjectRouteCleanupResult> {
+    return this.removeScopedRoute(domain, "project-cleanup");
+  }
+
+  /** Only another canonical project directory proves a stale configuration
+   * reference. A missing owner or this project's path on a different workspace
+   * is uncertain state and must retain the deletion fence. */
+  private isForeignProjectRoute(page: {
+    slug: string;
+    source_workspace_id?: string | null;
+    exported_path?: string | null;
+  }): boolean {
+    const prefix = `${CLOUD_DOCKER_ROUTE_ROOT}/projects/`;
+    const canonicalRoot = (root: string) =>
+      root.startsWith(prefix) && /^[a-f0-9]{32}$/.test(root.slice(prefix.length));
+    if (
+      !this.routeRoot ||
+      !canonicalRoot(this.routeRoot) ||
+      !page.source_workspace_id?.trim() ||
+      !page.exported_path ||
+      !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(page.slug)
+    )
+      return false;
+    const root = posix.dirname(page.exported_path);
+    return (
+      canonicalRoot(root) &&
+      page.exported_path === `${root}/${page.slug}` &&
+      root !== this.routeRoot
+    );
+  }
+
+  private async removeScopedRoute(
+    domain: string,
+    mode: "strict" | "project-cleanup",
+    opts?: { signal?: AbortSignal },
+  ): Promise<ProjectRouteCleanupResult> {
     opts?.signal?.throwIfAborted();
-    if (!this.workspaceId)
+    if (!this.workspaceId || !this.routeRoot)
       throw new Error("Route removal requires the owning managed server and project");
     return this.lock.run(async () => {
       // Disabled Pages have no route-registry entry but still own exported
       // files. Inventory by Page hostname also makes their cleanup retryable.
       const page = await this.pageForDomain(domain);
-      if (!page) return;
+      if (!page) return "absent";
       if (
         page.source_workspace_id !== this.workspaceId ||
         page.exported_path !== `${this.routeRoot}/${page.slug}`
       ) {
+        if (mode === "project-cleanup" && this.isForeignProjectRoute(page)) return "foreign";
         throw new Error("Cloud route is not owned by this project");
       }
       if (page.custom_domain && normalizeHostname(page.custom_domain) === normalizeHostname(domain))
@@ -592,6 +638,7 @@ export class CloudInfraProvider implements RoutingProvider, SslProvider {
       opts?.signal?.throwIfAborted();
       if (!(await this.pages.delete(page.slug)).success)
         throw new Error("Could not remove the managed route");
+      return "removed";
     });
   }
 

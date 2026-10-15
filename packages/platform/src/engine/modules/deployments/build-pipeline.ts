@@ -2703,8 +2703,9 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   }
 
   // The web container is live and routed: the previous deployment's role
-  // containers retire now, the same moment its web container did.
-  await roleRollout?.commit();
+  // containers retire now, the same moment its web container did. A removal
+  // that fails comes back as a warning for this deploy (folded in below).
+  const roleRetirementWarning = await roleRollout?.commit();
 
   // Allocation authority is the target-scoped claim written before activation.
   // Keep the historical scalar only as a routing/UI compatibility cache, and do
@@ -2903,10 +2904,13 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   // absent from the persisted log — invisible on replay, in history, and to the
   // CLI. Emitting it here (matching the compose path's wording) makes the server
   // the single writer for every warning, so the client never has to add one.
+  // The role retirement warning stays out of `deployWarning` for the same reason
+  // as readiness: that key means routing trouble and offers "Retry routing".
   const deployWarnings = [
     metaPatch.deployWarning,
     metaPatch.readinessWarning,
     hostPortClaimWarning,
+    roleRetirementWarning,
   ].filter((warning): warning is string => typeof warning === "string" && warning.length > 0);
   const warningMessage = deployWarnings.join(" · ");
   if (warningMessage) {

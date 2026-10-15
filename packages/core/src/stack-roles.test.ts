@@ -166,21 +166,24 @@ describe("STACKS.laravel.defaultRoles", () => {
     expect(scheduler?.singleton).toBe(true);
   });
 
-  it("every preset sets a 90s stop grace period the openship.json parser accepts", () => {
+  it("preserves worker and scheduler shutdown settings through the openship.json parser", () => {
     const roles: readonly StackRole[] = STACKS.laravel.defaultRoles ?? [];
-    expect(roles.map((r) => r.stopGracePeriod)).toEqual(["90s", "90s", "90s"]);
+    expect(roles.map((r) => r.stopGracePeriod)).toEqual(["90s", "90s", "10s"]);
+    expect(roles.find((r) => r.name === "scheduler")?.stopSignal).toBe("SIGTERM");
     // Presets bypass the parser, so run each value through it here.
     const { config, errors } = parseOpenshipConfig({
-      roles: roles.map(({ name, kind, command, singleton, stopGracePeriod }) => ({
+      roles: roles.map(({ name, kind, command, singleton, stopSignal, stopGracePeriod }) => ({
         name,
         kind,
         command,
         singleton,
+        stopSignal,
         stopGracePeriod,
       })),
     });
     expect(errors).toEqual([]);
-    expect(config?.roles?.map((r) => r.stopGracePeriod)).toEqual(["90s", "90s", "90s"]);
+    expect(config?.roles?.map((r) => r.stopGracePeriod)).toEqual(["90s", "90s", "10s"]);
+    expect(config?.roles?.find((r) => r.name === "scheduler")?.stopSignal).toBe("SIGTERM");
   });
 
   // "web" is never part of defaultRoles - it is derived from
