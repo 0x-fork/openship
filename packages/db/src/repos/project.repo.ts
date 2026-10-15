@@ -649,7 +649,8 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       return rows.length > 0;
     },
 
-    /** Release admission only when teardown rejected before destructive work. */
+    /** Release a transient fence after preflight rejection or receipt-managed
+     * promotion cleanup. Ordinary partial deletion stays fenced. */
     async clearDeletionInProgress(id: string) {
       await db
         .update(project)

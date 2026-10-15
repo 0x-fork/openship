@@ -90,8 +90,8 @@ export type ProjectStatusSource = {
    *  is why such a deploy used to vanish from the project entirely. */
   latestDeploymentBlocked?: boolean | null;
   deletedAt?: string | null;
-  /** True while an atomic teardown is in flight (the real in-progress flag;
-   *  teardown hard-deletes on success, so `deletedAt` is rarely set). */
+  /** Deletion admission fence, retained after cleanup fails. A cleanup error
+   *  makes this awaiting retry; successful teardown hard-deletes the row. */
   deletionInProgress?: boolean | null;
   deletionError?: string | null;
   /** Marks the Openship control-plane self-app. It IS the running host service and
