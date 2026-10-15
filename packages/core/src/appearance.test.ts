@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   APPEARANCE_DEFAULTS,
   APPEARANCE_TOKENS,
@@ -117,8 +118,23 @@ it("rejects WOFF2 assets with excessive decoded size before passing them to a fo
 it("keeps generated CSS synchronized with the authoritative palette", () => {
   expect(() =>
     execFileSync(process.execPath, [
-      new URL("../../../scripts/generate-theme-tokens.mjs", import.meta.url).pathname,
+      fileURLToPath(new URL("../../../scripts/generate-theme-tokens.mjs", import.meta.url)),
       "--check",
     ]),
   ).not.toThrow();
+});
+
+it("validates shadow geometry while supporting colors, inset and multiple layers", () => {
+  for (const value of [
+    "0 4px 12px rgba(0,0,0,.12)",
+    "inset 0 0 0 1px #aaaaaa",
+    "0 2px 4px #123, 0 4px 12px hsl(0 0% 0% / 20%)",
+  ])
+    expect(() =>
+      parseThemeDocument({ ...theme(), tokens: { "--th-card-shadow": value } }),
+    ).not.toThrow();
+  for (const value of ["1px", "1px 2px -3px", "1px 2px rgba( )", "1px 2px 3px 4px 5px"])
+    expect(() =>
+      parseThemeDocument({ ...theme(), tokens: { "--th-card-shadow": value } }),
+    ).toThrow();
 });

@@ -66,6 +66,37 @@ function validColor(value: string): boolean {
   });
 }
 
+function validShadow(value: string): boolean {
+  if (value === "none") return true;
+  const shadows = value.split(/,(?![^()]*\))/);
+  if (shadows.length > 4) return false;
+  return shadows.every((shadow) => {
+    const parts = shadow.trim().match(/(?:rgba?|hsla?)\([^)]*\)|[^\s]+/g) ?? [];
+    let colors = 0;
+    let insets = 0;
+    const lengths: number[] = [];
+    for (const part of parts) {
+      if (part === "inset") {
+        insets++;
+        continue;
+      }
+      if (validColor(part)) {
+        colors++;
+        continue;
+      }
+      if (!/^(?:0|-?(?:\d+(?:\.\d+)?|\.\d+)(?:px|rem))$/.test(part)) return false;
+      lengths.push(parseFloat(part));
+    }
+    return (
+      colors <= 1 &&
+      insets <= 1 &&
+      lengths.length >= 2 &&
+      lengths.length <= 4 &&
+      (lengths.length < 3 || lengths[2] >= 0)
+    );
+  });
+}
+
 /** Accept data values only. Never accept CSS declarations, URLs or arbitrary variables. */
 export function validAppearanceToken(key: string, value: string): boolean {
   const token = registry.get(key);
@@ -79,11 +110,7 @@ export function validAppearanceToken(key: string, value: string): boolean {
     return /^(?:0|(?:[0-9]|[12][0-9]|3[0-2])(?:\.\d{1,2})?px|(?:0|1)(?:\.\d{1,2})?rem)$/.test(
       value,
     );
-  if (token.type === "shadow")
-    return (
-      value === "none" ||
-      (/^(?=.{1,256}$)[\d\s.,()%pxremrgbahsl-]+$/.test(value) && /(?:px|rem)/.test(value))
-    );
+  if (token.type === "shadow") return validShadow(value);
   return validColor(value);
 }
 const tokenOverrides = z.record(z.string(), z.string().max(512)).superRefine((values, ctx) => {
