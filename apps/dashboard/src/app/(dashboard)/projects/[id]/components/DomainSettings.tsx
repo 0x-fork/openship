@@ -1,5 +1,6 @@
 "use client";
 
+import { DomainIngressSettings, IngressDestinationNotice } from "@/components/ingress/DomainIngressSettings";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import { getPortCheckIssue } from "@repo/core";
@@ -2020,6 +2021,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
         onCopy={handleCopy}
         portHint={portHintFor(item.mappedPort, item.serviceId)}
         outputHint={outputHintFor(item.targetPath)}
+        ingressAction={item.domainId && projectData.serverId && !isCloudProject && !item.hostname.toLowerCase().endsWith(`.${baseDomain}`) ? <DomainIngressSettings domainId={item.domainId} hostname={item.hostname} serverId={projectData.serverId} onChanged={() => { invalidateProjectCaches(id); router.refresh(); }} /> : undefined}
       />
     );
   };
@@ -2300,6 +2302,7 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
                 </div>
               )}
 
+              {newDomainType === "custom" && <IngressDestinationNotice serverId={projectData.serverId} />}
               {newDomainType === "custom" && (
                 <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-muted/25 px-4 py-3">
                   <div className="min-w-0">
@@ -3116,6 +3119,7 @@ function DomainOverviewCard({
   autoOpenRecords = false,
   portHint,
   outputHint,
+  ingressAction,
 }: {
   domain: DomainSummaryItem;
   /** Secondary actions (edit, renew, …) collapsed into a ⋯ menu. Visit is a
@@ -3143,6 +3147,7 @@ function DomainOverviewCard({
   portHint?: PortHint | null;
   /** Live static-output advisory — which of the three static-404 shapes this is. */
   outputHint?: OutputHint | null;
+  ingressAction?: React.ReactNode;
 }) {
   const { t, locale } = useI18n();
   const d = t.projectSettings.domains;
@@ -3267,6 +3272,7 @@ function DomainOverviewCard({
             />
           }
         />
+        {ingressAction && <InfoRow label={t.ingress.title} value={ingressAction} />}
         {/* SSL action feedback. The renew/recheck triggers live in the ⋯ menu,
             which unmounts the moment it's clicked — so without this the operator
             gets no signal for the seconds the request takes. Sits next to the SSL

@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **497 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **505 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -191,11 +191,19 @@ The current API has **497 unique tools**. Permission tags below describe the rou
 | Tool and HTTP route | Description | Access |
 | --- | --- | --- |
 | `delete_dns_credentials_by_id`<br />`DELETE /api/dns/credentials/:id` | Disconnect a DNS provider credential. | `settings:admin` |
+| `delete_dns_ingress_by_id`<br />`DELETE /api/dns/ingress/:id` | Disconnect a public ingress binding, removing only its owned hostnames and connector. | `settings:admin` |
 | `get_dns_credentials`<br />`GET /api/dns/credentials` | List connected DNS provider credentials for the org. | `settings:read` |
 | `get_dns_credentials_by_id`<br />`GET /api/dns/credentials/:id` | Get one connected DNS provider credential. | `settings:read` |
+| `get_dns_ingress`<br />`GET /api/dns/ingress` | List public ingress connections on connected self-hosted servers. | `settings:read` |
+| `get_dns_ingress_domains_by_id`<br />`GET /api/dns/ingress/domains/:id` | Get a domain's persisted tunnel, DNS and Access setup status. | `settings:read` |
 | `get_dns_providers`<br />`GET /api/dns/providers` | List supported DNS providers and the token scopes they need. | `settings:read` |
 | `post_dns_credentials`<br />`POST /api/dns/credentials` | Connect a DNS provider credential (Cloudflare API token). | `settings:admin` |
+| `post_dns_ingress`<br />`POST /api/dns/ingress` | Connect or create a named Cloudflare Tunnel for a deployment server. Optionally install its connector and enroll new custom domains. | `settings:admin` |
+| `post_dns_ingress_by_id_retry`<br />`POST /api/dns/ingress/:id/retry` | Retry persisted public ingress setup or cleanup. | `settings:admin` |
+| `post_dns_ingress_discover`<br />`POST /api/dns/ingress/discover` | List Cloudflare accounts, named tunnels and reusable Access policies using a saved credential. | `settings:admin` |
 | `post_dns_verify_zone`<br />`POST /api/dns/verify-zone` | Check whether a connected DNS provider manages a hostname's zone. | `settings:read` |
+| `put_dns_ingress_by_id`<br />`PUT /api/dns/ingress/:id` | Change tunnel defaults for future custom domains without changing existing hostname policies. | `settings:admin` |
+| `put_dns_ingress_domains_by_id`<br />`PUT /api/dns/ingress/domains/:id` | Connect a custom domain to its server's tunnel, change its Access policy, or disconnect it. | `settings:admin` |
 
 ### domains
 
