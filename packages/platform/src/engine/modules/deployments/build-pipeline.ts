@@ -736,11 +736,37 @@ export async function finalizeComposeDeploy(opts: {
     // A single-app predecessor's role containers are not part of this stack.
     try {
       const prevDep = project.activeDeploymentId ? await findActiveDeployment(project) : null;
-      await retirePreviousRoleContainers({
+      const roleWarning = await retirePreviousRoleContainers({
         previous: prevDep,
         currentDeploymentId: dep.id,
         log: (m, level) => logger.log(`${m}\n`, level),
       });
+      if (roleWarning) {
+        const meta = settled.meta as Record<string, unknown> | null;
+        const compose = meta?.composeDeployment as Record<string, unknown> | undefined;
+        const warningMessage = [
+          ...new Set(
+            [
+              compose?.warningMessage ||
+                (settled.status === "partial_failure"
+                  ? "Some services failed — see service deployments for details."
+                  : null),
+              meta?.deployWarning,
+              roleWarning,
+            ].filter((message): message is string => typeof message === "string" && message.length > 0),
+          ),
+        ].join(" · ");
+        logger.log(`Deployment completed with warnings: ${warningMessage}\n`, "warn");
+        await setDeploymentStatus(dep.id, settled.status, {
+          sse: {
+            status: "ready",
+            meta: {
+              warningMessage,
+              decisionPending: compose?.decision === "pending",
+            },
+          },
+        });
+      }
     } catch (err) {
       observeCaughtError(err, "platform/engine/modules/deployments/build-pipeline");
     }

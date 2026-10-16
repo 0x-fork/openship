@@ -183,7 +183,7 @@ const NOOP_ROLLOUT: RoleRollout = {
  * The deploy warning for previous containers that commit could not remove. A
  * failed removal does not prove the container still runs, so it says "may".
  */
-function retirementWarning(failed: readonly RoleContainerRef[]): string | null {
+export function roleRetirementWarning(failed: readonly RoleContainerRef[]): string | null {
   if (failed.length === 0) return null;
   const names = failed
     .map((ref) => `${ref.role} replica ${ref.replica} (${ref.containerId.slice(0, 12)})`)
@@ -389,7 +389,7 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
           ),
         ),
       );
-      return retirementWarning(previous.filter((_, index) => !removed[index]));
+      return roleRetirementWarning(previous.filter((_, index) => !removed[index]));
     },
     async abort() {
       if (settled) return;
