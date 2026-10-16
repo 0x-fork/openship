@@ -78,6 +78,10 @@ operations. These notes cover all merged changes since 0.9.1.
 - **Keep domain operations consistent** — service aliases on the same port are
   preserved, domains added through the CLI receive routing, and Cloud routing
   retries recover missing Pages through the owning Cloud connection.
+- **Honor trusted proxies on containerized edges** — operator-declared proxy IPs
+  reach the edge without rebuilding its image. Invalid addresses and CIDR prefixes
+  are discarded. Failed configuration updates restore the previous shared trust
+  include, and an incomplete rollback cannot activate a partial configuration.
 
 ### Cloud spaces, billing and connections
 
