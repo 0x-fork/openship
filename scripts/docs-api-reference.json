@@ -3673,6 +3673,18 @@
       "section": "Cloudflare Tunnel ingress",
       "description": "Connect a custom domain to its deployment server tunnel, change its Access policy or request disconnection.",
       "route": "PUT /api/dns/ingress/domains/:id"
+    },
+    "projects.getRuntimeRoleConfiguration": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Read active role definitions and the revision required to configure them.",
+      "route": "GET /api/projects/:id/roles/configuration"
+    },
+    "projects.configureRuntimeRoles": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Apply a role configuration revision from the active image while preserving web and unchanged replicas.",
+      "route": "POST /api/projects/:id/roles/configuration"
     }
   },
   "http": {

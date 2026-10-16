@@ -435,6 +435,27 @@
     "checking": "Laufzeitrollen werden geprüft…",
     "staleTarget": "Dieses Rollenreplikat gehört nicht zur aktiven Bereitstellung. Wähle die Logquelle erneut aus.",
     "retry": "Erneut versuchen",
-    "replicaOne": "{count} Replikat"
+    "replicaOne": "{count} Replikat",
+    "configuration": {
+      "configure": "Rollen konfigurieren",
+      "title": "Worker & Scheduler",
+      "hint": "Mit dem aktiven Image anwenden. Web und unveränderte Replikate laufen weiter.",
+      "sourceHint": "Diese Einstellungen gelten für diese Version. Eine explizite roles-Liste in openship.json hat beim nächsten Quell-Deployment Vorrang.",
+      "name": "Name",
+      "command": "Befehl",
+      "kind": "Typ",
+      "replicas": "Replikate",
+      "singleton": "Einzelne Instanz",
+      "addWorker": "Worker hinzufügen",
+      "addScheduler": "Scheduler hinzufügen",
+      "remove": "Rolle entfernen",
+      "advanced": "Erweitert",
+      "healthCommand": "Integritätsbefehl (optional)",
+      "stopGrace": "Frist zum Beenden",
+      "apply": "Änderungen anwenden",
+      "applying": "Wird angewendet…",
+      "cancel": "Abbrechen",
+      "retry": "Erneut versuchen"
+    }
   }
 }

@@ -578,6 +578,8 @@ IDs.
 | Read recent request/server logs. | `projects.recentServerLogs(id, input?)` | `GET /api/projects/:id/server-logs/recent`<br />`project:read` |
 | Stream project runtime log events. | `projects.streamRuntimeLogs(id, input?, options?)` | `GET /api/projects/:id/logs/stream`<br />`project:read` |
 | Stream project request/server log events. | `projects.streamServerLogs(id, input?, options?)` | `GET /api/projects/:id/server-logs/stream`<br />`project:read` |
+| Read active role definitions and the revision required to configure them. | `projects.getRuntimeRoleConfiguration(id)` | `GET /api/projects/:id/roles/configuration`<br />`project:read` |
+| Apply a role configuration revision from the active image while preserving web and unchanged replicas. | `projects.configureRuntimeRoles(id, input)` | `POST /api/projects/:id/roles/configuration`<br />`project:update` |
 
 ### Connections, storage, and apps
 

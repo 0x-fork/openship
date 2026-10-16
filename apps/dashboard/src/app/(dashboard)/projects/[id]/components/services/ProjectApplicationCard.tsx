@@ -6,6 +6,7 @@ import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
+import { RuntimeRoleConfigurationControl } from "@/components/services/RuntimeRoleConfiguration";
 import { RuntimeRolesCard } from "@/components/services/RuntimeRoles";
 
 /** Uses the existing project deployment and controls, without a second service identity. */
@@ -37,6 +38,9 @@ export function ProjectApplicationCard() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">{t.projects.services.applicationHint}</p>
           <div className="flex flex-wrap gap-2">
+            {projectData.activeDeploymentId && projectData.runtimeMode === "docker" && projectData.deployTarget !== "cloud" && !projectData.clusterId && (
+              <RuntimeRoleConfigurationControl projectId={id} deploymentId={projectData.activeDeploymentId} />
+            )}
             <Button asChild size="sm" variant="secondary">
               <Link href={`/projects/${id}/logs`}>{t.projects.sidebar.tabs.logs}</Link>
             </Button>

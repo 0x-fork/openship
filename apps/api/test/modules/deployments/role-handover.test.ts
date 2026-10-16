@@ -165,6 +165,36 @@ describe("durable role handover recovery (#1254)", () => {
     expect((await repos.deployment.findById(f.dep.id))?.status).toBe("ready");
   });
 
+  it.each([false, true])(
+    "protects carried web and replicas while recovering a configuration revision (committing=%s)",
+    async (committing) => {
+      const f = await fixture();
+      const carried = [{ ...f.previous.roleContainers![0], ownerDeploymentId: f.previous.id }];
+      const journal = await beginRoleHandover({
+        dep: f.dep,
+        previous: f.previous,
+        config: f.config,
+        roles: [{ name: "scheduler", kind: "scheduler", command: "exec cron" }],
+        reuse: carried,
+        preserveWeb: { containerId: "old-web", ownerDeploymentId: f.previous.id },
+      });
+      expect(f.dep.roleHandover?.version).toBe(2);
+      if (committing) {
+        await journal.recordWeb("old-web");
+        await journal.committing();
+      }
+      await recoverProjectRoleHandovers(f.project.id);
+      expect(removed).toEqual([]);
+      expect(containers.get("old-scheduler")?.running).toBe(true);
+      expect(containers.get("old-web")?.running).toBe(true);
+      expect((await repos.deployment.findById(f.dep.id))?.roleContainers).toEqual(carried);
+      expect(h.routing).not.toHaveBeenCalled();
+      expect((await repos.project.findById(f.project.id))?.activeDeploymentId).toBe(
+        committing ? f.dep.id : f.previous.id,
+      );
+    },
+  );
+
   it("recovers a lost create response by its durable name before restoring the predecessor", async () => {
     const f = await fixture();
     await f.journal.recordStopIntent(f.previous.roleContainers![0]);

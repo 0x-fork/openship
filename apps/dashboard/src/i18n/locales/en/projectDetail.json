@@ -435,6 +435,27 @@
     "checking": "Checking runtime roles…",
     "staleTarget": "This role replica is not in the active deployment. Select a log target again.",
     "retry": "Retry",
-    "replicaOne": "{count} replica"
+    "replicaOne": "{count} replica",
+    "configuration": {
+      "configure": "Configure roles",
+      "title": "Workers & schedulers",
+      "hint": "Apply using the active image. Web and unchanged replicas keep running.",
+      "sourceHint": "These settings apply to this release. An explicit roles array in openship.json takes precedence on the next source deployment.",
+      "name": "Name",
+      "command": "Command",
+      "kind": "Type",
+      "replicas": "Replicas",
+      "singleton": "Single instance",
+      "addWorker": "Add worker",
+      "addScheduler": "Add scheduler",
+      "remove": "Remove role",
+      "advanced": "Advanced",
+      "healthCommand": "Health command (optional)",
+      "stopGrace": "Stop grace period",
+      "apply": "Apply changes",
+      "applying": "Applying…",
+      "cancel": "Cancel",
+      "retry": "Try again"
+    }
   }
 }

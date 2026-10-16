@@ -1596,3 +1596,11 @@ export const STACK_ICONS: Partial<Record<StackId, string>> = {
   docker:      `${DI}/docker/docker-original.svg`,
   "docker-compose": `${DI}/docker/docker-original.svg`,
 };
+
+/** A recorded role replica; reused configuration revisions retain its creation owner. */
+export interface RoleContainerRef {
+  role: string;
+  replica: number;
+  containerId: string;
+  ownerDeploymentId?: string;
+}

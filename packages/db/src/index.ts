@@ -144,7 +144,7 @@ export {
   type NewDeployment,
   type BuildSession,
   type NewBuildSession,
-  type DeploymentResourceChanges,
+  type DeploymentResourceChanges, type DeploymentRoleChanges,
   type Domain,
   type NewDomain,
   type DnsCredential,

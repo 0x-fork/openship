@@ -1,3 +1,4 @@
+import { RoleSchema } from "./project-inputs";
 import { Type, type Static } from "@sinclair/typebox";
 
 export const ProjectRuntimeLogsInputSchema = Type.Object(
@@ -46,3 +47,19 @@ export const ProjectRuntimeRolesSchema = Type.Object({
 export type RuntimeRoleContainer = Static<typeof RuntimeRoleContainerSchema>;
 export type RuntimeRole = Static<typeof RuntimeRoleSchema>;
 export type ProjectRuntimeRoles = Static<typeof ProjectRuntimeRolesSchema>;
+
+export const RuntimeRoleConfigurationInputSchema = Type.Object({
+  expectedDeploymentId: Type.String({ minLength: 1 }),
+  expectedUpdatedAt: Type.String({ format: "date-time" }),
+  roles: Type.Array(RoleSchema, { maxItems: 20 }),
+}, { additionalProperties: false });
+export type RuntimeRoleConfigurationInput = Static<typeof RuntimeRoleConfigurationInputSchema>;
+export const RuntimeRoleConfigurationSchema = Type.Object({
+  supported: Type.Boolean(),
+  reason: nullableString,
+  deploymentId: nullableString,
+  updatedAt: Type.String(),
+  roles: Type.Array(RoleSchema),
+});
+
+export type RuntimeRoleConfiguration = Static<typeof RuntimeRoleConfigurationSchema>;

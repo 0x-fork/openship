@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **506 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **508 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -424,6 +424,7 @@ The current API has **506 unique tools**. Permission tags below describe the rou
 | `get_projects_by_id_pending_actions`<br />`GET /api/projects/:id/pending-actions` | What is waiting on a human for this project, and how to resolve each item. Covers a deploy blocked on a named cause (e.g. a port already in use), a deploy HELD right now on a decision (answer it with the build-respond tool — the exact action id and body are in the item's resolveWith, and `expiresAt` is when the deploy gives up), a partial-failure release awaiting keep/reject, unsynced routing, unverified domains, and failed/expired certificates. Each item carries `resolveWith`, an array of concrete &#123;method, path, body&#125; calls — use those rather than guessing. Call this after starting a deploy that seems stuck, and whenever a project reads as Action Required. This covers deploy/domain/routing items only — for container-runtime health (crash loops, unhealthy or down containers) read the project's incidents instead. Scoped to ONE project: to ask what is broken across the whole installation (these items for every project, plus runtime incidents, unreachable servers and edge/mail state, ranked by severity), read the issues feed instead. | `project:read` |
 | `get_projects_by_id_resources`<br />`GET /api/projects/:id/resources` | Get the project's CPU/RAM/disk resource config. | `project:read` |
 | `get_projects_by_id_roles`<br />`GET /api/projects/:id/roles` | Read the active deployment's runtime roles, replicas, live status, and restart counts. | `project:read` |
+| `get_projects_by_id_roles_configuration`<br />`GET /api/projects/:id/roles/configuration` | Read editable runtime role settings from the active Docker release. | `project:read` |
 | `get_projects_by_id_rollback_capacity`<br />`GET /api/projects/:id/rollback-capacity` | Get the rollback retention window in force (explicit or disk-sized), the measured per-release size, and the deploy host's free disk. | `project:read` |
 | `get_projects_by_id_route_rules`<br />`GET /api/projects/:id/route-rules` | List project edge rules for rate limits, access restrictions and traffic filtering. | `project:read`<br />Self-hosted |
 | `get_projects_by_id_routing_edge_status`<br />`GET /api/projects/:id/routing/edge-status` | Check whether the project's server edge (OpenResty on 80/443) is already set up. | `project:read` |
@@ -466,6 +467,7 @@ The current API has **506 unique tools**. Permission tags below describe the rou
 | `post_projects_by_id_options`<br />`POST /api/projects/:id/options` | Set build/deploy options for a project. | `project:write` |
 | `post_projects_by_id_output_check`<br />`POST /api/projects/:id/output-check` | Live static-output check for the project's active deployment (advisory; static apps). | `project:read` |
 | `post_projects_by_id_port_check`<br />`POST /api/projects/:id/port-check` | Live port-reachability check for the project's active deployment (advisory). | `project:read` |
+| `post_projects_by_id_roles_configuration`<br />`POST /api/projects/:id/roles/configuration` | Apply runtime role settings using the active image without rebuilding or restarting web. Expected release and project revision prevent stale edits. | `project:write` |
 | `post_projects_by_id_route_rules`<br />`POST /api/projects/:id/route-rules` | Create an edge traffic rule for this project, optionally scoped to a domain or path. A rule can block live traffic; read the existing rules before changing access. | `project:write`<br />Self-hosted |
 | `post_projects_by_id_routing_retry`<br />`POST /api/projects/:id/routing/retry` | Repair project routes and verify pending domains and HTTPS without rebuilding; clears the routing warning only when all checks succeed. | `project:write` |
 | `post_projects_by_id_sleep_mode`<br />`POST /api/projects/:id/sleep-mode` | Set the project's sleep mode (auto_sleep / always_on). | `project:write` |

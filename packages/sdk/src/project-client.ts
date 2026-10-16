@@ -267,6 +267,8 @@ export function createRemoteProjectOperations(
       retryRouting: { method: "POST", path: (id) => path(id) + "/routing/retry" },
       runtimeLogs: { method: "GET", path: (id) => path(id) + "/logs", envelope: "data" },
       getRuntimeRoles: { method: "GET", path: (id) => path(id) + "/roles", envelope: "data" },
+      getRuntimeRoleConfiguration: { method: "GET", path: (id) => path(id) + "/roles/configuration", envelope: "data" },
+      configureRuntimeRoles: { method: "POST", path: (id) => path(id) + "/roles/configuration", envelope: "data" },
       getCloneToken: { method: "GET", path: (id) => path(id) + "/clone-token" },
       updateCloneToken: { method: "PATCH", path: (id) => path(id) + "/clone-token" },
       deletionPreview: {

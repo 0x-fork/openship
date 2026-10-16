@@ -27,7 +27,7 @@ import {
   ProjectRoutingRetrySchema,
 } from "./project-routing";
 import { ProjectLogSchemas } from "./project-logs";
-import { ProjectRuntimeLogsInputSchema, ProjectRuntimeRolesSchema } from "./project-runtime";
+import { ProjectRuntimeLogsInputSchema, ProjectRuntimeRolesSchema, RuntimeRoleConfigurationSchema, RuntimeRoleConfigurationInputSchema } from "./project-runtime";
 import { ProjectTransferSchemas } from "./project-transfer";
 import { AppProjectSchemas } from "./apps";
 import { ProjectClusterSchemas } from "./project-cluster";
@@ -510,6 +510,9 @@ export const ProjectControlSchemas = {
     output: Type.Array(LogEntrySchema),
   },
   getRuntimeRoles: { action: "read", output: ProjectRuntimeRolesSchema },
+  getRuntimeRoleConfiguration: { action: "read", output: RuntimeRoleConfigurationSchema },
+  configureRuntimeRoles: { action: "write", input: RuntimeRoleConfigurationInputSchema,
+    output: Type.Object({ deploymentId: Type.String() }) },
   getCloneToken: { action: "read", output: CloneTokenStateSchema },
   updateCloneToken: {
     action: "admin",

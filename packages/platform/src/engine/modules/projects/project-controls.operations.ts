@@ -144,6 +144,14 @@ export function createProjectControls(
     async runtimeLogs(ctx, id, input) {
       return (await service()).getRuntimeLogs(id, ctx.organizationId, input?.tail, input);
     },
+    async getRuntimeRoleConfiguration(ctx, id) {
+      return (await import("./role-configuration.service")).getRoleConfiguration(id, ctx.organizationId);
+    },
+    async configureRuntimeRoles(ctx, id, input) {
+      const result = await (await import("./role-configuration.service")).configureRuntimeRoles(ctx, id, input);
+      updated(ctx, id, { action: "roles.configure", deploymentId: result.deploymentId });
+      return result;
+    },
     async getRuntimeRoles(ctx, id) {
       return (await import("./project-roles")).getRuntimeRoles(id, ctx.organizationId);
     },

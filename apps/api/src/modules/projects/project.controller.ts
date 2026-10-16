@@ -470,6 +470,16 @@ function runtimeLogInput(c: Context) {
   };
 }
 
+export async function runtimeRoleConfiguration(c: Context) {
+  const result = await getPlatformKernel().projects.getRuntimeRoleConfiguration(operationContext(c), param(c, "id"));
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
+export async function configureRuntimeRoles(c: Context) {
+  const result = await getPlatformKernel().projects.configureRuntimeRoles(operationContext(c), param(c, "id"), await c.req.json());
+  applyOperationContext(c, result.context);
+  return c.json({ data: result.data });
+}
 export async function runtimeRoles(c: Context) {
   const result = await getPlatformKernel().projects.getRuntimeRoles(
     operationContext(c),
