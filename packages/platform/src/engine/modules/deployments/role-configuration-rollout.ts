@@ -12,6 +12,7 @@ import {
 } from "./role-handover";
 import { rolloutRoles, planRoleReplicas } from "./role-rollout";
 import { runtimeRoleRolloutDeps } from "./role-runtime";
+import { resolveReadinessGate } from "./readiness-gate";
 import { inspectRoleConfigurationImage } from "../projects/role-configuration.service";
 import {
   throwIfDeploymentCancelled,
@@ -139,7 +140,7 @@ export async function runRoleConfigurationRollout(input: {
             config,
             logger,
             beforeStart: input.beforeStart,
-            stabilizationWindowMs: 3_000,
+            stabilizationWindowMs: resolveReadinessGate(live.readiness).stabilization.windowMs,
             signal,
             recordCreated: journal.recordCreated,
             recordStopIntent: journal.recordStopIntent,

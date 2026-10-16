@@ -385,7 +385,7 @@ describeDockerE2E("runtime roles against Docker", () => {
     const { runRoleConfigurationRollout } = await import("@repo/platform/engine/modules/deployments/role-configuration-rollout");
     const org = await seedOrg();
     const ownedProjectId = `role-configuration-${process.pid}`;
-    const project = await seedProject(org.organizationId, { id: ownedProjectId });
+    const project = await seedProject(org.organizationId, { id: ownedProjectId, readiness: { stabilizationSeconds: 1 } });
     const queue = worker({ replicas: 1, command: "trap 'exit 0' TERM; while :; do sleep 1 & wait $!; done" });
     const cron = scheduler("trap 'exit 0' TERM; while :; do sleep 1 & wait $!; done");
     const original = await seedDeployment(project, { meta: { runtimeMode: "docker", roles: [queue, cron] } });
@@ -407,8 +407,9 @@ describeDockerE2E("runtime roles against Docker", () => {
         const meta = { runtimeMode: "docker", roles, webOwnerDeploymentId: original.id,
           roleConfiguration: { sourceDeploymentId: active.id, webContainerId: web.containerId, webOwnerDeploymentId: original.id, imageId } };
         const next = await seedDeployment(live, { status: "deploying", meta });
+        const messages: string[] = [];
         try { await runRoleConfigurationRollout({ project: live, dep: next, runtime, config: { ...cfg(next.id), imageRef: imageId },
-          logger: new BuildLogger(() => {}), beforeStart: async () => {}, publish: async containerId => {
+          logger: new BuildLogger(entry => messages.push(entry.message)), beforeStart: async () => {}, publish: async containerId => {
             await repos.deployment.setContainerId(next.id, containerId);
             await repos.deployment.updateStatus(next.id, "ready");
             await setActive(project.id, next.id);
@@ -418,6 +419,7 @@ describeDockerE2E("runtime roles against Docker", () => {
           await repos.deployment.updateStatus(next.id, "failed");
           throw error;
         }
+        expect(messages.some(message => message.includes("(1s stabilization window)"))).toBe(true);
         return (await repos.deployment.findById(next.id))!;
       };
       const up = await apply([{ ...queue, replicas: 3 }, cron]);
