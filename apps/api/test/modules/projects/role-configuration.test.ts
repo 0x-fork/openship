@@ -42,6 +42,7 @@ async function fixture(target = "server") {
   owned.push(project.id);
   const active = await seedDeployment(project, {
     containerId: "web",
+    url: "https://app.example.test",
     meta: {
       runtimeMode: "docker",
       deployTarget: target,
@@ -96,6 +97,7 @@ describe("runtime role configuration admission", () => {
       roleConfiguration: { sourceDeploymentId: f.active.id, webContainerId: "web", imageId },
     });
     expect(dep.envVars).toEqual(f.active.envVars);
+    expect(dep.url).toBe(f.active.url);
     expect(await repos.deployment.findBuildSessionByDeploymentId(dep.id)).toMatchObject({
       status: "queued",
     });

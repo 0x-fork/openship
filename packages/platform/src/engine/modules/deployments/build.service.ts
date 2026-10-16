@@ -1359,6 +1359,8 @@ async function createQueuedDeploymentUnlocked(opts: {
   framework: string;
   meta: DeploymentConfigSnapshot;
   envVars: Record<string, string> | null;
+  /** Existing app URL when a configuration revision keeps its primary container. */
+  preservedUrl?: string | null;
   commitSha?: string;
   commitMessage?: string;
   trigger?: string;
@@ -1492,6 +1494,7 @@ async function createQueuedDeploymentUnlocked(opts: {
       trigger: opts.trigger ?? "manual",
       actionRequestId: opts.actionRequestId,
       environment: opts.environment,
+      ...(opts.preservedUrl !== undefined ? { url: opts.preservedUrl } : {}),
       framework: opts.framework,
       status: "queued",
       // Release/dist deploy identity, from the resolved snapshot. Like commit_sha

@@ -139,6 +139,7 @@ export async function configureRuntimeRoles(
         rollbackStrategy: active!.rollbackStrategy as "snapshot" | "git",
         meta: snapshot,
         envVars: active!.envVars as Record<string, string> | null,
+        preservedUrl: active!.url,
         roleChanges: {
           expectedActiveDeploymentId: active!.id,
           expectedProjectUpdatedAt: live.updatedAt,
