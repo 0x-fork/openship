@@ -33,6 +33,8 @@ export const SourceScanSchema = Type.Object({
   routing: EnsureProjectBody.properties.routingConfig,
   releaseCommands: EnsureProjectBody.properties.releaseCommands,
   roles: EnsureProjectBody.properties.roles,
+  /** Detected suggestions only; never enabled by scanning a source. */
+  rolePresets: EnsureProjectBody.properties.roles,
   services: Type.Optional(Type.Array(Type.Object({
     ...BuildServiceInput.properties,
     commandArgv: Type.Optional(Type.Union([Type.Array(Type.String()), Type.Null()])),
