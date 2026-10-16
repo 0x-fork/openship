@@ -173,7 +173,7 @@ import {
   DeploymentCancelledError,
 } from "./deployment-cancellation";
 import { rolloutRoles, type RoleRollout } from "./role-rollout";
-import { retirePreviousRoleContainers, rolesUnsupportedReason, runtimeRoleRolloutDeps } from "./role-runtime";
+import { rolesUnsupportedReason, runtimeRoleRolloutDeps } from "./role-runtime";
 
 // Build env = CI/telemetry defaults (BUILD_ENV_VARS) + the customer's own env
 // vars. NODE_ENV is deliberately NOT set or overridden here: it's the customer's
@@ -733,17 +733,6 @@ export async function finalizeComposeDeploy(opts: {
   // Failed, cancelled, and reconciling deployments leave the live release intact.
   const settled = await repos.deployment.findById(dep.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline"); return null; });
   if (settled?.status === "ready" || settled?.status === "partial_failure") {
-    // A single-app predecessor's role containers are not part of this stack.
-    try {
-      const prevDep = project.activeDeploymentId ? await findActiveDeployment(project) : null;
-      await retirePreviousRoleContainers({
-        previous: prevDep,
-        currentDeploymentId: dep.id,
-        log: (m, level) => logger.log(`${m}\n`, level),
-      });
-    } catch (err) {
-      observeCaughtError(err, "platform/engine/modules/deployments/build-pipeline");
-    }
     await archivePreviousDeployment(dep, project, logger);
   }
 }

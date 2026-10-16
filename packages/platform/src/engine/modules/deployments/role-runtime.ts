@@ -13,7 +13,7 @@ import {
   type RuntimeAdapter,
 } from "@repo/adapters";
 import type { Deployment } from "@repo/db";
-import type { RoleContainerRef, RoleRolloutDeps } from "./role-rollout";
+import { roleRetirementWarning, type RoleContainerRef, type RoleRolloutDeps } from "./role-rollout";
 import { verifyDeployedContainers, type StabilityFinding } from "./stability-audit.service";
 import { withDeploymentRuntime } from "../../lib/deployment-runtime";
 
@@ -186,7 +186,8 @@ export function runtimeRoleRolloutDeps(input: {
  * compose (multi-service) deploy. That path never runs `rolloutRoles`, so
  * without this the old workers and scheduler would keep running beside the new
  * stack. Every container is destroyed concurrently through the PREVIOUS
- * deployment's runtime, each bounded and best-effort. Never throws.
+ * deployment's runtime, each bounded and best-effort. Never throws; returns the
+ * same deploy warning as role rollout when a container could not be removed.
  */
 export async function retirePreviousRoleContainers(input: {
   previous:
@@ -200,11 +201,11 @@ export async function retirePreviousRoleContainers(input: {
     dep: Pick<Deployment, "meta" | "organizationId">,
     fn: (runtime: RuntimeAdapter) => Promise<T>,
   ) => Promise<T>;
-}): Promise<void> {
+}): Promise<string | null> {
   const { previous, currentDeploymentId, log } = input;
-  if (!previous || previous.id === currentDeploymentId) return;
+  if (!previous || previous.id === currentDeploymentId) return null;
   const containers = previous.roleContainers ?? [];
-  if (containers.length === 0) return;
+  if (containers.length === 0) return null;
 
   const withRuntime = input.withRuntime ?? withDeploymentRuntime;
   const previousRoles = (previous.meta as { roles?: readonly StackRole[] | null } | null)?.roles;
@@ -214,7 +215,7 @@ export async function retirePreviousRoleContainers(input: {
     log(
       `Removing ${containers.length} previous role container${containers.length === 1 ? "" : "s"}...`,
     );
-    await withRuntime(previous, (runtime) =>
+    const failed = await withRuntime(previous, (runtime) =>
       Promise.all(
         containers.map(async (ref) => {
           try {
@@ -223,18 +224,22 @@ export async function retirePreviousRoleContainers(input: {
               timeoutMs,
               `timed out after ${timeoutMs}ms (the container runtime never answered)`,
             );
+            return null;
           } catch (err) {
             observeCaughtError(err, ROLE_RUNTIME_SOURCE);
             log(
               `Warning: failed to remove previous role container ${ref.role} ${ref.replica}: ${safeErrorMessage(err)}`,
               "warn",
             );
+            return ref;
           }
         }),
       ),
     );
+    return roleRetirementWarning(failed.filter((ref): ref is RoleContainerRef => ref !== null));
   } catch (err) {
     observeCaughtError(err, ROLE_RUNTIME_SOURCE);
     log(`Warning: could not remove the previous role containers: ${safeErrorMessage(err)}`, "warn");
+    return roleRetirementWarning(containers);
   }
 }

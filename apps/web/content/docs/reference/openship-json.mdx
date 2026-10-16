@@ -494,6 +494,10 @@ scheduler replacement there.
 - Pausing, resuming and restarting the project act on its roles too.
 - Deleting a deployment removes its role containers.
 - Clearing a project's roles retires the running ones on the next deploy.
+- Failed retirement produces a deployment warning naming the affected roles and
+  containers. Once the old release falls outside its rollback window, retention
+  cleanup retries removal before reclaiming the image. Failed cleanup stays
+  eligible for retry; roles referenced by protected releases are preserved.
 
 <Callout title="Not in the dashboard yet" type="warn">
 Role containers are not shown in the dashboard, and no dashboard field edits roles: they

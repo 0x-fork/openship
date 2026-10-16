@@ -617,7 +617,7 @@ describe("retirePreviousRoleContainers", () => {
     expect(t.withRuntime).not.toHaveBeenCalled();
   });
 
-  it("a failing destroy only warns and the rest still run", async () => {
+  it("a failing destroy names only the failed role in the deploy warning and the rest still run", async () => {
     const t = setup(async (id) => {
       if (id === "old-w1") throw new Error("rm failed");
     });
@@ -628,7 +628,10 @@ describe("retirePreviousRoleContainers", () => {
         log: t.log,
         withRuntime: t.withRuntime as never,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(
+      "Previous role container worker replica 1 (old-w1) could not be removed. " +
+        "It may still be running the previous release's code. Remove it manually.",
+    );
     expect(t.destroyed.sort()).toEqual(["old-sched", "old-w1", "old-w2"]);
     const warns = t.logs.filter((l) => l.level === "warn");
     expect(warns).toHaveLength(1);
@@ -646,7 +649,7 @@ describe("retirePreviousRoleContainers", () => {
         withRuntime: t.withRuntime as never,
       });
       await vi.advanceTimersByTimeAsync(40_000);
-      await expect(done).resolves.toBeUndefined();
+      await expect(done).resolves.toContain("worker replica 2 (old-w2)");
       const warns = t.logs.filter((l) => l.level === "warn");
       expect(warns).toHaveLength(1);
       expect(warns[0]!.message).toContain("timed out after 40000ms");
@@ -667,7 +670,11 @@ describe("retirePreviousRoleContainers", () => {
         log: t.log,
         withRuntime: withRuntime as never,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(
+      "3 previous role containers could not be removed: worker replica 1 (old-w1), " +
+        "worker replica 2 (old-w2), sched replica 1 (old-sched). " +
+        "They may still be running the previous release's code. Remove them manually.",
+    );
     const warns = t.logs.filter((l) => l.level === "warn");
     expect(warns).toHaveLength(1);
     expect(warns[0]!.message).toContain("host unreachable");
