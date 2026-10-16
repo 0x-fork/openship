@@ -55,6 +55,7 @@
     }
   },
   "nav": {
+    "resources": "Cloud spaces",
     "support": "Support",
     "scale": "Scale",
     "home": "Home",
