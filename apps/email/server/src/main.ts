@@ -173,6 +173,9 @@ app.use('/*', serveStatic({
   root: clientBuildDir,
   precompressed: true,
   onFound: (_path, c) => {
+    if (/^\/assets\/[^/]+-[\w-]{8}\.[^/]+$/.test(c.req.path)) {
+      c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    }
     // Hono adds Vary for compressed files; identity responses vary too.
     if (!c.res.headers.has('Content-Encoding')) {
       c.header('Vary', 'Accept-Encoding', { append: true });

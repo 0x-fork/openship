@@ -64,7 +64,7 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-it("negotiates Brotli and gzip without changing the decoded JavaScript", async () => {
+it("negotiates Brotli and gzip while retaining immutable caching and the decoded JavaScript", async () => {
   for (const encoding of ["br", "gzip", "identity"]) {
     const response = await fetch(origin + "/assets/app-AbCd1234.js", {
       headers: { "Accept-Encoding": encoding, Origin: "https://mail.example.test" },
@@ -74,6 +74,7 @@ it("negotiates Brotli and gzip without changing the decoded JavaScript", async (
       encoding === "identity" ? null : encoding,
     );
     expect(response.headers.get("content-type")).toContain("javascript");
+    expect(response.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
     expect(response.headers.get("vary")).toContain("Accept-Encoding");
     expect(response.headers.get("vary")).toContain("Origin");
     expect(
