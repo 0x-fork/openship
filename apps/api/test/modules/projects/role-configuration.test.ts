@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db, repos, schema } from "@repo/db";
 import { DockerRuntime } from "@repo/adapters";
 import type { ExecutionContext } from "@repo/platform";
-import { seedDeployment, seedOrg, seedProject, setActive } from "../../helpers/seed";
+import { seedDeployment, seedOrg, seedProject, seedService, setActive } from "../../helpers/seed";
 const h = vi.hoisted(() => ({
   runtime: null as unknown,
   start: vi.fn(async () => "build"),
@@ -98,10 +98,30 @@ describe("runtime role configuration admission", () => {
       meta: {
         ...(f.active.meta as Record<string, unknown>),
         hasServer: false,
-        workloadType: "worker",
+        workload: "worker",
       },
     });
     expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(true);
+    expect((await configureRuntimeRoles(f.ctx, f.project.id, f.input)).deploymentId).toBeTruthy();
+  });
+  it("uses the deployment topology rules for primary records and disabled sidecars", async () => {
+    const f = await fixture();
+    await seedService(f.project.id, { name: "primary", kind: "app", enabled: true });
+    const sidecar = await seedService(f.project.id, {
+      name: "database",
+      kind: "compose",
+      enabled: false,
+    });
+    expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(true);
+    await db.update(schema.service).set({ enabled: true }).where(eq(schema.service.id, sidecar.id));
+    expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(false);
+    await expect(configureRuntimeRoles(f.ctx, f.project.id, f.input)).rejects.toThrow(
+      "single-app Docker",
+    );
+    await db
+      .update(schema.service)
+      .set({ enabled: false })
+      .where(eq(schema.service.id, sidecar.id));
     expect((await configureRuntimeRoles(f.ctx, f.project.id, f.input)).deploymentId).toBeTruthy();
   });
   it("rejects stale edits, unavailable images, unsupported Cloud and foreign organizations before creating work", async () => {
