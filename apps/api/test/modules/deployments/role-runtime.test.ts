@@ -190,13 +190,20 @@ function harness(
   return { deps, runtime, previousRuntime, logs, logger, verifyStability, beforeStart, config };
 }
 
-const finding = (name: string, ok: boolean, detail: string): StabilityFinding =>
+const finding = (
+  containerId: string,
+  status: StabilityFinding["verdict"]["status"],
+  detail = status,
+): StabilityFinding =>
   ({
-    target: { serviceName: name, containerId: "c" },
-    verdict: { ok } as never,
+    target: { serviceName: containerId, containerId },
+    verdict: { status, ok: status === "stable" || status === "completed" } as never,
     summary: detail,
     detail,
   }) as StabilityFinding;
+/** One stable finding per ref: what a healthy rollout's stability watch returns. */
+const stable = (...refs: { containerId: string }[]) =>
+  refs.map((ref) => finding(ref.containerId, "stable"));
 
 describe("runtimeRoleRolloutDeps: startReplica", () => {
   it("passes config, role, replica, logger.callback and the same beforeStart to deployRole", async () => {
@@ -228,9 +235,9 @@ describe("runtimeRoleRolloutDeps: verify", () => {
       roles: [worker("worker", { health: { kind: "exec", command: "true" } })],
       runtime: { inContainerExecutor: vi.fn(async () => ({ exec })) },
       findings: [
-        finding("worker-1", true, "fine"),
-        finding("worker-2", false, "worker-2 crashed"),
-        finding("sched-1", false, "later"),
+        finding("c1", "stable"),
+        finding("c2", "exited", "worker-2 crashed"),
+        finding("c3", "exited", "later"),
       ],
     });
     expect(await h.deps.verify(refs)).toBe("worker-2 crashed");
@@ -272,6 +279,7 @@ describe("runtimeRoleRolloutDeps: verify", () => {
         scheduler("sched", { health: { kind: "process" } }),
       ],
       runtime: { inContainerExecutor },
+      findings: stable(...refs),
     });
     expect(await h.deps.verify(refs)).toBeNull();
     expect(inContainerExecutor).toHaveBeenCalledTimes(2);
@@ -291,6 +299,7 @@ describe("runtimeRoleRolloutDeps: verify", () => {
           },
         })),
       },
+      findings: stable(refs[1]!),
     });
     expect(await h.deps.verify([refs[1]!])).toBe(
       'Role "worker" replica 2 health command failed: exit 1',
@@ -301,6 +310,7 @@ describe("runtimeRoleRolloutDeps: verify", () => {
     const h = harness({
       roles: [worker("worker", { health: { kind: "exec", command: "check" } })],
       runtime: { inContainerExecutor: undefined },
+      findings: stable(refs[0]!),
     });
     expect(await h.deps.verify([refs[0]!])).toBeNull();
     expect(h.logs.some((l) => l.level === "warn" && l.message.includes('role "worker"'))).toBe(
@@ -311,9 +321,86 @@ describe("runtimeRoleRolloutDeps: verify", () => {
   it("returns null when stability and health both pass", async () => {
     const h = harness({
       roles: [worker("worker", { health: { kind: "exec", command: "ok" } })],
-      findings: [finding("worker-1", true, "fine")],
+      findings: stable(refs[0]!),
     });
     expect(await h.deps.verify([refs[0]!])).toBeNull();
+  });
+
+  describe("requires exactly one stable finding per requested container", () => {
+    const pair = refs.slice(0, 2);
+
+    it("passes with one distinct stable finding for each container", async () => {
+      const h = harness({ findings: stable(...pair) });
+      expect(await h.deps.verify(pair)).toBeNull();
+    });
+
+    it("fails a replica whose process completed: a role must keep running", async () => {
+      const h = harness({ findings: [finding("c1", "stable"), finding("c2", "completed")] });
+      expect(await h.deps.verify(pair)).toBe(
+        'Role "worker" replica 2 exited with code 0 during the startup check. A role is a long-running process, so it must keep running.',
+      );
+    });
+
+    it.each([
+      ["no finding for the second container", [finding("c1", "stable")], "2", "no result"],
+      [
+        "two findings for the first container and none for the second",
+        [finding("c1", "stable"), finding("c1", "stable")],
+        "1",
+        "2 results",
+      ],
+    ])("fails as unverified with %s", async (_label, findings, replica, count) => {
+      const h = harness({ findings });
+      expect(await h.deps.verify(pair)).toBe(
+        `Could not verify that role "worker" replica ${replica} started: the startup check returned ${count} for container c${replica}`,
+      );
+    });
+
+    it("reports a conclusive failure before an unverified replica", async () => {
+      const h = harness({ findings: [finding("c2", "exited", "worker-2 crashed")] });
+      expect(await h.deps.verify(pair)).toBe("worker-2 crashed");
+    });
+
+    it("fails a replica whose inspection throws, through the real stability watch", async () => {
+      // The shared watch logs the error and returns no finding for that replica.
+      const logs: { message: string; level?: string }[] = [];
+      const deps = runtimeRoleRolloutDeps({
+        roles: [worker()],
+        previous: [],
+        runtime: asRuntime({
+          name: "docker",
+          supports: (capability: string) => capability === "stabilityProbe",
+          sampleStability: vi.fn(async () => {
+            throw new Error("inspect failed");
+          }),
+        }),
+        previousRuntime: asRuntime({ name: "docker" }),
+        config: { deploymentId: "dep-1" } as unknown as DeployConfig,
+        logger: {
+          log: (message: string, level?: string) => logs.push({ message, level }),
+        } as unknown as BuildLogger,
+        beforeStart: async () => {},
+        stabilizationWindowMs: 5_000,
+        keepProvisionedOnCancel: () => false,
+      });
+      expect(await deps.verify([refs[0]!])).toBe(
+        'Could not verify that role "worker" replica 1 started: the startup check returned no result for container c1',
+      );
+      expect(logs.some((l) => l.level === "warn" && l.message.includes("inspect failed"))).toBe(
+        true,
+      );
+    });
+
+    it("never runs exec health when a replica is unverified", async () => {
+      const exec = vi.fn(async () => "");
+      const h = harness({
+        roles: [worker("worker", { health: { kind: "exec", command: "true" } })],
+        runtime: { inContainerExecutor: vi.fn(async () => ({ exec })) },
+        findings: [],
+      });
+      expect(await h.deps.verify(pair)).toMatch(/^Could not verify/);
+      expect(exec).not.toHaveBeenCalled();
+    });
   });
 });
 
