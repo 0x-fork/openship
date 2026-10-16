@@ -860,36 +860,23 @@ async function resolveMessageUids(
   const uidMatch = /^uid:(\d+)$/.exec(id);
   if (uidMatch) return [Number(uidMatch[1])];
 
-  const rawId = id.trim();
-  const candidates = new Set([normalizeMessageId(rawId)]);
-  // Query-state already decodes normal URLs. Legacy callers sometimes send
-  // the entire encoded <Message-ID>; accept that wrapper once, after trying
-  // the literal ID. Percent escapes inside real Message-IDs stay opaque.
-  if (/^%3c.*%3e$/i.test(rawId)) {
-    try {
-      candidates.add(normalizeMessageId(decodeURIComponent(rawId)));
-    } catch {
-      // Malformed URL escapes must never change the literal identifier.
+  // Query-state decodes URLs before dispatching actions. Message-IDs can
+  // contain literal percent escapes, including %3C...%3E, so guessing an
+  // additional URL-decoded interpretation could select a different email.
+  const expectedId = normalizeMessageId(id);
+  // An empty HEADER search matches every message with that header. IMAP
+  // also matches substrings and ignores case; verify every candidate UID.
+  if (!expectedId) return null;
+  const uids = await client.search({ header: { 'message-id': expectedId } }, { uid: true });
+  if (!Array.isArray(uids) || uids.length === 0) return null;
+  const matches: number[] = [];
+  for await (const message of client.fetch(uids, { envelope: true }, { uid: true })) {
+    if (normalizeMessageId(message.envelope?.messageId) === expectedId) {
+      matches.push(message.uid);
     }
   }
-
-  for (const expectedId of candidates) {
-    // Never issue an empty HEADER search: it matches every message with
-    // that header. IMAP also matches substrings and ignores case, so SEARCH
-    // results are only candidates, not permission to mutate those UIDs.
-    if (!expectedId) continue;
-    const uids = await client.search({ header: { 'message-id': expectedId } }, { uid: true });
-    if (!Array.isArray(uids) || uids.length === 0) continue;
-    const matches: number[] = [];
-    for await (const message of client.fetch(uids, { envelope: true }, { uid: true })) {
-      if (normalizeMessageId(message.envelope?.messageId) === expectedId) {
-        matches.push(message.uid);
-      }
-    }
-    // Drain FETCH before issuing another IMAP command on this connection.
-    if (matches.length > 0) return matches;
-  }
-  return null;
+  // Drain FETCH before issuing another IMAP command on this connection.
+  return matches.length > 0 ? matches : null;
 }
 
 const GET_THREAD_DEBUG = process.env.IMAP_DEBUG === '1';

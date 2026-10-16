@@ -150,9 +150,12 @@ describe('webmail deletion (#429)', () => {
     expect(connection).not.toHaveBeenCalled();
   });
 
-  it('deletes messages identified by URL-encoded Message-ID headers', async () => {
+  it('deletes a message opened through a URL-encoded deep link', async () => {
+    const url = new URL(
+      'https://mail.example.com/inbox?threadId=%3C6044072238196767142@google.com%3E',
+    );
     await moveThreadsTo({
-      threadIds: ['%3C6044072238196767142@google.com%3E'],
+      threadIds: [url.searchParams.get('threadId')!],
       currentFolder: 'inbox',
       destination: 'bin',
     });
@@ -192,21 +195,31 @@ describe('exact Message-ID resolution (#1286)', () => {
     expect([...mailboxes.get('Trash')!]).toEqual([42]);
   });
 
-  it('decodes a legacy encoded wrapper exactly once', async () => {
+  it('decodes a deep link exactly once, preserving literal percent escapes', async () => {
     competingMessages('<invoice%41@example.com>', '<invoiceA@example.com>');
+    const url = new URL(
+      `https://mail.example.com/inbox?threadId=${encodeURIComponent('<invoice%41@example.com>')}`,
+    );
     await caller.bulkDelete({
-      ids: [encodeURIComponent('<invoice%41@example.com>')],
+      ids: [url.searchParams.get('threadId')!],
       folder: 'inbox',
     });
     expect([...mailboxes.get('INBOX')!]).toEqual([43]);
     expect([...mailboxes.get('Trash')!]).toEqual([42]);
   });
 
-  it('prefers an exact literal ID over its legacy URL-decoded interpretation', async () => {
+  it('does not reinterpret an encoded-looking literal ID on a repeated action', async () => {
     competingMessages('%3Cinvoice@example.com%3E', '<invoice@example.com>');
     await caller.bulkDelete({ ids: ['%3Cinvoice@example.com%3E'], folder: 'inbox' });
     expect([...mailboxes.get('INBOX')!]).toEqual([43]);
     expect([...mailboxes.get('Trash')!]).toEqual([42]);
+    await expect(
+      caller.bulkDelete({
+        ids: ['%3Cinvoice@example.com%3E'],
+        folder: 'inbox',
+      }),
+    ).rejects.toThrow('Message not found');
+    expect([...mailboxes.get('INBOX')!]).toEqual([43]);
   });
 
   it.each([
@@ -284,10 +297,13 @@ describe('exact Message-ID resolution (#1286)', () => {
     expect(result.latest.subject).toBe('<invoice@example.com>');
   });
 
-  it('reads a legacy encoded wrapper with an unbracketed IMAP envelope', async () => {
+  it('reads a deep link with an unbracketed IMAP envelope', async () => {
     messageIds.set(42, '6044072238196767142@google.com');
+    const url = new URL(
+      'https://mail.example.com/inbox?threadId=%3C6044072238196767142@google.com%3E',
+    );
     const result = await caller.get({
-      id: '%3C6044072238196767142@google.com%3E',
+      id: url.searchParams.get('threadId')!,
       folder: 'inbox',
     });
     expect(result.latest.subject).toBe('6044072238196767142@google.com');
