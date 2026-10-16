@@ -139,6 +139,32 @@ describe("durable role handover recovery (#1254)", () => {
     return { project, previous, dep, config, journal, put, candidateName };
   }
 
+  it("protects a published handover from a late failure or cancellation, even while recovery is pending", async () => {
+    const { onFailure, onCancelled, reportPipelineError } =
+      await import("@repo/platform/engine/modules/deployments/deployment-lifecycle");
+    const f = await fixture();
+    await f.journal.committing();
+    const log = vi.fn();
+    const ctx = {
+      project: f.project,
+      dep: f.dep,
+      buildSessionId: "no-live-session",
+      persistLogs: () => [],
+      provisioned: {},
+    };
+    await onFailure(ctx, "late failure");
+    await reportPipelineError(ctx, "late transport failure", { log });
+    expect((await repos.deployment.findById(f.dep.id))?.status).toBe("reconciling");
+    expect(removed).toEqual([]);
+    await repos.deployment.updateStatus(f.dep.id, "ready");
+    await setActive(f.project.id, f.dep.id);
+    const recovered = { ...ctx, settled: undefined };
+    await onCancelled(recovered);
+    expect(recovered.settled).toBe("ready");
+    await reportPipelineError(recovered, "late cancellation", { log });
+    expect((await repos.deployment.findById(f.dep.id))?.status).toBe("ready");
+  });
+
   it("recovers a lost create response by its durable name before restoring the predecessor", async () => {
     const f = await fixture();
     await f.journal.recordStopIntent(f.previous.roleContainers![0]);
