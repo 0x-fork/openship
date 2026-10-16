@@ -4,6 +4,7 @@ import { DockerRuntime } from "@repo/adapters";
 import { repos, type Deployment, type Project } from "@repo/db";
 import type { RuntimeRoleConfigurationInput } from "@repo/contracts";
 import type { ExecutionContext } from "@repo/platform";
+import { snapshotToClass } from "../deployments/deployment-class";
 import { findActiveDeployment } from "../../lib/active-deployment";
 import { assertResourceInOrg, assertNotControlPlane } from "../../lib/resource-access";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
@@ -25,7 +26,7 @@ function unsupported(project: Project, active: Deployment | null | undefined): s
     meta.deployTarget === "cloud" ||
     meta.clusterId ||
     meta.composeServices?.length ||
-    !meta.hasServer
+    snapshotToClass(meta).workload === "static"
   )
     return "Runtime role configuration requires a single-app Docker deployment.";
   return null;

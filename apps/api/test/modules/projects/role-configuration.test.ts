@@ -92,6 +92,18 @@ describe("runtime role configuration admission", () => {
       (await repos.deployment.listInFlightByProject(f.project.id)).map((row) => row.id),
     ).toEqual([dep.id]);
   });
+  it("supports a headless Docker primary process using the same workload classification as deployment", async () => {
+    const f = await fixture();
+    await repos.deployment.updateStatus(f.active.id, "ready", {
+      meta: {
+        ...(f.active.meta as Record<string, unknown>),
+        hasServer: false,
+        workloadType: "worker",
+      },
+    });
+    expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(true);
+    expect((await configureRuntimeRoles(f.ctx, f.project.id, f.input)).deploymentId).toBeTruthy();
+  });
   it("rejects stale edits, unavailable images, unsupported Cloud and foreign organizations before creating work", async () => {
     const f = await fixture();
     await expect(
