@@ -474,8 +474,12 @@ Every role container must stay up through the stabilization window, **15 seconds
 default. This check always runs for roles, whatever the project's readiness settings,
 because a role has no port to probe. If the role declares an `exec` health command, it
 runs once, after the window. A failed startup check fails the deploy and triggers the
-rollback attempt described above. The startup check runs only during a deploy. It does not
-continuously monitor role containers afterward.
+rollback attempt described above. The startup check runs only during a deploy.
+Afterward, container monitoring watches each recorded role replica through the same
+health checks, incident history and notifications as the web container. It checks
+process state and restarts; it does not repeatedly execute a role's `health.command`.
+Deployments, intentionally stopped projects and loss of the observer's network use
+the same alert suppression rules as other workloads.
 
 <Callout title="Use exec so the stop signal reaches your process" type="warn">
 The command runs under `sh -c`. Without `exec`, the shell stays as the main process and
