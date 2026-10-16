@@ -4,6 +4,7 @@ import { DockerRuntime } from "@repo/adapters";
 import { repos, type Deployment, type Project } from "@repo/db";
 import type { RuntimeRoleConfigurationInput } from "@repo/contracts";
 import type { ExecutionContext } from "@repo/platform";
+import { shouldUseProjectServicePipeline } from "../deployments/compose/project-services";
 import { snapshotToClass } from "../deployments/deployment-class";
 import { findActiveDeployment } from "../../lib/active-deployment";
 import { assertResourceInOrg, assertNotControlPlane } from "../../lib/resource-access";
@@ -17,7 +18,10 @@ import {
   type DeploymentConfigSnapshot,
 } from "../deployments/build.service";
 
-function unsupported(project: Project, active: Deployment | null | undefined): string | null {
+async function unsupported(
+  project: Project,
+  active: Deployment | null | undefined,
+): Promise<string | null> {
   const meta = active?.meta as DeploymentConfigSnapshot | null;
   if (!active?.containerId || !meta) return "Deploy this app before configuring runtime roles.";
   if (project.disabledAt) return "Resume this app before configuring runtime roles.";
@@ -29,6 +33,8 @@ function unsupported(project: Project, active: Deployment | null | undefined): s
     snapshotToClass(meta).workload === "static"
   )
     return "Runtime role configuration requires a single-app Docker deployment.";
+  if (await shouldUseProjectServicePipeline(project, meta.composeServices))
+    return "Runtime role configuration requires a single-app Docker deployment.";
   return null;
 }
 
@@ -36,7 +42,7 @@ export async function getRoleConfiguration(id: string, organizationId: string) {
   const project = await repos.project.findById(id);
   assertResourceInOrg(project, "Project", organizationId, id);
   const active = await findActiveDeployment(project);
-  const reason = unsupported(project, active);
+  const reason = await unsupported(project, active);
   return {
     supported: !reason,
     reason,
@@ -102,10 +108,8 @@ export async function configureRuntimeRoles(
         "ROLE_CONFIGURATION_CHANGED",
       );
     const active = await findActiveDeployment(live);
-    const reason = unsupported(live, active);
+    const reason = await unsupported(live, active);
     if (reason) throw new ValidationError(reason);
-    if ((await repos.service.listByProject(id)).some((service) => service.enabled !== false))
-      throw new ValidationError("Runtime role configuration requires a single-app deployment.");
     return withDeploymentRuntime(active!, async (runtime) => {
       if (!(runtime instanceof DockerRuntime) || !runtime.supports("roles"))
         throw new ValidationError("This runtime cannot configure roles.");
