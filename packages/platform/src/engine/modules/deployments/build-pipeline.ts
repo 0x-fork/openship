@@ -2339,6 +2339,11 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     certificateManagement: ssl.certificateManagement,
     usesManagedRouting,
     isStatic: isStaticFileServe,
+    // Match live routing repair: a verified Domains-tab hostname on a single
+    // app serves that app even when no endpoint mapping was saved (#1281).
+    ...(!isStaticFileServe && !isWorker && phase.effectiveTarget !== "cloud"
+      ? { defaultTargetPort: deployConfig.port }
+      : {}),
     staticContainerPort:
       !isStaticFileServe &&
       phase.effectiveTarget === "cloud" &&
