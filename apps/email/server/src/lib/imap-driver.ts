@@ -19,6 +19,7 @@
  */
 
 import { TextDecoder } from 'node:util';
+import type { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import { sanitizeMailHtml } from './sanitize';
 import { withImap, type ImapAuth } from './imap';
@@ -847,45 +848,46 @@ export interface UidHint {
  */
 function normalizeMessageId(id: string | null | undefined): string {
   if (!id) return '';
-  let decoded = id.trim();
-  try {
-    decoded = decodeURIComponent(decoded).trim();
-  } catch {}
-  if (decoded.startsWith('<')) decoded = decoded.slice(1);
-  if (decoded.endsWith('>')) decoded = decoded.slice(0, -1);
-  return decoded.trim();
+  let value = id.trim();
+  if (value.startsWith('<') && value.endsWith('>')) value = value.slice(1, -1);
+  return value.trim();
 }
 
 async function resolveMessageUids(
-  client: {
-    search: (filter: { header?: { 'message-id': string } }, options?: { uid: boolean }) => Promise<number[] | boolean>;
-  },
+  client: Pick<ImapFlow, 'search' | 'fetch'>,
   id: string,
 ): Promise<number[] | null> {
   const uidMatch = /^uid:(\d+)$/.exec(id);
   if (uidMatch) return [Number(uidMatch[1])];
 
   const rawId = id.trim();
-  let decodedId = rawId;
-  try {
-    decodedId = decodeURIComponent(rawId).trim();
-  } catch {}
-  const normalized = normalizeMessageId(decodedId);
-
-  const seenCandidates: Record<string, true> = {};
-  const candidates: string[] = [];
-  for (const c of [rawId, decodedId, normalized, normalized ? `<${normalized}>` : '']) {
-    if (c && !seenCandidates[c]) {
-      seenCandidates[c] = true;
-      candidates.push(c);
+  const candidates = new Set([normalizeMessageId(rawId)]);
+  // Query-state already decodes normal URLs. Legacy callers sometimes send
+  // the entire encoded <Message-ID>; accept that wrapper once, after trying
+  // the literal ID. Percent escapes inside real Message-IDs stay opaque.
+  if (/^%3c.*%3e$/i.test(rawId)) {
+    try {
+      candidates.add(normalizeMessageId(decodeURIComponent(rawId)));
+    } catch {
+      // Malformed URL escapes must never change the literal identifier.
     }
   }
 
-  for (const candidate of candidates) {
-    const res = await client.search({ header: { 'message-id': candidate } }, { uid: true });
-    if (Array.isArray(res) && res.length > 0) {
-      return res;
+  for (const expectedId of candidates) {
+    // Never issue an empty HEADER search: it matches every message with
+    // that header. IMAP also matches substrings and ignores case, so SEARCH
+    // results are only candidates, not permission to mutate those UIDs.
+    if (!expectedId) continue;
+    const uids = await client.search({ header: { 'message-id': expectedId } }, { uid: true });
+    if (!Array.isArray(uids) || uids.length === 0) continue;
+    const matches: number[] = [];
+    for await (const message of client.fetch(uids, { envelope: true }, { uid: true })) {
+      if (normalizeMessageId(message.envelope?.messageId) === expectedId) {
+        matches.push(message.uid);
+      }
     }
+    // Drain FETCH before issuing another IMAP command on this connection.
+    if (matches.length > 0) return matches;
   }
   return null;
 }
@@ -974,9 +976,10 @@ export async function getThread(
             );
             const validCandidate =
               candidate && typeof candidate === 'object' ? candidate : null;
-            const matchedMsgId = validCandidate
-              ? normalizeMessageId(validCandidate.envelope?.messageId) === normalizedId
-              : false;
+            const matchedMsgId =
+              validCandidate && normalizedId
+                ? normalizeMessageId(validCandidate.envelope?.messageId) === normalizedId
+                : false;
             gtDebug('hint: fetchOne', {
               ms: Math.round(performance.now() - t1),
               found: !!validCandidate,
@@ -993,9 +996,8 @@ export async function getThread(
         // mailbox checking headers; expensive on large mailboxes without
         // FTS, which is why the hint path above exists.
         //
-        // We search BOTH the bracketed and unbracketed form so the lookup
-        // doesn't depend on which form the IMAP server stores internally
-        // (Dovecot keeps brackets, some servers strip them).
+        // The shared resolver checks exact envelope IDs after SEARCH so
+        // substring/case matches cannot select a different message.
         if (!msg) {
           const t0 = performance.now();
           const search = await resolveMessageUids(client, id);
@@ -1269,20 +1271,20 @@ export async function setImportant(
 export async function deleteThreads(auth: ImapAuth, input: FlagInput): Promise<void> {
   if (input.ids.length === 0) return;
   const sourceMailbox = folderToMailbox(input.folder ?? 'inbox');
-  const uidOnly = (id: string) => {
-    const m = /^uid:(\d+)$/.exec(id);
-    return m ? [Number(m[1])] : null;
-  };
   await withImap(auth, async (client) => {
     const lock = await client.getMailboxLock(sourceMailbox);
     try {
       for (const id of input.ids) {
         const found = await resolveMessageUids(client, id);
-        if (!found) continue;
+        if (!found) throw new Error(`Message not found for deletion: ${id}`);
         if (sourceMailbox === 'Trash') {
-          await client.messageDelete(found, { uid: true });
+          if (!(await client.messageDelete(found, { uid: true }))) {
+            throw new Error(`IMAP refused message deletion: ${id}`);
+          }
         } else {
-          await client.messageMove(found, 'Trash', { uid: true });
+          if (!(await client.messageMove(found, 'Trash', { uid: true }))) {
+            throw new Error(`IMAP refused move to Trash: ${id}`);
+          }
         }
       }
     } finally {
@@ -1331,10 +1333,6 @@ export async function modifyLabels(
   } else if (add.length === 0 && (remove.includes('INBOX') || remove.includes('SPAM'))) {
     moveTo = 'Archive';
   }
-  const uidOnly = (id: string) => {
-    const m = /^uid:(\d+)$/.exec(id);
-    return m ? [Number(m[1])] : null;
-  };
   await withImap(auth, async (client) => {
     // Dovecot doesn't auto-create Archive. CREATE on an existing mailbox
     // returns ALREADYEXISTS, which imapflow resolves as `created: false`.
@@ -1343,16 +1341,22 @@ export async function modifyLabels(
     try {
       for (const id of input.ids) {
         const found = await resolveMessageUids(client, id);
-        if (!found) continue;
+        if (!found) throw new Error(`Message not found for labels: ${id}`);
         if (moveTo) {
-          if (moveTo !== mailbox) await client.messageMove(found, moveTo, { uid: true });
+          if (moveTo !== mailbox && !(await client.messageMove(found, moveTo, { uid: true }))) {
+            throw new Error(`IMAP refused move to ${moveTo}: ${id}`);
+          }
           continue;
         }
         if (input.addLabels && input.addLabels.length > 0) {
-          await client.messageFlagsAdd(found, input.addLabels, { uid: true });
+          if (!(await client.messageFlagsAdd(found, input.addLabels, { uid: true }))) {
+            throw new Error(`IMAP refused label addition: ${id}`);
+          }
         }
         if (input.removeLabels && input.removeLabels.length > 0) {
-          await client.messageFlagsRemove(found, input.removeLabels, { uid: true });
+          if (!(await client.messageFlagsRemove(found, input.removeLabels, { uid: true }))) {
+            throw new Error(`IMAP refused label removal: ${id}`);
+          }
         }
       }
     } finally {
