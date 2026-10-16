@@ -69,6 +69,10 @@ when the server is unavailable. Reopening an eligible pull request creates a fre
 Delivery deduplication, leases, and periodic reconciliation recover missed webhooks and restarts.
 Failures and pending cleanup are visible in the source environment's preview list.
 
+Whole-instance transfers preserve preview ownership and pending cleanup. Disable previews and wait
+for cleanup before transferring their environments individually. Portable configuration exports
+clear preview automation and host-specific cache receipts; configure them on the destination.
+
 Automation currently supports Docker, direct-server and managed Cloud targets. Cluster targets,
 host bind mounts, shared host/container namespaces, and generated service files or inline Dockerfiles
 require a separate preview template and are rejected during setup. They cannot silently reuse

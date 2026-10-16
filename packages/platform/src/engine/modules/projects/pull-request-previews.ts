@@ -257,7 +257,7 @@ export async function configurePreviews(
       params: { state: "open", base: source.gitBranch, per_page: 100 },
     });
     await repos.project.update(source.id, { previewSettings: { ...settings, baseDomain } });
-    for (const pr of open)
+    for (const pr of open.filter((pr) => previewEligible(pr, source)))
       await repos.pullRequestPreview.enqueue({
         organizationId: source.organizationId,
         sourceProjectId: source.id,
@@ -529,7 +529,7 @@ async function reconcile(row: PullRequestPreview, token: string) {
     let id = row.commentId;
     if (!id) {
       // Recover an accepted POST whose response was lost; never add one comment per commit.
-      for (let page = 1; page <= 10; page++) {
+      for (let page = 1; ; page++) {
         const comments = await request<Array<{ id: number; body: string }>>(
           `${root}/issues/${row.number}/comments?per_page=100&page=${page}`,
         );
@@ -567,7 +567,7 @@ export async function runPullRequestPreviewsSweep() {
         organizationId: source.organizationId,
         label: "github:preview-discovery",
       });
-      for (let page = 1; page <= 10; page++) {
+      for (let page = 1; ; page++) {
         const prs = await githubFetch<PullRequest[]>({
           ctx,
           owner: source.gitOwner,
@@ -575,7 +575,7 @@ export async function runPullRequestPreviewsSweep() {
           url: `https://api.github.com/repos/${encodeURIComponent(source.gitOwner)}/${encodeURIComponent(source.gitRepo)}/pulls`,
           params: { state: "open", base: source.gitBranch, per_page: 100, page },
         });
-        for (const pr of prs)
+        for (const pr of prs.filter((pr) => previewEligible(pr, source)))
           await repos.pullRequestPreview.enqueue({
             organizationId: source.organizationId,
             sourceProjectId: source.id,
