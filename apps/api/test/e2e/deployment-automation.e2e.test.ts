@@ -68,6 +68,7 @@ describeDockerE2E("managed deployment output and build environment", () => {
     } as BuildConfig;
     for (const [file, content] of Object.entries({
       ...files,
+      ".fixture-id": randomUUID(),
       Dockerfile: generateDockerfile(config),
     })) {
       await mkdir(dirname(join(dir, file)), { recursive: true });
