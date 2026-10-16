@@ -4,8 +4,13 @@ import { expect, it } from "vitest";
 
 it("bounds the macOS signer's binary probe for malformed protobuf-like resources", () => {
   // Resolve through Forge's signing dependency chain, including isolated installs.
-  let require = createRequire(import.meta.url);
-  for (const dependency of ["@electron-forge/core", "@electron/packager", "@electron/osx-sign"]) {
+  const desktopRequire = createRequire(import.meta.url);
+  let require = createRequire(desktopRequire.resolve("@electron-forge/cli/package.json"));
+  for (const dependency of [
+    "@electron-forge/core",
+    "@electron/packager",
+    "@electron/osx-sign",
+  ]) {
     require = createRequire(require.resolve(dependency));
   }
   const detector = require.resolve("isbinaryfile");
