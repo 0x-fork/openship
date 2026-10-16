@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import type { StackRole } from "@repo/core";
 import type { BuildLogger, DeployConfig, RuntimeAdapter } from "@repo/adapters";
 import {
+  rolloutRoles,
+  type RoleContainerRef,
+} from "@repo/platform/engine/modules/deployments/role-rollout";
+import {
   rolesUnsupportedReason,
   roleTeardownTimeoutMs,
   retirePreviousRoleContainers,
@@ -138,6 +142,7 @@ function harness(
   over: {
     roles?: readonly StackRole[];
     previousRoles?: readonly StackRole[];
+    previous?: readonly RoleContainerRef[];
     findings?: StabilityFinding[];
     runtime?: Record<string, unknown>;
     previousRuntime?: Record<string, unknown>;
@@ -172,7 +177,7 @@ function harness(
   const deps = runtimeRoleRolloutDeps({
     roles: over.roles ?? [worker()],
     previousRoles: over.previousRoles,
-    previous: [],
+    previous: over.previous ?? [],
     runtime: asRuntime(runtime),
     previousRuntime: asRuntime(previousRuntime),
     config,
@@ -342,6 +347,38 @@ describe("runtimeRoleRolloutDeps: stopPrevious", () => {
     const h = harness({ runtime: { stop: runtimeStop } });
     await h.deps.stopPrevious("old");
     expect(runtimeStop).not.toHaveBeenCalled();
+  });
+});
+
+describe("runtimeRoleRolloutDeps: singleton handover (#1253)", () => {
+  it("gives the rollout the previous roles, so a renamed scheduler stops before its replacement starts", async () => {
+    const events: string[] = [];
+    const h = harness({
+      roles: [scheduler("cron")],
+      previousRoles: [scheduler("scheduler")],
+      previous: [{ role: "scheduler", replica: 1, containerId: "old-sched" }],
+      runtime: {
+        deployRole: vi.fn(async (_config: unknown, role: StackRole) => {
+          events.push(`start ${role.name}`);
+          return { containerId: "new-cron" };
+        }),
+      },
+      previousRuntime: {
+        stop: vi.fn(async (id: string) => {
+          events.push(`stop ${id}`);
+        }),
+      },
+      findings: [
+        {
+          target: { serviceName: "cron-1", containerId: "new-cron" },
+          verdict: { status: "stable", ok: true, reason: "stayed up" },
+          summary: "stayed up",
+          detail: "stayed up",
+        },
+      ],
+    });
+    await rolloutRoles(h.deps);
+    expect(events).toEqual(["stop old-sched", "start cron"]);
   });
 });
 

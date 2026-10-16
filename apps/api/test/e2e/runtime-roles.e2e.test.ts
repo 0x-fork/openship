@@ -72,7 +72,9 @@ function rollout(
   deploymentId: string,
   roles: StackRole[],
   previous?: RoleRollout,
-  overrides: Partial<Pick<RoleRolloutDeps, "destroyStarted" | "teardownTimeoutMs" | "log">> = {},
+  overrides: Partial<
+    Pick<RoleRolloutDeps, "destroyStarted" | "teardownTimeoutMs" | "log" | "previousRoles">
+  > = {},
 ) {
   return rolloutRoles({
     ...runtimeRoleRolloutDeps({
@@ -339,5 +341,23 @@ describeDockerE2E("runtime roles against Docker", () => {
 
     expect(await containersOf(dep("b"))).toEqual([]);
     expect(await containersOf(dep("e"))).toEqual([]);
+  });
+
+  it("stops a renamed scheduler before its replacement starts (#1253)", async () => {
+    const f = await rollout(dep("f"), [scheduler()]);
+    await f.commit();
+    const cron = { ...scheduler(), name: "cron" };
+    const g = await rollout(dep("g"), [cron], f, { previousRoles: [scheduler()] });
+
+    // Before commit the renamed predecessor is stopped and kept, not running beside cron.
+    expect(await stateOf(f.started[0]!.containerId)).toBe("exited");
+    await expectAllRunning(g);
+    await g.commit();
+    expect(await containersOf(dep("f"))).toEqual([]);
+    expect((await schedulerLog()).split(",").slice(-3)).toEqual([
+      `start-${dep("f")}`,
+      `stop-${dep("f")}`,
+      `start-${dep("g")}`,
+    ]);
   });
 });
