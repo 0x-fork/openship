@@ -50,7 +50,7 @@ export type ProjectRuntimeRoles = Static<typeof ProjectRuntimeRolesSchema>;
 
 export const RuntimeRoleConfigurationInputSchema = Type.Object({
   expectedDeploymentId: Type.String({ minLength: 1 }),
-  expectedUpdatedAt: Type.String({ format: "date-time" }),
+  expectedUpdatedAt: Type.String(),
   roles: Type.Array(RoleSchema, { maxItems: 20 }),
 }, { additionalProperties: false });
 export type RuntimeRoleConfigurationInput = Static<typeof RuntimeRoleConfigurationInputSchema>;

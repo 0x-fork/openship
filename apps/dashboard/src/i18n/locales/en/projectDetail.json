@@ -439,7 +439,7 @@
     "configuration": {
       "configure": "Configure roles",
       "title": "Workers & schedulers",
-      "hint": "Apply using the active image. Web and unchanged replicas keep running.",
+      "hint": "Apply using the active image. Your app and unchanged replicas keep running.",
       "sourceHint": "These settings apply to this release. An explicit roles array in openship.json takes precedence on the next source deployment.",
       "name": "Name",
       "command": "Command",

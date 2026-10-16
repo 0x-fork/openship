@@ -439,7 +439,7 @@
     "configuration": {
       "configure": "Rolleri yapılandır",
       "title": "İşçiler ve zamanlayıcılar",
-      "hint": "Etkin imajı kullanarak uygula. Web ve değişmeyen kopyalar çalışmaya devam eder.",
+      "hint": "Etkin imajı kullanarak uygula. Uygulama ve değişmeyen kopyalar çalışmaya devam eder.",
       "sourceHint": "Bu ayarlar bu sürüme uygulanır. Sonraki kaynak dağıtımında openship.json içindeki açık roles dizisi önceliklidir.",
       "name": "Ad",
       "command": "Komut",

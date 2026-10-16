@@ -439,7 +439,7 @@
     "configuration": {
       "configure": "Rollen konfigurieren",
       "title": "Worker & Scheduler",
-      "hint": "Mit dem aktiven Image anwenden. Web und unveränderte Replikate laufen weiter.",
+      "hint": "Mit dem aktiven Image anwenden. Die App und unveränderte Replikate laufen weiter.",
       "sourceHint": "Diese Einstellungen gelten für diese Version. Eine explizite roles-Liste in openship.json hat beim nächsten Quell-Deployment Vorrang.",
       "name": "Name",
       "command": "Befehl",

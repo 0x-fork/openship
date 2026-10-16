@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, repos, schema } from "@repo/db";
 import { DockerRuntime } from "@repo/adapters";
+import { ProjectControlSchemas } from "@repo/contracts";
+import { createResourceOperations } from "../../../../../packages/platform/src/resource-operations";
+import { createProjectControls } from "@repo/platform/engine/modules/projects/project-controls.operations";
 import type { ExecutionContext } from "@repo/platform";
 import { seedDeployment, seedOrg, seedProject, seedService, setActive } from "../../helpers/seed";
 const h = vi.hoisted(() => ({
@@ -75,7 +78,17 @@ async function fixture(target = "server") {
 describe("runtime role configuration admission", () => {
   it("uses the active immutable image and frozen environment, persists desired roles atomically and deduplicates a pending retry", async () => {
     const f = await fixture();
-    const result = await configureRuntimeRoles(f.ctx, f.project.id, f.input);
+    const operations = createResourceOperations(
+      ProjectControlSchemas,
+      {
+        authorize: async (ctx: ExecutionContext) => ctx,
+      },
+      "project",
+      createProjectControls(vi.fn()),
+    );
+    const read = await operations.getRuntimeRoleConfiguration(f.ctx, f.project.id);
+    expect(read.data).toMatchObject({ supported: true, deploymentId: f.active.id });
+    const { data: result } = await operations.configureRuntimeRoles(f.ctx, f.project.id, f.input);
     const dep = (await repos.deployment.findById(result.deploymentId))!;
     expect(dep.meta).toMatchObject({
       handoverAppImage: imageId,

@@ -439,7 +439,7 @@
     "configuration": {
       "configure": "Configurar roles",
       "title": "Workers y planificadores",
-      "hint": "Aplica con la imagen activa. La web y las réplicas sin cambios siguen funcionando.",
+      "hint": "Aplica con la imagen activa. La app y las réplicas sin cambios siguen funcionando.",
       "sourceHint": "Estos ajustes se aplican a esta versión. Una lista roles explícita en openship.json tiene prioridad en el próximo despliegue desde el código.",
       "name": "Nombre",
       "command": "Comando",

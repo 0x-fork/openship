@@ -439,7 +439,7 @@
     "configuration": {
       "configure": "Configurar funções",
       "title": "Workers e agendadores",
-      "hint": "Aplicar com a imagem ativa. A web e as réplicas sem alterações continuam funcionando.",
+      "hint": "Aplicar com a imagem ativa. O app e as réplicas sem alterações continuam funcionando.",
       "sourceHint": "Estas configurações se aplicam a esta versão. Uma lista roles explícita em openship.json tem prioridade no próximo deploy do código.",
       "name": "Nome",
       "command": "Comando",
