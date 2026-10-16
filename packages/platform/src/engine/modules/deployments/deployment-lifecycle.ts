@@ -700,7 +700,7 @@ export async function onCancelled(
 }
 
 /** Release numbering is cosmetic — see the call site's ordering invariant. */
-async function readReleaseVersion(
+export async function readReleaseVersion(
   projectId: string,
   commitSha: string | null | undefined,
 ): Promise<number | undefined> {

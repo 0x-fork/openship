@@ -146,7 +146,15 @@ export interface RoleRolloutDeps {
   /** The previous deployment's recorded role containers. */
   previous: readonly RoleContainerRef[] | null | undefined;
   /** Start one replica for the NEW deployment and resolve to its container id. */
-  startReplica(role: StackRole, replica: number): Promise<string>;
+  startReplica(
+    role: StackRole,
+    replica: number,
+    created?: (containerId: string) => Promise<void>,
+  ): Promise<string>;
+  /** Record the created container before its process can start. */
+  recordCreated?(ref: RoleContainerRef): Promise<void>;
+  /** Durable stop intent must precede the remote stop request. */
+  recordStopIntent?(ref: RoleContainerRef): Promise<void>;
   /** Startup check across the given containers: null when every one stayed up, else a failure detail. */
   verify(containers: readonly RoleContainerRef[]): Promise<string | null>;
   /** Stop must confirm shutdown (or absence), not just a non-running UI status. */
@@ -303,6 +311,7 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
     // A cancellation must be seen before the old scheduler is stopped, or
     // keepProvisionedOnCancel would leave no scheduler running at all.
     throwIfDeploymentCancelled(signal);
+    await deps.recordStopIntent?.(old);
     log(`Stopping previous ${old.role} (kept restorable until this deploy is healthy)...`);
     try {
       await withTimeout(
@@ -322,9 +331,22 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
   const startOne = async (role: StackRole, replica: number): Promise<RoleContainerRef> => {
     throwIfDeploymentCancelled(signal);
     log(`Starting role ${role.name} replica ${replica}...`);
-    const containerId = await deps.startReplica(role, replica);
-    const ref: RoleContainerRef = { role: role.name, replica, containerId };
-    started.push(ref);
+    let ref: RoleContainerRef | undefined;
+    const created = async (containerId: string) => {
+      if (ref) {
+        if (ref.containerId !== containerId)
+          throw new Error("A role replica created multiple containers");
+        return;
+      }
+      ref = { role: role.name, replica, containerId };
+      // Register in memory before awaiting persistence: a failed write still
+      // has to unwind the container, even if the adapter's removal also fails.
+      started.push(ref);
+      await deps.recordCreated?.(ref);
+    };
+    const containerId = await deps.startReplica(role, replica, created);
+    await created(containerId);
+    if (!ref) throw new Error("Role creation returned no container");
     return ref;
   };
 

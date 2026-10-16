@@ -46,6 +46,7 @@ vi.mock("@repo/db", () => ({
       update: async () => {},
     },
     deployment: {
+      listPendingRoleHandovers: async () => [],
       listForRetention: async () => h.ready,
       listInFlightByProject: async () => [],
       findById: async (id: string) => h.ready.find((d) => d.id === id),

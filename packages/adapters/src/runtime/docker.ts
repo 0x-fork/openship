@@ -1141,6 +1141,39 @@ function deploymentContainerEnv(config: DeployConfig): { env: string[]; dropped:
 }
 
 export class DockerRuntime implements RuntimeAdapter {
+  /** Stable creation identity, also recorded before a role handover mutates Docker. */
+  static deploymentContainerName(
+    config: Pick<DeployConfig, "runtimeName" | "projectId" | "deploymentId">,
+    role?: { name: string; replica: number },
+  ): string {
+    const web = `openship-${config.runtimeName || config.projectId}-${config.deploymentId}`;
+    return role ? `${web}-${role.name}-${role.replica}` : web;
+  }
+
+  /** An exact journal reference is still subject to the daemon's ownership labels. */
+  async findOwnedDeploymentContainer(
+    reference: string,
+    owner: { projectId: string; deploymentId: string; role?: string },
+  ): Promise<string | null> {
+    let info: Dockerode.ContainerInspectInfo;
+    try {
+      info = await this.docker.getContainer(reference).inspect();
+    } catch (error) {
+      if (isDockerNotFoundError(error)) return null;
+      throw error;
+    }
+    const labels = info.Config.Labels ?? {};
+    if (
+      labels[OPENSHIP_LABEL.project] !== owner.projectId ||
+      labels[OPENSHIP_LABEL.deployment] !== owner.deploymentId ||
+      (owner.role ? labels[OPENSHIP_LABEL.role] !== owner.role : !!labels[OPENSHIP_LABEL.role])
+    ) {
+      throw new Error(
+        "The recorded deployment container belongs to a different workload; recovery was refused",
+      );
+    }
+    return info.Id;
+  }
   readonly name: string = "docker";
   /** Declared as a list so a subclass can narrow it (see CloudDockerRuntime). */
   static readonly CAPABILITIES: readonly RuntimeCapability[] = [
@@ -3853,7 +3886,7 @@ export class DockerRuntime implements RuntimeAdapter {
       throw new Error("Docker deploy requires an imageRef (built image tag)");
     }
 
-    const containerName = `openship-${config.runtimeName || config.projectId}-${config.deploymentId}`;
+    const containerName = DockerRuntime.deploymentContainerName(config);
 
     // Environment variables — shared with runReleaseCommand, see deploymentContainerEnv.
     const { env, dropped } = deploymentContainerEnv(config);
@@ -4029,8 +4062,10 @@ export class DockerRuntime implements RuntimeAdapter {
       throw new Error(`Role replica must be an integer >= 1, got ${replica}`);
     }
 
-    const containerName =
-      `openship-${config.runtimeName || config.projectId}-${config.deploymentId}-${role.name}-${replica}`;
+    const containerName = DockerRuntime.deploymentContainerName(config, {
+      name: role.name,
+      replica,
+    });
 
     // The web container's env, minus PORT: a role binds no port. `portless` only
     // omits the generated value, so a project-set PORT is filtered here too, and

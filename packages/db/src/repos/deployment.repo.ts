@@ -18,6 +18,13 @@ export type NewDeployment = typeof deployment.$inferInsert;
 export type BuildSession = typeof buildSession.$inferSelect;
 export type NewBuildSession = typeof buildSession.$inferInsert;
 
+function pendingRoleHandoverCondition() {
+  return and(
+    isNotNull(deployment.roleHandover),
+    sql`coalesce(${deployment.roleHandover}->>'phase', '') <> 'complete'`,
+  );
+}
+
 export interface DeploymentResourceChanges {
   expectedActiveDeploymentId: string;
   expectedProjectUpdatedAt: Date;
@@ -68,7 +75,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       const rows = await tx
         .update(deployment)
         .set(codec.sealDeployment({ ...extra, status: "cancelled", updatedAt: now }))
-        .where(where)
+        .where(and(where, sql`coalesce(${deployment.roleHandover}->>'phase', '') <> 'committing'`))
         .returning();
       if (rows.length === 0) return false;
       await tx
@@ -424,6 +431,17 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       const { id: providedId, ...rest } = data;
       const id = providedId ?? generateId("dep");
       return withProjectWorkAdmission(db, rest.projectId, rest.organizationId, async (tx) => {
+        const [pending] = await tx
+          .select({ id: deployment.id })
+          .from(deployment)
+          .where(and(eq(deployment.projectId, rest.projectId), pendingRoleHandoverCondition()))
+          .limit(1);
+        if (pending)
+          throw new AppError(
+            "The previous role handover still needs recovery. Retry when the server is reachable, or review the cancelled deployment's kept containers.",
+            409,
+            "ROLE_HANDOVER_RECOVERY_PENDING",
+          );
         if (rest.trigger === "webhook" && !rest.actionRequestId) {
           const [target] = await tx.select().from(project).where(eq(project.id, rest.projectId));
           const [required] = await tx.select({ id: actionProject.workflowId }).from(actionProject)
@@ -929,7 +947,12 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       const swept = await db
         .update(deployment)
         .set({ status: "cancelled", errorMessage: reason, updatedAt: now })
-        .where(inArray(deployment.status, ["queued", "building", "deploying"]))
+        .where(
+          and(
+            inArray(deployment.status, ["queued", "building", "deploying"]),
+            sql`coalesce(${deployment.roleHandover}->>'phase', '') <> 'committing'`,
+          ),
+        )
         .returning();
 
       if (swept.length > 0) {
@@ -974,6 +997,57 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         .update(deployment)
         .set({ roleContainers, updatedAt: new Date() })
         .where(eq(deployment.id, id));
+    },
+
+    /** Runtime journal updates never replace immutable config or concurrent metadata. */
+    async setRoleHandover(input: {
+      id: string;
+      projectId: string;
+      organizationId: string;
+      value: Record<string, unknown>;
+      roleContainers?: { role: string; replica: number; containerId: string }[];
+      committing?: boolean;
+      expectedRevision: number | null;
+    }) {
+      const [written] = await db
+        .update(deployment)
+        .set({
+          roleHandover: input.value,
+          ...(input.roleContainers ? { roleContainers: input.roleContainers } : {}),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(deployment.id, input.id),
+            eq(deployment.projectId, input.projectId),
+            eq(deployment.organizationId, input.organizationId),
+            input.committing ? ne(deployment.status, "cancelled") : undefined,
+            input.expectedRevision === null
+              ? isNull(deployment.roleHandover)
+              : sql`${deployment.roleHandover}->>'revision' = ${String(input.expectedRevision)}`,
+          ),
+        )
+        .returning();
+      if (!written)
+        throw new AppError(
+          "The deployment changed before its role handover was recorded",
+          409,
+          "ROLE_HANDOVER_STATE_CHANGED",
+        );
+    },
+
+    async listPendingRoleHandovers(projectId?: string) {
+      const rows = await db
+        .select()
+        .from(deployment)
+        .where(
+          and(
+            projectId ? eq(deployment.projectId, projectId) : undefined,
+            pendingRoleHandoverCondition(),
+          ),
+        )
+        .orderBy(asc(deployment.createdAt));
+      return rows.map((row) => codec.openDeployment(row)!);
     },
 
     /**

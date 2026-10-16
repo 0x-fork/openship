@@ -84,6 +84,8 @@ export function runtimeRoleRolloutDeps(input: {
   signal?: AbortSignal;
   /** Read at failure time, not construction time. */
   keepProvisionedOnCancel: () => boolean;
+  recordCreated?: RoleRolloutDeps["recordCreated"];
+  recordStopIntent?: RoleRolloutDeps["recordStopIntent"];
   /** Injected for tests; defaults to verifyDeployedContainers. */
   verifyStability?: typeof verifyDeployedContainers;
 }): RoleRolloutDeps {
@@ -95,10 +97,15 @@ export function runtimeRoleRolloutDeps(input: {
     roles,
     previousRoles: input.previousRoles,
     previous: input.previous,
+    recordCreated: input.recordCreated,
+    recordStopIntent: input.recordStopIntent,
 
-    async startReplica(role, replica) {
+    async startReplica(role, replica, created) {
       const { containerId } = await runtime.deployRole!(config, role, replica, logger.callback, {
-        beforeStart: input.beforeStart,
+        beforeStart: async (containerId) => {
+          await created?.(containerId);
+          await input.beforeStart(containerId);
+        },
       });
       return containerId;
     },

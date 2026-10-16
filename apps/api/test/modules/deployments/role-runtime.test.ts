@@ -148,6 +148,7 @@ function harness(
     previousRuntime?: Record<string, unknown>;
     keepProvisionedOnCancel?: () => boolean;
     stabilizationWindowMs?: number;
+    beforeStart?: () => Promise<void>;
   } = {},
 ): Harness {
   const logs: { message: string; level: string | undefined }[] = [];
@@ -172,7 +173,7 @@ function harness(
     ...over.previousRuntime,
   };
   const verifyStability = vi.fn(async () => over.findings ?? []);
-  const beforeStart = async () => {};
+  const beforeStart = over.beforeStart ?? (async () => {});
   const config = { deploymentId: "dep-1" } as unknown as DeployConfig;
   const deps = runtimeRoleRolloutDeps({
     roles: over.roles ?? [worker()],
@@ -206,19 +207,31 @@ const stable = (...refs: { containerId: string }[]) =>
   refs.map((ref) => finding(ref.containerId, "stable"));
 
 describe("runtimeRoleRolloutDeps: startReplica", () => {
-  it("passes config, role, replica, logger.callback and the same beforeStart to deployRole", async () => {
-    const h = harness();
+  it("records the container before joining networks and starting its process", async () => {
+    const events: string[] = [];
+    const h = harness({
+      beforeStart: async () => {
+        events.push("networks");
+      },
+    });
     const role = worker("emails");
-    const id = await h.deps.startReplica(role, 2);
-    expect(id).toBe("new-id");
     const deployRole = h.runtime.deployRole as ReturnType<typeof vi.fn>;
+    deployRole.mockImplementation(async (...args: unknown[]) => {
+      await (args[4] as { beforeStart: (id: string) => Promise<void> }).beforeStart("new-id");
+      events.push("start");
+      return { containerId: "new-id" };
+    });
+    const id = await h.deps.startReplica(role, 2, async () => {
+      events.push("persist");
+    });
+    expect(id).toBe("new-id");
     expect(deployRole).toHaveBeenCalledTimes(1);
     const args = deployRole.mock.calls[0] as unknown[];
     expect(args[0]).toBe(h.config);
     expect(args[1]).toBe(role);
     expect(args[2]).toBe(2);
     expect(typeof args[3]).toBe("function");
-    expect((args[4] as { beforeStart: unknown }).beforeStart).toBe(h.beforeStart);
+    expect(events).toEqual(["persist", "networks", "start"]);
   });
 });
 
