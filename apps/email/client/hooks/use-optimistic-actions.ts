@@ -536,8 +536,14 @@ export function useOptimisticActions() {
       params: { currentFolder, destination: 'bin' },
       optimisticId,
       execute: async () => {
-        await bulkDeleteThread({ ids: threadIds, folder: currentFolder });
-
+        const decodedIds = threadIds.map((id) => {
+          try {
+            return decodeURIComponent(id).trim();
+          } catch {
+            return id.trim();
+          }
+        });
+        await bulkDeleteThread({ ids: decodedIds, folder: currentFolder });
         if (mail.bulkSelected.length > 0) {
           setMail({ ...mail, bulkSelected: [] });
         }

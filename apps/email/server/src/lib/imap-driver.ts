@@ -847,10 +847,47 @@ export interface UidHint {
  */
 function normalizeMessageId(id: string | null | undefined): string {
   if (!id) return '';
-  let s = id.trim();
-  if (s.startsWith('<')) s = s.slice(1);
-  if (s.endsWith('>')) s = s.slice(0, -1);
-  return s.trim();
+  let decoded = id.trim();
+  try {
+    decoded = decodeURIComponent(decoded).trim();
+  } catch {}
+  if (decoded.startsWith('<')) decoded = decoded.slice(1);
+  if (decoded.endsWith('>')) decoded = decoded.slice(0, -1);
+  return decoded.trim();
+}
+
+async function resolveMessageUids(
+  client: {
+    search: (filter: { header?: { 'message-id': string } }, options?: { uid: boolean }) => Promise<number[] | boolean>;
+  },
+  id: string,
+): Promise<number[] | null> {
+  const uidMatch = /^uid:(\d+)$/.exec(id);
+  if (uidMatch) return [Number(uidMatch[1])];
+
+  const rawId = id.trim();
+  let decodedId = rawId;
+  try {
+    decodedId = decodeURIComponent(rawId).trim();
+  } catch {}
+  const normalized = normalizeMessageId(decodedId);
+
+  const seenCandidates: Record<string, true> = {};
+  const candidates: string[] = [];
+  for (const c of [rawId, decodedId, normalized, normalized ? `<${normalized}>` : '']) {
+    if (c && !seenCandidates[c]) {
+      seenCandidates[c] = true;
+      candidates.push(c);
+    }
+  }
+
+  for (const candidate of candidates) {
+    const res = await client.search({ header: { 'message-id': candidate } }, { uid: true });
+    if (Array.isArray(res) && res.length > 0) {
+      return res;
+    }
+  }
+  return null;
 }
 
 const GET_THREAD_DEBUG = process.env.IMAP_DEBUG === '1';
@@ -961,16 +998,9 @@ export async function getThread(
         // (Dovecot keeps brackets, some servers strip them).
         if (!msg) {
           const t0 = performance.now();
-          let searchRaw = await client.search({ header: { 'message-id': id } }, { uid: true });
-          let search: number[] = Array.isArray(searchRaw) ? searchRaw : [];
-          if (search.length === 0 && normalizedId !== id) {
-            // Retry without angle brackets - some servers strip them in the
-            // header index even though the envelope keeps them.
-            searchRaw = await client.search({ header: { 'message-id': normalizedId } }, { uid: true });
-            search = Array.isArray(searchRaw) ? searchRaw : [];
-          }
-          gtDebug('slow: search', { ms: Math.round(performance.now() - t0), hits: search.length });
-          if (search.length > 0) {
+          const search = await resolveMessageUids(client, id);
+          gtDebug('slow: search', { ms: Math.round(performance.now() - t0), hits: search?.length ?? 0 });
+          if (search && search.length > 0) {
             const uid = search[search.length - 1];
             const t1 = performance.now();
             msg = await client.fetchOne(
@@ -1171,10 +1201,7 @@ async function modifyFlag(
             const exists = await client.fetchOne(uidHandle, { uid: true }, { uid: true });
             found = exists ? [Number(uidHandle)] : undefined;
           } else {
-            const search = await client.search(
-              { header: { 'message-id': id } },
-              { uid: true },
-            );
+            const search = await resolveMessageUids(client, id);
             found = search && search.length > 0 ? search : undefined;
           }
           if (found && found.length > 0) {
@@ -1250,14 +1277,7 @@ export async function deleteThreads(auth: ImapAuth, input: FlagInput): Promise<v
     const lock = await client.getMailboxLock(sourceMailbox);
     try {
       for (const id of input.ids) {
-        let found = uidOnly(id);
-        if (!found) {
-          const search = await client.search(
-            { header: { 'message-id': id } },
-            { uid: true },
-          );
-          found = search && search.length > 0 ? search : null;
-        }
+        const found = await resolveMessageUids(client, id);
         if (!found) continue;
         if (sourceMailbox === 'Trash') {
           await client.messageDelete(found, { uid: true });
@@ -1322,14 +1342,7 @@ export async function modifyLabels(
     const lock = await client.getMailboxLock(mailbox);
     try {
       for (const id of input.ids) {
-        let found = uidOnly(id);
-        if (!found) {
-          const search = await client.search(
-            { header: { 'message-id': id } },
-            { uid: true },
-          );
-          found = search && search.length > 0 ? search : null;
-        }
+        const found = await resolveMessageUids(client, id);
         if (!found) continue;
         if (moveTo) {
           if (moveTo !== mailbox) await client.messageMove(found, moveTo, { uid: true });

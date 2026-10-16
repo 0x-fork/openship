@@ -49,10 +49,16 @@ export function getAvailableActions(folder: FolderLocation): ThreadDestination[]
 export async function moveThreadsTo({ threadIds, currentFolder, destination }: MoveThreadOptions) {
   try {
     if (!threadIds.length) return;
+    const decodedThreadIds = threadIds.map((id) => {
+      try {
+        return decodeURIComponent(id).trim();
+      } catch {
+        return id.trim();
+      }
+    });
     const isInInbox = currentFolder === FOLDERS.INBOX || !currentFolder;
     const isInSpam = currentFolder === FOLDERS.SPAM;
     const isInBin = currentFolder === FOLDERS.BIN;
-
     let addLabel = '';
     let removeLabel = '';
 
@@ -90,7 +96,7 @@ export async function moveThreadsTo({ threadIds, currentFolder, destination }: M
         // label. deleteThreads moves to Trash when the source is not Trash,
         // and permanently deletes when it is.
         return trpcClient.mail.bulkDelete.mutate({
-          ids: threadIds,
+          ids: decodedThreadIds,
           folder: currentFolder,
         });
       }
@@ -104,7 +110,7 @@ export async function moveThreadsTo({ threadIds, currentFolder, destination }: M
     }
 
     return trpcClient.mail.modifyLabels.mutate({
-      ids: threadIds,
+      ids: decodedThreadIds,
       folder: currentFolder,
       addLabels: addLabel ? [addLabel] : [],
       removeLabels: removeLabel ? [removeLabel] : [],

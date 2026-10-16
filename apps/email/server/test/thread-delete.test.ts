@@ -102,6 +102,31 @@ describe('webmail deletion (#429)', () => {
     await moveThreadsTo({ threadIds: [], currentFolder: 'inbox', destination: 'bin' });
     expect(connection).not.toHaveBeenCalled();
   });
+
+  it('deletes messages identified by URL-encoded Message-ID headers', async () => {
+    const searchSearches: string[] = [];
+    const searchClient = {
+      ...client,
+      search: async (filter: { header?: { 'message-id': string } }) => {
+        if (filter.header?.['message-id']) {
+          searchSearches.push(filter.header['message-id']);
+          if (filter.header['message-id'] === '<6044072238196767142@google.com>') {
+            return [42];
+          }
+        }
+        return [];
+      },
+    };
+    connection.mockImplementationOnce(async (_auth, fn) => fn(searchClient as never));
+    await moveThreadsTo({
+      threadIds: ['%3C6044072238196767142@google.com%3E'],
+      currentFolder: 'inbox',
+      destination: 'bin',
+    });
+    expect([...mailboxes.get('INBOX')!]).toEqual([]);
+    expect([...mailboxes.get('Trash')!]).toEqual([42]);
+    expect(searchSearches).toContain('<6044072238196767142@google.com>');
+  });
 });
 
 describe('webmail spam and archive moves (#980)', () => {
