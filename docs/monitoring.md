@@ -306,7 +306,9 @@ yourself at the origin does nothing. See
 `CF-Connecting-IP` and not `X-Forwarded-For`.
 
 For a non-Cloudflare proxy, set `OPENSHIP_EDGE_TRUSTED_PROXIES` (comma-separated CIDRs)
-and optionally `OPENSHIP_EDGE_REAL_IP_HEADER`. Both apply on the next routing change.
+and optionally `OPENSHIP_EDGE_REAL_IP_HEADER`. Settings are read on the next routing change.
+Only IP literals and CIDRs with valid addresses and prefix lengths are accepted; malformed
+entries are dropped instead of making nginx reject every routing update.
 
 On the containerized edge, the trusted proxies are written to
 `sites-enabled/_openship-real-ip.conf`, because the image's `nginx.conf` is baked. There,
@@ -314,6 +316,11 @@ On the containerized edge, the trusted proxies are written to
 `real_ip_header`, and nginx allows only one per scope. A tunnel connector on the same host
 that forwards Cloudflare traffic still sends `CF-Connecting-IP`, so trusting its address is
 enough.
+
+The containerized edge updates this shared include under the routing configuration lock.
+If publication or reload fails, it restores the previous include before recovering the route;
+recovery does not reapply the rejected settings. If restoration itself fails, the operation
+reports the rollback failure and does not reload a partially restored configuration.
 
 ### Free `*.opsh.io` domains
 

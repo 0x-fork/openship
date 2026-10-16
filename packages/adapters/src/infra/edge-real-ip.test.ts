@@ -65,6 +65,26 @@ describe("the trusted-proxy list", () => {
     process.env.OPENSHIP_EDGE_TRUSTED_PROXIES = "10.0.0.0/8, not-an-ip, ; rm -rf /, 1.2.3.4";
     expect(edgeTrustedProxies()).toEqual(["10.0.0.0/8", "1.2.3.4"]);
   });
+
+  it("rejects invalid addresses and prefix lengths before either edge emits them", () => {
+    const valid = ["192.0.2.1", "10.0.0.0/32", "2001:db8::/128", "::ffff:192.0.2.1/120"];
+    const invalid = [
+      "999.1.1.1",
+      "deadbeef",
+      "127.1",
+      "1:::2",
+      "10.0.0.0/33",
+      "2001:db8::/129",
+      "10.0.0.0/-1",
+      "10.0.0.0/1/2",
+      "fe80::1%eth0",
+    ];
+    process.env.OPENSHIP_EDGE_TRUSTED_PROXIES = [...valid, ...invalid].join(",");
+    expect(edgeTrustedProxies()).toEqual(valid);
+    for (const conf of [edgeRealIpConf(), edgeContainerRealIpConf()]) {
+      for (const address of invalid) expect(conf).not.toContain(`set_real_ip_from ${address};`);
+    }
+  });
 });
 
 describe("the emitted config", () => {

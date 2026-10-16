@@ -62,6 +62,7 @@
  */
 
 import { SYSTEM } from "@repo/core";
+import { isIP } from "node:net";
 import { CLOUDFLARE_IPV4, CLOUDFLARE_IPV6 } from "./cloudflare-ips.generated";
 
 /** Filename of the generated real-ip include, inside the OpenResty conf dir. */
@@ -96,11 +97,20 @@ export function edgeRealIpHeader(): string {
 export function edgeTrustedProxies(): string[] {
   const raw = process.env.OPENSHIP_EDGE_TRUSTED_PROXIES?.trim();
   if (!raw) return [];
-  const CIDR = /^(?:(?:\d{1,3}\.){3}\d{1,3}|[0-9a-fA-F:]+)(?:\/\d{1,3})?$/;
   return raw
     .split(/[,\s]+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 0 && s.length <= 64 && CIDR.test(s));
+    .filter((s) => {
+      if (!s || s.length > 64) return false;
+      const [address = "", prefix, ...extra] = s.split("/");
+      const family = isIP(address);
+      // nginx cannot use interface-scoped IPv6 literals in set_real_ip_from.
+      if (!family || address.includes("%") || extra.length) return false;
+      return (
+        prefix === undefined ||
+        (/^(?:0|[1-9]\d{0,2})$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128))
+      );
+    });
 }
 
 /**
