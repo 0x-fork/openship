@@ -14,7 +14,7 @@ import {
   isProject,
   isProjectPage,
   isProjectHome,
-  RuntimeLogsInputSchema,
+  ProjectRuntimeLogsInputSchema,
   ServerLogsInputSchema,
   isEnsureProjectResult,
   type ProjectOperations,
@@ -266,6 +266,7 @@ export function createRemoteProjectOperations(
       disable: { method: "POST", path: (id) => path(id) + "/disable" },
       retryRouting: { method: "POST", path: (id) => path(id) + "/routing/retry" },
       runtimeLogs: { method: "GET", path: (id) => path(id) + "/logs", envelope: "data" },
+      getRuntimeRoles: { method: "GET", path: (id) => path(id) + "/roles", envelope: "data" },
       getCloneToken: { method: "GET", path: (id) => path(id) + "/clone-token" },
       updateCloneToken: { method: "PATCH", path: (id) => path(id) + "/clone-token" },
       deletionPreview: {
@@ -298,9 +299,12 @@ export function createRemoteProjectOperations(
       });
     },
     async *streamRuntimeLogs(id, command = {}, options = {}) {
-      const input = parseInput(RuntimeLogsInputSchema, command);
+      const input = parseInput(ProjectRuntimeLogsInputSchema, command);
       const url = http.url(path(id) + "/logs/stream");
       if (input.tail !== undefined) url.searchParams.set("tail", String(input.tail));
+      if (input.role !== undefined) url.searchParams.set("role", input.role);
+      if (input.replica !== undefined) url.searchParams.set("replica", String(input.replica));
+      if (input.deploymentId !== undefined) url.searchParams.set("deploymentId", input.deploymentId);
       yield* http.events(url.href, { signal: options.signal });
     },
     async *streamServerLogs(id, command = {}, options = {}) {

@@ -14,7 +14,6 @@ import {
 } from "./project-inputs";
 import {
   DeploymentHistoryFilters,
-  DeploymentLogsSchema,
   DeploymentPageSchema,
   LogEntrySchema,
 } from "./deployment-resources";
@@ -28,6 +27,7 @@ import {
   ProjectRoutingRetrySchema,
 } from "./project-routing";
 import { ProjectLogSchemas } from "./project-logs";
+import { ProjectRuntimeLogsInputSchema, ProjectRuntimeRolesSchema } from "./project-runtime";
 import { ProjectTransferSchemas } from "./project-transfer";
 import { AppProjectSchemas } from "./apps";
 import { ProjectClusterSchemas } from "./project-cluster";
@@ -505,10 +505,11 @@ export const ProjectControlSchemas = {
   },
   runtimeLogs: {
     action: "read",
-    input: DeploymentLogsSchema,
+    input: ProjectRuntimeLogsInputSchema,
     optionalInput: true,
     output: Type.Array(LogEntrySchema),
   },
+  getRuntimeRoles: { action: "read", output: ProjectRuntimeRolesSchema },
   getCloneToken: { action: "read", output: CloneTokenStateSchema },
   updateCloneToken: {
     action: "admin",

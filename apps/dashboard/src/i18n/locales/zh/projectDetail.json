@@ -420,5 +420,21 @@
         "transport": "连接已中断。您的服务可能仍在运行。"
       }
     }
+  },
+  "runtimeRoles": {
+    "title": "运行角色",
+    "kind": "角色",
+    "web": "Web",
+    "worker": "工作进程",
+    "scheduler": "调度器",
+    "replicas": "{count} 个副本",
+    "replica": "副本 {replica}",
+    "restarts": "重启 {count} 次",
+    "missing": "未找到",
+    "logs": "查看日志",
+    "checking": "正在检查运行角色…",
+    "staleTarget": "此角色副本不属于当前部署。请重新选择日志来源。",
+    "retry": "重试",
+    "replicaOne": "{count} 个副本"
   }
 }

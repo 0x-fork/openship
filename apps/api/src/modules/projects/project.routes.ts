@@ -1134,6 +1134,18 @@ r.post(
 
 /* ─── Runtime logs ─────────────────────────────────────────────────────── */
 r.get(
+  "/:id/roles",
+  {
+    tag: "project:read",
+    readOnly: true,
+    mcp: {
+      description:
+        "Read the active deployment's runtime roles, replicas, live status, and restart counts.",
+    },
+  },
+  ctrl.runtimeRoles,
+);
+r.get(
   "/:id/logs",
   {
     tag: "project:read",
@@ -1146,6 +1158,7 @@ r.get(
   "/:id/logs/stream",
   {
     tag: "project:read",
+    query: ProjectControlSchemas.runtimeLogs.input,
     mcpExcluded:
       "SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming.",
   },

@@ -420,5 +420,21 @@
         "transport": "接続が中断されました。サービスは稼働している可能性があります。"
       }
     }
+  },
+  "runtimeRoles": {
+    "title": "実行ロール",
+    "kind": "ロール",
+    "web": "Web",
+    "worker": "ワーカー",
+    "scheduler": "スケジューラー",
+    "replicas": "レプリカ {count} 個",
+    "replica": "レプリカ {replica}",
+    "restarts": "再起動 {count} 回",
+    "missing": "見つかりません",
+    "logs": "ログを表示",
+    "checking": "実行ロールを確認中…",
+    "staleTarget": "このレプリカは現在のデプロイに含まれていません。ログの対象を選び直してください。",
+    "retry": "再試行",
+    "replicaOne": "レプリカ {count} 個"
   }
 }

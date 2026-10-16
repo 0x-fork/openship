@@ -420,5 +420,21 @@
         "transport": "La conexión se interrumpió. Es posible que tu servicio siga funcionando."
       }
     }
+  },
+  "runtimeRoles": {
+    "title": "Roles de ejecución",
+    "kind": "Rol",
+    "web": "Web",
+    "worker": "Trabajador",
+    "scheduler": "Planificador",
+    "replicas": "{count} réplicas",
+    "replica": "Réplica {replica}",
+    "restarts": "{count} reinicios",
+    "missing": "No encontrada",
+    "logs": "Ver registros",
+    "checking": "Comprobando roles de ejecución…",
+    "staleTarget": "Esta réplica no pertenece al despliegue activo. Selecciona de nuevo el origen de los registros.",
+    "retry": "Reintentar",
+    "replicaOne": "{count} réplica"
   }
 }

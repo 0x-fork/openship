@@ -47,6 +47,7 @@ openship project|projects [options] [command]
 | [`connections`](/docs/cli/reference/project/connections#openship-project-connections) | Wire app outputs into a project's environment through the engine |
 | [`pending <id>`](/docs/cli/reference/project#openship-project-pending) | Show pending deployment, routing and certificate actions |
 | [`incidents <id>`](/docs/cli/reference/project#openship-project-incidents) | Show this project's monitoring incidents |
+| [`roles <id>`](/docs/cli/reference/project#openship-project-roles) | Show active runtime roles, replicas, status and restart counts |
 | [`drift <id>`](/docs/cli/reference/project#openship-project-drift) | Compare source and deployment configuration |
 | [`rollback-capacity <id>`](/docs/cli/reference/project#openship-project-rollback-capacity) | Inspect retained rollback capacity |
 | [`info <id>`](/docs/cli/reference/project#openship-project-info) | Read project details and deployment configuration |
@@ -551,6 +552,9 @@ openship project logs [options] <id>
 | Option | Meaning |
 | --- | --- |
 | `--tail <n>` | Number of recent lines |
+| `--role <name>` | Read one active runtime role instead of the web application |
+| `--replica <n>` | Role replica number (defaults to 1) |
+| `--deployment-id <id>` | Reject logs if this deployment is no longer active |
 | `-f, --follow` | Stream logs until interrupted |
 
 ## openship project options
@@ -651,6 +655,18 @@ openship project resources set [options] <id> <file>
 | --- | --- |
 | `id` | Project ID |
 | `file` | JSON patch with production/build resource selections, sleepMode or port |
+
+## openship project roles
+
+Show active runtime roles, replicas, status and restart counts
+
+```text
+openship project roles [options] <id>
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `id` | Project ID |
 
 ## openship project rollback-capacity
 

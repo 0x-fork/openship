@@ -100,6 +100,7 @@ projectConnectionsCommand.command("remove").alias("rm")
 export const projectInspectionCommands = ([
   ["pending", "getPendingActions", "Show pending deployment, routing and certificate actions"],
   ["incidents", "getIncidents", "Show this project's monitoring incidents"],
+  ["roles", "getRuntimeRoles", "Show active runtime roles, replicas, status and restart counts"],
   ["drift", "getCommitStatus", "Compare source and deployment configuration"],
   ["rollback-capacity", "getRollbackCapacity", "Inspect retained rollback capacity"],
   ["info", "getInfo", "Read project details and deployment configuration"],
