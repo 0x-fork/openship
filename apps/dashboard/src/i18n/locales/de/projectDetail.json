@@ -420,5 +420,21 @@
         "transport": "Die Verbindung wurde unterbrochen. Dein Dienst läuft möglicherweise noch."
       }
     }
+  },
+  "runtimeRoles": {
+    "title": "Laufzeitrollen",
+    "kind": "Rolle",
+    "web": "Web",
+    "worker": "Worker",
+    "scheduler": "Scheduler",
+    "replicas": "{count} Replikate",
+    "replica": "Replikat {replica}",
+    "restarts": "{count} Neustarts",
+    "missing": "Fehlt",
+    "logs": "Logs anzeigen",
+    "checking": "Laufzeitrollen werden geprüft…",
+    "staleTarget": "Dieses Rollenreplikat gehört nicht zur aktiven Bereitstellung. Wähle die Logquelle erneut aus.",
+    "retry": "Erneut versuchen",
+    "replicaOne": "{count} Replikat"
   }
 }

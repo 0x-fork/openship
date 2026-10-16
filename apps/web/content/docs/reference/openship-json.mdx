@@ -499,12 +499,43 @@ scheduler replacement there.
   cleanup retries removal before reclaiming the image. Failed cleanup stays
   eligible for retry; roles referenced by protected releases are preserved.
 
-<Callout title="Not in the dashboard yet" type="warn">
-Role containers are not shown in the dashboard, and no dashboard field edits roles: they
-are set in `openship.json` or through the API. On the server, a role container is named
-`openship-<project slug>-<deployment id>-<role>-<replica>`, so
-`docker logs <name>` reads that role's output.
-</Callout>
+### Status and logs
+
+**Apps & Services** and **Topology** show the active deployment's roles, their replica
+counts, live status, and observed restart counts. Open **View logs** on a replica to
+read its output under **Monitoring & Logs**. The runtime log picker also lists role
+replicas alongside the application and its companion services.
+
+Status checks only inspect the runtime; they do not start processes or run health
+commands. An unreachable server shows unknown status with Retry. A saved log link
+is pinned to its deployment, so it cannot silently open a newer release's container.
+
+Role configuration is still set in `openship.json` or through the project API. The SDK
+exposes the same read-only inventory and log selection:
+
+```ts
+const projectId = "proj_example";
+const runtime = await ship.projects.getRuntimeRoles(projectId);
+if (runtime.deploymentId) {
+  const logs = await ship.projects.runtimeLogs(projectId, {
+    role: "queue",
+    replica: 1,
+    deploymentId: runtime.deploymentId,
+    tail: 100,
+  });
+}
+```
+
+From the CLI:
+
+```bash
+openship project roles proj_example
+openship project logs proj_example --role queue --replica 1 --follow
+```
+
+On the server, role containers are named
+`openship-<project slug>-<deployment id>-<role>-<replica>`; `docker logs <name>`
+remains available for direct inspection.
 
 ## Persistent storage
 

@@ -420,5 +420,21 @@
         "transport": "Bağlantı kesildi. Servisiniz hâlâ çalışıyor olabilir."
       }
     }
+  },
+  "runtimeRoles": {
+    "title": "Çalışma zamanı rolleri",
+    "kind": "Rol",
+    "web": "Web",
+    "worker": "İşçi",
+    "scheduler": "Zamanlayıcı",
+    "replicas": "{count} kopya",
+    "replica": "Kopya {replica}",
+    "restarts": "{count} yeniden başlatma",
+    "missing": "Bulunamadı",
+    "logs": "Günlükleri görüntüle",
+    "checking": "Çalışma zamanı rolleri denetleniyor…",
+    "staleTarget": "Bu kopya etkin dağıtımda bulunmuyor. Günlük kaynağını yeniden seçin.",
+    "retry": "Yeniden dene",
+    "replicaOne": "{count} kopya"
   }
 }

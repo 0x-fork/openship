@@ -142,7 +142,10 @@ export function createProjectControls(
     },
     retryRouting: retryProjectRoutingOperation,
     async runtimeLogs(ctx, id, input) {
-      return (await service()).getRuntimeLogs(id, ctx.organizationId, input?.tail);
+      return (await service()).getRuntimeLogs(id, ctx.organizationId, input?.tail, input);
+    },
+    async getRuntimeRoles(ctx, id) {
+      return (await import("./project-roles")).getRuntimeRoles(id, ctx.organizationId);
     },
     async getCloneToken(ctx, id) {
       const project = await (await service()).getProject(id, ctx.organizationId);

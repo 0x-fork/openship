@@ -420,5 +420,21 @@
         "transport": "A ligação foi interrompida. O seu serviço pode continuar em execução."
       }
     }
+  },
+  "runtimeRoles": {
+    "title": "Papéis de execução",
+    "kind": "Papel",
+    "web": "Web",
+    "worker": "Worker",
+    "scheduler": "Agendador",
+    "replicas": "{count} réplicas",
+    "replica": "Réplica {replica}",
+    "restarts": "{count} reinicializações",
+    "missing": "Não encontrada",
+    "logs": "Ver logs",
+    "checking": "Verificando papéis de execução…",
+    "staleTarget": "Esta réplica não pertence à implantação ativa. Selecione novamente a origem dos logs.",
+    "retry": "Tentar novamente",
+    "replicaOne": "{count} réplica"
   }
 }

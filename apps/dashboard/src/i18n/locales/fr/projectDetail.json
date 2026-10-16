@@ -420,5 +420,21 @@
         "transport": "La connexion a été interrompue. Votre service fonctionne peut-être encore."
       }
     }
+  },
+  "runtimeRoles": {
+    "title": "Rôles d’exécution",
+    "kind": "Rôle",
+    "web": "Web",
+    "worker": "Worker",
+    "scheduler": "Planificateur",
+    "replicas": "{count} réplicas",
+    "replica": "Réplica {replica}",
+    "restarts": "{count} redémarrages",
+    "missing": "Introuvable",
+    "logs": "Voir les journaux",
+    "checking": "Vérification des rôles d’exécution…",
+    "staleTarget": "Ce réplica ne fait pas partie du déploiement actif. Sélectionnez à nouveau la source des journaux.",
+    "retry": "Réessayer",
+    "replicaOne": "{count} réplica"
   }
 }

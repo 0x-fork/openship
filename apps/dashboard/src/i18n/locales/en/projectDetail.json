@@ -420,5 +420,21 @@
         "transport": "The connection was interrupted. Your service may still be running."
       }
     }
+  },
+  "runtimeRoles": {
+    "title": "Runtime roles",
+    "kind": "Role",
+    "web": "Web",
+    "worker": "Worker",
+    "scheduler": "Scheduler",
+    "replicas": "{count} replicas",
+    "replica": "Replica {replica}",
+    "restarts": "{count} restarts",
+    "missing": "Missing",
+    "logs": "View logs",
+    "checking": "Checking runtime roles…",
+    "staleTarget": "This role replica is not in the active deployment. Select a log target again.",
+    "retry": "Retry",
+    "replicaOne": "{count} replica"
   }
 }

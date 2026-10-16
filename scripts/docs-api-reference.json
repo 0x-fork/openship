@@ -492,10 +492,16 @@
       "description": "Repair routing with live logs and a terminal success or failure event.",
       "route": "POST /api/projects/:id/routing/retry/stream"
     },
+    "projects.getRuntimeRoles": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Read active runtime roles, replica status, and restart counts.",
+      "route": "GET /api/projects/:id/roles"
+    },
     "projects.runtimeLogs": {
       "page": "projects",
       "section": "Routing and monitoring",
-      "description": "Read recent runtime log entries.",
+      "description": "Read recent runtime logs; optionally select a role, replica, and active deployment.",
       "route": "GET /api/projects/:id/logs"
     },
     "projects.getCloneToken": {
