@@ -179,9 +179,16 @@ describe("preview templates across stacks", () => {
     expect(row.namespaceVolumes).toBe(true);
   });
   test("rejects source host mounts and embedded secrets rather than sharing production state", () => {
-    expect(() =>
-      previewEnvironmentInput({ ...source, volumes: ["/data:/data"] }, [], 5, "feature"),
-    ).toThrow("isolated");
+    for (const volume of ["/data:/data", " /data:/data:ro ", ".:/app", "..:/app"]) {
+      expect(() =>
+        previewEnvironmentInput({ ...source, volumes: [volume] }, [], 5, "feature"),
+      ).toThrow("isolated");
+      expect(() =>
+        previewEnvironmentInput(source, [{ name: "app", volumes: [volume] } as Service], 5, "feature"),
+      ).toThrow("isolated");
+    }
+    expect(previewEnvironmentInput({ ...source, volumes: ["/data"] }, [], 5, "feature").project.volumes)
+      .toEqual(["/data"]);
     expect(() =>
       previewEnvironmentInput(
         { ...source, buildCommand: "TOKEN=production build" },

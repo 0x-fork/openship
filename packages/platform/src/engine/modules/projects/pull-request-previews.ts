@@ -6,6 +6,7 @@ import {
   isValidCustomHostname,
   inspectCommandEnvironment,
   isHostPathSource,
+  parseVolumeMount,
   type ComposeAdvanced,
 } from "@repo/core";
 import { diagnostics } from "@repo/core/diagnostics";
@@ -63,12 +64,14 @@ export function previewEnvironmentInput(
   const suffix = createHash("sha256").update(source.id).digest("hex").slice(0, 6);
   const slug = `${source.slug.slice(0, 35)}-pr-${number}-${suffix}`;
   const safeVolumes = (volumes: readonly string[] | null | undefined) => {
-    for (const spec of volumes ?? [])
-      if (spec.includes(":") && isHostPathSource(spec))
+    for (const spec of volumes ?? []) {
+      const { source } = parseVolumeMount(spec);
+      if (isHostPathSource(source) || source === "." || source === "..")
         throw new AppError(
           "PR previews require isolated named volumes; host bind mounts must be removed from the preview template.",
           400,
         );
+    }
     return volumes ? [...volumes] : null;
   };
   const commands = (row: {
