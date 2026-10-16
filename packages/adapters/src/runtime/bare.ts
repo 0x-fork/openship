@@ -56,7 +56,8 @@ import {
 } from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
-import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
+import { resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
+import { nodeOutputOptions, prepareNodeOutput, prepareNodeOutputCommand, AUTOMATIC_START } from "./node-output";
 import { isExcludedDocRootEntry } from "./docker-build-plan";
 import { isArtifactPathRef, removeManagedArtifact } from "./managed-artifact";
 import type { ProcessSupervisor, SupervisorFactory } from "./supervisor/types";
@@ -564,10 +565,8 @@ export class BareRuntime implements RuntimeAdapter {
           // emitted a wholesale-shippable bundle (e.g. Next's `output:'standalone'`),
           // ship it as-is — traced node_modules included — and skip the on-target
           // install. Absent → falls through to host mode.
-          const selfContained = await prepareStackOutput(
-            config.stack,
-            resolveProjectDir(buildDir, config.rootDirectory),
-          );
+          const outputOptions = nodeOutputOptions(config, resolveProjectDir(buildDir, config.rootDirectory));
+          const selfContained = outputOptions ? await prepareNodeOutput(outputOptions) : null;
           if (selfContained) {
             log.log("Detected self-contained build output — shipping the bundle (no install on target).\n");
             await transferLocalDirectory(
@@ -693,12 +692,21 @@ export class BareRuntime implements RuntimeAdapter {
     };
 
     const result = await runBuildPipeline(buildEnv, sourceStaged ? { ...config, sourceStaged: true } : config, log);
+    const prepareOutput = result.status === "deploying" ? prepareNodeOutputCommand(config, resolveProjectDir(dir, config.rootDirectory)) : undefined;
+    if (prepareOutput) await buildEnv.exec(prepareOutput, log.callback);
+    const root = config.rootDirectory?.trim().replace(/^\/+|\/+$/g, "");
+    const start = prepareOutput ? AUTOMATIC_START : config.startCommand || "npm start";
+    // Every stack starts from the app directory used during its build. The
+    // release directory contains the whole repository on this target-build path.
+    const appPath = root ? nodeBinPathExport(config.packageManager, [".", root.split("/").map(() => "..").join("/")]) : "";
+    const startCommand = root ? `cd ${sq(root)} && ${appPath ? `${appPath} && ` : ""}${start}` : prepareOutput ? start : undefined;
     return {
       sessionId: config.sessionId,
       status: result.status,
       imageRef: dir,
       durationMs: result.durationMs,
       errorMessage: result.errorMessage,
+      ...(startCommand ? { startCommand } : {}),
     };
   }
 

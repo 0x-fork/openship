@@ -248,6 +248,8 @@ export interface StackDefinition {
   defaultBuildCommand: string;
   /** Default start command */
   defaultStartCommand: string;
+  /** Verified self-contained server artifact; preparers share this across build runtimes. */
+  serverOutput?: { kind: "nextjs" | "node"; directory: string; entry: string };
   /**
    * Optional web startup optimization, enabled by openship.json `optimize`.
    * Runs with the runtime environment before the resolved start command.
@@ -316,9 +318,11 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "next build",
     defaultStartCommand: "next start",
+    serverOutput: { kind: "nextjs", directory: ".next", entry: "server.js" },
     requiredToolVersions: { node: "20.9.0" },
     cacheDirs: [".next/cache"],
-    buildCacheDirs: [".next/cache"],    detection: {
+    buildCacheDirs: [".next/cache"],
+    detection: {
       rootMarkers: ["next.config.js", "next.config.mjs", "next.config.ts"],
       deps: ["next"],
     },
@@ -361,7 +365,9 @@ export const STACKS = {
     defaultPort: 3000,
     defaultBuildCommand: "nuxt build",
     defaultStartCommand: "node .output/server/index.mjs",
-    cacheDirs: [".nuxt"],    detection: {
+    serverOutput: { kind: "node", directory: ".output", entry: "server/index.mjs" },
+    cacheDirs: [".nuxt"],
+    detection: {
       rootMarkers: ["nuxt.config.js", "nuxt.config.ts", "nuxt.config.mjs"],
       deps: ["nuxt", "@nuxt/core"],
     },

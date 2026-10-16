@@ -68,6 +68,7 @@ import type { PortProbeExecutor } from "../system/port-listen";
 import { PassThrough, Writable, type Readable } from "node:stream";
 import { relative, sep } from "node:path";
 import { resolveDockerBuildArgs } from "./docker-build-args";
+import { imageStartCommand, nodeOutputOptions } from "./node-output";
 import { dockerContainerStatus, dockerPublishedPortInfo } from "./docker-container-info";
 import { applyDockerEnvironment, type DockerEnvironmentOptions } from "./docker-environment";
 import { DEFAULT_CONTAINER_LOG_CONFIG } from "../container-logging";
@@ -2672,6 +2673,26 @@ export class DockerRuntime implements RuntimeAdapter {
     }
   }
 
+  private async managedCacheReceipt(tag: string, log: BuildLogger): Promise<string[] | undefined> {
+    const summary = log.cacheSummary();
+    if (summary) log.log(`${summary}\n`);
+    try {
+      const executor = (this.transport.kind === "ssh" || this.transport.kind === "cloud") ? this.connectionOptions?.executor : null;
+      const labels = executor
+        ? JSON.parse(await executor.exec(`docker image inspect --format '{{json .Config.Labels}}' ${sq(tag)}`))
+        : (await this.docker.getImage(tag).inspect())?.Config?.Labels;
+      const value = labels?.["io.openship.build-cache-targets"];
+      const targets: unknown = value ? JSON.parse(value) : [];
+      if (!Array.isArray(targets) || !targets.every(target => typeof target === "string" && target.startsWith("/"))) return;
+      if (targets.length) log.log(`Managed build caches: ${targets.join(", ")}\n`);
+      return targets.length ? targets : undefined;
+    } catch (error) {
+      observeCaughtError(error, "adapters/runtime/docker");
+      log.log("Build cache verification is unavailable; manual cache mounts will be retained.\n", "warn");
+      return;
+    }
+  }
+
   async build(config: BuildConfig, logger?: BuildLogger): Promise<BuildResult> {
     const log = logger ?? new BuildLogger();
     const startTime = Date.now();
@@ -2742,6 +2763,7 @@ export class DockerRuntime implements RuntimeAdapter {
           status: "deploying",
           imageRef: tag,
           durationMs: Date.now() - startTime,
+          managedCacheTargets: await this.managedCacheReceipt(tag, log),
         };
       }
 
@@ -2824,7 +2846,7 @@ export class DockerRuntime implements RuntimeAdapter {
       log.log(`[build] ✓ Image ${tag} ready`);
       log.step("build", "completed", `Finalizing image ${tag}`);
       const durationMs = Date.now() - startTime;
-      return { sessionId: config.sessionId, status: "deploying", imageRef: tag, durationMs };
+      return { sessionId: config.sessionId, status: "deploying", imageRef: tag, durationMs, managedCacheTargets: await this.managedCacheReceipt(tag, log) };
     } catch (err) {
       observeCaughtError(err, "adapters/runtime/docker");
       if (abort.signal.aborted || err instanceof BuildCancelledError) return cancelled();
@@ -3023,6 +3045,7 @@ export class DockerRuntime implements RuntimeAdapter {
         sessionId: config.sessionId,
         status: "deploying",
         imageRef: hostOutDir,
+        managedCacheTargets: buildResult.managedCacheTargets,
         durationMs: elapsed(),
       };
     } catch (err) {
@@ -3717,6 +3740,7 @@ export class DockerRuntime implements RuntimeAdapter {
                   sessionId: spec.config.sessionId,
                   status: "deploying" as const,
                   imageRef: spec.config.staticOutDir,
+                  managedCacheTargets: await this.managedCacheReceipt(tag, spec.logger),
                   durationMs: Date.now() - startedAt,
                 };
             spec.onResult?.(result);
@@ -3730,6 +3754,7 @@ export class DockerRuntime implements RuntimeAdapter {
             status: "deploying",
             imageRef: tag,
             durationMs: Date.now() - startedAt,
+            managedCacheTargets: await this.managedCacheReceipt(tag, spec.logger),
           };
           spec.onResult?.(result);
           results.push({ serviceName: spec.serviceName, result });
@@ -3899,7 +3924,10 @@ export class DockerRuntime implements RuntimeAdapter {
     }
 
     // Start command - if provided, split into Cmd array
-    const cmd = config.startCommand ? ["sh", "-c", config.startCommand] : undefined;
+    const labels = nodeOutputOptions({ stack: config.stack ?? "" }, ".")
+      ? (await this.docker.getImage(imageRef).inspect()).Config?.Labels : undefined;
+    const startCommand = imageStartCommand(labels, config.startCommand);
+    const cmd = startCommand ? ["sh", "-c", startCommand] : undefined;
 
     const restartPolicy = resolveRestartPolicy(config.restartPolicy);
 
@@ -6061,7 +6089,11 @@ export class DockerRuntime implements RuntimeAdapter {
         : []),
       ...serviceEnv.entries.map(([k, v]) => `${k}=${v}`),
     ];
-    const cmd = resolveComposeCmd(config);
+    let cmd = resolveComposeCmd(config);
+    if (!config.advanced?.entrypoint && cmd?.length === 3 && cmd[0] === "sh" && cmd[1] === "-c") {
+      const start = imageStartCommand((await this.docker.getImage(config.image).inspect()).Config?.Labels, cmd[2]);
+      if (start) cmd = ["sh", "-c", start];
+    }
     const entrypoint = resolveComposeEntrypoint(config.advanced);
     const hostMappings = parseContainerHosts(config.advanced?.extraHosts);
     const extraHosts = hostMappings &&

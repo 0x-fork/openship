@@ -3,7 +3,10 @@
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
+import { CommandEnvironmentNotice } from "@/components/import-project/CommandEnvironmentNotice";
+import { BuildCacheMigration } from "@/components/project-settings/DeploymentAutomation";
 import React, { useEffect, useState } from "react";
+import { useOptionalProjectSettings } from "@/context/ProjectSettingsContext";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { TagListInput, ChipMultiSelect } from "@/components/ui/TagListInput";
 import { useI18n } from "@/components/i18n-provider";
@@ -63,6 +66,7 @@ const splitList = (value: string) =>
     .filter(Boolean);
 
 export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmit, submitLabel, includeVolumes = true }: ServiceSettingsFormProps) {
+  const projectContext = useOptionalProjectSettings();
   const { t } = useI18n();
   const f = t.projectDetail.services.settingsForm;
   const isMonorepo = serviceKind(service) === "monorepo";
@@ -266,6 +270,12 @@ export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmi
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      {projectContext && <BuildCacheMigration key={service.id} projectId={projectContext.id} serviceId={service.id} />}
+      {isMonorepo && <CommandEnvironmentNotice projectId={projectContext?.id} serviceId={service.id} commands={{ installCommand, buildCommand, startCommand }} onMigrated={commands => {
+        if (commands.installCommand !== undefined) setInstallCommand(commands.installCommand);
+        if (commands.buildCommand !== undefined) setBuildCommand(commands.buildCommand);
+        if (commands.startCommand !== undefined) setStartCommand(commands.startCommand);
+      }} />}
       {error && (
         <div className="rounded-xl border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger">
           {error}

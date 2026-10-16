@@ -99,6 +99,29 @@ export function createProjectControls(
       });
       return data;
     },
+    async migrateCommandEnvironment(ctx, id, input) {
+      if (input.serviceId) await authorization.authorize(ctx, { resourceType: "service", resourceId: input.serviceId, action: "write" });
+      const data = await repos.project.migrateCommandEnvironment(id, ctx.organizationId, input);
+      updated(ctx, id, { action: "envVars.migrateCommands", environment: input.environment, serviceId: input.serviceId, keys: data.keys });
+      return data;
+    },
+    async buildCacheMigration(ctx, id, input) {
+      if (input.serviceId) await authorization.authorize(ctx, { resourceType: "service", resourceId: input.serviceId, action: "write" });
+      const data = await repos.project.buildCacheMigration(id, ctx.organizationId, input.serviceId, input.remove);
+      if (data.removed.length) updated(ctx, id, { action: "buildCache.migrate", serviceId: input.serviceId, removed: data.removed, deploymentId: data.deploymentId });
+      return data;
+    },
+    async configurePreviews(ctx, id, input) {
+      const data = await (await import("./pull-request-previews")).configurePreviews(ctx, id, input);
+      updated(ctx, id, { action: "previews.configure", settings: data.settings });
+      return data;
+    },
+    async listPreviews(ctx, id) {
+      const project = await repos.project.findByIdInOrganization(id, ctx.organizationId);
+      assertResourceInOrg(project, "Project", ctx.organizationId, id);
+      const rows = await repos.pullRequestPreview.list(id, ctx.organizationId);
+      return { settings: project.previewSettings, previews: rows.map(({ id, number, projectId, status, url, error, headSha }) => ({ id, number, projectId, status, url, error, headSha })) };
+    },
     async getResources(ctx, id) {
       return (await service()).getResources(id, ctx.organizationId);
     },

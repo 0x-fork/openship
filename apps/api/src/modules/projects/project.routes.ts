@@ -526,6 +526,19 @@ r.post(
 );
 
 /* ─── Environment variables ────────────────────────────────────────────── */
+r.get("/:id/previews", { tag: "project:read", mcp: { description: "List managed pull request previews, URLs, lifecycle state, and configuration." } }, ctrl.listPreviews);
+r.post("/:id/previews", { tag: "project:write", body: ProjectControlSchemas.configurePreviews.input,
+  mcp: { description: "Enable or disable isolated same-repository pull request previews. Preview Environment values are used; disabling cleans up managed previews." },
+}, ctrl.configurePreviews);
+r.post("/:id/build-cache/migration", {
+  tag: "project:write", body: ProjectControlSchemas.buildCacheMigration.input,
+  mcp: { description: "Inspect manual build cache mounts and migrate selected mounts after a successful managed-cache deployment. Cached volume data is retained." },
+}, ctrl.buildCacheMigration);
+r.post("/:id/env/migrate-commands", {
+  tag: "project:write",
+  body: ProjectControlSchemas.migrateCommandEnvironment.input,
+  mcp: { description: "Atomically move literal command variables into encrypted project or service Environment. Refuses changed commands, shell expressions, and conflicting values." },
+}, ctrl.migrateCommandEnvironment);
 // Project-scoped bulk routes (no per-env_var id in the URL) → gate on the
 // project, matching what the controllers already assert (permission.assert
 // project:read/write) and how /:id/options works. The previous

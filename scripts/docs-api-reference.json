@@ -3685,6 +3685,30 @@
       "section": "Routing and monitoring",
       "description": "Apply a role configuration revision from the active image while preserving web and unchanged replicas.",
       "route": "POST /api/projects/:id/roles/configuration"
+    },
+    "projects.buildCacheMigration": {
+      "page": "projects",
+      "section": "Operations",
+      "description": "Inspect manual cache mounts or remove selected mounts after a successful managed-cache deployment.",
+      "route": "POST /api/projects/:id/build-cache/migration"
+    },
+    "projects.configurePreviews": {
+      "page": "projects",
+      "section": "Operations",
+      "description": "Enable or disable automatic same-repository pull request environments.",
+      "route": "POST /api/projects/:id/previews"
+    },
+    "projects.listPreviews": {
+      "page": "projects",
+      "section": "Operations",
+      "description": "Read preview configuration, deployment URLs and reconciliation errors.",
+      "route": "GET /api/projects/:id/previews"
+    },
+    "projects.migrateCommandEnvironment": {
+      "page": "projects",
+      "section": "Operations",
+      "description": "Atomically move literal command variables into the selected environment without overwriting conflicting values.",
+      "route": "POST /api/projects/:id/env/migrate-commands"
     }
   },
   "http": {

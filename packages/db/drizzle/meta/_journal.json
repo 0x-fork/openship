@@ -1373,6 +1373,13 @@
       "when": 1792195200000,
       "tag": "0195_role_handover",
       "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1792195200001,
+      "tag": "0196_deployment_automation",
+      "breakpoints": true
     }
   ]
 }
