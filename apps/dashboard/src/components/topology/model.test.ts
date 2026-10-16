@@ -87,6 +87,37 @@ describe("production project topology", () => {
     expect(result.nodes.filter((node) => node.kind === "service")).toHaveLength(1);
   });
 
+  it.each([
+    ["running", "stopped", "failed", 1],
+    ["running", "starting", "starting", 1],
+    ["running", "unknown", "unknown", undefined],
+    ["stopped", "stopped", "stopped", 0],
+  ] as const)(
+    "summarizes observed role replicas %s/%s as %s",
+    (first, second, state, instances) => {
+      const result = graph({
+        roles: {
+          deploymentId: "d1",
+          error: null,
+          roles: [
+            {
+              name: "queue",
+              kind: "worker",
+              replicas: 2,
+              containers: [
+                { replica: 1, containerId: "queue-1", status: first, restartCount: 0 },
+                { replica: 2, containerId: "queue-2", status: second, restartCount: 0 },
+              ],
+            },
+          ],
+        },
+      });
+      const role = result.nodes.find((node) => node.kind === "role")!;
+      expect(role.state).toBe(state);
+      expect(role.instances).toBe(instances);
+    },
+  );
+
   it("never projects a retired deployment's roles onto the current graph", () => {
     expect(
       graph({

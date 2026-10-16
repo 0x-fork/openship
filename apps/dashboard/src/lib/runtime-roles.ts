@@ -10,7 +10,9 @@ export function runtimeRoleState(role: RuntimeRole): RuntimeRoleContainer["statu
   if (!states.length || states.includes("unknown")) return "unknown";
   if (states.every((state) => state === "running")) return "running";
   if (states.every((state) => state === "stopped")) return "stopped";
-  return "starting";
+  if (states.includes("starting")) return "starting";
+  // A partly stopped role needs attention until its stopped replicas recover.
+  return "failed";
 }
 
 export function roleLogsHref(
