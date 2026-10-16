@@ -169,7 +169,14 @@ app.get('/index.html', sendIndexHtml);
 // Static files: assets, fonts, manifest, etc. serveStatic falls through to
 // the next handler when a path doesn't resolve to a file on disk, which is
 // what lets the SPA fallback below handle client-side routes.
-app.use('/*', serveStatic({ root: clientBuildDir }));
+app.use('/*', serveStatic({
+  root: clientBuildDir,
+  onFound: (_path, c) => {
+    if (/^\/assets\/[^/]+-[\w-]{8}\.[^/]+$/.test(c.req.path)) {
+      c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  },
+}));
 
 // SPA fallback - any unmatched GET serves index.html so React Router can
 // take over routing on the client. Registered last so it never shadows API
