@@ -368,3 +368,20 @@ describe("planNeedsRepository — what gates the clone + GitHub access", () => {
     ).toBe(false);
   });
 });
+
+describe("legacy configuration and retained runtime units", () => {
+  it("does not block an in-place unit restore that replays no saved configuration", () => {
+    expect(
+      planRestore(
+        input({
+          unitRestore: true,
+          target: {
+            meta: {
+              composeServices: [{ name: "app", environment: { URL: "postgresql://***@db/app" } }],
+            },
+          } as never,
+        }),
+      ),
+    ).toEqual({ mode: "unit-swap" });
+  });
+});

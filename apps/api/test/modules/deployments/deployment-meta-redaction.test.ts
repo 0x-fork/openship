@@ -1,247 +1,138 @@
-/**
- * A frozen compose snapshot must keep the credentials a rollback replays.
- *
- * `deployment.meta` rides into jsonb through the BUILD-LOG scrubber, and that
- * scrubber rewrites URL userinfo to `***@` (`redactCredentials`). For a log line
- * that is right. For `meta.composeServices` — the frozen env of every compose
- * service — it is a break, in the same shape as the backup `restoreCommand` bug:
- * the field is an encrypted operational record that a rollback replays VERBATIM,
- * and `syncFromCompose` writes it onto the live service rows, which is what
- * actually builds the container.
- *
- * So a `DATABASE_URL=postgresql://app:secret@db:5432/app` was frozen as
- * `postgresql://***@db:5432/app`, and rolling that release back rebuilt the exact
- * breakage the rollback was meant to undo — the app crash-looped on
- * `no password supplied` while the rollback itself reported success.
- *
- * The redaction protected nothing here either: `sealDeploymentMeta` encrypts the
- * same field, which is a stronger guarantee than a `***` that breaks the restore.
- */
-
-import { describe, expect, it } from "vitest";
-import { DEPLOYMENT_SECRET_FIELDS } from "@repo/db/configuration-secrets";
-
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
+import { db, repos, schema } from "@repo/db";
+import { CONFIGURATION_PREFIX } from "@repo/db/configuration-secrets";
 import {
   sanitizeDeploymentMeta,
-  sanitizeStorableStrings,
-  storableTextPreservingSecrets,
+  sanitizeLogsForPersistence,
 } from "@repo/platform/engine/modules/deployments/build-log-sanitize";
-import {
-  hasRedactedFrozenEnv,
-  isRedactedUserinfo,
-  replaceRedactedFrozenEnv,
-} from "@repo/platform/engine/modules/deployments/compose/redacted-frozen-env";
+import { hasRedactedFrozenConfiguration } from "@repo/platform/engine/modules/deployments/compose/redacted-frozen-env";
+import { seedDeployment, seedOrg, seedProject } from "../../helpers/seed";
 
-const DSN = "postgresql://app:s3cr3t@db:5432/app";
-const REDACTED_DSN = "postgresql://***@db:5432/app";
-const GITHUB_CLONE = "https://x-access-token:ghs_AAAAAAAAAAAAAAAA@github.com/owner/repo.git";
-const REDACTED_CLONE = "https://***@github.com/owner/repo.git";
-
-/** Built rather than typed, so no editor or copy step can lose them. */
-const NUL = String.fromCharCode(0);
-const LONE_SURROGATE = String.fromCharCode(0xd800);
-const ROCKET = String.fromCodePoint(0x1f680);
-
-/** The shape `sealDeploymentMeta` encrypts: compose services under `meta`. */
-function meta() {
-  return {
-    branch: "main",
-    releaseVersion: "v1.2.3",
-    composeServices: [
-      {
-        name: "app",
-        image: "app:bld_1",
-        environment: { DATABASE_URL: DSN, APP_ENV: "production" },
-      },
-      {
-        name: "db",
-        image: "postgres:16-alpine",
-        environment: { POSTGRES_PASSWORD: "s3cr3t" },
-      },
-    ],
-  };
-}
-
-describe("a deployment meta write keeps the credentials a rollback replays", () => {
-  it("stores the DSN verbatim", () => {
-    const stored = sanitizeDeploymentMeta(meta());
-    expect(stored.composeServices[0].environment.DATABASE_URL).toBe(DSN);
-    // A secret with no URL shape is untouched by the redactor either way, but
-    // the whole field must reach storage, not just its credential-bearing keys.
-    expect(stored.composeServices[1].environment.POSTGRES_PASSWORD).toBe("s3cr3t");
-  });
-
-  it("is what the old path got wrong, so the regression is visible here", () => {
-    // The unmodified scrubber, for contrast: same input, unrestorable output.
-    const scrubbed = sanitizeStorableStrings(meta());
-    const dsn = scrubbed.composeServices[0].environment.DATABASE_URL;
-    expect(dsn).toBe(REDACTED_DSN);
-    expect(dsn).not.toContain("s3cr3t");
-    // And nothing downstream could tell — it is still a plausible DSN.
-    expect(dsn).toMatch(/^postgresql:\/\//);
-  });
-
-  it("still redacts the credential the pipeline itself embeds in a command", () => {
-    // The exemption is scoped to the encrypted field. Elsewhere in the same blob
-    // the scrubber is the thing standing between a build log and a private repo.
-    const stored = sanitizeDeploymentMeta({
-      composeDeployment: { cloneUrl: GITHUB_CLONE },
-      composeServices: meta().composeServices,
-    });
-    expect(stored.composeDeployment.cloneUrl).toBe(REDACTED_CLONE);
-    expect(stored.composeServices[0].environment.DATABASE_URL).toBe(DSN);
-  });
-
-  it("still scrubs other meta fields that are log text, not records", () => {
-    const stored = sanitizeDeploymentMeta({
-      deployWarning: `build step failed cloning ${GITHUB_CLONE}`,
-      composeServices: meta().composeServices,
-    });
-    expect(stored.deployWarning).not.toContain("ghs_AAAAAAAAAAAAAAAA");
-  });
-
-  it("exempts the whole subtree under composeServices, not just its leaves", () => {
-    const stored = sanitizeDeploymentMeta({
-      composeServices: [{ name: "app", advanced: { inlineFiles: { ".env": DSN } } }],
-    });
-    expect(stored.composeServices[0].advanced.inlineFiles[".env"]).toBe(DSN);
-  });
-
-  it("exempts exactly the fields the storage codec seals", () => {
-    // The invariant, pinned: whatever `sealDeploymentMeta` ENCRYPTS must be a
-    // field this write path leaves intact. `DEPLOYMENT_SECRET_FIELDS` grows, and
-    // a field that is encrypted on the way in but scrubbed on the way out is a
-    // rollback replaying a destroyed value.
-    for (const field of DEPLOYMENT_SECRET_FIELDS) {
-      const stored = sanitizeDeploymentMeta({ [field]: [{ name: "app", value: DSN }] });
-      expect((stored as Record<string, Array<{ value: string }>>)[field][0].value).toBe(DSN);
-    }
-  });
+vi.mock("@repo/platform/engine/lib/notification-dispatcher", () => ({
+  notification: { emit: vi.fn() },
+}));
+vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({ audit: { recordAsync: vi.fn() } }));
+vi.mock("@repo/platform/engine/lib/favicon-detector", () => ({ detectAndStoreFavicon: vi.fn() }));
+vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", () => ({
+  onWebmailDeployed: vi.fn(),
+}));
+const { onSuccess, onNoChanges } =
+  await import("@repo/platform/engine/modules/deployments/deployment-lifecycle");
+const projects: string[] = [];
+afterEach(async () => {
+  for (const id of projects.splice(0))
+    await db.delete(schema.project).where(eq(schema.project.id, id));
 });
+const DSN = "postgresql://app:release-secret@db:5432/app";
+const TOKEN = "ghp_AAAAAAAAAAAAAAAAAAAAAAAA";
+const configuration = () => [
+  {
+    name: "app",
+    environment: {
+      DATABASE_URL: DSN,
+      GITHUB_TOKEN: TOKEN,
+      LARGE_CONFIG: "x".repeat(40000),
+      EXACT_BYTES: "a\r\nb\u0000\ud800",
+    },
+    buildArgs: { DATABASE_URL: DSN },
+    advanced: { files: [{ path: "/app/config", content: DSN }] },
+  },
+];
 
-describe("preserving credentials does not give up storability", () => {
-  it("still drops a NUL and repairs a lone surrogate", () => {
-    // Both are FATAL at the column: Postgres rejects the NUL byte in a text
-    // column outright and the lone surrogate in jsonb. A compose env value
-    // assembled from interpolation can carry either, and this write also carries
-    // the deployment's terminal status.
+describe("deployment lifecycle preserves encrypted operational configuration (#985)", () => {
+  it.each(["success", "no-changes"] as const)(
+    "round-trips exact configuration through the %s hook and real storage codec",
+    async (outcome) => {
+      const org = await seedOrg();
+      const project = await seedProject(org.organizationId);
+      projects.push(project.id);
+      const composeServices = configuration();
+      const seed = await seedDeployment(project, { status: "deploying" });
+      // Admission uses the repository codec too; never insert plaintext secret
+      // fields directly into JSONB, which correctly rejects the NUL fixture.
+      await repos.deployment.updateStatus(seed.id, "deploying", { meta: { composeServices } });
+      const dep = (await repos.deployment.findById(seed.id))!;
+      dep.meta = {
+        ...(dep.meta as Record<string, unknown>),
+        deployWarning: `failed to clone https://token:secret@github.com/org/repo\u0000`,
+      };
+      const session = await repos.deployment.createBuildSession({
+        deploymentId: dep.id,
+        projectId: project.id,
+        status: "deploying",
+      });
+      const ctx = {
+        project,
+        dep,
+        buildSessionId: session.id,
+        provisioned: {},
+        persistLogs: () =>
+          sanitizeLogsForPersistence([
+            { timestamp: new Date().toISOString(), message: `Connecting to ${DSN} using ${TOKEN}` },
+          ]),
+      };
+      if (outcome === "success") await onSuccess(ctx, { containerId: "app", durationMs: 1 });
+      else await onNoChanges(ctx, { durationMs: 1 });
+      const stored = (await repos.deployment.findById(dep.id))!;
+      expect(stored.status).toBe(outcome === "success" ? "ready" : "no_changes");
+      expect(stored.meta).toMatchObject({ composeServices, configurationSecretsPreserved: true });
+      expect((stored.meta as Record<string, unknown>).deployWarning).toBe(
+        "failed to clone https://***@github.com/org/repo",
+      );
+      const [raw] = await db
+        .select()
+        .from(schema.deployment)
+        .where(eq(schema.deployment.id, dep.id));
+      expect((raw.meta as Record<string, unknown>).composeServices).toEqual(
+        expect.stringMatching(new RegExp(`^${CONFIGURATION_PREFIX}`)),
+      );
+      expect(JSON.stringify(raw.meta)).not.toContain("release-secret");
+      const logs = JSON.stringify(
+        (await repos.deployment.findBuildSessionByDeploymentId(dep.id))!.logs,
+      );
+      expect(logs).not.toContain("release-secret");
+      expect(logs).not.toContain(TOKEN);
+    },
+  );
+
+  it("only exempts fields sealed by the storage codec, not a similarly named diagnostic key", () => {
     const stored = sanitizeDeploymentMeta({
-      composeServices: [{ name: "app", environment: { DSN: `${DSN} ${NUL} ${LONE_SURROGATE}` } }],
+      composeServices: configuration(),
+      diagnostics: { composeServices: { warning: DSN } },
     });
-    const dsn = stored.composeServices[0].environment.DSN;
-    expect(dsn).not.toContain(NUL);
-    expect(dsn).not.toMatch(/[\uD800-\uDFFF]/);
-    expect(dsn).toContain("s3cr3t@db:5432");
-  });
-
-  it("keeps a valid surrogate PAIR intact", () => {
-    const stored = sanitizeDeploymentMeta({
-      composeServices: [{ name: "app", environment: { BANNER: `hi ${ROCKET}` } }],
+    expect(stored.composeServices).toEqual(configuration());
+    expect(stored.diagnostics.composeServices.warning).toBe("postgresql://***@db:5432/app");
+    expect(sanitizeDeploymentMeta({ warning: DSN })).toEqual({
+      warning: "postgresql://***@db:5432/app",
     });
-    expect(stored.composeServices[0].environment.BANNER).toBe(`hi ${ROCKET}`);
   });
 
-  it("differs from the scrubber ONLY in the redaction", () => {
-    // A meta with no preserved subtree must be byte-identical to the old path.
-    expect(sanitizeDeploymentMeta({ deployWarning: "ok" })).toEqual(
-      sanitizeStorableStrings({ deployWarning: "ok" }),
-    );
-    // And the exempt half of a value is still length-capped like any other.
-    const long = `${"x".repeat(32768 - 1)}${ROCKET} tail`;
-    const stored = sanitizeDeploymentMeta({
-      composeServices: [{ name: "a", environment: { K: long } }],
-    });
-    expect(stored.composeServices[0].environment.K).toContain("truncated for storage");
-  });
-
-  it("matches the shared preserving-secrets primitive on a preserved leaf", () => {
-    // The exemption routes through `storableTextPreservingSecrets`, not a new
-    // pass — one implementation, so the two cannot drift.
-    expect(storableTextPreservingSecrets(DSN)).toBe(DSN);
-  });
-});
-
-describe("a snapshot frozen before the fix still restores", () => {
-  const live = new Map([
-    ["app", { DATABASE_URL: DSN, APP_ENV: "production" }],
-    ["db", { POSTGRES_PASSWORD: "s3cr3t" }],
-  ]);
-
-  it("recognises only the scrubber's own shape", () => {
-    expect(isRedactedUserinfo(REDACTED_DSN)).toBe(true);
-    expect(isRedactedUserinfo(REDACTED_CLONE)).toBe(true);
-    expect(isRedactedUserinfo(DSN)).toBe(false);
-    // A bare `***` in a real value must not be read as scrubber output — an
-    // operator's own banner is not a redacted credential.
-    expect(isRedactedUserinfo("echo '*** ok ***'")).toBe(false);
-    expect(isRedactedUserinfo(undefined)).toBe(false);
-    expect(isRedactedUserinfo(null)).toBe(false);
-  });
-
-  it("takes the live value for a redacted key, and the frozen value for the rest", () => {
-    const restored = replaceRedactedFrozenEnv(
-      [
+  it("keeps deliberate literal markers in newly captured configuration usable", () => {
+    const captured = sanitizeDeploymentMeta({
+      composeServices: [
         {
           name: "app",
-          environment: { DATABASE_URL: REDACTED_DSN, APP_ENV: "staging" },
+          environment: {
+            MASK_LITERAL: "***",
+            URL_LITERAL: "https://***@example.test",
+          },
         },
       ],
-      live,
-    );
-    expect(restored[0].environment.DATABASE_URL).toBe(DSN);
-    // Only the mangled key is replaced. The frozen value is still the record.
-    expect(restored[0].environment.APP_ENV).toBe("staging");
+    });
+    expect(hasRedactedFrozenConfiguration(captured)).toBe(false);
+    expect(captured.composeServices[0].environment.MASK_LITERAL).toBe("***");
   });
 
-  it("leaves an intact snapshot alone, by reference", () => {
-    const frozen = [{ name: "app", environment: { DATABASE_URL: DSN } }] as const;
-    expect(replaceRedactedFrozenEnv(frozen, live)).toBe(frozen);
-  });
-
-  it("keeps a redacted value the live row cannot supply", () => {
-    // No live counterpart means no value to substitute. Dropping the key would
-    // silently unset a variable the container needs; keeping `***` is the
-    // honest outcome, and the deploy log is where it surfaces.
-    const restored = replaceRedactedFrozenEnv(
-      [{ name: "worker", environment: { DATABASE_URL: REDACTED_DSN } }],
-      live,
-    );
-    expect(restored[0].environment.DATABASE_URL).toBe(REDACTED_DSN);
-  });
-
-  it("passes monorepo sub-apps through untouched", () => {
-    // Their env is applied from the live rows, not from the frozen snapshot, so
-    // rewriting it here would change nothing that ships.
-    const frozen = [{ name: "web", kind: "monorepo" as const, environment: { URL: REDACTED_DSN } }];
-    expect(replaceRedactedFrozenEnv(frozen, live)).toBe(frozen);
-  });
-
-  it("tolerates a snapshot or a live map that is missing", () => {
-    expect(replaceRedactedFrozenEnv(undefined, live)).toEqual([]);
-    expect(
-      replaceRedactedFrozenEnv(
-        [{ name: "app", environment: { DATABASE_URL: REDACTED_DSN } }],
-        new Map(),
-      ),
-    ).toEqual([{ name: "app", environment: { DATABASE_URL: REDACTED_DSN } }]);
-  });
-
-  it("only claims a repair is needed when something is actually mangled", () => {
-    // This is the gate the rollback path uses to skip its live-row read, so it
-    // has to agree with `replaceRedactedFrozenEnv` on every input — a false
-    // negative here silently replays `***`, and a false positive costs a query
-    // on every restore.
-    expect(hasRedactedFrozenEnv(meta().composeServices)).toBe(false);
-    expect(
-      hasRedactedFrozenEnv([{ name: "app", environment: { DATABASE_URL: REDACTED_DSN } }]),
-    ).toBe(true);
-    // A monorepo entry is applied from the live rows, not the snapshot, so it is
-    // not this path's business.
-    expect(
-      hasRedactedFrozenEnv([{ name: "web", kind: "monorepo", environment: { URL: REDACTED_DSN } }]),
-    ).toBe(false);
-    expect(hasRedactedFrozenEnv(undefined)).toBe(false);
-    expect(hasRedactedFrozenEnv([])).toBe(false);
-    expect(hasRedactedFrozenEnv([{ name: "app" }])).toBe(false);
+  it("detects unrecoverable legacy DSNs and bare token redaction throughout encrypted configuration", () => {
+    for (const composeServices of [
+      [{ name: "app", environment: { DATABASE_URL: "postgresql://***@db/app" } }],
+      [{ name: "app", environment: { GITHUB_TOKEN: "***" } }],
+      [{ name: "app", buildArgs: { TOKEN: "***" } }],
+      [{ name: "app", advanced: { files: [{ content: "postgresql://***@db/app" }] } }],
+    ])
+      expect(hasRedactedFrozenConfiguration({ composeServices })).toBe(true);
+    expect(hasRedactedFrozenConfiguration({ composeServices: configuration() })).toBe(false);
+    expect(hasRedactedFrozenConfiguration({ warning: "https://***@example.test" })).toBe(false);
   });
 });
