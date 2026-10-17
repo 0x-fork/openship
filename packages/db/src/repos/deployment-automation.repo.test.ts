@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { fileURLToPath } from "node:url";
 import * as schema from "../schema";
 import { createEncryption } from "../encryption";
@@ -284,5 +284,21 @@ describe("durable preview identity", () => {
       deployments.create(input, undefined, undefined, { id: intent!.id, token: "lease" }),
     ).rejects.toThrow("already has");
     expect(await db.select().from(schema.deployment)).toHaveLength(1);
+    // A ready deployment can still own an unfinished runtime handover. Preview
+    // admission must retain the shared recovery gate before it queues new work.
+    await db
+      .update(schema.deployment)
+      .set({
+        status: "ready",
+        roleHandover: sql`'{"phase":"published"}'::jsonb`,
+      })
+      .where(eq(schema.deployment.id, admitted!.id));
+    await expect(
+      deployments.create({ ...input, commitSha: "b".repeat(40) }, undefined, undefined, {
+        id: intent!.id,
+        token: "lease",
+      }),
+    ).rejects.toMatchObject({ code: "ROLE_HANDOVER_RECOVERY_PENDING" });
+    expect((await previews.list("p", "org"))[0]!.headSha).toBe(input.commitSha);
   });
 });
