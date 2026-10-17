@@ -206,6 +206,14 @@ describe("preview templates across stacks", () => {
         "feature",
       ),
     ).toThrow("Environment");
+    expect(() =>
+      previewEnvironmentInput(
+        { ...source, buildCommand: "prepare && TOKEN=production build" },
+        [],
+        5,
+        "feature",
+      ),
+    ).toThrow("Environment");
   });
   test("forks, drafts, wrong base branches and closed PRs cannot run preview code", () => {
     expect(previewEligible(pr, source)).toBe(true);

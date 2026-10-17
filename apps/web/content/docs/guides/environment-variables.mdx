@@ -349,8 +349,9 @@ builders, including Node/Bun, Python, PHP, Ruby and compiled stacks. A custom Do
 and consume its own build arguments. Browser-facing variables such as `NEXT_PUBLIC_*` and `VITE_*`
 are compiled into client assets: rebuild after changing them, and never put secrets in them.
 
-Build settings warn when install, build or start commands begin with embedded variables.
-**Move to Environment** removes literal assignments and saves their values in one transaction.
+Build settings warn about embedded variables at the start of a command or after shell separators
+such as `&&` and `;`. **Move to Environment** removes literal leading assignments and saves their
+values in one transaction. Chained assignments require manual editing to preserve their scope.
 Existing equal values are retained; conflicting values or concurrent command edits stop the migration.
 Shell expansions and command substitutions require manual editing. Values are encrypted and masked;
 warnings and audit records contain variable names only. The import wizard supports the same action

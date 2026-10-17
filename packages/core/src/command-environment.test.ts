@@ -50,4 +50,27 @@ describe("command environment migration", () => {
     ).not.toContain("very-private");
     expect(inspectCommandEnvironment("bun run build").migratable).toBe(false);
   });
+  it.each([
+    "prepare && TOKEN=secret npm run build",
+    "prepare; env TOKEN=secret node server.js",
+    "prepare\nexport TOKEN=secret && node server.js",
+    "prepare | TOKEN=secret node server.js",
+    "(TOKEN=secret node server.js)",
+    "TOKEN=first prepare && TOKEN=second node server.js",
+  ])("warns about chained assignments without attempting a partial migration: %s", (command) => {
+    expect(inspectCommandEnvironment(command)).toMatchObject({
+      keys: ["TOKEN"],
+      migratable: false,
+    });
+    expect(commandEnvironmentWarning(command, "Build")).not.toContain("secret");
+  });
+  it("does not interpret quoted or escaped separators as later commands", () => {
+    for (const command of [
+      "printf '&& TOKEN=literal'",
+      'printf "; TOKEN=literal"',
+      "printf \\; TOKEN=argument",
+    ])
+      expect(inspectCommandEnvironment(command).keys).toEqual([]);
+    expect(inspectCommandEnvironment("\n TOKEN=literal build").migratable).toBe(true);
+  });
 });

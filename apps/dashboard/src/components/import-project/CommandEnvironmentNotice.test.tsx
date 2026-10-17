@@ -64,6 +64,21 @@ it("does not migrate expressions or overwrite conflicting draft values", async (
   expect(migrate).not.toHaveBeenCalled();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("different values");
 });
+it("warns about chained assignments without exposing their values or offering partial migration", async () => {
+  const migrate = vi.fn();
+  await act(async () =>
+    root.render(
+      <CommandEnvironmentNotice
+        commands={{ buildCommand: "prepare && TOKEN=private-value build" }}
+        migrateDraft={migrate}
+      />,
+    ),
+  );
+  expect(container.textContent).toContain("TOKEN");
+  expect(container.textContent).not.toContain("private-value");
+  expect(container.querySelector("button")).toBeNull();
+  expect(migrate).not.toHaveBeenCalled();
+});
 it("submits a service-scoped atomic migration and ignores a response after account scope changes", async () => {
   const changed = vi.fn();
   let resolve!: (value: unknown) => void;

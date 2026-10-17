@@ -6,7 +6,7 @@ export interface CommandEnvironment {
   migratable: boolean;
 }
 
-export function inspectCommandEnvironment(input: string): CommandEnvironment {
+function inspectLeadingEnvironment(input: string): CommandEnvironment {
   const variables: Record<string, string> = Object.create(null);
   const keys: string[] = [];
   let offset = 0;
@@ -66,6 +66,36 @@ export function inspectCommandEnvironment(input: string): CommandEnvironment {
     command: keys.length ? command : input,
     migratable: keys.length > 0 && safe,
   };
+}
+
+/** Migration is limited to a literal prefix. Warnings also cover assignments
+ * in later shell commands, so preview templates cannot copy those values. */
+export function inspectCommandEnvironment(input: string): CommandEnvironment {
+  const leading = inspectLeadingEnvironment(input);
+  const keys = new Set(leading.keys);
+  let quote = "";
+  let chained = false;
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index]!;
+    if (char === "\\" && quote !== "'") {
+      index++;
+      continue;
+    }
+    if (char === "'" && quote !== '"') {
+      quote = quote ? "" : "'";
+      continue;
+    }
+    if (char === '"' && quote !== "'") {
+      quote = quote ? "" : '"';
+      continue;
+    }
+    if (quote || !/[;&|(\n]/.test(char)) continue;
+    if (char === "\n" && !input.slice(0, index).trim()) continue;
+    const next = inspectLeadingEnvironment(input.slice(index + 1));
+    if (next.keys.length) chained = true;
+    for (const key of next.keys) keys.add(key);
+  }
+  return { ...leading, keys: [...keys], migratable: leading.migratable && !chained };
 }
 
 /** Names only; suitable for preflight, logs, and audit records. */
