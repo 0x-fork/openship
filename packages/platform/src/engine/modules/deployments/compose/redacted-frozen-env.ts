@@ -1,4 +1,4 @@
-import { DEPLOYMENT_SECRET_FIELDS } from "@repo/db/configuration-secrets";
+import { serviceKind } from "../../../lib/deployable-service";
 
 /** Older lifecycle hooks scrubbed operational config as if it were log text.
  * Its missing credentials cannot be reconstructed from today's mutable rows.
@@ -8,7 +8,18 @@ export function hasRedactedFrozenConfiguration(meta: unknown): boolean {
   if (!meta || typeof meta !== "object" || Array.isArray(meta)) return false;
   const snapshot = meta as Record<string, unknown>;
   if (snapshot.configurationSecretsPreserved === true) return false;
-  return DEPLOYMENT_SECRET_FIELDS.some((key) => containsRedaction(snapshot[key]));
+  // Match the deploy pipeline's syncFromCompose input. Monorepo records are
+  // not replayed onto service configuration from this snapshot.
+  return (
+    Array.isArray(snapshot.composeServices) &&
+    snapshot.composeServices.some(
+      (service) =>
+        service &&
+        typeof service === "object" &&
+        serviceKind(service) === "compose" &&
+        containsRedaction(service),
+    )
+  );
 }
 
 function containsRedaction(value: unknown): boolean {
