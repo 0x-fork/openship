@@ -1484,6 +1484,13 @@ async function executeBuildAndDeploy(
       return;
     }
 
+    if (buildResult.managedCacheTargets?.length) await repos.project.recordBuildCacheReceipt(project.id, project.id, { targets: buildResult.managedCacheTargets, deploymentId: dep.id, completedAt: new Date().toISOString() });
+    const previousBuild = project.activeDeploymentId ? await repos.deployment.findById(project.activeDeploymentId) : null;
+    if (buildResult.durationMs && previousBuild?.buildDurationMs) {
+      const difference = (buildResult.durationMs - previousBuild.buildDurationMs) / 1000;
+      logger.log(`Build time: ${(buildResult.durationMs / 1000).toFixed(1)}s; ${Math.abs(difference).toFixed(1)}s ${difference < 0 ? "faster" : "slower"} than the previous active build.\n`);
+    }
+
     await setDeploymentStatus(dep.id, "deploying", {
       extra: { imageRef: buildResult.imageRef, buildDurationMs: buildResult.durationMs },
     });

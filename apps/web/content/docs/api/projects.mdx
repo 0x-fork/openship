@@ -602,6 +602,15 @@ IDs.
 | Request a Cloud transfer; fixed scopes currently require unavailable tenant mapping. | `projects.transferToCloud(id)` | `POST /api/projects/:id/transfer/to-cloud`<br />`project:admin` · Self-hosted |
 | Request a transfer from Cloud; fixed-scope Cloud mapping limits apply. | `projects.transferToSelfHosted(id)` | `POST /api/projects/:id/transfer/to-self-hosted`<br />`project:admin` · Self-hosted |
 
+### Resource methods
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Inspect manual cache mounts or remove selected mounts after a successful managed-cache deployment. | `projects.buildCacheMigration(id, input)` | `POST /api/projects/:id/build-cache/migration`<br />`project:write` |
+| Enable or disable automatic same-repository pull request environments. | `projects.configurePreviews(id, input)` | `POST /api/projects/:id/previews`<br />`project:write` |
+| Read preview configuration, deployment URLs and reconciliation errors. | `projects.listPreviews(id)` | `GET /api/projects/:id/previews`<br />`project:read` |
+| Atomically move literal command variables into the selected environment without overwriting conflicting values. | `projects.migrateCommandEnvironment(id, input)` | `POST /api/projects/:id/env/migrate-commands`<br />`project:write` |
+
 ### HTTP endpoints
 
 | Operation | SDK | REST API |

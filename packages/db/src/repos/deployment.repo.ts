@@ -5,7 +5,7 @@ import { generateId, AppError, summarizeDeploymentHistory, DEPLOYMENT_HISTORY_ST
 import { isDeepStrictEqual } from "node:util";
 import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
-import { deployment, buildSession, project, service, cloudBuildActivity, cloudWorkspace } from "../schema";
+import { deployment, buildSession, project, service, cloudBuildActivity, cloudWorkspace, pullRequestPreview } from "../schema";
 import { actionDeployment, actionProject, actionRun, actionWorkflow } from "../schema/actions";
 import { detailOf } from "./storable-detail";
 import { reserveCloudBuildActivity, type CloudBuildResources } from "./cloud-build-activity.repo";
@@ -432,6 +432,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       resourceChanges?: DeploymentResourceChanges,
       actionLeaseOwner?: string,
       roleChanges?: DeploymentRoleChanges,
+      previewAdmission?: { id: string; token: string },
     ): Promise<Deployment | undefined> {
       // `id` is normally generated; re-import (live re-attach) passes the ORIGINAL
       // deployment id so the still-running containers (labelled `openship.deployment=<id>`)
@@ -450,6 +451,18 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
             409,
             "ROLE_HANDOVER_RECOVERY_PENDING",
           );
+        if (previewAdmission) {
+          const [intent] = await tx.select().from(pullRequestPreview).where(and(
+            eq(pullRequestPreview.id, previewAdmission.id), eq(pullRequestPreview.leaseToken, previewAdmission.token),
+            eq(pullRequestPreview.projectId, rest.projectId), eq(pullRequestPreview.organizationId, rest.organizationId),
+            sql`${pullRequestPreview.leaseExpiresAt} > now()`,
+          )).for("update");
+          const [source] = intent ? await tx.select().from(project).where(and(eq(project.id, intent.sourceProjectId), eq(project.organizationId, rest.organizationId))).for("share") : [];
+          if (!source?.previewSettings?.enabled || source.deletedAt || source.deletionInProgress)
+            throw new AppError("Preview admission expired or previews were disabled", 409);
+          if (intent!.headSha === rest.commitSha && intent!.deploymentId)
+            throw new AppError("This preview commit already has a deployment", 409);
+        }
         if (rest.trigger === "webhook" && !rest.actionRequestId) {
           const [target] = await tx.select().from(project).where(eq(project.id, rest.projectId));
           const [required] = await tx.select({ id: actionProject.workflowId }).from(actionProject)
@@ -505,6 +518,11 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
           .values(codec.sealDeployment({ id, ...rest }))
           .onConflictDoNothing()
           .returning();
+        if (inserted && previewAdmission) {
+          await tx.insert(buildSession).values({ id: generateId("bs"), deploymentId: inserted.id, projectId: inserted.projectId, status: "queued" });
+          await tx.update(pullRequestPreview).set({ headSha: inserted.commitSha, deploymentId: inserted.id, status: "deploying", error: null, updatedAt: new Date() })
+            .where(eq(pullRequestPreview.id, previewAdmission.id));
+        }
         if (inserted) await queueDeploymentChecks(tx, codec.openDeployment(inserted));
         if (inserted?.actionRequestId) await tx.update(actionDeployment).set({
           // Keep the admission retryable until kickoff is acknowledged. A crash

@@ -1345,6 +1345,7 @@ export async function createQueuedDeployment(opts: Parameters<typeof createQueue
 async function createQueuedDeploymentUnlocked(opts: {
   actionRequestId?: string;
   actionLeaseOwner?: string;
+  previewAdmission?: { id: string; token: string };
   /** Internal, reviewed resource edit committed with deployment admission. */
   roleChanges?: import("@repo/db").DeploymentRoleChanges;
   resourceChanges?: DeploymentResourceChanges;
@@ -1517,6 +1518,7 @@ async function createQueuedDeploymentUnlocked(opts: {
     if (opts.resourceChanges || opts.actionLeaseOwner) admission[1] = opts.resourceChanges;
     if (opts.actionLeaseOwner) admission[2] = opts.actionLeaseOwner;
     if (opts.roleChanges) admission[3] = opts.roleChanges;
+    if (opts.previewAdmission) admission[4] = opts.previewAdmission;
     return repos.deployment.create(...admission);
   };
   const dep = env.CLOUD_MODE
@@ -1530,7 +1532,7 @@ async function createQueuedDeploymentUnlocked(opts: {
   }
 
   try {
-    if (!opts.resourceChanges && !opts.roleChanges) await repos.deployment.createBuildSession({
+    if (!opts.resourceChanges && !opts.roleChanges && !opts.previewAdmission) await repos.deployment.createBuildSession({
       deploymentId: dep.id,
       projectId: opts.projectId,
       status: "queued",
@@ -2703,6 +2705,7 @@ export interface DeploymentTriggerInput {
   /** Internal Actions admission receipt; public deployment inputs cannot set it. */
   actionRequestId?: string;
   actionLeaseOwner?: string;
+  previewAdmission?: { id: string; token: string };
   actionEvent?: Record<string, unknown>;
 }
 
@@ -2712,6 +2715,13 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   // have moved since application authorization resolved its organization.
   if (!project || project.organizationId !== ctx.organizationId) {
     throw new NotFoundError("Project", data.projectId);
+  }
+  if (data.previewAdmission && data.commitSha) {
+    const existing = await repos.pullRequestPreview.admittedDeployment(data.previewAdmission.id, data.previewAdmission.token, data.commitSha);
+    if (existing && existing.projectId === project.id) {
+      if (existing.status === "queued") await kickoffBuild(project, existing);
+      return { deployment: existing, skipped: true as const };
+    }
   }
   if (data.actionRequestId) {
     const existing = await repos.actions.deploymentForActionRequest(ctx.organizationId, data.actionRequestId);
@@ -2829,7 +2839,7 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   if (!data.reuseSnapshot && data.trigger !== "rollback") {
     // Required checks approve the entire source tree at this commit, including
     // Compose and lifecycle configuration. Do not re-read those files at HEAD.
-    const sourceRef = data.actionRequestId ? requestedCommitSha! : branch;
+    const sourceRef = (data.actionRequestId || data.previewAdmission) ? requestedCommitSha! : branch;
     let sourceInfo: SourceEnvInfo | undefined = await reconcileComposeSource(ctx, project, sourceRef, {
       changedPaths: data.changedPaths,
       interpolationEnv: decryptEnvMap(encryptedEnvVars ?? {}),
@@ -2840,6 +2850,10 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
     if (sourceEnv.additions.length > 0) {
       await repos.project.mergeEnvVars(project.id, environment, sourceEnv.additions, []);
     }
+  }
+
+  if (data.previewAdmission) {
+    await (await import("../projects/pull-request-previews")).preparePreviewDeployment(ctx, project, data.previewAdmission);
   }
 
   // Scoped internal callers (incoming deploy hooks) require an exact target
@@ -3080,6 +3094,7 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
     trigger: data.trigger ?? "manual",
     actionRequestId: data.actionRequestId,
     actionLeaseOwner: data.actionLeaseOwner,
+    previewAdmission: data.previewAdmission,
     environment,
     framework: snapshot.framework,
     meta: await metaWithPrevious(snapshot, project),

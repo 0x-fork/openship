@@ -91,6 +91,10 @@ jobs:
             command: bun run --cwd apps/api test --shard=1/2
           - suite: API 2/2
             command: bun run --cwd apps/api test --shard=2/2
+          - suite: Deployment automation
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/deployment-automation.e2e.test.ts
           - suite: Database
             command: bun run --cwd packages/db test
           - suite: Mail database actions
