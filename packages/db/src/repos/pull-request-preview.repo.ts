@@ -61,9 +61,15 @@ export function createPullRequestPreviewRepo(db: Database, encryption: Configura
     ) {
       await db
         .insert(previews)
-        .values({ ...input, id: generateId("prp"), nextAttemptAt: new Date() })
+        .values({
+          ...input,
+          owner: input.owner.toLowerCase(),
+          repo: input.repo.toLowerCase(),
+          id: generateId("prp"),
+          nextAttemptAt: new Date(),
+        })
         .onConflictDoUpdate({
-          target: [previews.sourceProjectId, previews.number],
+          target: [previews.sourceProjectId, previews.owner, previews.repo, previews.number],
           set: { nextAttemptAt: new Date(), updatedAt: new Date() },
         });
     },

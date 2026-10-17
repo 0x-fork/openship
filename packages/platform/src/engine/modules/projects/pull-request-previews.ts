@@ -226,19 +226,19 @@ export async function configurePreviews(
 ) {
   const source = await repos.project.findByIdInOrganization(projectId, ctx.organizationId);
   if (!source) throw new AppError("Project not found", 404);
-  if (
-    source.environmentType === "preview" ||
-    source.gitProvider !== "github" ||
-    !source.gitOwner ||
-    !source.gitRepo
-  )
-    throw new AppError("Enable previews on a GitHub-backed source environment.", 400);
   const baseDomain = settings.baseDomain?.trim()
     ? normalizeCustomHostname(settings.baseDomain)
     : undefined;
   if (baseDomain && (baseDomain.startsWith("*.") || !isValidCustomHostname(baseDomain)))
     throw new AppError("Enter a valid base domain, without '*.'.", 400);
   if (settings.enabled) {
+    if (
+      source.environmentType === "preview" ||
+      source.gitProvider !== "github" ||
+      !source.gitOwner ||
+      !source.gitRepo
+    )
+      throw new AppError("Enable previews on a GitHub-backed source environment.", 400);
     if (source.clusterId)
       throw new AppError(
         "PR preview automation requires a Docker or direct server deployment target.",
@@ -408,8 +408,14 @@ async function reconcile(row: PullRequestPreview, token: string) {
       throw new Error("Preview reconciliation lease ended");
   };
   await assertLease();
+  const sameRepository =
+    source?.gitOwner?.toLowerCase() === row.owner.toLowerCase() &&
+    source?.gitRepo?.toLowerCase() === row.repo.toLowerCase();
   const pr =
-    source?.previewSettings?.enabled && !source.deletedAt && !source.deletionInProgress
+    source?.previewSettings?.enabled &&
+    sameRepository &&
+    !source.deletedAt &&
+    !source.deletionInProgress
       ? await request<PullRequest>(`${root}/pulls/${row.number}`)
       : null;
   let child = row.projectId

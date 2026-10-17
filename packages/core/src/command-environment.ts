@@ -7,7 +7,7 @@ export interface CommandEnvironment {
 }
 
 export function inspectCommandEnvironment(input: string): CommandEnvironment {
-  const variables: Record<string, string> = {};
+  const variables: Record<string, string> = Object.create(null);
   const keys: string[] = [];
   let offset = 0;
   let safe = true;
@@ -17,6 +17,9 @@ export function inspectCommandEnvironment(input: string): CommandEnvironment {
     const match = input.slice(offset).match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=/);
     if (!match) break;
     const key = match[1]!;
+    // Saved environment maps do not support the legacy object-prototype setter.
+    // Keep this assignment in the command rather than silently losing its value.
+    if (key === "__proto__") safe = false;
     offset += match[0].length;
     let value = "";
     let quote = "";
@@ -69,5 +72,5 @@ export function inspectCommandEnvironment(input: string): CommandEnvironment {
 export function commandEnvironmentWarning(command: string, label: string): string | undefined {
   const result = inspectCommandEnvironment(command);
   if (!result.keys.length) return;
-  return `${label} embeds environment variables: ${result.keys.join(", ")}. Manage these in Environment; saved variables are available during builds and at runtime.${result.migratable ? "" : " This command uses shell expressions and needs a manual edit."}`;
+  return `${label} embeds environment variables: ${result.keys.join(", ")}. Manage these in Environment; saved variables are available during builds and at runtime.${result.migratable ? "" : " This command needs a manual edit before migration."}`;
 }

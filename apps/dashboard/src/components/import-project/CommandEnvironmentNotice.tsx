@@ -82,7 +82,7 @@ export function CommandEnvironmentNotice({
         </Button>
       ) : (
         <p className="mt-2 text-muted-foreground">
-          Review shell expressions manually before moving these variables.
+          Review this command manually before moving these variables.
         </p>
       )}
       {error && (

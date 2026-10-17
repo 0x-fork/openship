@@ -30,7 +30,12 @@ export const pullRequestPreview = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
-    uniqueIndex("pull_request_preview_source_number").on(table.sourceProjectId, table.number),
+    uniqueIndex("pull_request_preview_source_repository_number").on(
+      table.sourceProjectId,
+      table.owner,
+      table.repo,
+      table.number,
+    ),
     index("pull_request_preview_due").on(table.nextAttemptAt),
   ],
 );

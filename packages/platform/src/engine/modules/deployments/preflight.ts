@@ -30,6 +30,8 @@ import {
   hasMinResources,
   commandEnvironmentWarning,
   manualBuildCaches,
+  normalizeAppVolume,
+  parseVolumeMount,
 } from "@repo/core";
 import { cloudClient } from "../../lib/cloud/client";
 import { isCloudConnectedForOrg } from "../../lib/cloud/session";
@@ -1521,7 +1523,10 @@ export async function runPreflightChecks(
     }
     const caches = manualBuildCaches(owner);
     if (caches.length) checks.push({ id: `manual-cache-${index}`, label: "Build caches", status: "warn", message: `${owner.name} has manual mounts for managed build-cache paths: ${caches.map(cache => cache.target).join(", ")}. Use the managed-cache migration after a successful deployment.` });
-    const mounts = (owner.volumes ?? []).map(spec => spec.split(":")[1] ?? spec);
+    const mounts = (owner.volumes ?? []).flatMap(spec => {
+      const normalized = normalizeAppVolume(spec);
+      return normalized ? [parseVolumeMount(normalized).target.replace(/\/+$/, "") || "/"] : [];
+    });
     const duplicate = [...new Set(mounts.filter((target, index) => mounts.indexOf(target) !== index))];
     if (duplicate.length) checks.push({ id: `duplicate-mount-${index}`, label: "Duplicate mounts", status: "warn", message: `${owner.name} mounts these paths more than once: ${duplicate.join(", ")}. Keep one mount per path.` });
   }

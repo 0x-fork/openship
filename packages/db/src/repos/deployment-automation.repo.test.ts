@@ -26,31 +26,27 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await client.exec("TRUNCATE pull_request_preview, env_var, service, deployment, project CASCADE");
-  await db
-    .insert(schema.project)
-    .values({
-      id: "p",
-      organizationId: "org",
-      groupId: "g",
-      name: "App",
-      slug: "app",
-      framework: "nextjs",
-      packageManager: "bun",
-      rootDirectory: "apps/web",
-      runtimeMode: "docker",
-      buildCommand: "PUBLIC_URL='https://example.test' bun run build",
-      previewSettings: { enabled: true, comments: true },
-      volumes: ["bun:/root/.bun/install/cache", "next:/app/.next/cache", "data:/app/data"],
-    });
-  await db
-    .insert(schema.service)
-    .values({
-      id: "s",
-      projectId: "p",
-      name: "web",
-      kind: "monorepo",
-      buildCommand: "TOKEN=service-secret bun run build",
-    });
+  await db.insert(schema.project).values({
+    id: "p",
+    organizationId: "org",
+    groupId: "g",
+    name: "App",
+    slug: "app",
+    framework: "nextjs",
+    packageManager: "bun",
+    rootDirectory: "apps/web",
+    runtimeMode: "docker",
+    buildCommand: "PUBLIC_URL='https://example.test' bun run build",
+    previewSettings: { enabled: true, comments: true },
+    volumes: ["bun:/root/.bun/install/cache", "next:/app/.next/cache", "data:/app/data"],
+  });
+  await db.insert(schema.service).values({
+    id: "s",
+    projectId: "p",
+    name: "web",
+    kind: "monorepo",
+    buildCommand: "TOKEN=service-secret bun run build",
+  });
 });
 
 describe("command variables", () => {
@@ -154,6 +150,27 @@ describe("durable preview identity", () => {
       repo: "app",
       number: 42,
     });
+  it("keeps repository identity when a source changes repositories and PR numbers repeat", async () => {
+    await enqueue();
+    await previews.enqueue({
+      organizationId: "org",
+      sourceProjectId: "p",
+      owner: "Acme",
+      repo: "Other",
+      number: 42,
+    });
+    await previews.enqueue({
+      organizationId: "org",
+      sourceProjectId: "p",
+      owner: "acme",
+      repo: "other",
+      number: 42,
+    });
+    expect((await previews.list("p", "org")).map((row) => row.repo).sort()).toEqual([
+      "app",
+      "other",
+    ]);
+  });
   it("deduplicates deliveries, leases work and creates one isolated environment with only preview variables", async () => {
     await projects.mergeEnvVars(
       "p",

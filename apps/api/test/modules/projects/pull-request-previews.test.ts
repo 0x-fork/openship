@@ -22,6 +22,8 @@ const m = vi.hoisted(() => ({
     update: vi.fn(),
     createEnvironment: vi.fn(),
     admittedDeployment: vi.fn(),
+    list: vi.fn(),
+    enqueue: vi.fn(),
   },
   service: { listByProject: vi.fn(), update: vi.fn() },
   deployment: { findById: vi.fn() },
@@ -70,6 +72,7 @@ vi.mock("@repo/platform/engine/config/index", () => ({
 
 import {
   preparePreviewDeployment,
+  configurePreviews,
   previewEligible,
   previewEnvironmentInput,
   runPullRequestPreviewsSweep,
@@ -184,11 +187,17 @@ describe("preview templates across stacks", () => {
         previewEnvironmentInput({ ...source, volumes: [volume] }, [], 5, "feature"),
       ).toThrow("isolated");
       expect(() =>
-        previewEnvironmentInput(source, [{ name: "app", volumes: [volume] } as Service], 5, "feature"),
+        previewEnvironmentInput(
+          source,
+          [{ name: "app", volumes: [volume] } as Service],
+          5,
+          "feature",
+        ),
       ).toThrow("isolated");
     }
-    expect(previewEnvironmentInput({ ...source, volumes: ["/data"] }, [], 5, "feature").project.volumes)
-      .toEqual(["/data"]);
+    expect(
+      previewEnvironmentInput({ ...source, volumes: ["/data"] }, [], 5, "feature").project.volumes,
+    ).toEqual(["/data"]);
     expect(() =>
       previewEnvironmentInput(
         { ...source, buildCommand: "TOKEN=production build" },
@@ -237,6 +246,38 @@ describe("preview deployment preparation", () => {
 });
 
 describe("durable preview reconciliation", () => {
+  test("allows disabling and queuing cleanup after the GitHub source is disconnected", async () => {
+    m.project.findByIdInOrganization.mockResolvedValue({
+      ...source,
+      gitProvider: null,
+      gitOwner: null,
+      gitRepo: null,
+    });
+    m.preview.list.mockResolvedValue([intent]);
+    await configurePreviews({ organizationId: "org" } as never, "source", {
+      enabled: false,
+      comments: true,
+    });
+    expect(m.project.update).toHaveBeenCalledWith("source", {
+      previewSettings: { enabled: false, comments: true, baseDomain: undefined },
+    });
+    expect(m.preview.enqueue).toHaveBeenCalledWith(intent);
+    expect(m.request).not.toHaveBeenCalled();
+  });
+  test("cleans up the old repository's preview when its source switches repositories", async () => {
+    m.project.findByIdInOrganization.mockImplementation(async (id) =>
+      id === "source" ? { ...source, gitRepo: "different-repo" } : child,
+    );
+    await runPullRequestPreviewsSweep();
+    expect(m.teardown).toHaveBeenCalledWith(
+      expect.anything(),
+      "child",
+      expect.objectContaining({ wipeVolumes: true }),
+    );
+    expect(intent.status).toBe("closed");
+    expect(m.trigger).not.toHaveBeenCalled();
+    expect(m.request.mock.calls.some(([args]) => args.url.endsWith("/pulls/5"))).toBe(false);
+  });
   test("does not publish a URL while the deployment reports unsynchronized routing", async () => {
     m.deployment.findById.mockResolvedValue({
       status: "ready",

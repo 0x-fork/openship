@@ -412,19 +412,57 @@ export const ProjectControlSchemas = {
   },
   buildCacheMigration: {
     action: "write",
-    input: Type.Object({ serviceId: Type.Optional(Type.String()), remove: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 })) }),
-    output: Type.Object({ candidates: Type.Array(Type.Object({ spec: Type.String(), target: Type.String() })), canMigrate: Type.Boolean(), deploymentId: nullableString, removed: Type.Array(Type.String()) }),
+    input: Type.Object({
+      serviceId: Type.Optional(Type.String()),
+      remove: Type.Optional(Type.Array(Type.String({ maxLength: 500 }), { maxItems: 50 })),
+    }),
+    output: Type.Object({
+      candidates: Type.Array(Type.Object({ spec: Type.String(), target: Type.String() })),
+      canMigrate: Type.Boolean(),
+      deploymentId: nullableString,
+      removed: Type.Array(Type.String()),
+    }),
   },
   configurePreviews: {
     action: "write",
-    input: Type.Object({ enabled: Type.Boolean(), comments: Type.Boolean(), baseDomain: Type.Optional(Type.String({ maxLength: 200 })) }),
-    output: Type.Object({ settings: Type.Object({ enabled: Type.Boolean(), comments: Type.Boolean(), baseDomain: Type.Optional(Type.String()) }) }),
+    input: Type.Object({
+      enabled: Type.Boolean(),
+      comments: Type.Boolean(),
+      baseDomain: Type.Optional(Type.String({ maxLength: 200 })),
+    }),
+    output: Type.Object({
+      settings: Type.Object({
+        enabled: Type.Boolean(),
+        comments: Type.Boolean(),
+        baseDomain: Type.Optional(Type.String()),
+      }),
+    }),
   },
   listPreviews: {
     action: "read",
-    output: Type.Object({ settings: Type.Union([Type.Object({ enabled: Type.Boolean(), comments: Type.Boolean(), baseDomain: Type.Optional(Type.String()) }), Type.Null()]),
-      previews: Type.Array(Type.Object({ id: Type.String(), number: Type.Integer(), projectId: nullableString, status: Type.String(), url: nullableString, error: nullableString, headSha: nullableString })) }),
+    output: Type.Object({
+      settings: Type.Union([
+        Type.Object({
+          enabled: Type.Boolean(),
+          comments: Type.Boolean(),
+          baseDomain: Type.Optional(Type.String()),
+        }),
+        Type.Null(),
+      ]),
+      previews: Type.Array(
+        Type.Object({
+          id: Type.String(),
+          number: Type.Integer(),
+          projectId: nullableString,
+          status: Type.String(),
+          url: nullableString,
+          error: nullableString,
+          headSha: nullableString,
+        }),
+      ),
+    }),
   },
+
   getRollbackCapacity: {
     action: "read",
     output: Type.Object({
@@ -498,7 +536,11 @@ export const ProjectControlSchemas = {
   migrateCommandEnvironment: {
     action: "write",
     input: Type.Object({
-      environment: Type.Union([Type.Literal("production"), Type.Literal("preview"), Type.Literal("development")]),
+      environment: Type.Union([
+        Type.Literal("production"),
+        Type.Literal("preview"),
+        Type.Literal("development"),
+      ]),
       serviceId: Type.Optional(Type.String({ minLength: 1 })),
       commands: Type.Object({
         installCommand: Type.Optional(Type.String({ maxLength: 1000 })),
@@ -506,8 +548,12 @@ export const ProjectControlSchemas = {
         startCommand: Type.Optional(Type.String({ maxLength: 1000 })),
       }),
     }),
-    output: Type.Object({ keys: Type.Array(Type.String()), commands: Type.Record(Type.String(), Type.String()) }),
+    output: Type.Object({
+      keys: Type.Array(Type.String()),
+      commands: Type.Record(Type.String(), Type.String()),
+    }),
   },
+
   ...ProjectClusterSchemas,
   updateResources: { action: "write", input: UpdateResourcesBody, output: ProjectResourcesSchema },
   setSleepMode: {

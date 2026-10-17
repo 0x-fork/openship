@@ -33,6 +33,7 @@ describe("command environment migration", () => {
     "A=x A=y bun build",
     "A=~/file bun build",
     "export A=x; bun build",
+    "__proto__=literal bun build",
   ])("leaves dynamic or ambiguous syntax for manual review: %s", (command) => {
     expect(inspectCommandEnvironment(command).migratable).toBe(false);
   });

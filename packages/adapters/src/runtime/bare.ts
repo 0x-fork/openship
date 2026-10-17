@@ -691,15 +691,31 @@ export class BareRuntime implements RuntimeAdapter {
       writeSecretFile: (p, content) => this.executor.writeFile(p, content),
     };
 
-    const result = await runBuildPipeline(buildEnv, sourceStaged ? { ...config, sourceStaged: true } : config, log);
-    const prepareOutput = result.status === "deploying" ? prepareNodeOutputCommand(config, resolveProjectDir(dir, config.rootDirectory)) : undefined;
+    const result = await runBuildPipeline(
+      buildEnv,
+      sourceStaged ? { ...config, sourceStaged: true } : config,
+      log,
+    );
+    const prepareOutput = result.status === "deploying"
+      ? prepareNodeOutputCommand(config, resolveProjectDir(dir, config.rootDirectory))
+      : undefined;
     if (prepareOutput) await buildEnv.exec(prepareOutput, log.callback);
     const root = config.rootDirectory?.trim().replace(/^\/+|\/+$/g, "");
-    const start = prepareOutput ? AUTOMATIC_START : config.startCommand || "npm start";
-    // Every stack starts from the app directory used during its build. The
-    // release directory contains the whole repository on this target-build path.
-    const appPath = root ? nodeBinPathExport(config.packageManager, [".", root.split("/").map(() => "..").join("/")]) : "";
-    const startCommand = root ? `cd ${sq(root)} && ${appPath ? `${appPath} && ` : ""}${start}` : prepareOutput ? start : undefined;
+    const defaultStart = STACKS[config.stack as StackId]?.defaultStartCommand;
+    const usesDefaultStart =
+      !config.startCommand?.trim() || config.startCommand.trim() === defaultStart;
+    const automaticStart = prepareOutput && usesDefaultStart;
+    const start = automaticStart
+      ? AUTOMATIC_START
+      : config.startCommand || defaultStart || "npm start";
+    // Managed defaults run in the app directory used by the build. Explicit
+    // commands keep the existing repository cwd, including their own `cd` steps.
+    const appPath = root
+      ? nodeBinPathExport(config.packageManager, [".", root.split("/").map(() => "..").join("/")])
+      : "";
+    const startCommand = usesDefaultStart && root
+      ? `cd ${sq(root)} && ${appPath ? `${appPath} && ` : ""}${start}`
+      : automaticStart ? start : undefined;
     return {
       sessionId: config.sessionId,
       status: result.status,

@@ -6090,10 +6090,6 @@ export class DockerRuntime implements RuntimeAdapter {
       ...serviceEnv.entries.map(([k, v]) => `${k}=${v}`),
     ];
     let cmd = resolveComposeCmd(config);
-    if (!config.advanced?.entrypoint && cmd?.length === 3 && cmd[0] === "sh" && cmd[1] === "-c") {
-      const start = imageStartCommand((await this.docker.getImage(config.image).inspect()).Config?.Labels, cmd[2]);
-      if (start) cmd = ["sh", "-c", start];
-    }
     const entrypoint = resolveComposeEntrypoint(config.advanced);
     const hostMappings = parseContainerHosts(config.advanced?.extraHosts);
     const extraHosts = hostMappings &&
@@ -6146,6 +6142,13 @@ export class DockerRuntime implements RuntimeAdapter {
       // availability again before stopping the old container, without pulling
       // a mutable substitute or contacting the registry during cutover.
       await this.inspectDeploymentImage(config.image);
+    }
+
+    // Labels belong to the replacement image. Resolve them after acquisition,
+    // before stopping the live service, including on a fresh deployment host.
+    if (!config.advanced?.entrypoint && cmd?.length === 3 && cmd[0] === "sh" && cmd[1] === "-c") {
+      const start = imageStartCommand((await this.inspectDeploymentImage(config.image)).Config?.Labels, cmd[2]);
+      if (start) cmd = ["sh", "-c", start];
     }
 
     // Flush the existing service before removing it, using Docker's normal

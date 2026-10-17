@@ -44,6 +44,8 @@ interface ServiceSettingsFormProps {
   submitLabel?: string;
   /** Service detail owns mounts in its Volumes tab; topology editors keep them here. */
   includeVolumes?: boolean;
+  /** Immediate persisted actions are enabled only by the saved service editor. */
+  enableAutomationActions?: boolean;
 }
 
 /** Backend per-item caps (service.schema.ts ComposeFieldsBlock) surfaced here so
@@ -65,7 +67,7 @@ const splitList = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmit, submitLabel, includeVolumes = true }: ServiceSettingsFormProps) {
+export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmit, submitLabel, includeVolumes = true, enableAutomationActions = false }: ServiceSettingsFormProps) {
   const projectContext = useOptionalProjectSettings();
   const { t } = useI18n();
   const f = t.projectDetail.services.settingsForm;
@@ -270,12 +272,21 @@ export function ServiceSettingsForm({ service, siblingServiceNames = [], onSubmi
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {projectContext && <BuildCacheMigration key={service.id} projectId={projectContext.id} serviceId={service.id} />}
-      {isMonorepo && <CommandEnvironmentNotice projectId={projectContext?.id} serviceId={service.id} commands={{ installCommand, buildCommand, startCommand }} onMigrated={commands => {
-        if (commands.installCommand !== undefined) setInstallCommand(commands.installCommand);
-        if (commands.buildCommand !== undefined) setBuildCommand(commands.buildCommand);
-        if (commands.startCommand !== undefined) setStartCommand(commands.startCommand);
-      }} />}
+      {enableAutomationActions && projectContext && (
+        <BuildCacheMigration key={service.id} projectId={projectContext.id} serviceId={service.id} />
+      )}
+      {isMonorepo && (
+        <CommandEnvironmentNotice
+          projectId={enableAutomationActions ? projectContext?.id : undefined}
+          serviceId={service.id}
+          commands={{ installCommand, buildCommand, startCommand }}
+          onMigrated={commands => {
+            if (commands.installCommand !== undefined) setInstallCommand(commands.installCommand);
+            if (commands.buildCommand !== undefined) setBuildCommand(commands.buildCommand);
+            if (commands.startCommand !== undefined) setStartCommand(commands.startCommand);
+          }}
+        />
+      )}
       {error && (
         <div className="rounded-xl border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger">
           {error}

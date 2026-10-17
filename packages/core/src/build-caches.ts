@@ -1,5 +1,6 @@
 import { STACKS, type StackDefinition } from "./stacks";
 import { normalizeAppVolume } from "./volumes";
+import { parseVolumeMount } from "./volume-spec";
 
 export const PACKAGE_BUILD_CACHES: Readonly<Record<string, readonly string[]>> = {
   npm: ["/root/.npm"],
@@ -50,7 +51,7 @@ export function manualBuildCaches(input: {
   return (input.volumes ?? []).flatMap((spec) => {
     const normalized = normalizeAppVolume(spec);
     if (!normalized) return [];
-    const target = normalized.split(":")[1]?.replace(/\/+$/, "");
+    const target = parseVolumeMount(normalized).target.replace(/\/+$/, "");
     const canonical = target?.startsWith("/app/") ? source + target.slice(4) : target;
     return canonical && targets.includes(canonical) ? [{ spec, target: canonical }] : [];
   });
