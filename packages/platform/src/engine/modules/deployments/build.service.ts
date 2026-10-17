@@ -213,6 +213,8 @@ export async function runDeploymentPreflight(
 
 /** Config snapshot stored in deployment.meta - self-contained build+deploy config. */
 export interface DeploymentConfigSnapshot {
+  /** Set by lifecycle persistence after encrypted configuration bypasses log redaction. */
+  configurationSecretsPreserved?: boolean;
   /** Idempotency for an explicit capacity adjustment; never accepted over HTTP. */
   capacityAdjustment?: { key: string; requestHash: string };
   /** Internal Cloud service-slot reservation, derived at queue creation. */
