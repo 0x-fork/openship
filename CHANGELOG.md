@@ -38,6 +38,9 @@ since 0.9.2.
   comments update one existing comment, alongside the existing deployment Checks.
   Whole-instance transfers preserve preview ownership; individual project imports
   clear preview automation that cannot safely transfer.
+- **Use automation from the SDK** — configure and list previews, inspect or migrate
+  manual cache mounts, and move command variables through the shared validated
+  project operations.
 
 ### Workers, schedulers and rollback
 

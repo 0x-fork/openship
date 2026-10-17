@@ -62,6 +62,9 @@ jobs:
       - name: Typecheck apps/api
         run: bun run --cwd apps/api lint
 
+      - name: Typecheck SDK
+        run: bun run --cwd packages/sdk lint
+
       - name: Audit structured error boundaries
         run: |
           bun test scripts/audit-error-boundaries.test.ts
