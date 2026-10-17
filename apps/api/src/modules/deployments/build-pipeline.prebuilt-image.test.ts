@@ -63,6 +63,8 @@ vi.mock("@repo/db", () => ({
     cloudBuildActivity: { cancelReservation: mocks.cancelReservation },
     cloudDockerWorkspace: { find: (...args: unknown[]) => mocks.findCloudDockerBinding(...args) },
     deployment: {
+      listPendingRoleHandovers: async () => [],
+      setRoleHandover: async () => {},
       findBuildSessionByDeploymentId: (...args: unknown[]) =>
         mocks.findBuildSessionByDeploymentId(...args),
       claimBuildExecution: (...args: unknown[]) => mocks.claimBuildExecution(...args),
@@ -133,7 +135,12 @@ vi.mock("@repo/adapters", () => {
     BuildLogger,
     LocalExecutor: class LocalExecutor {},
     BareRuntime: class BareRuntime {},
-    DockerRuntime: class DockerRuntime {},
+    DockerRuntime: class DockerRuntime {
+      // This suite observes artifact/retirement behavior, not Docker identities.
+      static deploymentContainerName() {
+        return "mock-container";
+      }
+    },
     CloudRuntime: class CloudRuntime {},
     CloudDockerRuntime: class CloudDockerRuntime {},
     STATIC_RELEASE_BASE: "/opt/openship/static/releases",

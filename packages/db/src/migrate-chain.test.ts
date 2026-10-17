@@ -278,16 +278,22 @@ describe("migration chain applies to an existing, populated database", () => {
       await client.exec("SET session_replication_role = replica;");
       await seedRow(client, "project", SEED_ID);
       await seedRow(client, "deployment", SEED_ID);
-      const projects = (await client.query("SELECT * FROM project")).rows;
-      const deployments = (await client.query("SELECT * FROM deployment")).rows;
-      const applied = (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows;
+      const projects = (await client.query<Record<string, unknown>>("SELECT * FROM project")).rows;
+      const deployments = (await client.query<Record<string, unknown>>("SELECT * FROM deployment"))
+        .rows;
+      const applied = (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id"))
+        .rows;
 
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
         projects.map((project) => ({ ...project, roles: null })),
       );
       expect((await client.query("SELECT * FROM deployment")).rows).toEqual(
-        deployments.map((deployment) => ({ ...deployment, role_containers: null })),
+        deployments.map((deployment) => ({
+          ...deployment,
+          role_containers: null,
+          role_handover: null,
+        })),
       );
       expect((await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(0, applied.length))
         .toEqual(applied);

@@ -698,7 +698,12 @@ async function sweepOnce(opts?: HealthSweepOptions): Promise<HealthWatchSummary>
     // containers. Skipped WITHOUT retiring — an open incident stays open, because
     // we genuinely don't know anything about this project right now.
     const newest = latestDeps.get(project.id) ?? dep;
-    if (deploymentIsInFlight(newest) || now - newest.updatedAt.getTime() < DEPLOY_GRACE_MS) {
+    const handoverPending = newest.roleHandover && newest.roleHandover.phase !== "complete";
+    if (
+      deploymentIsInFlight(newest) ||
+      handoverPending ||
+      now - newest.updatedAt.getTime() < DEPLOY_GRACE_MS
+    ) {
       unknownCandidates.push({ project, dep, meta, serverId: target.serverId });
       continue;
     }

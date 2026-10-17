@@ -197,6 +197,29 @@ async function finishSession(
  * Lives here rather than inline in build-pipeline so the decision is exercisable
  * without standing up the whole build platform.
  */
+/** Commit intent follows publication and may already have retired predecessors.
+ * A later exception/cancellation must never tear the published candidate down.
+ * The journal reconciler owns completion; this only closes the current stream. */
+export async function protectRoleHandoverOutcome(ctx: LifecycleContext): Promise<void> {
+  if (ctx.settled || ctx.dep.roleHandover?.phase !== "committing") return;
+  // Set before any read: loss of the DB connection is not permission to unwind.
+  ctx.settled = "reconciling";
+  try {
+    const current = await repos.deployment.findById(ctx.dep.id);
+    if (current?.status === "ready") {
+      ctx.settled = "ready";
+      await finishSession(ctx.buildSessionId, "ready", current.buildDurationMs ?? 0, collectLogs(ctx));
+      sessionManager.updateStatus(ctx.dep.id, "ready");
+    } else {
+      await onReconciling(ctx, {
+        warningMessage: "Role handover completion is pending. Openship will retry when the server is reachable.",
+      });
+    }
+  } catch (error) {
+    observeCaughtError(error, "platform/engine/modules/deployments/deployment-lifecycle");
+  }
+}
+
 export async function reportPipelineError(
   ctx: LifecycleContext,
   message: string,
@@ -504,6 +527,10 @@ export async function onFailure(
   errorMeta?: { errorCode?: string; errorDetails?: Record<string, unknown>; errorMessage?: string },
 ): Promise<void> {
   const { runtime, project, dep, buildSessionId, provisioned } = ctx;
+  if (dep.roleHandover?.phase === "committing") {
+    await protectRoleHandoverOutcome(ctx);
+    return;
+  }
   reportError(error ?? "Deployment failed", { kind: "deployment", component: "deployment-lifecycle",
     operation: "deployment.failed", organizationId: dep.organizationId, projectId: project.id,
     deploymentId: dep.id, serverId: project.serverId ?? undefined, durationMs, code: errorMeta?.errorCode, handled: true });
@@ -645,6 +672,10 @@ export async function onCancelled(
   opts: { keepProvisioned?: boolean } = {},
 ): Promise<void> {
   const { runtime, dep, buildSessionId, provisioned } = ctx;
+  if (dep.roleHandover?.phase === "committing") {
+    await protectRoleHandoverOutcome(ctx);
+    return;
+  }
 
   if (!opts.keepProvisioned && runtime && provisioned.imageRef) {
     try {
@@ -700,7 +731,7 @@ export async function onCancelled(
 }
 
 /** Release numbering is cosmetic — see the call site's ordering invariant. */
-async function readReleaseVersion(
+export async function readReleaseVersion(
   projectId: string,
   commitSha: string | null | undefined,
 ): Promise<number | undefined> {

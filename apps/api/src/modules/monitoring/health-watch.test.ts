@@ -1312,6 +1312,18 @@ describe("control-plane restart", () => {
 // ─── Gate 1: a deploy in flight ──────────────────────────────────────────────
 
 describe("deploy suppression", () => {
+  it("keeps an interrupted role handover unknown until recovery finishes", async () => {
+    const app = seedApp({ status: "failed" });
+    const deployment = h.deployments.find((row) => row.id === app.depId)!;
+    deployment.roleHandover = { phase: "preparing" };
+    setState(app.containerId, "exited", { exitCode: 1 });
+    await confirm();
+    expect(openFor(app.projectId)).toHaveLength(0);
+    deployment.roleHandover = { phase: "complete" };
+    await confirm();
+    expect(openFor(app.projectId)).toHaveLength(1);
+  });
+
   it("skips a project whose deploy is still running", async () => {
     const { projectId, containerId } = seedApp({ status: "deploying" });
     setState(containerId, "gone");
