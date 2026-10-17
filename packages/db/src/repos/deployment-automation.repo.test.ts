@@ -264,10 +264,13 @@ describe("durable preview identity", () => {
       status: "queued",
     };
     await expect(
-      deployments.create(input, undefined, undefined, { id: intent!.id, token: "stale" }),
+      deployments.create(input, undefined, undefined, undefined, {
+        id: intent!.id,
+        token: "stale",
+      }),
     ).rejects.toThrow("expired");
     expect(await db.select().from(schema.deployment)).toHaveLength(0);
-    const admitted = await deployments.create(input, undefined, undefined, {
+    const admitted = await deployments.create(input, undefined, undefined, undefined, {
       id: intent!.id,
       token: "lease",
     });
@@ -281,7 +284,10 @@ describe("durable preview identity", () => {
       headSha: input.commitSha,
     });
     await expect(
-      deployments.create(input, undefined, undefined, { id: intent!.id, token: "lease" }),
+      deployments.create(input, undefined, undefined, undefined, {
+        id: intent!.id,
+        token: "lease",
+      }),
     ).rejects.toThrow("already has");
     expect(await db.select().from(schema.deployment)).toHaveLength(1);
     // A ready deployment can still own an unfinished runtime handover. Preview
@@ -294,7 +300,7 @@ describe("durable preview identity", () => {
       })
       .where(eq(schema.deployment.id, admitted!.id));
     await expect(
-      deployments.create({ ...input, commitSha: "b".repeat(40) }, undefined, undefined, {
+      deployments.create({ ...input, commitSha: "b".repeat(40) }, undefined, undefined, undefined, {
         id: intent!.id,
         token: "lease",
       }),
