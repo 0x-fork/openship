@@ -108,7 +108,6 @@ describe("Cloud Docker build execution limits", () => {
   });
   it.each([
     ["cloud", true],
-    ["cloud", false],
     ["ssh", true],
     ["ssh", false],
   ] as const)(
@@ -212,13 +211,20 @@ describe("Cloud Docker build execution limits", () => {
     expect(h.commands()).toContain("buildx rm --force --keep-state 'openship-");
     expect(h.commands()).toContain("--keep-state");
   });
-  it("applies the same budget to the legacy Cloud Docker builder", async () => {
+  it("refuses a Cloud build without BuildKit instead of using the daemon's native builder", async () => {
     const h = fixture("cloud", false);
-    await h.run();
-    const command = h.commands();
-    expect(command).toContain("--memory 536870912 --memory-swap 536870912");
-    expect(command).toContain("--cpu-quota 25000 --cpu-period 100000");
-    expect(command).not.toContain("buildx create");
+    await expect(h.run()).rejects.toMatchObject({ code: "CLOUD_BUILDKIT_UNAVAILABLE" });
+    expect(h.executor.streamExec).not.toHaveBeenCalled();
+    expect(h.commands()).not.toContain("buildx create");
+    expect(h.runtime._docker.listVolumes).not.toHaveBeenCalled();
+  });
+  it("never falls back to the Engine API when the Cloud executor is missing, even with cache mounts disabled", async () => {
+    const h = fixture();
+    h.runtime.connectionOptions.executor = undefined;
+    await expect(
+      h.runtime.cachedBuildConfig({ ...config, buildCache: false }),
+    ).rejects.toMatchObject({ code: "CLOUD_BUILD_EXECUTOR_UNAVAILABLE" });
+    expect(h.executor.exec).not.toHaveBeenCalled();
   });
   it.each([true, false])(
     "keeps the self-hosted SSH build path unchanged (BuildKit: %s)",
