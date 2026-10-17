@@ -248,9 +248,9 @@ export type DockerConnectionOptions = DockerTransportOptions & {
 export interface BuildCachePruneOptions {
   /** Include reusable (not only dangling) cache records. Active builds remain protected by Docker. */
   all?: boolean;
-  /** Leave at least this many bytes of reusable cache on the daemon. Omit for a full prune. */
+  /** Retained unused-cache budget. Omit for a full prune of eligible idle state. */
   keepStorageBytes?: number;
-  /** Docker build-cache filters, for example `{ until: ["24h"] }`. */
+  /** Native Docker-only filters, for example `{ until: ["24h"] }`. Rejected on managed Cloud. */
   filters?: Record<string, string[]>;
   abortSignal?: AbortSignal;
 }
@@ -1644,6 +1644,12 @@ export class DockerRuntime implements RuntimeAdapter {
   private engineCacheProbe: Promise<boolean> | null = null;
 
   private async cachedBuildConfig(config: BuildConfig): Promise<BuildConfig> {
+    if (this.transport.kind === "cloud" && !this.connectionOptions?.executor)
+      throw new AppError(
+        "The managed Cloud build executor is unavailable. Recover the Cloud space before retrying.",
+        503,
+        "CLOUD_BUILD_EXECUTOR_UNAVAILABLE",
+      );
     if (config.buildCache === false || process.env.OPENSHIP_BUILD_CACHE_MOUNTS === "false" ||
         config.envVars?.OPENSHIP_BUILD_CACHE_MOUNTS === "false")
       return { ...config, buildCache: false };
@@ -1772,6 +1778,12 @@ export class DockerRuntime implements RuntimeAdapter {
     // `--force-rm` is a legacy-builder concept (BuildKit keeps no intermediate
     // containers to remove), so it goes when BuildKit is on.
     const buildKit = await this.remoteBuildKitAvailable();
+    if (this.connectionOptions?.transport === "cloud" && !buildKit)
+      throw new AppError(
+        "The managed Cloud BuildKit worker is unavailable. Recover the Cloud space before retrying; the current deployment has not been replaced.",
+        503,
+        "CLOUD_BUILDKIT_UNAVAILABLE",
+      );
     // Cloud workers remain project-owned for cancellation and crash recovery.
     // Apply only the user's explicit CPU/RAM caps; zero dimensions stay uncapped.
     const cloudLimits = this.connectionOptions?.transport === "cloud" ? dockerBuildResourceLimits(config.resources) : undefined;
@@ -1786,13 +1798,9 @@ export class DockerRuntime implements RuntimeAdapter {
     // it ever looks at the context. `--force-rm` is the mirror image — a legacy-only
     // concept (BuildKit keeps no intermediate containers to remove). So the flag set
     // follows the builder; passing either unconditionally breaks one of the two.
-    let builderFlags = buildKit
+    const builderFlags = buildKit
       ? " --progress=plain"
       : ` --force-rm --add-host ${sq(`${ownershipHost}:127.0.0.1`)}`;
-    if (!buildKit && cloudLimits) {
-      if (cloudLimits.memory) builderFlags += ` --memory ${cloudLimits.memory} --memory-swap ${cloudLimits.memory}`;
-      if (cloudLimits.cpuquota) builderFlags += ` --cpu-quota ${cloudLimits.cpuquota} --cpu-period ${cloudLimits.cpuperiod}`;
-    }
     if (buildKit) {
       log.log("Builder: BuildKit (docker buildx detected on the host)");
     } else if (opts?.requiresBuildKit) {
@@ -4507,9 +4515,14 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   /**
-   * Reclaim BuildKit/classic-builder cache through Docker Engine's native API.
+   * Reclaim owned Cloud worker state OR native Docker Engine builder cache.
    *
-   * Build cache belongs to the DAEMON, not to a project: intermediate records
+   * Cloud never prunes the daemon's embedded builder. On fuse-overlayfs that
+   * scan can exhaust dockerd memory, disrupting unrelated application management.
+   * Cloud builds use isolated project workers; their collector checks ownership,
+   * attachments and pending commands under the same lock as worker bootstrap.
+   *
+   * Native build cache belongs to the DAEMON, not to a project: intermediate records
    * do not reliably retain OpenShip's final-image labels. Callers therefore own
    * the host-wide policy (bounded automatic retention vs an explicit full
    * clear). Docker itself excludes records leased by an active build.
@@ -4519,22 +4532,32 @@ export class DockerRuntime implements RuntimeAdapter {
    */
   async pruneBuildCache(options: BuildCachePruneOptions = {}): Promise<BuildCachePruneResult> {
     options.abortSignal?.throwIfAborted();
-    let managed: BuildCachePruneResult | undefined;
-    if (this.connectionOptions?.transport === "cloud" && this.connectionOptions.executor &&
-        !Object.keys(options.filters ?? {}).length) {
-      managed = await this.withBuildCacheLock(() => {
-        options.abortSignal?.throwIfAborted();
-        return this.pruneManagedBuildState(this.connectionOptions!.executor!, {
-        keepBytes: options.keepStorageBytes ?? 0,
-        });
-      });
-    }
     const keepStorageBytes = options.keepStorageBytes;
     if (
       keepStorageBytes !== undefined &&
       (!Number.isSafeInteger(keepStorageBytes) || keepStorageBytes < 0)
     ) {
       throw new RangeError("keepStorageBytes must be a non-negative safe integer");
+    }
+
+    if (this.connectionOptions?.transport === "cloud") {
+      const executor = this.connectionOptions.executor;
+      if (!executor)
+        throw new AppError(
+          "The managed Cloud build executor is unavailable. Recover the Cloud space before retrying.",
+          503,
+          "CLOUD_BUILD_EXECUTOR_UNAVAILABLE",
+        );
+      if (Object.keys(options.filters ?? {}).length)
+        throw new AppError(
+          "Docker Engine cache filters cannot be applied to managed Cloud project caches.",
+          400,
+          "CLOUD_BUILD_CACHE_FILTER_UNSUPPORTED",
+        );
+      return this.withBuildCacheLock(() => {
+        options.abortSignal?.throwIfAborted();
+        return this.pruneManagedBuildState(executor, { keepBytes: keepStorageBytes ?? 0 });
+      });
     }
 
     const query: Record<string, boolean | number | Record<string, string[]>> = {
@@ -4572,15 +4595,15 @@ export class DockerRuntime implements RuntimeAdapter {
       SpaceReclaimed?: unknown;
     };
     return {
-      cachesDeleted: [...(managed?.cachesDeleted ?? []), ...(Array.isArray(response.CachesDeleted)
+      cachesDeleted: Array.isArray(response.CachesDeleted)
         ? response.CachesDeleted.filter((id): id is string => typeof id === "string")
-        : [])],
+        : [],
       spaceReclaimed:
-        (managed?.spaceReclaimed ?? 0) + (typeof response.SpaceReclaimed === "number" &&
+        typeof response.SpaceReclaimed === "number" &&
         Number.isFinite(response.SpaceReclaimed) &&
         response.SpaceReclaimed >= 0
           ? response.SpaceReclaimed
-          : 0),
+          : 0,
     };
   }
 
