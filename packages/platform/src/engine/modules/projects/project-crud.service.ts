@@ -2,6 +2,7 @@
  * Project CRUD service - create, read, update, list, ensure.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { activeDeploymentForProject, findActiveDeployment, listActiveServiceDeployments } from "@repo/platform/engine/lib/active-deployment";
 import {
   repos,
@@ -13,6 +14,9 @@ import {
 } from "@repo/db";
 import {
   slugify,
+  runtimeProjectUpdate,
+  assertRuntimeVersionTarget,
+  AppError,
   NotFoundError,
   ConflictError,
   ForbiddenError,
@@ -34,7 +38,9 @@ import {
   normalizeFramework,
   isServicesFramework,
   resolveWorkload,
+  resolveGitHubDeploymentChecks,
   toWorkloadType,
+  parseOpenshipConfig,
   type ReleaseSource,
   type UpdatableIdentity,
   type WorkloadType,
@@ -69,16 +75,17 @@ import {
   deriveNextProjectRouteState,
   listProjectRouteRows,
   persistProjectRouteState,
+  prepareProjectRouteState,
   reapplyProjectLiveRoutes,
   resolveProjectRouteState,
   syncProjectRouteState,
   type ProjectRouteState,
 } from "../domains/project-route.service";
 import { applyProjectRouting } from "../domains/routing-apply.service";
-import { syncProjectManagedEdge } from "./project-runtime.service";
+import { markRoutingWarning, syncProjectManagedEdge } from "./project-runtime.service";
 import { normalizeStoredPublicEndpoints, publicEndpointHostname } from "../../lib/public-endpoints";
 import { resolveDeploymentEnvironment } from "../deployments/deployment-environment";
-import { assertFreeEndpointsAllowed } from "../../lib/free-domain-guard";
+import { assertFreeEndpointsAllowed, composeEndpointChanges } from "../../lib/free-domain-guard";
 import { currentPlanTier, planProjectLimit, PlanUpgradeRequiredError } from "../../lib/plan-guard";
 import { assertValidCustomDomains, customHostnamesOf } from "../../lib/custom-domain-guard";
 import { hasMaskedValue, unmaskEnv } from "../../lib/secret-env";
@@ -92,8 +99,10 @@ import type {
 } from "@repo/contracts";
 import { UpdateProjectBody } from "@repo/contracts";
 import { readDeployMeta, resolveProjectDeployTarget } from "./project-deploy-target";
+import { assertCloudRoutingCapabilities, assertProjectRoutingCapabilities } from "./project-routing-capabilities";
 import { withLiveProjectRuntimeMutation, withProjectRuntimeLock } from "../../lib/project-runtime-lock";
 import { requireOrgServer } from "../../lib/server-target";
+import { resolveCloudProjectServer, requireCloudWorkspace } from "../../lib/cloud-workspace-scope";
 export { resolveProjectDeployTarget } from "./project-deploy-target";
 
 /** A retention edit and its cleanup share the admission lock. A concurrent
@@ -193,7 +202,7 @@ async function loadActiveMigration(projectId: string) {
   try {
     return readActiveMigration(await repos.dockerMigrationRun.findActiveForProject(projectId));
   } catch (err) {
-    console.error(`[projects] active-migration lookup failed for ${projectId}:`, err);
+    errorDiagnostics.error("platform/engine/modules/projects/project-crud.service", `[projects] active-migration lookup failed for ${projectId}:`, err);
     return null;
   }
 }
@@ -206,7 +215,7 @@ async function loadActiveMigrations(
   try {
     return await repos.dockerMigrationRun.findActiveForProjects(projectIds);
   } catch (err) {
-    console.error("[projects] batched active-migration lookup failed:", err);
+    errorDiagnostics.error("platform/engine/modules/projects/project-crud.service", "[projects] batched active-migration lookup failed:", err);
     return new Map();
   }
 }
@@ -302,10 +311,8 @@ export async function enrichProject(p: Project) {
     activeMigration,
     ...readEnabled(p),
     ...readActiveDeploymentSummary(activeDep),
-    // isCloud decides the fallback when nothing is configured: the metered free
-    // tier on cloud, NO limits self-hosted (the machine is the cap).
     resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
-      isCloud: deployTarget === "cloud",
+      automaticBuild: deployTarget === "cloud" && env.CLOUD_MODE,
     }),
   };
 }
@@ -329,7 +336,7 @@ export async function enrichProjectsBatch(
     .filter((id): id is string => Boolean(id));
   const deployments = await repos.deployment
     .findManyById(activeDeploymentIds)
-    .catch(() => new Map<string, Deployment>());
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return new Map<string, Deployment>(); });
 
   const serverIds = new Set<string>();
   for (const project of projects) {
@@ -345,7 +352,7 @@ export async function enrichProjectsBatch(
   }
   const servers = await repos.server
     .getMany(Array.from(serverIds))
-    .catch(() => new Map<string, Server>());
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return new Map<string, Server>(); });
 
   // ONE statement for every project's live run, so the "Migrating" pill on a list of 50
   // projects costs a query rather than 50. The map is empty on cloud (no migrations there)
@@ -375,10 +382,8 @@ export async function enrichProjectsBatch(
       activeMigration: readActiveMigration(activeMigrations.get(p.id)),
       ...readEnabled(p),
       ...readActiveDeploymentSummary(activeDep),
-      // isCloud decides the fallback when nothing is configured: the metered
-      // free tier on cloud, NO limits self-hosted (the machine is the cap).
       resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
-        isCloud: deployTarget === "cloud",
+        automaticBuild: deployTarget === "cloud" && env.CLOUD_MODE,
       }),
     };
   });
@@ -404,6 +409,7 @@ function normalizeReleaseSource(input: ReleaseSource): ReleaseSource {
   try {
     artifactKind = releaseArtifactKind(input);
   } catch (err) {
+    observeCaughtError(err, "platform/engine/modules/projects/project-crud.service");
     throw new ValidationError(safeErrorMessage(err));
   }
 
@@ -503,6 +509,7 @@ function normalizeReleaseSource(input: ReleaseSource): ReleaseSource {
       const tag = source.pinnedVersion ?? "v1.2.3";
       renderReleaseImage(source.imageTemplate, { version: tag.replace(/^v/i, ""), tag });
     } catch (err) {
+      observeCaughtError(err, "platform/engine/modules/projects/project-crud.service");
       throw new ValidationError(safeErrorMessage(err));
     }
   } else if (source.imageTemplate) {
@@ -583,6 +590,23 @@ function normalizeComposePath(value: string | null | undefined): string | null {
   return value?.trim() ? value.trim() : null;
 }
 
+/**
+ * Roles enter through the same rules as `openship.json`'s `roles`: run the value
+ * through the config parser so a hand-built request cannot persist what a repo
+ * file could not declare. undefined = not sent (leave unchanged / create NULL),
+ * null and [] pass through as given. The parsed result is what gets stored, so
+ * it never carries the preset-only `when`/`unless` fields.
+ */
+function validateRoles(roles: unknown): TCreateProjectBody["roles"] {
+  if (roles === undefined || roles === null) return roles;
+  const { config, errors } = parseOpenshipConfig({ roles });
+  if (errors.length > 0) {
+    throw new ValidationError(`Invalid roles: ${errors.join("; ")}`);
+  }
+  // parseRoles rejects kind "web", so the result fits the wire shape.
+  return (config?.roles ?? []) as NonNullable<TCreateProjectBody["roles"]>;
+}
+
 function environmentNameFromSlug(slug: string) {
   return (
     slug
@@ -593,11 +617,13 @@ function environmentNameFromSlug(slug: string) {
   );
 }
 
-async function ensureProjectApp(data: TCreateProjectBody, slug: string, organizationId: string) {
+type ResolvedCreateProjectBody = TCreateProjectBody & Pick<TEnsureProjectBody, "services"> & { workspaceId?: string };
+
+async function ensureProjectApp(data: ResolvedCreateProjectBody, slug: string, organizationId: string) {
   return withProjectCreationLock(organizationId, async () => {
     let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
     if (app) return { app, created: false };
-    await assertProjectQuota(organizationId);
+    await assertProjectQuota(organizationId, data.workspaceId ?? null);
 
     const source = resolveProjectSource(data);
 
@@ -668,7 +694,7 @@ function resolveWorkloadColumns(intent: {
 
 function buildProductionProjectInput(
   groupId: string,
-  data: TCreateProjectBody,
+  data: ResolvedCreateProjectBody,
   slug: string,
   routing: ProjectRouteState,
   organizationId: string,
@@ -691,6 +717,7 @@ function buildProductionProjectInput(
     organizationId,
     groupId,
     serverId: data.serverId ?? null,
+    workspaceId: data.workspaceId ?? null,
     name: data.name,
     slug,
     environmentName: "Production",
@@ -705,6 +732,7 @@ function buildProductionProjectInput(
     releaseSource: source.releaseSource,
     installationId: data.installationId,
     autoDeploy: !!(env.CLOUD_MODE && source.gitOwner && source.gitRepo),
+    githubChecks: data.githubChecks,
     framework: normalizeFramework(data.framework),
     packageManager: data.packageManager ?? "npm",
     installCommand: data.installCommand,
@@ -720,7 +748,12 @@ function buildProductionProjectInput(
     // undefined (not declared) leaves the column NULL = no release phase, which
     // is what every project did before the phase existed.
     releaseCommands: data.releaseCommands ?? null,
+    // undefined (not declared) leaves the column NULL = web only, which is what
+    // every project was before roles existed.
+    roles: data.roles ?? null,
     buildImage: data.buildImage,
+    runtimeVersion: data.runtimeVersion,
+    runtimeImage: data.runtimeImage,
     productionMode: workload.productionMode,
     port: data.port ?? 3000,
     hasServer: workload.hasServer,
@@ -732,10 +765,10 @@ function buildProductionProjectInput(
     buildKind: isReleaseImage ? "prebuilt" : (data.buildKind ?? null),
     workspacePrepareCommand:
       data.projectType === "monorepo" ? (data.monorepoWorkspace?.prepareCommand ?? null) : null,
+    cloudStaticHosting: data.cloudStaticHosting ?? "pages",
     routingConfig: data.routingConfig ?? null,
     rollbackWindow:
       data.rollbackWindow != null ? normalizeRollbackWindow(data.rollbackWindow) : null,
-    cloudArchiveStrategy: data.cloudArchiveStrategy ?? undefined,
     defaultRollbackStrategy: data.defaultRollbackStrategy ?? undefined,
     // Edge→app upstream addressing. Omitted → schema default "auto" (loopback-
     // port). The wizard seeds this from the user's route-strategy default.
@@ -774,7 +807,7 @@ async function persistMonorepoApps(projectId: string, data: TCreateProjectBody):
     data.monorepoApps.some((app) => hasMaskedValue(app.environment)) ||
     customHostnamesOf(data.monorepoApps).length > 0;
   const storedRows = needsRows
-    ? await repos.service.listByProjectKind(projectId, "monorepo").catch(() => [])
+    ? await repos.service.listByProjectKind(projectId, "monorepo").catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return []; })
     : [];
   const storedEnvByName = new Map<string, Record<string, string>>(
     storedRows.map((row) => [row.name, (row.environment as Record<string, string> | null) ?? {}]),
@@ -840,7 +873,7 @@ async function persistComposeServices(
   // carry, so re-syncing a project that holds a bad one isn't refused outright.
   // Only reads the rows when a custom hostname is actually in play.
   if (customHostnamesOf(data.services).length) {
-    const rows = await repos.service.listByProject(projectId).catch(() => []);
+    const rows = await repos.service.listByProject(projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return []; });
     assertValidCustomDomains(data.services, { known: customHostnamesOf(rows) });
   }
 
@@ -849,7 +882,7 @@ async function persistComposeServices(
     // Same precedence as requestBuildAccess: stored rows first, then the upload
     // session — for a fresh scan the uploaded compose is the newer truth.
     const realEnvByName = new Map<string, Record<string, string>>();
-    for (const row of await repos.service.listByProject(projectId).catch(() => [])) {
+    for (const row of await repos.service.listByProject(projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return []; })) {
       realEnvByName.set(row.name, (row.environment as Record<string, string> | null) ?? {});
     }
     const session = data.uploadSessionId ? getFolderSession(data.uploadSessionId) : undefined;
@@ -863,7 +896,7 @@ async function persistComposeServices(
       const restored = unmaskEnv(svc.environment, realEnvByName.get(svc.name) ?? null);
       if (Object.keys(restored).length < Object.keys(svc.environment ?? {}).length) {
         // Warn so a secret lost this way is traceable (mirrors createService).
-        console.warn(
+        errorDiagnostics.warn("platform/engine/modules/projects/project-crud.service",
           `[ensureProject] service "${svc.name}": dropped masked env value(s) with no stored source` +
             (data.uploadSessionId ? "" : " — pass uploadSessionId to restore them"),
         );
@@ -882,11 +915,18 @@ async function persistComposeServices(
 }
 
 async function createProductionProject(
-  data: TCreateProjectBody,
+  data: ResolvedCreateProjectBody,
   slug: string,
   organizationId: string,
   access?: { tokenId: string },
+  ctx?: RequestContext,
 ) {
+  // Reject incompatible runtime settings before any group/project insert.
+  assertRuntimeVersionTarget(data);
+  data = { ...data, ...runtimeProjectUpdate(null, data) };
+  // Same rules as openship.json; before any group/project insert.
+  const roles = validateRoles(data.roles);
+  if (roles !== undefined) data = { ...data, roles };
   // The project type is derived from persisted service rows. Accepting an
   // explicit monorepo without app metadata creates a different project from
   // the one requested (including CLI --type monorepo). Reject before writes.
@@ -899,9 +939,28 @@ async function createProductionProject(
   // it through the same org-scoped repository used by deployment preflight,
   // and do it before ensureProjectApp writes anything so a rejected binding is
   // atomic (no orphan project-group row).
-  if (data.serverId) {
-    await requireOrgServer(data.serverId, organizationId);
+  const selectedServer = data.serverId ? await requireOrgServer(data.serverId, organizationId) : null;
+  assertCloudRoutingCapabilities(data.routingConfig, !!selectedServer?.workspaceId);
+  if (selectedServer && !env.CLOUD_MODE) {
+    if (selectedServer.workspaceId) {
+      const { requireLinkedCloudServer } = await import("../../lib/cloud/server-link");
+      await requireLinkedCloudServer(organizationId, selectedServer.workspaceId);
+    }
   }
+  // Workspace ownership is always derived from the selected server.
+  data = { ...data, workspaceId: undefined };
+  if (env.CLOUD_MODE || selectedServer?.workspaceId) {
+    const { workspace, server } = await resolveCloudProjectServer(organizationId, data.serverId);
+    if (workspace) {
+      if (!ctx) throw new AppError("Workspace placement requires an authenticated execution context", 403, "CLOUD_WORKSPACE_ACCESS_REQUIRED");
+      const { authorization } = await import("../../lib/authorization");
+      await authorization.authorize(ctx, { resourceType: "server", resourceId: server!.id, action: "write" });
+      if (workspace.deletionInProgress) throw new AppError("Cloud workspace is unavailable for this project", 409, "CLOUD_WORKSPACE_UNAVAILABLE");
+      data = { ...data, workspaceId: workspace.id, serverId: server!.id };
+    }
+  }
+
+  assertCloudRoutingCapabilities(data.routingConfig, !!data.workspaceId);
 
   // Multi-tenant SaaS: never trust a client-supplied installationId. It binds the
   // project to a GitHub App installation, and the push-webhook fan-out deploys by
@@ -922,7 +981,7 @@ async function createProductionProject(
   if (
     env.CLOUD_MODE ||
     getWebhookStrategy() === "app" ||
-    (await hasActiveGitHubSource(organizationId).catch(() => false))
+    (await hasActiveGitHubSource(organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return false; }))
   ) {
     const owner = data.gitOwner?.trim();
     data.installationId = owner
@@ -936,10 +995,14 @@ async function createProductionProject(
   // written on a disconnected instance (no dead "Pending" route persisted). The
   // auto-derived default (data.publicEndpoints undefined) is deliberately NOT
   // gated — that path must keep working on a self-hosted instance.
-  if (data.publicEndpoints !== undefined) {
+  if (data.publicEndpoints !== undefined || data.services?.length) {
     await assertFreeEndpointsAllowed(
       organizationId,
-      normalizeStoredPublicEndpoints(data.publicEndpoints),
+      [
+        ...normalizeStoredPublicEndpoints(data.publicEndpoints),
+        ...(data.services?.length ? composeEndpointChanges(data.services).endpoints : []),
+      ],
+      { workspaceId: data.workspaceId },
     );
   }
   // Same placement, same reason as the free-endpoint gate above: refuse a bogus
@@ -974,7 +1037,9 @@ async function createProductionProject(
     return created;
   } catch (err) {
     if (appCreated) {
-      await repos.projectGroup.softDelete(app.id).catch(() => {});
+      await repos.projectGroup.softDelete(app.id).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service");
+      });
     }
     throw err;
   }
@@ -1050,7 +1115,9 @@ export async function createServicesProjectWithId(opts: {
     await persistProjectRouteState(created.id, routing.publicEndpoints);
     return created;
   } catch (err) {
-    await repos.projectGroup.softDelete(group.id).catch(() => {});
+    await repos.projectGroup.softDelete(group.id).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service");
+    });
     throw err;
   }
 }
@@ -1087,12 +1154,13 @@ export async function linkProjectRepo(
     async (project): Promise<LinkProjectRepoOutcome> => {
       try {
         assertResourceInOrg(project, "Project", organizationId, projectId);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service");
         return { ok: false, code: "not_found" } as const;
       }
 
       const sourceWebBaseUrl = await resolveGitHubWebBaseUrl(organizationId, owner).catch(
-        () => null,
+        (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; },
       );
       const gitUrl = sourceWebBaseUrl
         ? `${sourceWebBaseUrl.replace(/\/+$/, "")}/${owner}/${repo}.git`
@@ -1150,7 +1218,7 @@ export async function linkProjectRepo(
         const webhookUrl =
           strategy === "domain" ? domainWebhookUrl(project!.webhookDomain!) : undefined;
         const hookId = await ensureSharedWebhook(ctx, project!, owner, repo, webhookUrl).catch(
-          () => null,
+          (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; },
         );
         if (hookId) {
           gitFields.webhookId = hookId;
@@ -1319,7 +1387,7 @@ async function resolveEnvVersion(row: Project, latest: Deployment | null): Promi
     return latest?.releaseVersion ?? pinned ?? null;
   }
   if (row.isApp && !row.gitOwner) {
-    const services = await repos.service.listByProject(row.id).catch(() => []);
+    const services = await repos.service.listByProject(row.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return []; });
     const svc = services.find((s) => s.exposed && s.image) ?? services.find((s) => s.image);
     const ref = svc?.image;
     if (ref) return ref.includes(":") ? (ref.split(":").pop() ?? null) : "latest";
@@ -1403,7 +1471,7 @@ async function findProjectByAppSlug(
  * Exported for the project CLONE: a duplicate is a new project and must count like one, or
  * "duplicate" becomes the way around the cap.
  */
-export async function assertProjectQuota(organizationId: string): Promise<void> {
+export async function assertProjectQuota(organizationId: string, workspaceId?: string | null): Promise<void> {
   if (!env.CLOUD_MODE) {
     const { total } = await repos.projectGroup.listByOrganization(organizationId, {
       page: 1,
@@ -1415,19 +1483,17 @@ export async function assertProjectQuota(organizationId: string): Promise<void> 
     return;
   }
 
-  const planCap = await planProjectLimit(organizationId);
+  const planCap = await planProjectLimit(organizationId, workspaceId);
   if (planCap === null) return; // Team/Enterprise publish an unlimited project allowance.
   const cap = planCap;
-  const { total } = await repos.projectGroup.listByOrganization(organizationId, {
-    page: 1,
-    perPage: 1,
-  });
+  const total = await repos.project.countGroupsForOrganization(organizationId, workspaceId);
   if (total >= cap) {
     throw new PlanUpgradeRequiredError(
       cap === 0 ? "Choose a Cloud plan to create projects."
         : `Your plan includes ${cap} projects and you're using ${total}. Upgrade to add more.`,
       "project-limit",
-      await currentPlanTier(organizationId),
+      await currentPlanTier(organizationId, workspaceId),
+      workspaceId,
     );
   }
 }
@@ -1440,7 +1506,7 @@ export async function withProjectCreationLock<T>(organizationId: string, create:
   return createProvisionLock(`cloud:project-quota:${organizationId}`).run(create);
 }
 
-export async function ensureProject(data: EnsureProjectBody, organizationId: string) {
+export async function ensureProject(data: EnsureProjectBody, organizationId: string, ctx?: RequestContext, options?: { mustCreate: true }) {
   const nameSlug = slugify(data.name);
   const desiredSlug = data.slug || nameSlug;
 
@@ -1459,6 +1525,10 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   if (project && project.organizationId !== organizationId) {
     throw new NotFoundError("Project", data.projectId ?? desiredSlug);
   }
+  if (project && options?.mustCreate)
+    throw new ConflictError("A project with this name already exists. Choose another name for the import.");
+  if (project?.workspaceId && data.serverId && data.serverId !== project.serverId) throw new AppError(
+    "This project belongs to another execution target. Move its data explicitly before changing workspaces.", 409, "CLOUD_WORKSPACE_TARGET_CONFLICT");
   if (data.deploymentEnvironment !== undefined) {
     // Source deployments ensure config before asking for build access. Reject a
     // preview aimed at production here too, before overwriting services/config
@@ -1470,10 +1540,12 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
   }
   let created = false;
 
+  if (project) await assertProjectRoutingCapabilities(project, data.routingConfig);
+
   if (!project) {
     // No existing match → this ensure will create. Enforce the cap here too
     // (the folder-upload deploy flow reaches creation only through ensure).
-    project = await createProductionProject(data, desiredSlug, organizationId);
+    project = await createProductionProject(data, desiredSlug, organizationId, ctx?.tokenScope ?? undefined, ctx);
     created = true;
   } else {
     const update: Record<string, unknown> = {};
@@ -1488,7 +1560,10 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     if (data.composePath !== undefined) update.composePath = normalizeComposePath(data.composePath);
     if (data.startCommand !== undefined) update.startCommand = data.startCommand;
     if (data.releaseCommands !== undefined) update.releaseCommands = data.releaseCommands;
+    if (data.roles !== undefined) update.roles = validateRoles(data.roles);
     if (data.buildImage !== undefined) update.buildImage = data.buildImage;
+    Object.assign(update, runtimeProjectUpdate(project, data));
+    assertRuntimeVersionTarget({ ...project, ...data, ...update });
     if (data.port !== undefined) update.port = data.port;
     // Workload axis (workloadType / hasServer / productionMode) — one choke
     // point keeps the three columns in lockstep (issue #538). Only written when
@@ -1509,6 +1584,7 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
     if (data.projectType === "monorepo" && data.monorepoWorkspace !== undefined) {
       update.workspacePrepareCommand = data.monorepoWorkspace.prepareCommand ?? null;
     }
+    if (data.cloudStaticHosting !== undefined) update.cloudStaticHosting = data.cloudStaticHosting;
     if (data.routingConfig !== undefined) update.routingConfig = data.routingConfig;
     if (data.slug !== undefined && data.slug !== project.slug) {
       const existingProject = await repos.project.findBySlugInOrg(organizationId, data.slug);
@@ -1538,28 +1614,38 @@ export async function ensureProject(data: EnsureProjectBody, organizationId: str
       update.rollbackWindow =
         data.rollbackWindow === null ? null : normalizeRollbackWindow(data.rollbackWindow);
     }
-    if (data.cloudArchiveStrategy !== undefined) {
-      update.cloudArchiveStrategy = data.cloudArchiveStrategy;
+
+    // Validate explicit route changes before saving any of the accompanying
+    // field edits. In particular, ensure must not silently accept a refused URL.
+    const nextRoutes = data.publicEndpoints !== undefined || update.slug !== undefined || update.port !== undefined
+      ? await prepareProjectRouteState(project, {
+          nextPublicEndpoints: data.publicEndpoints,
+          slug: typeof update.slug === "string" ? update.slug : project.slug,
+        })
+      : null;
+    if (data.services?.length) {
+      const routes = composeEndpointChanges(data.services, await repos.service.listByProject(project.id));
+      await assertFreeEndpointsAllowed(organizationId, [
+        ...routes.endpoints, ...(nextRoutes?.publicEndpoints ?? []),
+      ], {
+        capability: "managed-compose-domains", workspaceId: project.workspaceId,
+        knownHostnames: [...routes.knownHostnames, ...(nextRoutes?.projectDomains ?? []).map(domain => domain.hostname)],
+      });
     }
 
     if (Object.keys(update).length > 0) {
       await persistProjectFields(project.id, update);
     }
 
-    // Reconcile routes AFTER persisting the project (best-effort) so a route-sync
-    // failure can't discard the field edits we just committed; the next deploy
-    // re-syncs routes. Same ordering as updateOptions.
-    if (
-      data.publicEndpoints !== undefined ||
-      update.slug !== undefined ||
-      update.port !== undefined
-    ) {
-      await syncProjectRouteState(project, {
-        nextPublicEndpoints: data.publicEndpoints,
-        slug: typeof update.slug === "string" ? update.slug : project.slug,
-      }).catch((err) =>
-        console.warn(`[ensureProject] route sync failed (non-fatal): ${safeErrorMessage(err)}`),
-      );
+    // Surface an explicit route failure; incidental port re-sync remains
+    // best-effort and will be retried on the next deploy.
+    if (nextRoutes) {
+      try {
+        await persistProjectRouteState(project.id, nextRoutes.publicEndpoints, nextRoutes.projectDomains);
+      } catch (err) {
+        if (data.publicEndpoints !== undefined || update.slug !== undefined) throw err;
+        errorDiagnostics.warn("platform/engine/modules/projects/project-crud.service", `[ensureProject] route sync failed (non-fatal): ${safeErrorMessage(err)}`, err);
+      }
     }
 
     if (
@@ -1639,7 +1725,7 @@ export async function getProject(projectId: string, organizationId: string) {
 // ─── Create project ──────────────────────────────────────────────────────────
 
 /** @scope org — only reads organizationId as a DB key. */
-export async function createProject(data: EnsureProjectBody, organizationId: string, access?: { tokenId: string }) {
+export async function createProject(data: EnsureProjectBody, organizationId: string, access?: { tokenId: string }, ctx?: RequestContext) {
   const slug = slugify(data.name);
 
   const existing = await findProjectByAppSlug(organizationId, slug);
@@ -1647,7 +1733,7 @@ export async function createProject(data: EnsureProjectBody, organizationId: str
 
   // installationId is resolved server-side inside createProductionProject, which
   // both creating entry points share — see the comment there.
-  const p = await createProductionProject(data, slug, organizationId, access);
+  const p = await createProductionProject(data, slug, organizationId, access, ctx);
   // Keep create and ensure on the same compose persistence helper. Most create
   // callers carry no services and this is a no-op; scanner-backed local imports
   // carry the canonical unmasked rows and must materialize them immediately.
@@ -1669,19 +1755,25 @@ async function reapplyCompleteProjectRouting(
   previousHostnames: string[],
   options?: Parameters<typeof reapplyProjectLiveRoutes>[2],
 ) {
-  const projectRoutes = options
-    ? reapplyProjectLiveRoutes(project, previousHostnames, options)
-    : reapplyProjectLiveRoutes(project, previousHostnames);
-  await projectRoutes.catch((err) =>
-    console.warn(
-      `[updateProject] project route re-apply failed (non-fatal, applies next deploy): ${safeErrorMessage(err)}`,
-    ),
-  );
-  await applyProjectRouting(project.id).catch((err) =>
-    console.warn(
-      `[updateProject] service/topology route re-apply failed (non-fatal, applies next deploy): ${safeErrorMessage(err)}`,
-    ),
-  );
+  const warnings: string[] = [];
+  const onWarning = (message: string) => {
+    if (!warnings.includes(message)) warnings.push(message);
+    options?.onWarning?.(message);
+  };
+  await reapplyProjectLiveRoutes(project, previousHostnames, { ...options, onWarning }).catch((err) => {
+    const message = safeErrorMessage(err);
+    errorDiagnostics.warn("platform/engine/modules/projects/project-crud.service", `[updateProject] project route re-apply failed: ${message}`, err);
+    onWarning(message);
+  });
+  await applyProjectRouting(project.id, { onWarning }).catch((err) => {
+    const message = safeErrorMessage(err);
+    errorDiagnostics.warn("platform/engine/modules/projects/project-crud.service", `[updateProject] service/topology route re-apply failed: ${message}`, err);
+    onWarning(message);
+  });
+  if (warnings.length) {
+    await markRoutingWarning((await findActiveDeployment(project)) ?? null, warnings.join("\n"));
+  }
+  return warnings;
 }
 
 export async function updateProject(
@@ -1689,19 +1781,40 @@ export async function updateProject(
   data: TUpdateProjectBody,
   organizationId: string,
 ) {
+  const changesRouting =
+    data.publicEndpoints !== undefined ||
+    data.port !== undefined ||
+    data.routeStrategy !== undefined ||
+    data.routingConfig !== undefined;
+  if (!changesRouting) return updateProjectUnlocked(projectId, data, organizationId);
+
+  // Authorize before admission. Preparation, domain-row persistence and live
+  // application share the existing project lock, so concurrent edits cannot
+  // interleave the two sides of a canonical redirect. Nested live writers reuse it.
+  const project = await repos.project.findById(projectId);
+  assertResourceInOrg(project, "Project", organizationId, projectId);
+  // Keep definitive capability refusals ahead of Cloud activity admission;
+  // the writer revalidates the current project again after acquiring the lock.
+  await assertProjectRoutingCapabilities(project, data.routingConfig);
+  return withProjectRuntimeLock(projectId, () =>
+    updateProjectUnlocked(projectId, data, organizationId),
+  );
+}
+
+async function updateProjectUnlocked(
+  projectId: string,
+  data: TUpdateProjectBody,
+  organizationId: string,
+) {
   const p = await repos.project.findById(projectId);
   assertResourceInOrg(p, "Project", organizationId, projectId);
 
-  // Reject a bogus custom hostname before the field edits below are committed — the
-  // route sync happens after them, so validating there alone would 400 a request
-  // that had already written the rest of the patch. Net-new only (the endpoint list
-  // is authoritative, so a save echoes back hostnames the project already has —
-  // including any bad one predating this gate, which must stay removable). #342
-  if (data.publicEndpoints !== undefined) {
-    assertValidCustomDomains([{ publicEndpoints: data.publicEndpoints }], {
-      known: (await listProjectRouteRows(projectId).catch(() => [])).map((row) => row.hostname),
-    });
-  }
+  // Shared route validation covers custom hostnames and scoped free-domain
+  // allowances before any accompanying project fields are written.
+  await assertProjectRoutingCapabilities(p, data.routingConfig);
+  const nextRoutes = data.publicEndpoints !== undefined
+    ? await prepareProjectRouteState(p, { nextPublicEndpoints: data.publicEndpoints })
+    : null;
 
   // SECURITY (mass-assignment): pick ONLY the allow-listed editable fields from
   // the (unvalidated, type-cast) request body. A raw `{ ...data }` spread let a
@@ -1720,6 +1833,8 @@ export async function updateProject(
     if (PROJECT_IDENTITY_KEYS.has(key)) continue;
     if (raw[key] !== undefined) update[key] = raw[key];
   }
+  Object.assign(update, runtimeProjectUpdate(p, update));
+  assertRuntimeVersionTarget({ ...p, ...update });
   // A rename changes the DISPLAY NAME only — `slug` is deliberately NOT
   // recomputed. The slug is this project's infrastructure identity, not a label:
   // it names the `openship-<slug>` docker network, the `openship-<slug>-<svc>`
@@ -1765,7 +1880,7 @@ export async function updateProject(
     const normalize = (s: string) => s.trim().replace(/^\/+/, "").replace(/\/+$/, "").toLowerCase();
     const prefixes = data.monorepoSharedPaths.map(normalize).filter((s) => s.length > 0);
     if (prefixes.length > 0) {
-      const services = await repos.service.listByProject(projectId).catch(() => []);
+      const services = await repos.service.listByProject(projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return []; });
       const serviceRoots = services
         .map((s) => normalize(s.rootDirectory ?? ""))
         .filter((s) => s.length > 0);
@@ -1812,7 +1927,7 @@ export async function updateProject(
       // slug: internalAlias == slug is the same single-app container answering to
       // both names, not a collision. Runs BEFORE repos.project.update below.
       if (alias !== normalizeAliasStrict(p.internalAlias)) {
-        const siblings = await repos.service.listByProject(projectId).catch(() => []);
+        const siblings = await repos.service.listByProject(projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return []; });
         if (aliasConflictsWithSiblings(alias, siblings)) {
           throw new ValidationError(
             "internalAlias collides with a service name or alias on this project",
@@ -1840,31 +1955,8 @@ export async function updateProject(
     // Snapshot the live hostnames before the sync so re-application can tear
     // down any the edit drops — AND so the free-cloud gate only fires for
     // NET-NEW free routes.
-    const beforeState = await resolveProjectRouteState(p).catch(() => null);
+    const beforeState = nextRoutes ?? await resolveProjectRouteState(p).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; });
     const previousHostnames = beforeState?.projectDomains.map((d) => d.hostname) ?? [];
-
-    // Atomic gate: a free (*.opsh.io) route only resolves behind the Openship
-    // Cloud edge — refuse before any write so a disconnected instance can't
-    // INTRODUCE a dead route. Only gate endpoints whose hostname isn't already
-    // live: re-validating the WHOLE set blocked removing/editing a route whenever
-    // another, already-persisted free route stayed in the set (you can't remove
-    // api.openship.io because app.openship.io is still there). Removal never
-    // introduces anything, so it never gates. Skipped for slug/port re-syncs.
-    if (data.publicEndpoints !== undefined) {
-      // Already-live hostnames = DB domain rows ∪ the resolved route endpoints
-      // (the latter also covers a PENDING route that has no domain row yet), so a
-      // remaining pending route is never mistaken for net-new.
-      const priorHosts = new Set(
-        [...previousHostnames, ...(beforeState?.publicEndpoints ?? []).map((e) => e.hostname)]
-          .filter((h): h is string => typeof h === "string" && h.length > 0)
-          .map((h) => h.trim().toLowerCase()),
-      );
-      const netNew = normalizeStoredPublicEndpoints(data.publicEndpoints).filter((endpoint) => {
-        const host = publicEndpointHostname(endpoint)?.trim().toLowerCase();
-        return host ? !priorHosts.has(host) : false;
-      });
-      await assertFreeEndpointsAllowed(organizationId, netNew);
-    }
 
     // Best-effort ONLY for an incidental re-sync (a port edit) — the field edit
     // is already committed and the next deploy re-syncs routes. But when the
@@ -1873,13 +1965,14 @@ export async function updateProject(
     // was persisted (silent drop). Fail loudly so the real reason (e.g. a slug
     // conflict) surfaces to the user instead of a false success.
     try {
-      await syncProjectRouteState(p, {
-        nextPublicEndpoints: data.publicEndpoints,
-        slug: p.slug,
-      });
+      if (nextRoutes) {
+        await persistProjectRouteState(projectId, nextRoutes.publicEndpoints, nextRoutes.projectDomains);
+      } else {
+        await syncProjectRouteState(p, { slug: p.slug });
+      }
     } catch (err) {
       if (data.publicEndpoints !== undefined) throw err;
-      console.warn(`[updateProject] route sync failed (non-fatal): ${safeErrorMessage(err)}`);
+      errorDiagnostics.warn("platform/engine/modules/projects/project-crud.service", `[updateProject] route sync failed (non-fatal): ${safeErrorMessage(err)}`, err);
     }
 
     // Re-apply the live route so a domain/port edit takes effect without a
@@ -1891,7 +1984,7 @@ export async function updateProject(
       // covers every managed hostname on the project, including the ones added by
       // this edit. Letting the re-apply sync them too raced its own follow-up —
       // two challenges for one target, the second resetting the first's token.
-      await reapplyCompleteProjectRouting(refreshed, previousHostnames, {
+      const routeWarnings = await reapplyCompleteProjectRouting(refreshed, previousHostnames, {
         managedEdgeSyncedByCaller: true,
       });
       // A free (*.opsh.io) domain resolves only through Openship Cloud's edge.
@@ -1904,9 +1997,10 @@ export async function updateProject(
       if (refreshed.activeDeploymentId) {
         await syncProjectManagedEdge(refreshed, organizationId, {
           markOnFailure: true,
+          clearOnSuccess: routeWarnings.length === 0,
         }).catch((err) =>
-          console.warn(
-            `[updateProject] managed edge sync failed (non-fatal): ${safeErrorMessage(err)}`,
+          errorDiagnostics.warn("platform/engine/modules/projects/project-crud.service",
+            `[updateProject] managed edge sync failed (non-fatal): ${safeErrorMessage(err)}`, err,
           ),
         );
       }
@@ -1978,6 +2072,12 @@ export async function createProjectEnvironment(
   const { userId, organizationId } = ctx;
   const base = await repos.project.findById(projectId);
   assertResourceInOrg(base, "Project", organizationId, projectId);
+  if (base.workspaceId) {
+    const { authorization } = await import("../../lib/authorization");
+    const { requireWorkspaceServer } = await import("../../lib/cloud-workspace-scope");
+    const server = await requireWorkspaceServer(organizationId, base.workspaceId);
+    await authorization.authorize(ctx, { resourceType: "server", resourceId: server.id, action: "write" });
+  }
 
   const environmentSlug = normalizeEnvironmentSlug(
     data.environmentSlug ?? data.environmentName,
@@ -2023,6 +2123,9 @@ export async function createProjectEnvironment(
   const created = await repos.project.create({
     organizationId,
     groupId: base.groupId,
+    workspaceId: base.workspaceId,
+    serverId: base.serverId,
+    clusterId: base.clusterId,
     // The catalog-app marker is a property of the whole cluster, not one
     // environment — carry it to every sibling so a new env of a catalog app
     // (e.g. a "staging" Convex) stays an app, and the cluster never drops off
@@ -2042,6 +2145,7 @@ export async function createProjectEnvironment(
     gitBranch,
     gitUrl: app?.gitUrl ?? base.gitUrl,
     installationId: app?.installationId ?? base.installationId,
+    githubChecks: base.githubChecks,
     releaseSource: base.releaseSource,
     framework: base.framework,
     packageManager: base.packageManager,
@@ -2054,7 +2158,10 @@ export async function createProjectEnvironment(
     composePath: base.composePath,
     startCommand: base.startCommand,
     releaseCommands: base.releaseCommands,
+    roles: base.roles,
     buildImage: base.buildImage,
+    runtimeVersion: base.runtimeVersion,
+    runtimeImage: base.runtimeImage,
     productionMode: base.productionMode,
     port: base.port,
     hasServer: base.hasServer,
@@ -2067,7 +2174,6 @@ export async function createProjectEnvironment(
     buildResources: base.buildResources,
     sleepMode: base.sleepMode,
     rollbackWindow: base.rollbackWindow,
-    cloudArchiveStrategy: base.cloudArchiveStrategy,
     defaultRollbackStrategy: base.defaultRollbackStrategy,
     webhookId: null,
     webhookDomain: null,
@@ -2225,7 +2331,7 @@ export function unresolvedUpstreamDrift(p: Project): UpstreamDrift {
 
 /** Image services whose upstream digest is worth resolving (image-only, enabled). */
 async function imageServicesOf(p: Project) {
-  const services = await repos.service.listByProject(p.id).catch(() => []);
+  const services = await repos.service.listByProject(p.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return []; });
   return services.filter((s) => s.image && !s.build && (s.enabled ?? true));
 }
 
@@ -2283,7 +2389,7 @@ export async function resolveUpstreamDrift(
     // no releaseSource (they deploy via localPath/migration), so they'd otherwise
     // fall through to unsupported.
     if (!isReleaseProvider(p.gitProvider)) {
-      const latestVersion = await resolveLatestReleaseTag(GITHUB_REPO).catch(() => null);
+      const latestVersion = await resolveLatestReleaseTag(GITHUB_REPO).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; });
       return {
         supported: true,
         mode: "release",
@@ -2314,14 +2420,14 @@ export async function resolveUpstreamDrift(
     const digestByRef: Record<string, string | null> = {};
     await Promise.all(
       refs.map(async (ref) => {
-        digestByRef[ref] = await resolveLatestImageDigest(ref).catch(() => null);
+        digestByRef[ref] = await resolveLatestImageDigest(ref).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; });
       }),
     );
     return { supported: true, mode: "image", digestByRef };
   }
 
   const head = ctx
-    ? await getLatestCommit(ctx, p.gitOwner!, p.gitRepo!, projectBranch(p)).catch(() => null)
+    ? await getLatestCommit(ctx, p.gitOwner!, p.gitRepo!, projectBranch(p)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; })
     : null;
   return {
     supported: true,
@@ -2352,7 +2458,7 @@ export async function resolveDeployedDrift(
   if (mode === "commit") {
     let deployedSha: string | null = null;
     if (p.activeDeploymentId) {
-      const dep = await findActiveDeployment(p).catch(() => null);
+      const dep = await findActiveDeployment(p).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; });
       deployedSha = dep?.commitSha ?? null;
     }
     return { mode: "commit", deployedSha };
@@ -2366,7 +2472,7 @@ export async function resolveDeployedDrift(
     }
     let currentVersion: string | null = null;
     if (p.activeDeploymentId) {
-      const dep = await findActiveDeployment(p).catch(() => null);
+      const dep = await findActiveDeployment(p).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return null; });
       currentVersion = dep?.releaseVersion ?? null;
     }
     if (!currentVersion && p.appTemplateId === "openship") currentVersion = readApiVersion();
@@ -2375,7 +2481,7 @@ export async function resolveDeployedDrift(
 
   const deployedByService = new Map<string, { ref?: string; digest?: string }>();
   if (p.activeDeploymentId) {
-    const sds = await listActiveServiceDeployments(p).catch(() => []);
+    const sds = await listActiveServiceDeployments(p).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return []; });
     for (const sd of sds) {
       deployedByService.set(sd.serviceId, {
         digest: sd.imageDigest ?? undefined,
@@ -2404,7 +2510,14 @@ export async function evaluateDrift(
   // question we're no longer asking — treat it as unknown, not as drift.
   if (upstream.mode !== driftMode(p)) return { supported: false as const };
 
-  const deployed = await resolveDeployedDrift(p, upstream.mode);
+  const [deployed, inFlight] = await Promise.all([
+    resolveDeployedDrift(p, upstream.mode),
+    repos.deployment.listInFlightByProject(p.id),
+  ]);
+  // Use the deployment admission query, including a worker still finishing after
+  // cancellation/cutover. A terminal-looking row alone cannot re-enable Update.
+  const active = inFlight[0];
+  const inProgressDeploymentId = active?.id ?? null;
 
   if (upstream.mode === "commit" && deployed.mode === "commit") {
     const latestSha = upstream.key === commitSourceKey(p) ? upstream.latestSha : null;
@@ -2421,20 +2534,15 @@ export async function evaluateDrift(
         behind = projectMatchesChanges(root, compare.files, p.monorepoSharedPaths);
       }
     }
-    // Is the latest commit already deploying? Then there's nothing to redeploy —
-    // it's in flight, so the nudge is suppressed. Computed live, which is why
-    // pressing Update quiets every surface immediately.
-    const latestInProgress =
-      behind && latestSha
-        ? Boolean(
-            await repos.deployment.findInProgressByCommit(p.id, latestSha).catch(() => undefined),
-          )
-        : false;
+    const latestInProgress = Boolean(
+      active && (active.trigger === "update" || (behind && latestSha && active.commitSha === latestSha)),
+    );
     return {
       supported: true as const,
       mode: "commit" as const,
       behind,
       latestInProgress,
+      inProgressDeploymentId,
       branch: projectBranch(p),
       latestSha,
       latestMessage: latestSha ? upstream.latestMessage : null,
@@ -2446,19 +2554,15 @@ export async function evaluateDrift(
     const latest = upstream.key === releaseSourceKey(p) ? upstream.latestVersion : null;
     const current = deployed.currentVersion;
     const behind = Boolean(latest && current && compareSemver(latest, current) > 0);
-    const latestInProgress =
-      behind && latest
-        ? Boolean(
-            await repos.deployment
-              .findInProgressByReleaseVersion(p.id, latest)
-              .catch(() => undefined),
-          )
-        : false;
+    const latestInProgress = Boolean(
+      active && (active.trigger === "update" || (behind && latest && active.releaseVersion === latest)),
+    );
     return {
       supported: true as const,
       mode: "release" as const,
       behind,
       latestInProgress,
+      inProgressDeploymentId,
       latestVersion: latest,
       currentVersion: current,
       pinned: upstream.pinned,
@@ -2502,7 +2606,8 @@ export async function evaluateDrift(
       supported: true as const,
       mode: "image" as const,
       behind: services.some((s) => s.behind),
-      latestInProgress: false,
+      latestInProgress: active?.trigger === "update",
+      inProgressDeploymentId,
       services,
     };
   }
@@ -2536,6 +2641,8 @@ export async function getGitInfo(projectId: string, organizationId: string) {
     webhookDomain: p.webhookDomain,
     autoDeploy: p.autoDeploy,
     defaultRollbackStrategy: p.defaultRollbackStrategy,
+    githubChecks: resolveGitHubDeploymentChecks(p.githubChecks),
+    githubChecksDelivery: await repos.deploymentCheck.latestForProject(projectId, organizationId),
     deployTarget,
   };
 }
@@ -2625,6 +2732,7 @@ export async function updateOptions(
     }
     update.gitBranch = options.gitBranch.trim();
   }
+  if (options.githubChecks !== undefined) update.githubChecks = options.githubChecks;
   if (options.buildCommand !== undefined) update.buildCommand = options.buildCommand;
   if (options.installCommand !== undefined) update.installCommand = options.installCommand;
   if (options.outputDirectory !== undefined) update.outputDirectory = options.outputDirectory;
@@ -2657,6 +2765,7 @@ export async function updateOptions(
     }
     update.releaseCommands = options.releaseCommands;
   }
+  if (options.roles !== undefined) update.roles = validateRoles(options.roles);
   if (options.productionPort !== undefined) update.port = options.productionPort;
   if (options.packageManager !== undefined) update.packageManager = options.packageManager;
   if (options.buildImage !== undefined) update.buildImage = options.buildImage;
@@ -2682,6 +2791,9 @@ export async function updateOptions(
   if (options.runtimeMode === "bare" || options.runtimeMode === "docker") {
     update.runtimeMode = options.runtimeMode;
   }
+
+  Object.assign(update, runtimeProjectUpdate(p, options));
+  assertRuntimeVersionTarget({ ...p, ...update });
 
   // Persist the canonical config FIRST, then reconcile routes (best-effort) on a
   // port change. Ordering the project write before route-sync means a route-sync

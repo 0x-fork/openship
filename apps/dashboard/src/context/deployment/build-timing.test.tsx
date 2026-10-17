@@ -13,23 +13,34 @@ import {
   INITIAL_STATE,
   resolveBuildElapsedMs,
   type DeploymentContextType,
+  type DeploymentConfig,
 } from "./types";
 
 const api = vi.hoisted(() => ({
   status: vi.fn(),
   redeploy: vi.fn(),
   cancel: vi.fn(),
+  respond: vi.fn(),
   toast: vi.fn(),
+  ensure: vi.fn(), buildAccess: vi.fn(), getEnv: vi.fn(), pricing: vi.fn(),
+  policy: vi.fn(), setOptions: vi.fn(),
   callbacks: {} as Record<string, (...args: any[]) => void>,
   stream: { isConnected: true, connect: vi.fn(), disconnect: vi.fn() },
 }));
 
 vi.mock("@/lib/api", () => ({
-  deployApi: { getBuildStatus: api.status, buildRedeploy: api.redeploy, cancel: api.cancel },
-  projectsApi: {},
+  deployApi: {
+    getBuildStatus: api.status,
+    buildRedeploy: api.redeploy,
+    cancel: api.cancel,
+    buildAccess: api.buildAccess,
+    buildRespond: api.respond,
+  },
+  projectsApi: { ensure: api.ensure, getEnv: api.getEnv, setOptions: api.setOptions },
 }));
+vi.mock("@/lib/api/actions", () => ({ actionsApi: { updateProjectPolicy: api.policy } }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: api.toast }) }));
-vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => () => false }));
+vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => api.pricing }));
 vi.mock("@/hooks/useProjectEndpoints", () => ({ invalidateProjectCaches: vi.fn() }));
 vi.mock("@/context/CloudContext", () => ({ useCloud: () => ({}) }));
 vi.mock("@/context/PlatformContext", () => ({
@@ -69,8 +80,8 @@ let build: ReturnType<typeof useDeploymentBuild>;
 let root: Root;
 let container: HTMLDivElement;
 
-function Harness() {
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
+function Harness({ initial = {} }: { initial?: Partial<DeploymentConfig> }) {
+  const [config, setConfig] = useState({ ...DEFAULT_CONFIG, ...initial });
   build = useDeploymentBuild(config, setConfig);
   return (
     <DeploymentContext.Provider value={{ config, ...build } as DeploymentContextType}>
@@ -79,11 +90,11 @@ function Harness() {
   );
 }
 
-async function mount() {
+async function mount(initial?: Partial<DeploymentConfig>) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root.render(<Harness />));
+  await act(async () => root.render(<Harness initial={initial} />));
 }
 
 async function load(extra: Record<string, unknown> = {}) {
@@ -107,6 +118,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.stream.isConnected = true;
   api.status.mockResolvedValue(snapshot());
+  api.pricing.mockReturnValue(false);
+  api.policy.mockReset().mockResolvedValue({});
+  api.setOptions.mockResolvedValue({ success: true });
 });
 
 afterEach(async () => {
@@ -114,12 +128,178 @@ afterEach(async () => {
   container?.remove();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("persisted port review", () => {
+  it("restores the binding finding and scopes a late dismissal to its original deployment", async () => {
+    const portCheck = [{ port: 3000, checked: true, listening: true, loopbackOnly: true }];
+    await mount();
+    await load({ status: "ready", is_active: false, portCheck });
+    expect(build.state.portCheck).toEqual(portCheck);
+    expect(build.deploymentStatus).toBe("ready");
+    await act(async () => build.resolvePortCheck("dep-old", 3000));
+    expect(build.state.portCheckSkipped).toEqual([3000]);
+    await load({ status: "ready", is_active: false, portCheck, portCheckSkipped: [3000] });
+    expect(build.state.portCheckSkipped).toEqual([3000]);
+
+    api.status.mockResolvedValue(
+      snapshot({ deployment_id: "dep-new", status: "ready", is_active: false, portCheck }),
+    );
+    await act(async () => {
+      await build.loadBuildSession("dep-new");
+    });
+    await act(async () => build.resolvePortCheck("dep-old", 3000));
+    expect(build.state.deploymentId).toBe("dep-new");
+    expect(build.state.portCheckSkipped).toEqual([]);
+    expect(build.state.deploymentSuccess).toBe(true);
+    expect(build.state.decisionPending).toBe(false);
+  });
+});
+
+describe("held backup decisions", () => {
+  const prompt = (attempt: number) => ({
+    promptId: `backup:${attempt}`,
+    title: "Backup failed",
+    message: "The new release has not started.",
+    actions: [{ id: `retry:${attempt}`, label: "Retry backup" }],
+  });
+
+  it.each(["network error", "rejected choice"])(
+    "restores the prompt on refresh and retains it after a %s",
+    async (failure) => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      await mount();
+      await load({ pendingPrompt: prompt(1) });
+      expect(build.state.pendingPrompt?.promptId).toBe("backup:1");
+      if (failure === "network error")
+        api.respond.mockRejectedValueOnce(new Error("Connection interrupted"));
+      else api.respond.mockResolvedValueOnce({ success: false });
+      await act(async () => {
+        await expect(build.respondToPrompt("retry:1")).rejects.toThrow();
+      });
+      expect(build.state.pendingPrompt?.promptId).toBe("backup:1");
+      api.respond.mockResolvedValueOnce({ success: true });
+      await act(async () => {
+        await build.respondToPrompt("retry:1");
+      });
+      expect(build.state.pendingPrompt).toBeNull();
+    },
+  );
+
+  it("does not clear the next backup failure when the previous response finishes late", async () => {
+    await mount();
+    await load({ pendingPrompt: prompt(1) });
+    let finish!: (value: { success: boolean }) => void;
+    api.respond.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const response = build.respondToPrompt("retry:1");
+    await act(async () => {
+      api.callbacks.onPrompt!(prompt(2));
+    });
+    await act(async () => {
+      finish({ success: true });
+      await response;
+    });
+    expect(build.state.pendingPrompt?.promptId).toBe("backup:2");
+  });
+
+  it("clears a held backup prompt when its unanswered deadline fails the deployment", async () => {
+    await mount();
+    await load({ pendingPrompt: prompt(1) });
+    await act(async () => {
+      api.callbacks.onFailure!("Backup decision timed out");
+    });
+    expect(build.state.pendingPrompt).toBeNull();
+    expect(build.state.deploymentFailed).toBe(true);
+  });
+
+  it("updates a decision answered in another tab even while the log stream remains connected", async () => {
+    await mount();
+    await load({ pendingPrompt: prompt(1) });
+    expect(api.stream.isConnected).toBe(true);
+    api.status.mockResolvedValue(snapshot({ pendingPrompt: prompt(2) }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(build.state.pendingPrompt?.promptId).toBe("backup:2");
+    api.status.mockResolvedValue(snapshot({ pendingPrompt: null }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(build.state.pendingPrompt).toBeNull();
+    expect(build.state.isDeploying).toBe(true);
+    api.status.mockClear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9000);
+    });
+    expect(api.status).not.toHaveBeenCalled();
+  });
+});
+
+it("retries capacity admission using the draft already created by the deployment wizard", async () => {
+  api.pricing.mockReturnValue(true);
+  api.ensure.mockResolvedValueOnce({ success: true, project_id: "original-draft", created: true })
+    .mockResolvedValue({ success: true, project_id: "original-draft", created: false });
+  api.buildAccess.mockRejectedValueOnce(new ApiError(409, "Capacity required", { code: "CLOUD_CAPACITY_REQUIRED", projectId: "original-draft" }))
+    .mockResolvedValue({ success: true, project_id: "original-draft", deployment_id: "recovered-deploy" });
+  api.getEnv.mockResolvedValue({ data: [] });
+  const navigate = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+  await mount({ isApp: true, framework: "node", projectName: "Original draft" });
+  await act(async () => { expect(await build.startDeployment()).toBeNull(); });
+  const retry = api.pricing.mock.calls[0]![1] as () => Promise<void>;
+  await act(async () => { await retry(); });
+  expect(api.ensure.mock.calls[1]![0]).toMatchObject({ projectId: "original-draft" });
+  expect(api.buildAccess.mock.calls.map(call => call[0].projectId)).toEqual(["original-draft", "original-draft"]);
+  expect(navigate).toHaveBeenCalledWith("/build/recovered-deploy");
+});
+
+describe("workflow rules in the shared deployment wizard", () => {
+  const actions = { mode: "actions" as const, workflowIds: ["ci"], requiredWorkflowIds: ["ci"] };
+  const config: Partial<DeploymentConfig> = { owner: "acme", repo: "app", branch: "main", framework: "node", actions };
+
+  it("saves rules for the ensured project before allowing deployment and preserves that draft on retry", async () => {
+    api.ensure.mockResolvedValue({ success: true, project_id: "draft", created: true });
+    api.getEnv.mockResolvedValue({ data: [] });
+    api.buildAccess.mockResolvedValue({ success: true, project_id: "draft", deployment_id: "deployment" });
+    api.policy.mockRejectedValueOnce(new ApiError(403, "Connect the repository's GitHub App first", { code: "ACTIONS_GITHUB_APP_REQUIRED" }));
+    vi.spyOn(window.location, "assign").mockImplementation(() => {});
+    await mount(config);
+    await act(async () => { expect(await build.startDeployment()).toBeNull(); });
+    expect(api.policy).toHaveBeenCalledWith({ ...actions, projectId: "draft" });
+    expect(api.buildAccess).not.toHaveBeenCalled();
+    expect(api.toast).toHaveBeenCalledWith(expect.stringContaining("GitHub App"), "error", "Error");
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure.mock.calls[1]![0]).toMatchObject({ projectId: "draft" });
+    expect(api.policy).toHaveBeenCalledTimes(2);
+    expect(api.policy.mock.invocationCallOrder[1]).toBeLessThan(api.buildAccess.mock.invocationCallOrder[0]!);
+    expect(api.buildAccess).toHaveBeenCalledOnce();
+  });
+
+  it("saves workflow rules with configuration-only changes without creating a deployment", async () => {
+    await mount({ ...config, projectId: "existing", projectEnvBaseline: [] });
+    await act(async () => { expect(await build.startDeployment({ saveConfigOnly: true })).toBe("existing"); });
+    expect(api.setOptions).toHaveBeenCalledOnce();
+    expect(api.policy).toHaveBeenCalledWith({ ...actions, projectId: "existing" });
+    expect(api.ensure).not.toHaveBeenCalled();
+    expect(api.buildAccess).not.toHaveBeenCalled();
+  });
 });
 
 describe("deployment counter (#919)", () => {
   it("picks up a queued build's start time even after its stream connects", async () => {
     await mount();
-    await load({ status: "queued", is_active: false, buildStartedAt: null });
+    const queue = { position: 3, reason: "concurrency", simultaneousBuilds: 1, activeBuilds: 1, workspaceId: "ws-1" };
+    await load({ status: "queued", is_active: false, buildStartedAt: null, queue });
+    expect(build.state.queue).toEqual(queue);
+    expect(build.state.deploymentFailed).toBe(false);
+    api.status.mockResolvedValue(snapshot({ status: "queued", is_active: false, buildStartedAt: null, queue: { ...queue, position: 2 } }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(build.state.queue?.position).toBe(2);
     expect(build.state.isDeploying).toBe(true);
     expect(clockText()).toBe("—");
     const actualStart = new Date(Date.now() + 1000).toISOString();
@@ -128,6 +308,7 @@ describe("deployment counter (#919)", () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
     expect(build.state.buildStartedAt).toBe(actualStart);
+    expect(build.state.queue).toBeNull();
     expect(clockText()).toBe("0:02");
     const reads = api.status.mock.calls.length;
     await act(async () => {

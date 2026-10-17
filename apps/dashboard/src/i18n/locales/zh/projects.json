@@ -34,6 +34,7 @@
     "local": "本地"
   },
   "card": {
+    "more": "更多",
     "liveVersion": "运行版本 v{version}",
     "sourceLocal": "本地",
     "services": "服务",
@@ -103,9 +104,11 @@
     "deletionInProgress": "该项目已有另一个删除操作正在进行",
     "deletionInProgressTitle": "删除进行中",
     "confirmForceOrphan": "部分资源无法从服务器移除。仍然删除该项目并稍后自动清理它们吗？",
-    "teardownFailedAt": "拆除在此处失败：{reasons}。请重试，或强制删除以将它们变为孤立资源。",
+    "teardownFailedAt": "无法完成清理：{reasons}。项目仍然保留。请解决此问题后重试删除。",
     "teardownFailed": "拆除失败",
     "cleanupFailedTitle": "清理失败",
+    "retryCleanup": "重试删除",
+    "cleanupPending": "删除已开始。清理完成前，项目将保持不可用。",
     "alreadyDeleted": "项目已删除",
     "forceModalTitle": "无法从源端移除",
     "forceModalBody": "无法连接到运行时（或持续失败），因此该项目未被拆除。你仍然可以将它从 Openship 中删除——记录会立即移除，服务器恢复可访问后会自动回收残留资源。",
@@ -134,6 +137,7 @@
       "deployments": "部署",
       "health": "健康",
       "monitoring": "监控",
+      "monitoringAndLogs": "监控与日志",
       "source": "源",
       "sourceAndTriggers": "源与触发器",
       "webhooks": "Webhook",
@@ -194,7 +198,8 @@
     "targetPending": "部署时选择",
     "type": "类型",
     "typeApp": "应用",
-    "typeProject": "项目"
+    "typeProject": "项目",
+    "subtextNoSource": "连接源代码以配置首次部署。"
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -242,7 +247,10 @@
     "noTransfer": "暂无传输"
   },
   "analytics": {
-    "loadFailed": "无法加载流量分析数据"
+    "loadFailed": "无法加载流量分析数据",
+    "loadFailedDescription": "重试以加载最新数据。",
+    "sectionsUnavailable": "无法获取：{sections}。",
+    "staleData": "正在显示最后获取的数据。"
   },
   "monitoring": {
     "noDataTitle": "暂无监控数据",
@@ -307,7 +315,11 @@
       "disable": "关闭热门路径"
     },
     "liveFeed": "最近请求",
-    "liveFeedHint": "在地图上显示最近请求列表（完整详情见日志标签页）"
+    "liveFeedHint": "在地图上显示最近请求列表（完整详情见日志标签页）",
+    "dataUnavailable": "部分监控数据暂时无法获取",
+    "connecting": "正在连接…",
+    "liveUnavailable": "实时请求暂时不可用",
+    "liveUnavailableDescription": "仍在显示历史流量。重新连接以查看实时请求。"
   },
   "services": {
     "failedLoad": "加载服务失败",
@@ -338,7 +350,10 @@
     "toastKeptEdits": "{name}：已保留你的编辑",
     "failedResolveDrift": "解决偏差失败",
     "failedCreateService": "创建服务失败",
-    "requestFailed": "请求失败"
+    "requestFailed": "请求失败",
+    "application": "应用程序",
+    "applicationHint": "通过此项目的部署进行管理。",
+    "companionsTitle": "添加其他应用或服务"
   },
   "serviceStatus": {
     "checking": "检查中…",
@@ -348,7 +363,7 @@
     "failed": "失败",
     "starting": "启动中",
     "restarting": "重启中",
-    "unknown": "未知"
+    "unknown": "无法获取状态"
   },
   "routingRetry": {
     "title": "域名路由需要处理",
@@ -399,6 +414,8 @@
     "fixStep3": "验证域名并部署。"
   },
   "connections": {
+    "nativeClusterHint": "选择与此数据库位于同一集群的项目。只有关联的项目才能获得私有访问权限。",
+    "nativeNoTargets": "目前没有其他项目使用此集群。",
     "useInProject": "在项目中使用",
     "title": "在项目中使用",
     "subtitle": "通过连接与其他项目共享此服务。",

@@ -40,7 +40,8 @@ export function renderApiReference() {
     if (!method) throw new Error(`Documented SDK method no longer exists: ${key}`);
     add(
       entry,
-      method.calls.map((call) => code(`${method.group}.${call}`)).join("<br />"),
+      method.calls.map((call) => code(`${method.group}.${call}`)).join("<br />") +
+        (method.surfaces.includes("native") ? "" : "<br />Remote client"),
       entry.route,
     );
     methods.delete(key);

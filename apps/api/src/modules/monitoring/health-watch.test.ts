@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { ContainerStabilitySample } from "@repo/adapters";
+import type { ServiceIncident } from "@repo/db";
 
 /**
  * The health watch's contract is a NOISE contract, and it is not expressible in
@@ -74,6 +75,11 @@ const h = vi.hoisted(() => {
     listThrows: null as string | null,
     /** Set to make `listAllContainers` never settle — a half-open bridge. */
     listHangs: false,
+    /**
+     * The same wedge, but releasable: the list is accepted and answers only when the
+     * test says so, which is how a reply that lands after the group deadline is watched.
+     */
+    listGate: null as Promise<void> | null,
     /** Set to drop `stabilityProbe`, leaving the sweep with the container list only. */
     noProbe: false,
     /** Set to make every inspect hang — a daemon that answered `ps` and then wedged. */
@@ -291,7 +297,7 @@ vi.mock("@repo/platform/engine/modules/monitoring/container-events", () => ({ re
  *   - `deployTarget: "server"` with NO serverId still routes over SSH, to the org's one
  *     server — and throws if the org doesn't have exactly one, as `resolveOrgServer` does.
  *   - `deployTarget: "cloud"` is only cloud when the build was local; otherwise the
- *     project was promoted and `project.cloudWorkspaceId` is what says so.
+ *     project was promoted and `project.workspaceId` is what says so.
  *
  * A mock that flattened those (an earlier one mapped "no serverId" to the LOCAL socket)
  * makes the mis-keyed group unrepresentable: every daemon answers alike, so the fixture
@@ -336,6 +342,7 @@ function fakeRuntime(box: string | null = null) {
     listAllContainers: async () => {
       if (h.disconnectOnList) h.disconnected = true;
       if (h.listThrows) throw new Error(h.listThrows);
+      if (h.listGate) await h.listGate;
       // Accepted and never answered. A rejection is the polite failure; this is the
       // one the deadline exists for.
       if (h.listHangs) return new Promise<never>(() => {});
@@ -380,7 +387,7 @@ interface SeedOpts {
   deployTarget?: string;
   buildStrategy?: string;
   /** Set to make this a promoted cloud project — the canonical cloud test. */
-  cloudWorkspaceId?: string;
+  workspaceId?: string;
   /**
    * The box the container really lives on, when the meta can't name it: a deploy that
    * targets "a server" without recording which one still runs SOMEWHERE, and the point of
@@ -418,7 +425,7 @@ function seedApp(opts: SeedOpts = {}) {
     slug: `app-${n}`,
     organizationId,
     activeDeploymentId: depId,
-    cloudWorkspaceId: opts.cloudWorkspaceId ?? null,
+    workspaceId: opts.workspaceId ?? null,
     disabledAt: opts.disabledAt ?? null,
   });
   h.deployments.push({
@@ -469,7 +476,7 @@ function seedComposeService(
     slug: `stack-${n}`,
     organizationId: "org1",
     activeDeploymentId: depId,
-    cloudWorkspaceId: null,
+    workspaceId: null,
     disabledAt: null,
   });
   h.deployments.push({
@@ -609,6 +616,7 @@ beforeEach(() => {
   h.localServer = null;
   h.listThrows = null;
   h.listHangs = false;
+  h.listGate = null;
   h.noProbe = false;
   h.sampleHangs = false;
   h.sampleGate = null;
@@ -621,6 +629,102 @@ beforeEach(() => {
   h.watcherEnabled = true;
   h.disconnected = false;
   h.disconnectOnList = false;
+});
+
+describe("runtime role monitoring", () => {
+  function addRole(depId: string, containerId: string, role = "queue", replica = 1) {
+    const dep = h.deployments.find((row) => row.id === depId)!;
+    const refs = (dep.roleContainers ?? []) as Array<Record<string, unknown>>;
+    dep.roleContainers = [...refs, { role, replica, containerId }];
+    h.containers.set(containerId, {
+      id: containerId,
+      state: "running",
+      status: "Up 3 hours",
+      labels: {},
+    });
+    h.containerBox.set(containerId, "srv1");
+  }
+
+  it("opens one incident for a failed replica, tracks events, and resolves after recovery", async () => {
+    const app = seedApp();
+    addRole(app.depId, "queue-1");
+    addRole(app.depId, "queue-2", "queue", 2);
+    setState("queue-2", "exited", { exitCode: 1 });
+
+    expect((await confirm()).workloads).toBe(3);
+    for (let i = 0; i < 3; i++) await tick();
+    expect(openFor(app.projectId)).toMatchObject([
+      { serviceId: null, serviceName: "queue · 2", containerId: "queue-2", kind: "down" },
+    ]);
+    expect(emitted("service.down")).toHaveLength(1);
+    const { isTrackedHealthContainer } =
+      await import("@repo/platform/engine/modules/monitoring/health-watch");
+    expect(isTrackedHealthContainer(await groupKey("srv1"), "queue-2")).toBe(true);
+
+    setState("queue-2", "running");
+    await tick();
+    expect(openFor(app.projectId)).toHaveLength(0);
+    expect(emitted("service.recovered")).toHaveLength(1);
+  });
+
+  it("keeps replica identity across redeploys and silently retires a removed role", async () => {
+    const app = seedApp();
+    addRole(app.depId, "old-queue");
+    setState("old-queue", "exited", { exitCode: 1 });
+    await confirm();
+    const incidentId = openFor(app.projectId)[0]?.id;
+    expect(incidentId).toBeDefined();
+
+    const dep = h.deployments.find((row) => row.id === app.depId)!;
+    dep.roleContainers = [];
+    addRole(app.depId, "new-queue");
+    setState("new-queue", "exited", { exitCode: 1 });
+    await confirm();
+    expect(openFor(app.projectId).map((row) => row.id)).toEqual([incidentId]);
+    expect(emitted("service.down")).toHaveLength(1);
+
+    dep.roleContainers = [];
+    expect((await tick()).stale).toBe(1);
+    expect(openFor(app.projectId)).toHaveLength(0);
+    expect(emitted("service.recovered")).toHaveLength(0);
+  });
+
+  it("suppresses role alerts during deploys, intentional project stops and observer network loss", async () => {
+    const app = seedApp({ status: "deploying" });
+    addRole(app.depId, "scheduler");
+    setState("scheduler", "exited", { exitCode: 1 });
+    await confirm();
+    expect(openFor(app.projectId)).toHaveLength(0);
+    h.deployments[0]!.status = "ready";
+    h.projects[0]!.disabledAt = new Date();
+    await confirm();
+    expect(openFor(app.projectId)).toHaveLength(0);
+    h.projects[0]!.disabledAt = null;
+    h.platformTarget = "desktop";
+    h.disconnected = true;
+    h.listThrows = "connect ENETUNREACH";
+    await confirm();
+    expect(h.incidents).toHaveLength(0);
+    expect(h.emit).not.toHaveBeenCalled();
+  });
+
+  it("includes roles in on-demand health scans without creating incidents", async () => {
+    const app = seedApp();
+    addRole(app.depId, "queue");
+    setState("queue", "exited", { exitCode: 1 });
+    const result = await checkCurrent();
+    const { listWorkloadHealthSnapshots } =
+      await import("@repo/platform/engine/modules/monitoring/health-watch");
+    expect(result.summary.workloads).toBe(2);
+    expect(listWorkloadHealthSnapshots("org1")).toContainEqual(
+      expect.objectContaining({
+        projectId: app.projectId,
+        containerId: "queue",
+        state: "down",
+      }),
+    );
+    expect(h.incidents).toHaveLength(0);
+  });
 });
 
 describe("automatic monitoring coverage and lifecycle", () => {
@@ -647,6 +751,10 @@ describe("automatic monitoring coverage and lifecycle", () => {
     await tick();
     expect(listWorkloadHealthSnapshots("org1").find(row => row.projectId === projectId)?.state).toBe("unknown");
     expect(openFor(projectId)).toHaveLength(0);
+    // One miss replaces certainty with unknown. It does not page — a single refused
+    // probe is the same false outage as one deadline.
+    expect(h.incidents.filter(row => row.kind === "server_unreachable" && row.status === "open")).toHaveLength(0);
+    await tick();
     expect(h.incidents.filter(row => row.kind === "server_unreachable" && row.status === "open")).toHaveLength(1);
   });
 
@@ -679,13 +787,26 @@ describe("automatic monitoring coverage and lifecycle", () => {
     expect(isTrackedHealthContainer(await groupKey("last-box"), containerId)).toBe(false);
   });
 
-  it("does no probing or incident work in the cloud runtime", async () => {
+  it("does not probe a Cloud deployment without a matching managed server binding", async () => {
     seedApp({ serverId: "must-not-be-probed" });
     h.platformTarget = "cloud";
     expect(await tick()).toMatchObject({ servers: 0, workloads: 0, opened: 0 });
     expect(h.inspects).toBe(0);
     expect(h.incidents).toEqual([]);
-    expect(h.renew).not.toHaveBeenCalled();
+    expect(h.renew).toHaveBeenCalledWith([]);
+  });
+
+  it("watches managed Docker workloads on their owned Cloud server", async () => {
+    const { projectId } = seedApp({ serverId: "managed-server", workspaceId: "managed-owner", deployTarget: "cloud" });
+    Object.assign(h.projects[0]!, { serverId: "managed-server" });
+    Object.assign(h.deployments[0]!.meta!, {
+      managedWorkspaceId: "managed-owner",
+      managedServer: { projectId, workspaceId: "provider-vm", ownerWorkspaceId: "managed-owner" },
+    });
+    h.platformTarget = "cloud";
+    expect(await tick()).toMatchObject({ servers: 1, workloads: 1 });
+    expect(h.inspects).toBe(1);
+    expect(h.renew).toHaveBeenCalledWith([`${await groupKey("managed-server")}::${projectId}`]);
   });
 });
 
@@ -1191,6 +1312,18 @@ describe("control-plane restart", () => {
 // ─── Gate 1: a deploy in flight ──────────────────────────────────────────────
 
 describe("deploy suppression", () => {
+  it("keeps an interrupted role handover unknown until recovery finishes", async () => {
+    const app = seedApp({ status: "failed" });
+    const deployment = h.deployments.find((row) => row.id === app.depId)!;
+    deployment.roleHandover = { phase: "preparing" };
+    setState(app.containerId, "exited", { exitCode: 1 });
+    await confirm();
+    expect(openFor(app.projectId)).toHaveLength(0);
+    deployment.roleHandover = { phase: "complete" };
+    await confirm();
+    expect(openFor(app.projectId)).toHaveLength(1);
+  });
+
   it("skips a project whose deploy is still running", async () => {
     const { projectId, containerId } = seedApp({ status: "deploying" });
     setState(containerId, "gone");
@@ -1329,6 +1462,56 @@ describe("intentional stop", () => {
 // ─── Gate 3: an unreachable box ──────────────────────────────────────────────
 
 describe("unreachable server", () => {
+  it.each(["selfhosted", "desktop"] as const)("keeps an explicit network failure distinct from failed services in %s mode", async (target) => {
+    h.platformTarget = target;
+    for (const serverId of ["network-a", "network-b", "network-c"]) seedApp({ serverId });
+    await tick();
+    h.listThrows = "(HTTP code 502) unexpected - Cannot reach Docker over SSH: connect ENETUNREACH 192.0.2.1:22 - Local (0.0.0.0:63263)";
+    expect(await tick()).toMatchObject({ offline: 3, unreachable: 0, opened: 3, resolved: 0 });
+    const { listWorkloadHealthSnapshots } = await import("@repo/platform/engine/modules/monitoring/health-watch");
+    expect(listWorkloadHealthSnapshots("org1").every((row) => row.state === "unknown")).toBe(true);
+    expect(h.incidents.every((row) => row.kind === "server_unreachable")).toBe(true);
+    await tick();
+    expect(h.emit).not.toHaveBeenCalled();
+
+    h.listThrows = null;
+    expect(await tick()).toMatchObject({ offline: 0, resolved: 3 });
+    expect(listWorkloadHealthSnapshots("org1").every((row) => row.state === "healthy")).toBe(true);
+    expect(h.emit).not.toHaveBeenCalled();
+  });
+
+  it("alerts once if a host still refuses connections after a network gap", async () => {
+    seedApp({ serverId: "network-then-host" });
+    h.listThrows = "connect ENETUNREACH 192.0.2.1:22";
+    await tick();
+    h.listThrows = "connect ECONNREFUSED 192.0.2.1:22";
+    await tick();
+    await tick();
+    expect(emitted("server.unreachable")).toHaveLength(1);
+    h.listThrows = null;
+    await tick();
+    expect(emitted("server.reachable")).toHaveLength(1);
+  });
+
+  it("keeps confirmed workload failures open through a network interruption", async () => {
+    const { projectId, containerId } = seedApp({ serverId: "confirmed-then-network" });
+    setState(containerId, "exited", { exitCode: 1 });
+    await confirm();
+    h.emit.mockClear();
+    h.listThrows = "connect ENETDOWN 192.0.2.1:22";
+    expect(await tick()).toMatchObject({ offline: 1, resolved: 0, stale: 0 });
+    expect(openFor(projectId)).toHaveLength(1);
+    expect(h.emit).not.toHaveBeenCalled();
+  });
+
+  it("reports a current-only network failure without creating incidents", async () => {
+    seedApp({ serverId: "network-current" });
+    h.listThrows = "connect ENETUNREACH 192.0.2.1:22";
+    expect((await checkCurrent()).summary).toMatchObject({ offline: 1, unreachable: 0 });
+    expect(h.incidents).toEqual([]);
+    expect(h.emit).not.toHaveBeenCalled();
+  });
+
   it("keeps remote health unknown while the desktop is offline without opening server incidents", async () => {
     h.platformTarget = "desktop";
     const first = seedApp({ serverId: "remote-a" });
@@ -1365,6 +1548,7 @@ describe("unreachable server", () => {
     h.platformTarget = "desktop";
     seedApp({ serverId: "remote-recovery" });
     h.listThrows = "Timed out while waiting for handshake";
+    expect(await tick()).toMatchObject({ unreachable: 1, opened: 0, pending: 1 });
     expect(await tick()).toMatchObject({ unreachable: 1, opened: 1 });
 
     h.disconnected = true;
@@ -1399,6 +1583,12 @@ describe("unreachable server", () => {
     h.emit.mockClear();
 
     h.listThrows = "connect ETIMEDOUT 10.0.0.9:22";
+    const missed = await tick();
+    expect(missed.unreachable).toBe(1);
+    expect(missed.opened).toBe(0);
+    expect(missed.pending).toBe(1);
+    expect(emitted("server.unreachable")).toHaveLength(0);
+
     const summary = await tick();
 
     expect(summary.unreachable).toBe(1);
@@ -1424,6 +1614,10 @@ describe("unreachable server", () => {
     expect(back.resolved).toBe(1);
     expect(emitted("server.reachable")).toHaveLength(1);
     expect(payloads("server.reachable")[0]?.message).toContain("answering again");
+    // Opened on the second miss, still down for the three ticks above, then this
+    // answer. That is 20s, not the few hundred milliseconds that used to read
+    // "after 0s".
+    expect(payloads("server.reachable")[0]?.downtime).toBe("20s");
     expect(emitted("service.recovered")).toHaveLength(0);
     expect(openFor(seeds[0]!.projectId)).toHaveLength(1);
   });
@@ -1440,6 +1634,7 @@ describe("unreachable server", () => {
     seedApp({ serverId: null });
 
     h.listThrows = "connect ENOENT /var/run/docker.sock";
+    expect((await tick()).opened).toBe(0);
     const down = await tick();
     expect(down.unreachable).toBe(1);
     expect(down.opened).toBe(1);
@@ -1657,32 +1852,276 @@ describe("unreachable server", () => {
     // Timers are faked for this test alone: the deadline is a real `setTimeout`, and
     // 90s of wall clock for one assertion is not a trade worth making.
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"], now: Date.now() });
-    let summary: Awaited<ReturnType<typeof tick>>;
     try {
       const { runHealthWatch } = await import("@repo/platform/engine/modules/monitoring/health-watch");
       const run = runHealthWatch();
       await vi.advanceTimersByTimeAsync(120_000);
-      summary = await run;
+      const summary = await run;
+
+      // One deadline is a miss, not a page — the same rule as a refused connection.
+      // The wedged transport is still torn down: `withTimeout` races the read, it
+      // cannot cancel it, and the chain has to be free for the next sweep.
+      expect(summary.unreachable).toBe(1);
+      expect(summary.opened).toBe(0);
+      expect(summary.pending).toBe(1);
+      expect(summary.errors).toBe(0);
+      expect(emitted("server.unreachable")).toHaveLength(0);
+      expect(h.disposed).toHaveBeenCalledTimes(1);
+
+      // A second sweep that also gets nothing, outside the confirm gap, pages once.
+      h.disposed.mockClear();
+      const secondRun = runHealthWatch();
+      await vi.advanceTimersByTimeAsync(120_000);
+      const confirmed = await secondRun;
+      expect(confirmed.unreachable).toBe(1);
+      expect(confirmed.opened).toBe(1);
+      expect(confirmed.errors).toBe(0);
+      expect(emitted("server.unreachable")).toHaveLength(1);
+      expect(payloads("server.unreachable")[0]?.message).toContain("2 projects");
+      expect(payloads("server.unreachable")[0]?.errorMessage).toContain("within 90s");
+      expect(h.disposed).toHaveBeenCalledTimes(1);
     } finally {
-      vi.useFakeTimers({ toFake: ["Date"], now: START });
+      vi.useFakeTimers({ toFake: ["Date"], now: Date.now() });
     }
 
-    // A box that cannot answer inside the deadline IS unreachable — the same
-    // incident as a refused connection, which is the one an operator needs.
-    expect(summary.unreachable).toBe(1);
-    expect(summary.opened).toBe(1);
-    expect(summary.errors).toBe(0);
-    expect(emitted("server.unreachable")).toHaveLength(1);
-    expect(payloads("server.unreachable")[0]?.message).toContain("2 projects");
-    expect(payloads("server.unreachable")[0]?.errorMessage).toContain("within 90s");
-    // And the wedged transport is torn down rather than held for the process's life:
-    // `withTimeout` races the read, it cannot cancel it.
-    expect(h.disposed).toHaveBeenCalledTimes(1);
-
-    // The chain is free: the next sweep runs normally.
+    // The chain is free, and a later answer is a real all-clear — not "after 0s".
     h.listHangs = false;
-    expect((await tick()).unreachable).toBe(0);
+    const back = await tick({ afterMs: 60_000 });
+    expect(back.unreachable).toBe(0);
+    expect(back.resolved).toBe(1);
+    expect(emitted("server.reachable")).toHaveLength(1);
+    expect(payloads("server.reachable")[0]?.downtime).not.toBe("0s");
   });
+
+  it("does not page from one miss, and a real answer clears it", async () => {
+    seedApp({ serverId: "srvOnce" });
+    h.listThrows = "connect ETIMEDOUT 10.0.0.9:22";
+    expect((await tick()).opened).toBe(0);
+    expect(emitted("server.unreachable")).toHaveLength(0);
+
+    h.listThrows = null;
+    const back = await tick();
+    expect(back.resolved).toBe(0);
+    expect(emitted("server.reachable")).toHaveLength(0);
+
+    // Forgiven, not stored: the next single miss is the first one again.
+    h.listThrows = "connect ETIMEDOUT 10.0.0.9:22";
+    expect((await tick()).opened).toBe(0);
+    expect(emitted("server.unreachable")).toHaveLength(0);
+  });
+
+  it("does not confirm a server miss from a burst inside the confirm gap", async () => {
+    seedApp({ serverId: "srvBurst" });
+    h.listThrows = "connect ECONNREFUSED 10.0.0.9:22";
+
+    for (let i = 0; i < 4; i++) {
+      const burst = await tick({ afterMs: 200 });
+      expect(burst.opened).toBe(0);
+      expect(burst.pending).toBe(1);
+    }
+    expect(emitted("server.unreachable")).toHaveLength(0);
+
+    expect((await tick({ afterMs: 4_000 })).opened).toBe(1);
+    expect(emitted("server.unreachable")).toHaveLength(1);
+  });
+
+  it("does not re-page an open server incident after the process restarts", async () => {
+    seedApp({ serverId: "srvRestart" });
+    h.listThrows = "connect ECONNREFUSED 10.0.0.9:22";
+    await tick();
+    await tick();
+    expect(emitted("server.unreachable")).toHaveLength(1);
+
+    restart();
+    h.emit.mockClear();
+
+    // The miss counter was process memory. The open row is what dedups, so the
+    // first miss after a restart touches the incident and stays quiet.
+    const again = await tick();
+    expect(again.opened).toBe(0);
+    expect(emitted("server.unreachable")).toHaveLength(0);
+    expect(h.incidents.filter((r) => r.status === "open" && r.kind === "server_unreachable")).toHaveLength(1);
+  });
+
+  it("does not forgive a miss or resolve when the container list returns after the deadline", async () => {
+    // The false pair: the 90s deadline writes the group off, then the `docker ps`
+    // that was already in flight — or the sweep queued behind it — answers in a
+    // few hundred milliseconds. Closing from that reply mails "after 0s". The
+    // late list must not clear the miss either, or the next deadline can never
+    // be the confirming one.
+    seedApp({ serverId: "srvLateList" });
+    seedApp({ serverId: "srvLateList" });
+    let release!: () => void;
+    h.listGate = new Promise<void>((resolve) => (release = resolve));
+
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"], now: Date.now() });
+    try {
+      const { runHealthWatch } = await import("@repo/platform/engine/modules/monitoring/health-watch");
+      const run = runHealthWatch();
+      await vi.advanceTimersByTimeAsync(120_000);
+      const summary = await run;
+      expect(summary.unreachable).toBe(1);
+      expect(summary.opened).toBe(0);
+      expect(summary.pending).toBe(1);
+      expect(emitted("server.unreachable")).toHaveLength(0);
+
+      release();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(emitted("server.reachable")).toHaveLength(0);
+      expect(h.incidents.filter((r) => r.kind === "server_unreachable")).toHaveLength(0);
+
+      h.listGate = null;
+      h.listHangs = true;
+      const second = runHealthWatch();
+      await vi.advanceTimersByTimeAsync(120_000);
+      const confirmed = await second;
+      expect(confirmed.opened).toBe(1);
+      expect(emitted("server.unreachable")).toHaveLength(1);
+      expect(emitted("server.reachable")).toHaveLength(0);
+    } finally {
+      h.listGate = null;
+      h.listHangs = false;
+      vi.useFakeTimers({ toFake: ["Date"], now: START });
+    }
+  });
+
+  it("confirms repeated inspect deadlines and waits for a complete read before recovery", async () => {
+    seedApp({ serverId: "srvInspectDeadline" });
+    h.sampleHangs = true;
+    vi.useFakeTimers({
+      toFake: ["Date", "setTimeout", "clearTimeout"],
+      now: Date.now(),
+    });
+    try {
+      const { runHealthWatch } =
+        await import("@repo/platform/engine/modules/monitoring/health-watch");
+      const firstRun = runHealthWatch();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await firstRun).toMatchObject({
+        unreachable: 1,
+        opened: 0,
+        pending: 1,
+      });
+
+      const secondRun = runHealthWatch();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await secondRun).toMatchObject({ unreachable: 1, opened: 1 });
+      expect(emitted("server.unreachable")).toHaveLength(1);
+
+      // A successful list is still not recovery if the following inspects hang.
+      const thirdRun = runHealthWatch();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(await thirdRun).toMatchObject({
+        unreachable: 1,
+        opened: 0,
+        resolved: 0,
+      });
+      expect(emitted("server.unreachable")).toHaveLength(1);
+      expect(emitted("server.reachable")).toHaveLength(0);
+      expect(
+        h.incidents.filter(
+          (row) => row.kind === "server_unreachable" && row.status === "open",
+        ),
+      ).toHaveLength(1);
+
+      h.sampleHangs = false;
+      expect(await tick()).toMatchObject({ unreachable: 0, resolved: 1 });
+      expect(emitted("server.reachable")).toHaveLength(1);
+      expect(payloads("server.reachable")[0]?.downtime).not.toBe("0s");
+    } finally {
+      h.sampleHangs = false;
+      vi.useFakeTimers({ toFake: ["Date"], now: START });
+    }
+  });
+
+  it("keeps snapshot-only reads out of daemon confirmation and recovery", async () => {
+    seedApp({ serverId: "srvReadOnlyConfirmation" });
+    h.listThrows = "connect ECONNREFUSED 10.0.0.9:22";
+    expect(await tick()).toMatchObject({ unreachable: 1, opened: 0, pending: 1 });
+
+    h.listThrows = null;
+    expect((await checkCurrent()).summary).toMatchObject({
+      unreachable: 0,
+      opened: 0,
+      resolved: 0,
+    });
+
+    h.listThrows = "connect ECONNREFUSED 10.0.0.9:22";
+    expect(await tick()).toMatchObject({ unreachable: 1, opened: 1 });
+    expect(emitted("server.unreachable")).toHaveLength(1);
+
+    h.listThrows = null;
+    expect((await checkCurrent()).summary).toMatchObject({
+      unreachable: 0,
+      opened: 0,
+      resolved: 0,
+    });
+    expect(
+      h.incidents.filter(
+        (row) => row.kind === "server_unreachable" && row.status === "open",
+      ),
+    ).toHaveLength(1);
+    expect(emitted("server.reachable")).toHaveLength(0);
+
+    expect(await tick()).toMatchObject({ unreachable: 0, resolved: 1 });
+    expect(emitted("server.reachable")).toHaveLength(1);
+  });
+
+  it("does not classify a slow recovery write as a daemon deadline", async () => {
+    seedApp({ serverId: "srvRecoveryWrite" });
+    h.listThrows = "connect ECONNREFUSED 10.0.0.9:22";
+    await tick();
+    await tick();
+    const incident = h.incidents.find(
+      (row) => row.kind === "server_unreachable" && row.status === "open",
+    )!;
+    expect(incident).toBeDefined();
+    h.emit.mockClear();
+    h.listThrows = null;
+
+    const { repos } = await import("@repo/db");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(repos.serviceIncident.findOpenForServer).mockImplementationOnce(
+      async () => {
+        await gate;
+        return incident as unknown as ServiceIncident;
+      },
+    );
+    vi.useFakeTimers({
+      toFake: ["Date", "setTimeout", "clearTimeout"],
+      now: Date.now(),
+    });
+    try {
+      const { runHealthWatch } =
+        await import("@repo/platform/engine/modules/monitoring/health-watch");
+      let completed = false;
+      const run = runHealthWatch().then((summary) => {
+        completed = true;
+        return summary;
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(completed).toBe(false);
+      expect(h.emit).not.toHaveBeenCalled();
+      expect(incident.status).toBe("open");
+
+      release();
+      expect(await run).toMatchObject({
+        unreachable: 0,
+        opened: 0,
+        resolved: 1,
+        errors: 0,
+      });
+      expect(emitted("server.reachable")).toHaveLength(1);
+      expect(emitted("server.unreachable")).toHaveLength(0);
+    } finally {
+      release();
+      vi.useFakeTimers({ toFake: ["Date"], now: START });
+    }
+  });
+
 });
 
 // ─── One group, one daemon ───────────────────────────────────────────────────
@@ -1736,7 +2175,8 @@ describe("group identity", () => {
     await confirm();
     expect(openFor(projectId)).toHaveLength(1);
 
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { diagnostics } = await import("@repo/core/diagnostics");
+    const warn = vi.spyOn(diagnostics, "warn").mockImplementation(() => {});
     try {
       // Nothing stops a server being deleted while projects still target it.
       h.servers.delete("srvGone");
@@ -1764,7 +2204,8 @@ describe("group identity", () => {
     setState(containerId, "exited", { exitCode: 1 });
     h.servers.set("srvMoved", { id: "srvMoved", name: "box", organizationId: "org2" });
 
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { diagnostics } = await import("@repo/core/diagnostics");
+    const warn = vi.spyOn(diagnostics, "warn").mockImplementation(() => {});
     try {
       const summary = await confirm();
 
@@ -1787,7 +2228,8 @@ describe("group identity", () => {
     });
     setState(containerId, "exited", { exitCode: 1 });
 
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { diagnostics } = await import("@repo/core/diagnostics");
+    const warn = vi.spyOn(diagnostics, "warn").mockImplementation(() => {});
     try {
       const summary = await confirm();
 
@@ -1848,12 +2290,12 @@ describe("workload selection", () => {
   });
 
   it("never watches a promoted cloud project, whatever its last local deploy says", async () => {
-    // `cloudWorkspaceId` is the canonical "this is a cloud project" test, and it has to
+    // `workspaceId` is the canonical "this is a cloud project" test, and it has to
     // outrank the deployment snapshot: after a promote the workload runs on Oblien while
     // the last LOCAL deployment still reads as an ordinary local deploy. Watching that
     // snapshot means inspecting containers this host no longer has — a confirmed `down`
     // on a service that is up.
-    const { containerId } = seedApp({ serverId: null, cloudWorkspaceId: "ws_1" });
+    const { containerId } = seedApp({ serverId: null, workspaceId: "ws_1" });
     setState(containerId, "gone");
 
     const summary = await tick();

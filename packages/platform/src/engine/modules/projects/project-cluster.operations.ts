@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import {
   AppError,
@@ -62,6 +63,7 @@ export function createProjectClusterOperations(
         });
         result.observedAt = new Date().toISOString();
       } catch (error) {
+        observeCaughtError(error, "platform/engine/modules/projects/project-cluster.operations");
         result.error = safeErrorMessage(error);
       }
     }
@@ -183,6 +185,7 @@ export function createProjectClusterOperations(
         // A configuration release reuses the immutable image. It uses the same
         // admission, cancellation, logs, history and recovery as every deploy.
         const deployed = await triggerDeployment(ctx, { projectId: id, refresh: true });
+        if (!deployed.deployment) throw new AppError("Deployment was not queued", 409, "ACTIONS_CHECKS_PENDING");
         return { deploymentId: deployed.deployment.id };
       });
       if (!result) throw new AppError("Project is being removed.", 409, "PROJECT_UNAVAILABLE");

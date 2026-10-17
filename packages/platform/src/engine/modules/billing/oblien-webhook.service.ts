@@ -3,7 +3,10 @@
  * the organization from Oblien's current entitlement. Events never grant credits
  * or suspend workspaces locally. Failed synchronization returns 503; provider
  * delivery retries durably; entitlement polling also refreshes the current state.
+ * Actions events queue a receipt check in their separate prepaid ledger, without
+ * changing the organization's application-server entitlement.
  */
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 export interface BillingWebhookResponse { status: number; payload: Record<string, unknown> }
 import { db, schema, repos, eq, type Database } from "@repo/db";
 import { createAuditEventRepo, createAuditSettingsRepo } from "@repo/db/repos";
@@ -21,6 +24,7 @@ import {
 import { OBLIEN_WEBHOOK_EVENTS } from "../../lib/oblien-webhook-config";
 import { observeVerifiedBillingEvent } from "../cloud-analytics/billing";
 import { creditAlertNotification } from "./billing-credit-alert";
+import { findBillingOwnerByNamespace } from "./billing-namespace-owner";
 
 const ROUTED_EVENT_TYPES = new Set<string>(OBLIEN_WEBHOOK_EVENTS);
 
@@ -75,17 +79,6 @@ function parseDate(v: unknown): Date | null {
   if (typeof v !== "string" && typeof v !== "number") return null;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
-}
-
-/* ───────── Org resolution by namespace ──────────────────────────────────── */
-
-async function findOrgByNamespace(namespace: string): Promise<string | null> {
-  const [row] = await db
-    .select({ id: schema.organization.id })
-    .from(schema.organization)
-    .where(eq(schema.organization.oblienNamespace, namespace))
-    .limit(1);
-  return row?.id ?? null;
 }
 
 /**
@@ -173,26 +166,48 @@ export async function handleOblienWebhook(
     return { status: 200, payload: { received: true } };
   }
   if (!namespace) return { status: 400, payload: { error: "missing namespace" } };
-  const orgId = await findOrgByNamespace(namespace);
-  if (!orgId) return { status: 200, payload: { received: true } };
-
+  let orgId: string | undefined;
   try {
-    await quotaWrapper.withCloudBillingLock(orgId, async (sync) => {
+    const owner = await findBillingOwnerByNamespace(namespace);
+    if (!owner) return { status: 200, payload: { received: true } };
+    const organizationId = orgId = owner.organizationId;
+    if (owner.kind === "actions") {
+      // Actions funding is independent of a customer's monthly server. Only
+      // enqueue a fresh receipt check; event amounts never grant retail funds.
+      if (["payment.succeeded", "entitlement.changed"].includes(eventType) &&
+        (payload.data?.kind == null || payload.data.kind === "topup")) {
+        const { queueActionsPaymentCheck } = await import("../actions/billing-application");
+        const metadata = payload.data?.metadata;
+        const purchaseId = metadata && typeof metadata === "object" && !Array.isArray(metadata)
+          ? (metadata as Record<string, unknown>).orderId : undefined;
+        await queueActionsPaymentCheck(organizationId, {
+          eventId, eventType,
+          checkoutId: typeof payload.data?.checkoutId === "string" ? payload.data.checkoutId : undefined,
+          purchaseId: typeof purchaseId === "string" ? purchaseId : undefined,
+        });
+      } else {
+        await upsertWebhookEventProcessed(db, eventId, eventType);
+      }
+      return { status: 200, payload: { received: true } };
+    }
+    await quotaWrapper.withCloudBillingLock(organizationId, async (sync) => {
       const [existing] = await db.select({ processedAt: schema.oblienWebhookEvent.processedAt })
         .from(schema.oblienWebhookEvent)
         .where(eq(schema.oblienWebhookEvent.oblienEventId, eventId)).limit(1);
       if (existing?.processedAt) {
-        await observeVerifiedBillingEvent(orgId, eventType, payload.data, payload.timestamp);
+        await observeVerifiedBillingEvent(organizationId, eventType, payload.data, payload.timestamp);
         return;
       }
       // Every relevant notification refreshes provider truth. In particular,
       // old payment/suspension events cannot revert a newer paid entitlement.
       const { entitlement, tier } = await sync({ syncResourceLimits: false });
       if (entitlement.namespace !== namespace) throw new Error("Billing namespace changed during delivery");
-      if (eventType === "credits.usage") await handleCreditsUsage(orgId, payload, entitlement.quota.balance);
+      // This historical display cache belongs to the old organization namespace.
+      // Workspace billing reads its own provider usage; never overwrite siblings.
+      if (eventType === "credits.usage" && !owner.workspaceId) await handleCreditsUsage(organizationId, payload, entitlement.quota.balance);
       const alert = creditAlertNotification({ eventType, eventId, data: payload.data ?? {},
-        timestamp: payload.timestamp, organizationId: orgId, entitlement, dashboardUrl: localDashboardUrl });
-      await observeVerifiedBillingEvent(orgId, eventType, payload.data, payload.timestamp);
+        timestamp: payload.timestamp, organizationId, workspaceId: owner.workspaceId ?? undefined, entitlement, dashboardUrl: localDashboardUrl });
+      await observeVerifiedBillingEvent(organizationId, eventType, payload.data, payload.timestamp);
       const enqueue = alert ? await notification.prepare(alert) : null;
       // No email is sent while holding this transaction. The receiver only ACKs
       // once notifications, the exhaustion activity, and its checkpoint commit together.
@@ -201,20 +216,26 @@ export async function handleOblienWebhook(
         if (enqueue) await enqueue(tx);
         if (alert?.eventType === "billing.credit_exhausted") {
           await createAuditEventRepo(tx, createAuditSettingsRepo(tx)).create({
-            organizationId: orgId,
+            organizationId,
             actorUserId: null,
             eventType: alert.eventType,
             resourceType: "organization",
-            resourceId: orgId,
+            resourceId: organizationId,
             source: "webhook",
             after: { planTierId: tier, oblienNamespace: namespace, sourceEventId: eventId },
           });
         }
         await upsertWebhookEventProcessed(tx, eventId, eventType);
       });
-    });
+    }, owner.workspaceId);
+    if (owner.workspaceId) {
+      const { reconcileWorkspaceSubscriptionChange } = await import("./billing-plan-change");
+      await reconcileWorkspaceSubscriptionChange(organizationId, owner.workspaceId);
+      const { requestPaidWorkspaceProvisioning } = await import("../cloud-workspaces/cloud-workspace.service");
+      await requestPaidWorkspaceProvisioning(organizationId, owner.workspaceId);
+    }
   } catch (error) {
-    console.warn(`[oblien-webhook] synchronization failed for org ${orgId}: ${safeErrorMessage(error)}`);
+    errorDiagnostics.warn("platform/engine/modules/billing/oblien-webhook.service", `[oblien-webhook] synchronization failed for ${orgId ? `org ${orgId}` : `namespace ${namespace}`}: ${safeErrorMessage(error)}`, error);
     return { status: 503, payload: { error: "Billing synchronization temporarily unavailable" } };
   }
   return { status: 200, payload: { received: true } };

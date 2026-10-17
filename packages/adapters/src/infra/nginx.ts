@@ -15,6 +15,7 @@
  * ```
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
   access as fsAccess,
   writeFile as fsWriteFile,
@@ -27,6 +28,7 @@ import {
   stat as fsStat,
   symlink as fsSymlink,
 } from "node:fs/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile as cpExecFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { promisify } from "node:util";
@@ -34,6 +36,7 @@ import { posix as edgePath } from "node:path";
 
 import type {
   CommandExecutor,
+  ProvisionLock,
   ManualCert,
   RouteConfig,
   RouteHeaderRule,
@@ -61,6 +64,7 @@ import {
 import { reloadBareOpenResty } from "./openresty-reload";
 import {
   safeErrorMessage,
+  withKeyedMutex,
   isLoopbackHost,
   sanitizeProxySettings,
   resolveRedirectStatus,
@@ -70,7 +74,12 @@ import {
   type NginxVersion,
   type ProxySettings,
 } from "@repo/core";
-import { cloudEdgeRealIpConf, isCloudFrontedHost } from "./edge-real-ip";
+import {
+  EDGE_CONTAINER_REAL_IP_CONF_NAME,
+  cloudEdgeRealIpConf,
+  edgeContainerRealIpConf,
+  isCloudFrontedHost,
+} from "./edge-real-ip";
 import { EDGE_UPSTREAM_DOWN_HANDLER } from "./edge-upstream-down";
 import { sq } from "../system/local-shell";
 import type { RootChecked } from "../system/privilege";
@@ -530,7 +539,7 @@ function headerEntries(
     rule.headers.map((header) => ({
       rule,
       header,
-      variable: rule.path === "/" ? null : `${prefix}_${n++}`,
+      variable: rule.path === "/" && !rule.exact ? null : `${prefix}_${n++}`,
     })),
   );
 }
@@ -559,7 +568,7 @@ function renderHeaderMaps(route: RouteConfig, slug: string): string {
     assertValidHeader(e.header.key, e.header.value);
     return `map $request_uri $${e.variable} {
     default "";
-    ~^${escapeLiteralPath(e.rule.path)} "${e.header.value.replace(/"/g, '\\"')}";
+    ~^${escapeLiteralPath(e.rule.path)}${e.rule.exact ? "(?:\\?|$)" : ""} "${e.header.value.replace(/"/g, '\\"')}";
 }`;
   });
   return `${blocks.join("\n")}\n`;
@@ -825,6 +834,9 @@ export interface NginxProviderOptions {
    * `root` is always the container path.
    */
   challengeDir?: string;
+  /** Serializes config transactions on this edge, including across API replicas.
+   * Adapter-only callers fall back to a process-wide lock for the sites path. */
+  configLock?: ProvisionLock;
 }
 
 const DEFAULT_CERT_DIR = "/etc/letsencrypt/live";
@@ -843,7 +855,8 @@ function assertValidAcmeOptions(opts: NginxProviderOptions): void {
     let directory: URL;
     try {
       directory = new URL(opts.acmeDirectoryUrl);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
       throw new Error("ACME directory must be a valid http(s) URL");
     }
     if (directory.protocol !== "https:" && directory.protocol !== "http:") {
@@ -1235,6 +1248,10 @@ interface FileSnapshot {
   content?: string;
 }
 
+// A shared config file could not be restored. Callers may restore their own
+// files, but must not reload a configuration whose rollback is incomplete.
+class ConfigRollbackError extends Error {}
+
 // ─── Implementation ──────────────────────────────────────────────────────────
 
 export class NginxProvider implements RoutingProvider, SslProvider {
@@ -1265,6 +1282,8 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private readonly pinPaths: boolean;
   private readonly containerEdge: boolean;
   private readonly challengeDir: string;
+  private readonly configLock: ProvisionLock;
+  private readonly configContext = new AsyncLocalStorage<{ active: boolean }>();
   /**
    * nginx version of the edge, when `detectOpenRestyPaths` could read it. Gates the
    * one directive whose syntax is version-dependent (`http2`); undefined = unknown,
@@ -1290,6 +1309,23 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     this.reloadCommand = buildReloadCommand(opts.paths);
     this.pinPaths = opts.pinPaths ?? false;
     this.challengeDir = opts.challengeDir ?? EDGE_CHALLENGE_DIR;
+    this.configLock = opts.configLock ?? {
+      run: (fn, signal) => withKeyedMutex(`edge-config:${opts.paths.sitesDir}`, fn, signal),
+    };
+  }
+
+  private withConfigLock<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+    // TLS activation and route replay call registerRoute, which calls reload.
+    // Nested calls share the transaction; unrelated async requests still queue.
+    if (this.configContext.getStore()?.active) return fn();
+    return this.configLock.run(async () => {
+      const context = { active: true };
+      try {
+        return await this.configContext.run(context, fn);
+      } finally {
+        context.active = false;
+      }
+    }, signal);
   }
 
   // ── File operation helpers (dual-path: local or remote) ──────────────
@@ -1325,7 +1361,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
           await this.executor.exec(`mv ${sq(tmpPath)} ${sq(path)}`);
         }
       } catch (err) {
-        await this.executor.rm(tmpPath).catch(() => undefined);
+        await this.executor.rm(tmpPath).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
         throw err;
       }
     } else {
@@ -1336,7 +1372,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
         await fsWriteFile(tmpPath, content, { encoding: "utf-8", mode });
         await fsRename(tmpPath, path);
       } catch (err) {
-        await fsRm(tmpPath).catch(() => undefined);
+        await fsRm(tmpPath).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
         throw err;
       }
     }
@@ -1357,8 +1393,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     try {
       await fsAccess(path);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
     }
   }
 
@@ -1366,15 +1403,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     if (this.executor) {
       await this.executor.rm(path);
     } else {
-      try {
-        // recursive: every CommandExecutor.rm is `rm -rf`, and callers pass DIRS as
-        // well as files (staged cert dirs, the bootstrap cert dir). A plain fsRm
-        // throws on a directory, and the catch below would swallow it — leaving the
-        // directory behind on the local path only.
-        await fsRm(path, { recursive: true, force: true });
-      } catch {
-        // Already gone
-      }
+      // force ignores a missing path, but permission/I/O failures must reach the
+      // config transaction so it can restore the other files before returning.
+      await fsRm(path, { recursive: true, force: true });
     }
   }
 
@@ -1435,7 +1466,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
   private async _readlink(path: string): Promise<string | null> {
     const link = await (
       this.executor ? this.executor.exec(`readlink ${sq(path)} 2>/dev/null`) : fsReadlink(path)
-    ).catch(() => "");
+    ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return ""; });
     return link.trim() || null;
   }
 
@@ -1493,7 +1524,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
         for (const name of names) await fsRename(join(staging, name), join(dir, name));
       }
     } finally {
-      await this._rm(staging).catch(() => undefined);
+      await this._rm(staging).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
     }
   }
 
@@ -1552,7 +1583,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     // default cert dir is under /etc/letsencrypt, which qualifies; this guards the
     // configuration, and HTTP-only is the honest answer when it doesn't.
     if (!this._sharesHostNamespace(dir)) {
-      console.warn(
+      errorDiagnostics.warn("adapters/infra/nginx",
         `[SSL] not creating a temporary certificate for ${domain}: ${dir} is not the same path ` +
           `inside the edge container as on the host, so OpenResty could not read the key — ` +
           `serving HTTP only until a real certificate is issued.`,
@@ -1564,7 +1595,8 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       if ((await this._exists(certPath)) && (await this._exists(keyPath))) {
         return { certPath, keyPath };
       }
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
       return null;
     }
 
@@ -1609,13 +1641,13 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       }
       return { certPath, keyPath };
     } catch (err) {
-      console.warn(
+      errorDiagnostics.warn("adapters/infra/nginx",
         `[SSL] could not create a temporary certificate for ${domain} — serving HTTP only until ` +
-          `a real certificate is issued (is openssl installed on the edge?): ${safeErrorMessage(err)}`,
+          `a real certificate is issued (is openssl installed on the edge?): ${safeErrorMessage(err)}`, err,
       );
       return null;
     } finally {
-      await this._rm(staging).catch(() => undefined);
+      await this._rm(staging).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
     }
   }
 
@@ -1632,6 +1664,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       const { stdout } = await execFileAsync(command, args);
       return stdout;
     } catch (err) {
+      observeCaughtError(err, "adapters/infra/nginx");
       // execFile's error carries stdout/stderr as props but NOT in .message
       // ("Command failed: certbot …"). Fold them in so the caller (and the
       // certbot summarizer) sees the real output, not just the exit boilerplate.
@@ -1679,7 +1712,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     // A file IS its own index; a directory needs index.html to serve at that path.
     const isFile = await fsStat(servedPath)
       .then((s) => s.isFile())
-      .catch(() => false);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return false; });
     const hasIndex = isFile || (await this._exists(join(servedPath, "index.html")));
     return { found: true, hasIndex, checked: true };
   }
@@ -1755,7 +1788,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
       );
     } catch (err) {
       // A partial write must not leave key material behind (git-ssh-material rule).
-      await this._rm(dir).catch(() => undefined);
+      await this._rm(dir).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
       throw err;
     }
     return path;
@@ -1778,14 +1811,16 @@ export class NginxProvider implements RoutingProvider, SslProvider {
         await this._writeFile(cleanupPath, opts.dnsCleanupHookScript, 0o700);
       }
     } catch (err) {
-      await this._rm(dir).catch(() => undefined);
+      await this._rm(dir).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
       throw err;
     }
     const recordEnv = `OPENSHIP_DNS_RECORD_FILE=${sq(recordPath)}`;
+    // Certbot validates the first word as an executable before invoking a shell.
+    // env preserves the assignment and inherited CERTBOT_* variables.
     return {
       dir,
-      authCommand: `${recordEnv} ${sq(authPath)}`,
-      cleanupCommand: opts.dnsCleanupHookScript ? `${recordEnv} ${sq(cleanupPath)}` : undefined,
+      authCommand: `env ${recordEnv} ${sq(authPath)}`,
+      cleanupCommand: opts.dnsCleanupHookScript ? `env ${recordEnv} ${sq(cleanupPath)}` : undefined,
     };
   }
 
@@ -1809,6 +1844,43 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     await this._writeFile(path, snapshot.content ?? "");
   }
 
+  /** Called under the edge config lock. Publish all files before one validation
+   * and reload; restore every snapshot on any write, removal, or reload failure. */
+  private async updateConfig(changes: { path: string; content: string | null }[]): Promise<void> {
+    const snapshots = await Promise.all(
+      changes.map(async ({ path }) => ({ path, snapshot: await this._captureFile(path) })),
+    );
+    try {
+      for (const { path, content } of changes) {
+        if (content === null) await this._rm(path);
+        else await this._writeFile(path, content);
+      }
+      await this.reload();
+    } catch (error) {
+      const failures: string[] = [];
+      // One failed restore must not prevent restoration of the other files.
+      for (const { path, snapshot } of snapshots) {
+        await this._restoreFile(path, snapshot).catch((err) => {
+          observeCaughtError(err, "adapters/infra/nginx");
+          failures.push(`${path}: ${safeErrorMessage(err)}`);
+        });
+      }
+      // Never reload a partially restored configuration.
+      if (!failures.length && !(error instanceof ConfigRollbackError)) {
+        await this.reloadConfig({}).catch((err) => {
+          observeCaughtError(err, "adapters/infra/nginx");
+          failures.push(safeErrorMessage(err));
+        });
+      }
+      if (failures.length) {
+        throw new Error(`${safeErrorMessage(error)}; rollback failed: ${failures.join("; ")}`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
+  }
+
   // ── Routing ──────────────────────────────────────────────────────────
 
   /**
@@ -1820,6 +1892,10 @@ export class NginxProvider implements RoutingProvider, SslProvider {
    * via provisionCert).
    */
   async registerRoute(route: RouteConfig): Promise<void> {
+    return this.withConfigLock(() => this.writeRoute(route));
+  }
+
+  private async writeRoute(route: RouteConfig): Promise<void> {
     assertValidDomain(route.domain);
     await this._mkdir(this.sitesDir);
 
@@ -1827,7 +1903,7 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     const configPath = join(this.sitesDir, `${slug}.conf`);
     if ("staticRoot" in route && route.staticRoot) {
       assertValidStaticRoot(route.staticRoot, { adopted: route.staticRootAdopted });
-    } else {
+    } else if (!route.notFound) {
       assertValidUpstream((route as { targetUrl: string }).targetUrl);
     }
     // A canonical host redirect REPLACES the body — this host serves no content of
@@ -1836,11 +1912,13 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     const hostRedirect = renderHostRedirect(route);
     const locationBody = hostRedirect
       ? hostRedirect
-      : "staticRoot" in route && route.staticRoot
-        ? `root ${route.staticRoot};
+      : route.notFound
+        ? "return 404;"
+        : "staticRoot" in route && route.staticRoot
+          ? `root ${route.staticRoot};
         index index.html;
         ${renderStaticTryFiles(route)}`
-        : `proxy_pass ${(route as { targetUrl: string }).targetUrl};
+          : `proxy_pass ${(route as { targetUrl: string }).targetUrl};
         ${PROXY_HEADERS}`;
 
     // `cleanUrls` / `trailingSlash` redirects. They live INSIDE `location /` so they
@@ -2084,21 +2162,20 @@ ${serveLocation}
       serverBlock = httpOnlyBlock;
     }
 
-    // Snapshot the prior conf so a block that fails `openresty -t` can be
-    // rolled back — otherwise a bad conf stays on disk and poisons every
-    // subsequent reload box-wide (same self-rollback applyRateLimit uses).
-    const snapshot = await this._captureFile(configPath);
+    // The target-check vhost is created before a project route can exist. Once a
+    // real route claims the same hostname it answers that challenge itself, so the
+    // single-purpose vhost must retire in the SAME config transaction. Leaving it
+    // behind produces nginx's duplicate-server-name warning and, because `_` sorts
+    // first, can make the challenge-only 404 vhost win over the application.
+    const challenges = await this.ownedChallengeVhosts(route.domain);
     // The prelude carries http-scope `map` blocks, so it goes ABOVE the server
     // block(s) — one file may hold both the :80 and :443 blocks, and a map may
     // appear only once for the pair.
-    await this._writeFile(configPath, `${prelude}${serverBlock}`);
-    try {
-      await this.reload();
-    } catch (err) {
-      await this._restoreFile(configPath, snapshot);
-      await this.reload().catch(() => undefined);
-      throw err;
-    }
+    await this.updateConfig([
+      { path: configPath, content: `${prelude}${serverBlock}` },
+      { path: this.routeStatePath(slug), content: JSON.stringify(route) },
+      ...challenges.map((path) => ({ path, content: null })),
+    ]);
 
     // The conf we just loaded doesn't reference the placeholder, so nothing is
     // serving it — drop it. Keyed on what was EMITTED rather than on "a real cert
@@ -2110,14 +2187,11 @@ ${serveLocation}
     // OpenResty is still reading the bootstrap paths, and removing them first would
     // break TLS for the domain on the next unrelated reload.
     if (!bootstrapServed) {
-      await this._rm(this.bootstrapCertDir(route.domain)).catch(() => undefined);
+      await this._rm(this.bootstrapCertDir(route.domain)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
     }
 
-    // Persist the full RouteConfig alongside the conf so `provisionCert` can
-    // re-register the EXACT route (proxyLocations + webhookProxy) after issuing a
-    // cert, instead of regex-reconstructing it from the generated conf (which
-    // only recovered the primary target and dropped composite locations).
-    await this._writeFile(this.routeStatePath(slug), JSON.stringify(route)).catch(() => undefined);
+    // The full RouteConfig sidecar was committed with the vhost above, so TLS
+    // activation can recover composite locations and never replay stale state.
   }
 
   private routeStatePath(slug: string): string {
@@ -2154,7 +2228,11 @@ ${serveLocation}
    * reconstructed from its conf: the scrape recovers only the primary target, so replaying
    * it would drop composite locations and the webhook proxy.
    */
-  async reapplyStoredRoutes(): Promise<{
+  async reapplyStoredRoutes() {
+    return this.withConfigLock(() => this.replayRoutes());
+  }
+
+  private async replayRoutes(): Promise<{
     scanned: number;
     repaired: string[];
     failed: { slug: string; reason: string }[];
@@ -2165,6 +2243,7 @@ ${serveLocation}
     try {
       entries = await this._lsSites();
     } catch (err) {
+      observeCaughtError(err, "adapters/infra/nginx");
       return { scanned: 0, repaired, failed: [{ slug: "*", reason: safeErrorMessage(err) }] };
     }
 
@@ -2175,14 +2254,14 @@ ${serveLocation}
     // Which confs are behind, asked in ONE command rather than one read per route: on a
     // remote box every read is a round trip, and this runs on the deploy path, so reading
     // 50 vhosts to discover that all 50 are current would put seconds on every deploy.
-    const stale = await this._staleVhostSlugs().catch(() => null);
+    const stale = await this._staleVhostSlugs().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return null; });
 
     for (const slug of slugs) {
       if (stale && !stale.has(slug)) continue;
       try {
         // A sidecar whose conf is gone is not a route: removeRoute deletes both, and
         // writing one back would resurrect a vhost an operator removed.
-        const conf = await this._readFile(join(this.sitesDir, `${slug}.conf`)).catch(() => null);
+        const conf = await this._readFile(join(this.sitesDir, `${slug}.conf`)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return null; });
         if (conf === null) continue;
         const gen = readVhostGeneration(conf);
         if (gen !== null && gen >= VHOST_GENERATION) continue;
@@ -2195,6 +2274,7 @@ ${serveLocation}
         await this.registerRoute(saved);
         repaired.push(saved.domain);
       } catch (err) {
+        observeCaughtError(err, "adapters/infra/nginx");
         failed.push({ slug, reason: safeErrorMessage(err) });
       }
     }
@@ -2285,6 +2365,10 @@ ${serveLocation}
    * vanish on the next unrelated reload). The error is re-thrown for retry.
    */
   async removeRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void> {
+    return this.withConfigLock(() => this.deleteRoute(domain, opts), opts?.signal);
+  }
+
+  private async deleteRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void> {
     assertValidDomain(domain);
     if (opts?.signal?.aborted) {
       throw new Error(`Route removal aborted before it started: ${domain}`);
@@ -2294,9 +2378,9 @@ ${serveLocation}
     const statePath = this.routeStatePath(slug);
     const confSnapshot = await this._captureFile(configPath);
     const stateSnapshot = await this._captureFile(statePath);
-    await this._rm(configPath);
-    await this._rm(statePath).catch(() => undefined);
     try {
+      await this._rm(configPath);
+      await this._rm(statePath);
       await this.reload({ allowStopped: true });
     } catch (err) {
       // A timed-out caller may already be retaining the project and refusing a
@@ -2307,13 +2391,15 @@ ${serveLocation}
       try {
         if (!opts?.signal?.aborted) await this._restoreFile(configPath, confSnapshot);
         if (!opts?.signal?.aborted) await this._restoreFile(statePath, stateSnapshot);
-        if (!opts?.signal?.aborted) {
-          await this.reload({ allowStopped: true }).catch(() => undefined);
+        if (!opts?.signal?.aborted && !(err instanceof ConfigRollbackError)) {
+          await this.reloadConfig({ allowStopped: true }).catch((diagnosticFailure) => {
+            observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
+          });
         }
       } finally {
         if (opts?.signal?.aborted) {
-          await this._rm(configPath).catch(() => undefined);
-          await this._rm(statePath).catch(() => undefined);
+          await this._rm(configPath).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
+          await this._rm(statePath).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
         }
       }
       throw err;
@@ -2322,17 +2408,48 @@ ${serveLocation}
     // Nothing references the placeholder cert once the vhost is gone. Real certs
     // in certbot's tree are deliberately left alone (a re-add reuses them); this
     // material is disposable by construction.
-    await this._rm(this.bootstrapCertDir(domain)).catch(() => undefined);
+    await this._rm(this.bootstrapCertDir(domain)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
   }
 
   // ── Edge-target challenge ────────────────────────────────────────────
 
-  /** Filename for a host's challenge vhost. The leading `_` is a namespace
+  /** Candidate filenames for a host's challenge vhost. The leading `_` is a namespace
    *  `resolveSlug` can never produce (`domainSlug` emits only `[A-Za-z0-9-]`), so no
    *  `registerRoute`/`removeRoute` for any domain can overwrite or delete it —
    *  matching the existing `_default.conf` / `_management.conf` convention. */
-  private challengeVhostPath(host: string): string {
-    return join(this.sitesDir, `_oblien-challenge-${this.domainSlug(host)}.conf`);
+  private challengeVhostPaths(host: string): string[] {
+    const normalized = host.toLowerCase().replace(/\.$/, "");
+    const base = `_oblien-challenge-${this.domainSlug(normalized)}`;
+    return [base, `${base}-${this.slugSuffix(normalized)}`].map((stem) =>
+      join(this.sitesDir, `${stem}.conf`),
+    );
+  }
+
+  private isChallengeFor(conf: string, host: string): boolean {
+    const names = this.serverNamesIn(conf);
+    return /^# openship-oblien-challenge:/m.test(conf) && names.length > 0 &&
+      names.every((name) => name === host.toLowerCase().replace(/\.$/, ""));
+  }
+
+  /** A lossy filename is never proof of ownership. Also preserve manually
+   * modified configs serving additional hostnames, even in our namespace. */
+  private async ownedChallengeVhosts(host: string): Promise<string[]> {
+    const owned: string[] = [];
+    const normalized = host.toLowerCase().replace(/\.$/, "");
+    for (const path of this.challengeVhostPaths(host)) {
+      const snapshot = await this._captureFile(path);
+      if (!snapshot.exists) continue;
+      if (this.isChallengeFor(snapshot.content!, host)) {
+        owned.push(path);
+      } else if (this.serverNamesIn(snapshot.content!).includes(normalized)) {
+        // Keeping a second config for the same host is unsafe too: nginx only
+        // warns and may continue serving the underscore-prefixed file instead.
+        throw new Error(
+          `Cannot configure ${host}: ${path} claims this hostname but is not an exclusively owned Openship challenge vhost.`,
+        );
+      }
+    }
+    return owned;
   }
 
   /**
@@ -2359,7 +2476,11 @@ ${serveLocation}
    * are served; none is ever removed — Oblien re-probes the SAME token near its
    * 90-day expiry, so dropping one silently kills that route ~83 days later.
    */
-  async serveEdgeChallenge(input: { host: string; tokens?: readonly string[] }): Promise<{
+  async serveEdgeChallenge(input: { host: string; tokens?: readonly string[] }) {
+    return this.withConfigLock(() => this.writeEdgeChallenge(input));
+  }
+
+  private async writeEdgeChallenge(input: { host: string; tokens?: readonly string[] }): Promise<{
     served: boolean;
     via: "existing-vhost" | "challenge-vhost" | null;
     claimedBy?: string;
@@ -2387,7 +2508,7 @@ ${serveLocation}
     const base = this.domainSlug(host);
     for (const stem of [base, `${base}-${this.slugSuffix(host)}`]) {
       const path = join(this.sitesDir, `${stem}.conf`);
-      const conf = await this._readFile(path).catch(() => "");
+      const conf = (await this._captureFile(path)).content;
       if (!conf || !this.serverNamesIn(conf).includes(host)) continue;
       // It claims the host. If it already carries the challenge location (written by
       // a build with this support) there is nothing to do — and crucially we must NOT
@@ -2404,7 +2525,18 @@ ${serveLocation}
       // tenant's own config), reporting a host as already-served when nothing here
       // answers the challenge. This gates a domain-control claim, so it has to mean
       // "there is a location for it", not "the string appears".
-      if (conf.includes(`${EDGE_CHALLENGE_URL_PREFIX} {`)) {
+      if (locationBlocks(stripComments(conf)).some(({ path }) =>
+        path === EDGE_CHALLENGE_URL_PREFIX || path === `^~ ${EDGE_CHALLENGE_URL_PREFIX}`,
+      )) {
+        // A dedicated challenge vhost may predate this route. The generated route
+        // now serves the same token directory, so keeping both is invalid nginx
+        // state: duplicate server_name, with the underscore-prefixed file loaded
+        // first. Retire it transactionally so an unrelated reload failure cannot
+        // leave disk and the running edge disagreeing.
+        const challenges = await this.ownedChallengeVhosts(host);
+        if (challenges.length) {
+          await this.updateConfig(challenges.map((path) => ({ path, content: null })));
+        }
         return { served: true, via: "existing-vhost" };
       }
       return {
@@ -2428,19 +2560,17 @@ ${serveLocation}
     //    location by what it serves, so a `return`-only one leaves this block
     //    classified as the scaffolding it is (see `isAcmeWebrootOnly`).
     const vhost = edgeChallengeVhostConf(host);
-    const path = this.challengeVhostPath(host);
-    const existing = await this._readFile(path).catch(() => "");
-    if (existing === vhost) return { served: true, via: "challenge-vhost" };
-
-    const snapshot = await this._captureFile(path);
-    await this._writeFile(path, vhost);
-    try {
-      await this.reload();
-    } catch (err) {
-      await this._restoreFile(path, snapshot);
-      await this.reload().catch(() => undefined);
-      throw err;
+    const slug = await this.resolveSlug(host, "_oblien-challenge-");
+    const path = join(this.sitesDir, `${slug}.conf`);
+    const existing = await this._captureFile(path);
+    const duplicates = (await this.ownedChallengeVhosts(host)).filter((p) => p !== path);
+    if (existing.content === vhost && !duplicates.length) {
+      return { served: true, via: "challenge-vhost" };
     }
+    await this.updateConfig([
+      { path, content: vhost },
+      ...duplicates.map((path) => ({ path, content: null })),
+    ]);
     return { served: true, via: "challenge-vhost" };
   }
 
@@ -2554,7 +2684,7 @@ ${serveLocation}
       // is an optional embellishment — no executor simply means no name to add.
       if (isAcmePortBindFailure(raw) && this.executor) {
         const occupant = await probeListeningPort(this.executor, ACME_HTTP01_PORT).catch(
-          () => null,
+          (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return null; },
         );
         if (occupant) {
           summary +=
@@ -2568,8 +2698,8 @@ ${serveLocation}
     } finally {
       // Remove the whole 0700 directory, not just the ini — one unit, like
       // git-ssh-material's cleanup.
-      if (eabConfig) await this._rm(dirname(eabConfig)).catch(() => undefined);
-      if (generatedDnsHooks) await this._rm(generatedDnsHooks.dir).catch(() => undefined);
+      if (eabConfig) await this._rm(dirname(eabConfig)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
+      if (generatedDnsHooks) await this._rm(generatedDnsHooks.dir).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return undefined; });
     }
 
     // An imported pair keeps its served path while Certbot issues into a free
@@ -2589,6 +2719,10 @@ ${serveLocation}
 
   /** One route activation path for Certbot, manual DNS, and uploaded certs. */
   async activateCert(domain: string): Promise<void> {
+    return this.withConfigLock(() => this.activateRouteCert(domain));
+  }
+
+  private async activateRouteCert(domain: string): Promise<void> {
     assertValidDomain(domain);
     // Rewrite the config with SSL now that certs exist
     const slug = await this.resolveSlug(domain);
@@ -2759,7 +2893,7 @@ ${serveLocation}
 
   private async hasCertbotLineage(domain: string): Promise<boolean> {
     const record = parseCertbotRenewalConfig(
-      await this._readFile(this.renewalConfPath(domain)).catch(() => ""),
+      await this._readFile(this.renewalConfPath(domain)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/infra/nginx"); return ""; }),
     );
     if (!record) return false;
     const archive = record.archiveDir ?? join(dirname(this.certDir), "archive", domain);
@@ -2832,7 +2966,8 @@ ${serveLocation}
         if (candidate.cert && (!best || candidate.cert.expiresAt > best.expiresAt)) {
           best = { name, expiresAt: candidate.cert.expiresAt };
         }
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
         /* An unreadable sibling is not an adoptable certificate. */
       }
     }
@@ -2853,6 +2988,7 @@ ${serveLocation}
         keyPem: await this._readFile(join(dir, "privkey.pem")),
       };
     } catch (error) {
+      observeCaughtError(error, "adapters/infra/nginx");
       throw new Error(
         `Cannot read the issued certificate for ${domain} at ${dir}: ${safeErrorMessage(error)}`,
       );
@@ -2874,7 +3010,8 @@ ${serveLocation}
     let conf: string;
     try {
       conf = await this._readFile(this.renewalConfPath(domain));
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
       return true;
     }
     const recorded = parseCertbotRenewalConfig(conf)?.server;
@@ -2895,6 +3032,10 @@ ${serveLocation}
    * be bypassed by a new caller that forgets it.
    */
   async installCert(domain: string, cert: ManualCert): Promise<SslResult> {
+    return this.withConfigLock(() => this.writeCert(domain, cert));
+  }
+
+  private async writeCert(domain: string, cert: ManualCert): Promise<SslResult> {
     assertValidDomain(domain);
 
     // Validate before touching disk. The pair must parse and the key must match,
@@ -2942,7 +3083,7 @@ ${serveLocation}
   /** Every `server_name` token declared in a vhost body. */
   private serverNamesIn(conf: string): string[] {
     const names: string[] = [];
-    for (const m of conf.matchAll(/server_name\s+([^;]+);/g)) {
+    for (const m of stripComments(conf).matchAll(/(?:^|[;{}\s])server_name\s+([^;]+);/g)) {
       for (const tok of m[1]!.trim().split(/\s+/)) {
         if (tok) names.push(tok.toLowerCase().replace(/\.$/, ""));
       }
@@ -2990,24 +3131,25 @@ ${serveLocation}
    * keep the FIRST, so the route we were asked to create would not take effect at
    * all. Losing the sibling is at least the outcome the caller asked for.
    */
-  private async resolveSlug(domain: string): Promise<string> {
-    const base = this.domainSlug(domain);
+  private async resolveSlug(domain: string, prefix = ""): Promise<string> {
+    const base = `${prefix}${this.domainSlug(domain)}`;
     const suffixed = `${base}-${this.slugSuffix(domain)}`;
     const host = domain.toLowerCase().replace(/\.$/, "");
 
-    if (await this._exists(join(this.sitesDir, `${suffixed}.conf`)).catch(() => false)) {
-      return suffixed;
+    const belongsToHost = (conf: string) => {
+      if (prefix) return this.isChallengeFor(conf, host);
+      const names = this.serverNamesIn(conf);
+      return names.length === 0 || names.includes(host);
+    };
+    const disambiguated = await this._captureFile(join(this.sitesDir, `${suffixed}.conf`));
+    if (disambiguated.exists) {
+      if (belongsToHost(disambiguated.content!)) return suffixed;
+      throw new Error(`Refusing to overwrite another hostname's vhost: ${suffixed}.conf`);
     }
 
     const basePath = join(this.sitesDir, `${base}.conf`);
-    if (await this._exists(basePath).catch(() => false)) {
-      const conf = await this._readFile(basePath).catch(() => "");
-      // Unreadable/empty → treat as ours rather than fragmenting on a read blip.
-      if (conf) {
-        const names = this.serverNamesIn(conf);
-        if (names.length > 0 && !names.includes(host)) return suffixed;
-      }
-    }
+    const incumbent = await this._captureFile(basePath);
+    if (incumbent.exists && !belongsToHost(incumbent.content!)) return suffixed;
     return base;
   }
 
@@ -3019,6 +3161,37 @@ ${serveLocation}
    * in sync without requiring an API restart.
    */
   private async reload(opts: { allowStopped?: boolean } = {}): Promise<void> {
+    return this.withConfigLock(async () => {
+      if (!this.containerEdge) return this.reloadConfig(opts);
+
+      // Stage operator trust with the candidate config, but retain the previous
+      // include if publishing, validation or reload fails. Recovery callers use
+      // reloadConfig directly so they never regenerate the rejected candidate.
+      const path = join(this.sitesDir, EDGE_CONTAINER_REAL_IP_CONF_NAME);
+      const previous = await this._captureFile(path);
+      const content = edgeContainerRealIpConf();
+      const changed = previous.content !== content;
+      try {
+        if (changed) await this._writeFile(path, content);
+        await this.reloadConfig(opts);
+      } catch (error) {
+        if (changed) {
+          try {
+            await this._restoreFile(path, previous);
+          } catch (restoreError) {
+            observeCaughtError(restoreError, "adapters/infra/nginx");
+            throw new ConfigRollbackError(
+              `${safeErrorMessage(error)}; rollback failed: ${safeErrorMessage(restoreError)}`,
+              { cause: error },
+            );
+          }
+        }
+        throw error;
+      }
+    });
+  }
+
+  private async reloadConfig(opts: { allowStopped?: boolean }): Promise<void> {
     if (this.executor) {
       if (!this.pinPaths) {
         try {
@@ -3030,7 +3203,8 @@ ${serveLocation}
           // re-gate a directive the box already supports.
           this.nginxVersion = freshPaths.nginxVersion ?? this.nginxVersion;
           this.reloadCommand = buildReloadCommand(freshPaths);
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
           // Detection failed - fall through with current cached paths
         }
       }
@@ -3070,7 +3244,8 @@ ${serveLocation}
     try {
       await fsReadFile(certPath);
       return true;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
       return false;
     }
   }
@@ -3091,7 +3266,8 @@ ${serveLocation}
     try {
       certPem = await this._readFile(join(this.certDir, domain, "fullchain.pem"));
       keyPem = await this._readFile(join(this.certDir, domain, "privkey.pem"));
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
       // The file exists but couldn't be read (SSH blip, permissions, partial
       // write). Transient — the caller must NOT treat this as "no cert".
       return { domain, expiresAt: "", issuer: "certbot", verified: false, reason: "read_error" };
@@ -3108,7 +3284,7 @@ ${serveLocation}
       // Logged because `reason` is a fixed enum: without this line the operator sees
       // "provisioning" with no way to learn the cert on disk is expired vs. for the
       // wrong name — two problems with very different fixes.
-      console.warn(`[SSL] unusable cert on disk for ${domain}: ${candidate.reason}`);
+      errorDiagnostics.warn("adapters/infra/nginx", `[SSL] unusable cert on disk for ${domain}: ${candidate.reason}`);
       return { domain, expiresAt: "", issuer: "certbot", verified: false, reason: "invalid" };
     }
     return {
@@ -3151,6 +3327,10 @@ ${serveLocation}
    * Pass rps=0 to disable rate limiting entirely.
    */
   async applyRateLimit(config: RateLimitConfig): Promise<void> {
+    return this.withConfigLock(() => this.writeRateLimit(config));
+  }
+
+  private async writeRateLimit(config: RateLimitConfig): Promise<void> {
     const confPath = this.rateLimitConfPath;
     const nginxConfPath = join(dirname(this.sitesDir), "nginx.conf");
     const snapshots = {
@@ -3195,8 +3375,9 @@ ${geoEntries.join("\n")}
       try {
         await this._restoreFile(confPath, snapshots.current);
         await this._restoreFile(nginxConfPath, snapshots.nginx);
-        await this.reload();
+        if (!(err instanceof ConfigRollbackError)) await this.reloadConfig({});
       } catch (restoreErr) {
+        observeCaughtError(restoreErr, "adapters/infra/nginx");
         rollbackError = safeErrorMessage(restoreErr);
       }
 
@@ -3245,7 +3426,8 @@ ${geoEntries.join("\n")}
       }
 
       return { rps, burst, whitelist };
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
       return null;
     }
   }

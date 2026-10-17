@@ -89,7 +89,7 @@ const REACHED_DEPLOY = new Error("reached the deploy step");
 async function run(
   composeBuild: Record<string, unknown>,
   snapshot = SNAPSHOT,
-  options: { runtimeName?: string; activeDeploymentId?: string } = {},
+  options: { runtimeName?: string; activeDeploymentId?: string; onBuildFinished?: () => Promise<void> } = {},
 ) {
   mocks.buildComposeImages.mockResolvedValue(composeBuild);
   // Deploying for real would drag in every collaborator past this point (and pin
@@ -124,6 +124,7 @@ async function run(
     buildEnvVars: {},
     buildResources: DEFAULT_RESOURCE_CONFIG,
     runtimeResources: DEFAULT_RESOURCE_CONFIG,
+    onBuildFinished: options.onBuildFinished,
   });
 }
 
@@ -519,7 +520,7 @@ describe("executeComposePipeline — cancellation", () => {
     expect(mocks.onFailure).not.toHaveBeenCalled();
   });
 
-  it("fails a cloud mutable-image cohort before any workspace is touched", async () => {
+  it("uses the shared Docker refresh flow for mutable images on a managed server", async () => {
     vi.mocked(repos.service.listByDeployment).mockResolvedValueOnce([
       {
         serviceId: "svc-api",
@@ -527,7 +528,7 @@ describe("executeComposePipeline — cancellation", () => {
       } as never,
     ]);
 
-    await run(
+    await expect(run(
       {
         cancelled: false,
         buildFailures: new Map(),
@@ -546,18 +547,40 @@ describe("executeComposePipeline — cancellation", () => {
         strictServiceScope: true,
         forcePullImages: true,
       } as typeof SNAPSHOT,
-      { runtimeName: "cloud", activeDeploymentId: "dep-live" },
-    );
+      { runtimeName: "docker", activeDeploymentId: "dep-live" },
+    )).rejects.toBe(REACHED_DEPLOY);
 
-    expect(mocks.deployComposeServices).not.toHaveBeenCalled();
-    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(
-      expect.anything(),
-      "openship/worker:bld_x",
-    );
-    expect(mocks.onFailure).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.stringMatching(/cannot refresh mutable image.*cloud service api/i),
-      23,
-    );
+    expect(mocks.deployComposeServices).toHaveBeenCalledOnce();
+    expect(mocks.onFailure).not.toHaveBeenCalled();
+  });
+
+});
+
+
+describe("Compose Cloud build release hook smoke", () => {
+  beforeEach(() => { vi.clearAllMocks(); mocks.keepProvisioned = false; mocks.cleanupBuildArtifact.mockResolvedValue(undefined); });
+  const cancelledBuild = () => ({ cancelled: true, buildFailures: new Map(), imageRefs: new Map(),
+    builtImageRefs: new Map([["svc-api", "built-image"]]), durationMs: 5 });
+
+  it("waits for slot release before moving past the completed image-build phase", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const onBuildFinished = vi.fn(() => pending);
+    const running = run(cancelledBuild(), SNAPSHOT, { onBuildFinished });
+    try {
+      await vi.waitFor(() => expect(onBuildFinished).toHaveBeenCalledOnce());
+      expect(mocks.buildComposeImages).toHaveBeenCalledOnce();
+      expect(mocks.cleanupBuildArtifact).not.toHaveBeenCalled();
+      expect(mocks.deployComposeServices).not.toHaveBeenCalled();
+    } finally { release(); await running; }
+    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(expect.anything(), "built-image");
+  });
+
+  it("a release-hook failure must not bypass cancellation artifact cleanup", async () => {
+    const failure = new Error("slot release unavailable");
+    await expect(run(cancelledBuild(), SNAPSHOT, {
+      onBuildFinished: async () => { throw failure; },
+    })).rejects.toBe(failure);
+    expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(expect.anything(), "built-image");
   });
 });

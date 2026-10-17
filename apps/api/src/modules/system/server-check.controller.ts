@@ -1,4 +1,5 @@
 /** HTTP adapters over shared server diagnostics, installers, prompts and streams. */
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context } from "hono";
 import { CreateServerInputSchema, parseInput } from "@repo/contracts";
 import { env } from "@repo/platform/engine/config/index";
@@ -46,7 +47,7 @@ export async function attachInstallStream(c: Context) {
   return operationEvents(c, signal => operations().openInstallEvents(operationContext(c), { sessionId: c.req.query("id") }, { signal }));
 }
 export async function monitorStream(c: Context) {
-  return operationEvents(c, signal => operations().openMonitor(operationContext(c), c.req.query("serverId")!, { signal }));
+  return operationEvents(c, signal => operations().openMonitor(operationContext(c), c.req.query("serverId")!, { signal, format: c.req.query("format") as "stats" | "usage" | undefined }));
 }
 
 // First-run admission remains an HTTP integration; the connection test itself is shared.
@@ -70,7 +71,7 @@ export async function onboardingTestConnection(c: Context) {
   // targets — never a legitimate remote SSH server, and the highest-value SSRF
   // targets (e.g. 169.254.169.254). Private LAN ranges stay allowed for the
   // authorized local operator; anonymous remote callers are rejected above.
-  const body = await c.req.json().catch(() => ({}));
+  const body = await c.req.json().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/system/server-check.controller"); return ({}); });
   if (isBlockedSshTarget(typeof body?.sshHost === "string" ? body.sshHost.trim() : "")) {
     return c.json({ ok: false, message: "This host is not allowed.", code: "blocked_host" }, 400);
   }

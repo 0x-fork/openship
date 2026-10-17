@@ -6,8 +6,9 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { type Project } from "@/constants/mock";
 import { AppLogo } from "@/components/AppLogo";
+import { ProjectStackIcon } from "@/components/shared/ProjectStackIcon";
 import { getFrameworkConfig } from "@/components/import-project/Frameworks";
-import { getProjectStatus, projectDisplayDomain } from "@/utils/project-status";
+import { getProjectStatus, projectCardHref, projectDisplayDomain } from "@/utils/project-status";
 import { ProjectStatusBadge } from "@/components/shared/ProjectStatusBadge";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useModal } from "@/context/ModalContext";
@@ -81,9 +82,7 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
   // A not-yet-deployed app reopens the install wizard (adopting its draft);
   // a deployed app opens as a normal project.
   const isDraftApp = !!project.isApp && status === "draft" && !!appTemplateId;
-  const clickTarget = isDraftApp
-    ? `/apps/new/${appTemplateId}?projectId=${project.id}`
-    : `/projects/${project.id}`;
+  const clickTarget = projectCardHref(project);
 
   const confirmDeleteApp = () => {
     const id = showModal({
@@ -133,7 +132,7 @@ const ProjectCard: React.FC<Props> = ({ project, preferAppLogo, updateAvailable,
               onError={favicon.onError}
             />
           ) : (
-            fw.icon("var(--foreground)")
+            <ProjectStackIcon framework={project.framework} />
           )}
         </div>
 

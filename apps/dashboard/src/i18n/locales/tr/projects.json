@@ -34,6 +34,7 @@
     "local": "Yerel"
   },
   "card": {
+    "more": "Diğer",
     "liveVersion": "Canlı sürüm v{version}",
     "appBadge": "Uygulama",
     "sourceLocal": "Yerel",
@@ -103,9 +104,11 @@
     "deletionInProgress": "Bu proje için başka bir silme işlemi zaten çalışıyor",
     "deletionInProgressTitle": "Silme işlemi devam ediyor",
     "confirmForceOrphan": "Bazı kaynaklar sunucudan kaldırılamadı. Proje yine de silinsin ve kalan kaynaklar daha sonra otomatik olarak temizlensin mi?",
-    "teardownFailedAt": "Kaldırma işlemi şurada başarısız oldu: {reasons}. Tekrar deneyin veya yetim bırakmak için zorla silin.",
+    "teardownFailedAt": "Temizleme tamamlanamadı: {reasons}. Proje hâlâ kayıtlı. Sorunu çözdükten sonra silmeyi yeniden deneyin.",
     "teardownFailed": "Kaldırma başarısız oldu",
     "cleanupFailedTitle": "Temizlik başarısız oldu",
+    "retryCleanup": "Silmeyi yeniden dene",
+    "cleanupPending": "Silme işlemi başladı. Temizleme tamamlanana kadar proje kullanılamaz.",
     "alreadyDeleted": "Proje zaten silinmiş",
     "forceModalTitle": "Kaynaktan kaldırılamadı",
     "forceModalBody": "Çalışma zamanına ulaşılamadı (veya hata vermeye devam etti), bu nedenle bu proje kaldırılamadı. Yine de Openship'ten silebilirsiniz — kayıt şimdi kaldırılır ve sunucu erişilebilir olduğunda kalan kaynaklar otomatik olarak temizlenir.",
@@ -132,6 +135,7 @@
       "deployments": "Dağıtımlar",
       "health": "Sağlık",
       "monitoring": "İzleme",
+      "monitoringAndLogs": "İzleme ve günlükler",
       "source": "Kaynak",
       "sourceAndTriggers": "Kaynak ve Tetikleyiciler",
       "webhooks": "Webhook'lar",
@@ -194,7 +198,8 @@
     "deleteConfirmPrefix": "Kalıcı olarak silinsin mi: ",
     "deleteConfirmSuffix": "?",
     "cancel": "İptal",
-    "delete": "Sil"
+    "delete": "Sil",
+    "subtextNoSource": "İlk dağıtımını yapılandırmak için bir kaynak bağla."
   },
   "overview": {
     "platformCloud": "Openship Bulut",
@@ -242,7 +247,10 @@
     "noTransfer": "Henüz veri transferi yok"
   },
   "analytics": {
-    "loadFailed": "Trafik analitiği yüklenemedi"
+    "loadFailed": "Trafik analitiği yüklenemedi",
+    "loadFailedDescription": "En güncel verileri yüklemek için tekrar deneyin.",
+    "sectionsUnavailable": "Kullanılamıyor: {sections}.",
+    "staleData": "Son kullanılabilir veriler gösteriliyor."
   },
   "monitoring": {
     "noDataTitle": "Henüz izleme verisi yok",
@@ -307,7 +315,11 @@
       "disable": "En çok kullanılan yolları kapat"
     },
     "liveFeed": "Son istekler",
-    "liveFeedHint": "Son istek listesini haritada göster (tüm ayrıntı Günlükler sekmesinde)"
+    "liveFeedHint": "Son istek listesini haritada göster (tüm ayrıntı Günlükler sekmesinde)",
+    "dataUnavailable": "Bazı izleme verileri kullanılamıyor",
+    "connecting": "Bağlanıyor…",
+    "liveUnavailable": "Canlı istekler kullanılamıyor",
+    "liveUnavailableDescription": "Geçmiş trafik gösterilmeye devam ediyor. Canlı istekler için yeniden bağlanın."
   },
   "services": {
     "failedLoad": "Servisler yüklenemedi",
@@ -338,7 +350,10 @@
     "toastKeptEdits": "{name}: düzenlemeleriniz korundu",
     "failedResolveDrift": "Yapılandırma çakışması giderilemedi",
     "failedCreateService": "Servis oluşturulamadı",
-    "requestFailed": "İstek başarısız oldu"
+    "requestFailed": "İstek başarısız oldu",
+    "application": "Uygulama",
+    "applicationHint": "Bu projenin dağıtımları üzerinden yönetilir.",
+    "companionsTitle": "Başka bir uygulama veya servis ekle"
   },
   "serviceStatus": {
     "checking": "Kontrol ediliyor…",
@@ -348,7 +363,7 @@
     "failed": "Başarısız",
     "starting": "Başlatılıyor",
     "restarting": "Yeniden başlatılıyor",
-    "unknown": "Bilinmiyor"
+    "unknown": "Durum alınamıyor"
   },
   "routingRetry": {
     "title": "Alan adı yönlendirmesi ilgi bekliyor",
@@ -450,6 +465,8 @@
     "cancel": "İptal"
   },
   "connections": {
+    "nativeClusterHint": "Bu veritabanının kümesindeki bir projeyi seçin. Yalnızca bağlı projeler özel erişim alır.",
+    "nativeNoTargets": "Henüz başka bir proje bu kümeyi kullanmıyor.",
     "useInProject": "Bir projede kullan",
     "title": "Bir projede kullan",
     "subtitle": "Bu hizmeti bir bağlantıyla başka bir projeyle paylaşın.",

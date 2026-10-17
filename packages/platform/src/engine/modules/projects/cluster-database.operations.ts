@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { randomBytes, createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import {
@@ -53,6 +54,7 @@ import {
 } from "./cluster-database.events";
 import { databaseImportSource, listDatabaseImports } from "./cluster-database-import";
 import { withBackupRunLock } from "../backups/backup-lock";
+import { nativeDatabaseConsumers } from "./cluster-database-connections";
 
 export function presentClusterDatabase(row: ClusterDatabaseRecord): ClusterDatabase {
   return {
@@ -158,7 +160,7 @@ export async function runClusterDatabase(
         if (!signal.aborted && !(await repos.clusterDatabase.heartbeat(row.id, row.generation)))
           cancelled.abort();
       })
-      .catch(() => cancelled.abort());
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/cluster-database.operations"); return cancelled.abort(); });
   }, 20_000);
   timer.unref();
   let connection: Awaited<ReturnType<typeof openClusterApi>> | undefined;
@@ -168,7 +170,7 @@ export async function runClusterDatabase(
       "Checking the saved cluster identity and private API connection.",
       async () => {
         const p = await project(ctx, row.projectId);
-        if ((p.clusterId && p.clusterId !== row.clusterId) || p.cloudWorkspaceId)
+        if ((p.clusterId && p.clusterId !== row.clusterId) || p.workspaceId)
           throw new Error("The project no longer targets this database's cluster.");
         connection = await openClusterApi(ctx.organizationId, row.clusterId, row.runtimeId);
         for (const host of connection.runtime.plan.hosts) await authorizeMember(ctx, host.serverId);
@@ -179,6 +181,7 @@ export async function runClusterDatabase(
       {
         ...row,
         hosts: connection!.runtime.plan.hosts,
+        consumerProjectIds: () => nativeDatabaseConsumers(row),
         ...(row.intent !== "remove" && row.config.backup
           ? { backupStorage: await backupStorage(ctx, row.config.backup.destinationId) }
           : {}),
@@ -305,10 +308,13 @@ export async function runClusterDatabase(
       await repos.clusterDatabase.finish(row.id, row.generation, "ready", observation, null);
     }
   } catch (error) {
+    observeCaughtError(error, "platform/engine/modules/projects/cluster-database.operations");
     if (await repos.clusterDatabase.active(row.id, row.generation)) {
       const message = safe(error);
       updateNetworkSetupStep(progress, current, "failed", message);
-      await persist().catch(() => {});
+      await persist().catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/cluster-database.operations");
+      });
       await repos.clusterDatabase.finish(row.id, row.generation, "failed", null, message);
     }
   } finally {
@@ -449,7 +455,7 @@ export function createClusterDatabaseOperations(
           if (
             !clusterId ||
             (p.clusterId && p.clusterId !== clusterId) ||
-            p.cloudWorkspaceId ||
+            p.workspaceId ||
             p.appTemplateId === "openship"
           )
             throw new AppError(
@@ -629,7 +635,9 @@ export function createClusterDatabaseOperations(
                   ))
                 )
                   await undoPin();
-              } catch {}
+              } catch (diagnosticFailure) {
+                observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/cluster-database.operations");
+              }
             }
             throw error;
           } finally {

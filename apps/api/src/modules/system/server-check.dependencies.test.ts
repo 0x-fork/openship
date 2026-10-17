@@ -57,7 +57,7 @@ vi.mock("../../lib/request-context", () => ({
 }));
 vi.mock("@repo/platform/engine/lib/ssh-manager", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  sshManager: { withExecutor: h.withExecutor, refreshAuthentication: h.refreshAuthentication },
+  sshManager: { acquire: vi.fn(async () => ({})), retain: vi.fn(), release: vi.fn(), withExecutor: h.withExecutor, refreshAuthentication: h.refreshAuthentication },
 }));
 vi.mock("../../lib/sse", () => ({ streamSSE: h.streamSSE }));
 vi.mock("@repo/platform/engine/lib/deliver-managed-image", () => ({
@@ -86,7 +86,12 @@ function component(name: string, healthy: boolean) {
 
 function context(body: unknown) {
   const sent: { body: unknown; status: number } = { body: undefined, status: 0 };
+  const vars = new Map<string, unknown>();
   const c = {
+    set: (key: string, value: unknown) => vars.set(key, value),
+    get: (key: string) => vars.get(key),
+    header: vi.fn(),
+    res: new Response(),
     req: { json: vi.fn(async () => body) },
     json: vi.fn((payload: unknown, status = 200) => {
       sent.body = payload;

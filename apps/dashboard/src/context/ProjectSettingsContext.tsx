@@ -1,4 +1,7 @@
 "use client";
+
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { useCloudResourceKey } from "./CloudResourceContext";
 import type { IconName } from "@repo/ui/icons";
 import React, {
   createContext,
@@ -11,6 +14,7 @@ import React, {
   useMemo,
 } from "react";
 import type { ReleaseSource, WorkloadType } from "@repo/core";
+import type { ProjectRoutingClaim, ProjectRoutingRetry } from "@repo/contracts";
 import { useRouter } from "next/navigation";
 import { useI18n } from "@/components/i18n-provider";
 import { usePlatform } from "@/context/PlatformContext";
@@ -68,6 +72,7 @@ interface ProjectOptions {
 }
 
 interface BasicProjectData {
+  environmentType?: "production" | "preview" | "development";
   id: string;
   slug: string;
   name: string;
@@ -75,6 +80,8 @@ interface BasicProjectData {
   framework: string;
   options?: ProjectOptions;
   domains?: ProjectDomain[];
+  routingClaims?: ProjectRoutingClaim[];
+  routingRetry?: ProjectRoutingRetry | null;
   access?: ProjectAccess;
   buildImage?: string;
   hasMultipleServices?: boolean;
@@ -99,9 +106,10 @@ interface BasicProjectData {
    */
   activeMigration?: ActiveMigration | null;
   deployTarget?: "cloud" | "server" | "local" | "cluster";
+  cloudStaticHosting?: "pages" | "server";
   clusterId?: string | null;
   clusterConfig?: import("@repo/core").ClusterWorkloadConfig | null;
-  cloudWorkspaceId?: string | null;
+  workspaceId?: string | null;
   deletedAt?: string | null;
   packageManager?: string;
   /** Source metadata for prebuilt release/image projects. */
@@ -135,6 +143,8 @@ interface EnvironmentData {
 }
 
 interface GitData {
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks;
+  githubChecksDelivery?: { error: string | null; pending: string | null; updatedAt: string } | null;
   repository: any;
   branch: string;
   recentCommits: any[];
@@ -329,7 +339,14 @@ interface ProviderProps {
   initialProjectData?: BasicProjectData;
 }
 
-export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
+export const ProjectSettingsProvider: React.FC<ProviderProps> = (props) => {
+  const resourceKey = useCloudResourceKey();
+  const seedOwner = useRef(resourceKey);
+  return <ProjectSettingsState key={resourceKey} {...props}
+    initialProjectData={seedOwner.current === resourceKey ? props.initialProjectData : undefined} />;
+};
+
+const ProjectSettingsState: React.FC<ProviderProps> = ({
   children,
   id,
   slug,
@@ -505,7 +522,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
     if (updateRequestRef.current?.key === updateKey) return updateRequestRef.current.promise;
     const promise = projectsApi.getCommitStatus(id)
       .then(({ data }) => data)
-      .catch(() => null) // Best-effort hint: a failed check is not evidence of an update.
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/context/ProjectSettingsContext"); return null; }) // Best-effort hint: a failed check is not evidence of an update.
       .then((data) => {
         if (!updateMountedRef.current || currentUpdateKeyRef.current !== updateKey ||
           updateRequestRef.current?.promise !== promise) return;
@@ -597,7 +614,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       }
     }
 
-    const target = projectData.cloudWorkspaceId
+    const target = projectData.workspaceId
       ? "cloud"
       : (projectData as any).serverId
         ? "server"
@@ -670,7 +687,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         }));
       }
     } catch (error) {
-      console.error("Failed to fetch environment variables:", error);
+      errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch environment variables:", error);
       setEnvironmentData((prev) => ({
         ...prev,
         isLoading: false,
@@ -731,6 +748,8 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
           isLoading: false,
           error: null,
           autoDeployEnabled: response.auto_deploy,
+          githubChecks: response.github_checks,
+          githubChecksDelivery: response.github_checks_delivery,
           webhookActive: response.webhook_active,
           webhookStrategy: response.webhook_strategy,
           webhookDomain: response.webhook_domain,
@@ -769,7 +788,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         }));
       }
     } catch (error) {
-      console.error("Failed to fetch git data:", error);
+      errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch git data:", error);
       setGitData((prev) => ({
         ...prev,
         isLoading: false,
@@ -872,7 +891,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         }
         return services;
       } catch (error) {
-        console.error("Failed to fetch project services:", error);
+        errorDiagnostics.error("dashboard/context/ProjectSettingsContext", "Failed to fetch project services:", error);
         fail();
         return [];
       } finally {
@@ -917,7 +936,7 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
         commit: setEnvironments,
         invalidate: invalidateProjectCachesFor,
         onRefreshError: (error) =>
-          console.warn("Failed to reconcile project environments after create", error),
+          errorDiagnostics.warn("dashboard/context/ProjectSettingsContext", "Failed to reconcile project environments after create", error),
       });
 
       return created;
@@ -927,8 +946,9 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
 
   const removeEnvironment = useCallback(
     (environmentId: string) => {
-      const remaining = removeProjectEnvironment(environments, environmentId);
-      setEnvironments(remaining);
+      // A deletion can finish after this provider switches to another project.
+      // Filter the current list; never replace it with the request's old list.
+      setEnvironments((current) => removeProjectEnvironment(current, environmentId));
       invalidateProjectCachesFor(projectEnvironmentIds(environmentId, environments));
     },
     [environments],
@@ -1050,15 +1070,17 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
       // via the traffic-source resolver (OpenResty mgmt API | Oblien analytics).
       {
         id: "monitoring",
-        label: tl.monitoring,
+        label: tl.monitoringAndLogs,
         icon: "activity",
         // Incidents belong beside metrics. The health watch covers local/SSH
         // workloads; cloud monitoring continues to use its existing adapters.
-        sections: healthAvailable ? [
+        sections: [
           { id: "monitoring", label: tl.monitoring },
-          { id: "health", label: tl.health },
-        ] : undefined,
+          { id: "logs", label: tl.logs },
+          ...(healthAvailable ? [{ id: "health", label: tl.health }] : []),
+        ],
       },
+      { id: "actions", label: t.actions.title, icon: "play-circle" },
       {
         id: "source",
         label: tl.sourceAndTriggers,
@@ -1068,7 +1090,6 @@ export const ProjectSettingsProvider: React.FC<ProviderProps> = ({
           { id: "webhooks", label: tl.webhooks },
         ],
       },
-      { id: "logs", label: tl.logs, icon: "file-text" },
       { id: "backup", label: tl.backup, icon: "database-backup" },
       { id: "advanced", label: tl.settings, icon: "wrench" },
     ];

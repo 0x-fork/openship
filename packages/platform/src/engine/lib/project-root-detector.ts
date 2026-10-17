@@ -497,6 +497,16 @@ function canPromoteNestedApp(root: ProjectRootSnapshot): boolean {
   );
 }
 
+function hasRootServer(root: ProjectRootSnapshot): boolean {
+  if (root.stack.category !== "backend" || !isSetCmd(root.stack.startCommand)) return false;
+  // Generic Node detection supplies a fallback command even for tooling-only
+  // package.json files. Require a declared start script before protecting it.
+  if (root.stack.stack !== "node") return true;
+  const pkg = resolvePackageJson(root.packageJson, root.fileContents);
+  const scripts = pkg?.scripts as Record<string, string> | undefined;
+  return isSetCmd(scripts?.start);
+}
+
 function isNestedProjectCandidate(candidate: ProjectRootSnapshot): boolean {
   if (!candidate.rootDirectory || candidate.stack.stack === "unknown") {
     return false;
@@ -568,7 +578,11 @@ export function applyWorkspaceContext(
   rootInput: ProjectRootSnapshotInput,
   selectedProject: ProjectRootSnapshot,
 ): ProjectRootSnapshot {
-  if (!selectedProject.rootDirectory || !hasJsWorkspaceContext(rootInput)) {
+  if (
+    selectedProject.stack.projectType === "docker" ||
+    !selectedProject.rootDirectory ||
+    !hasJsWorkspaceContext(rootInput)
+  ) {
     return selectedProject;
   }
 
@@ -660,6 +674,17 @@ function selectPreferredCandidate(
   for (const candidateInput of candidateInputs) {
     const candidate = buildProjectRootSnapshot(candidateInput);
     if (!options.isEligible(candidate)) {
+      continue;
+    }
+
+    // A backend's asset directory is not a replacement application. Preserve
+    // explicit deployment/workspace hints and independently configured apps.
+    if (
+      hasRootServer(root) &&
+      candidate.stack.category === "static" &&
+      candidate.source === "discovered" &&
+      !isIndependentlyDeployable(candidate)
+    ) {
       continue;
     }
 
@@ -861,14 +886,8 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     rootDirectory ||
     "app";
 
-  // A sub-app the Dockerfile owns carries no buildpack commands: the pipeline
-  // takes the Dockerfile branch on `stack === "docker"` (see cloud.ts /
-  // docker.ts) and ignores them, so a detected `npm i --force` — which
-  // detectStack still emits from a sibling package.json — is a lie in the UI and
-  // in the persisted service. Keyed on the STACK, not on "a Dockerfile exists":
-  // a Next.js app that merely ships an optional Dockerfile detects as `nextjs`
-  // and still builds via buildpack, so blanking its commands would leave it with
-  // nothing to install, build, or start.
+  // A Dockerfile owns its dependency/build steps. Preserve its runtime command
+  // default, or an explicit metadata override already applied by the detector.
   const dockerOwnsBuild = stack.stack === "docker";
   // Static sub-apps keep an empty start command: the monorepo build pipeline
   // serves them as files — via the edge on self-hosted, a generated nginx image on
@@ -887,7 +906,7 @@ function toMonorepoApp(snapshot: ProjectRootSnapshot, overrides?: { id?: string;
     packageManager: stack.packageManager === "unknown" ? "npm" : stack.packageManager,
     buildCommand: dockerOwnsBuild ? "" : stack.buildCommand,
     installCommand: dockerOwnsBuild ? "" : stack.installCommand,
-    startCommand: dockerOwnsBuild ? "" : stack.startCommand,
+    startCommand: stack.startCommand,
     buildImage: stack.buildImage,
     outputDirectory: stack.outputDirectory,
     productionPaths: stack.productionPaths,

@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React, { useCallback, useEffect, useState } from "react";
@@ -39,7 +40,7 @@ export function RollbackBackupPanel({
 }: {
   /** Null until the project exists (first deploy through the wizard). */
   projectId?: string | null;
-  /** The Advanced disclosure is open — don't fetch while collapsed. */
+  /** Whether the destination settings are being viewed. */
   enabled: boolean;
   artifactKind?: "image" | "files";
 }) {
@@ -54,7 +55,7 @@ export function RollbackBackupPanel({
 
   const load = useCallback(async () => {
     if (!projectId) return;
-    const pol = await backupsApi.listPolicies(projectId).then((r) => r.data ?? []).catch(() => []);
+    const pol = await backupsApi.listPolicies(projectId).then((r) => r.data ?? []).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/(deployment)/deploy/[slug]/components/RollbackBackupPanel"); return []; });
     setPolicies(pol);
   }, [projectId]);
 

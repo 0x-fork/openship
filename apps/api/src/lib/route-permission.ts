@@ -22,6 +22,7 @@
  *     the server if any registered route lacks a spec.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { Context, Next, MiddlewareHandler } from "hono";
 import type { TSchema } from "@sinclair/typebox";
 import { NotFoundError, normalizeRepoPath } from "@repo/core";
@@ -36,6 +37,8 @@ import {
   type SourceTier,
 } from "@repo/platform/engine/modules/github/github-access";
 import type { PolicyId } from "./rate-limit/policies";
+import { resolveResourceAuthority, type CloudResourceType } from "@repo/platform/engine/lib/cloud/resource-authority";
+import { assertCloudProxyScope } from "@repo/platform/engine/lib/cloud/scope";
 
 /* ------------------------------------------------------------------ */
 /*  Tag types                                                          */
@@ -216,21 +219,21 @@ async function assertParentChain(
   }
   // backup_destination → backup_policy / backup_run / backup_restore
   if (parent === "backup_destination" && child === "backup_policy") {
-    const p = await repos.backupPolicy.findById(childId).catch(() => null);
+    const p = await repos.backupPolicy.findById(childId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/lib/route-permission"); return null; });
     if (!p || p.destinationId !== parentId) {
       throw new NotFoundError("backup_policy", childId);
     }
     return;
   }
   if (parent === "backup_destination" && child === "backup_run") {
-    const r = await repos.backupRun.findById(childId).catch(() => null);
+    const r = await repos.backupRun.findById(childId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/lib/route-permission"); return null; });
     if (!r || r.destinationId !== parentId) {
       throw new NotFoundError("backup_run", childId);
     }
     return;
   }
   if (parent === "backup_destination" && child === "backup_restore") {
-    const r = await repos.backupRestore.findById(childId).catch(() => null);
+    const r = await repos.backupRestore.findById(childId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/lib/route-permission"); return null; });
     if (!r || r.destinationId !== parentId) {
       throw new NotFoundError("backup_restore", childId);
     }
@@ -274,6 +277,9 @@ export interface McpRouteMeta {
 export interface PermissionSpec {
   /** The tag describing what action is being performed. */
   tag: PermissionTag;
+  /** Explicit target for operations such as a domain preview on a server.
+   * Defaults to the tag's root; never inferred from unrelated request fields. */
+  cloudResource?: CloudResourceType;
   /**
    * Source-access tier for a GitHub route that touches repository CONTENT.
    *
@@ -688,22 +694,35 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
       // isolation by deriving the parent from the leaf row — the extra
       // assertion is only for URLs that explicitly claim a (parent, child)
       // pair so we catch /projects/A/services/B-belonging-to-project-C.
+      let cloudParent = false;
       if (parsed.root !== parsed.leaf) {
         const parentParamName =
           idsMap[parsed.root] ?? DEFAULT_ID_PARAMS[parsed.root] ?? "id";
         const parentId = c.req.param(parentParamName);
         if (parentId) {
-          await assertParentChain(parsed, parentId, leafId);
+          cloudParent = parsed.root === "project" &&
+            await resolveResourceAuthority("project", parentId, getRequestContext(c).organizationId) === "cloud";
+          if (cloudParent) {
+            // Cloud alone owns these child records. Gate the parent here; the
+            // secure router forwards the complete parent/child path and Cloud
+            // verifies membership there before running the same operation.
+            assertCloudProxyScope(getRequestContext(c));
+            await permission.assert(getRequestContext(c), {
+              resourceType: "project", resourceId: parentId, action: parsed.action as Action,
+            });
+          } else await assertParentChain(parsed, parentId, leafId);
         }
       }
 
       // Run the permission check. Loads resource → reads its org_id →
       // checks member(userId, org_id) → applies role/grants.
-      await permission.assert(getRequestContext(c), {
-        resourceType: parsed.leaf,
-        resourceId: leafId,
-        action: parsed.action as Action,
-      });
+      if (!cloudParent) {
+        await permission.assert(getRequestContext(c), {
+          resourceType: parsed.leaf,
+          resourceId: leafId,
+          action: parsed.action as Action,
+        });
+      }
     }
 
     // Stash the tag for downstream consumers (audit emitter, logging).

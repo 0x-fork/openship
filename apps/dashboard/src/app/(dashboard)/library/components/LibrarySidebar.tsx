@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import React, { useState, useEffect } from "react";
@@ -128,12 +129,9 @@ function SaasConnectionCard({
   const connected = identity?.connected ?? false;
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <UiIcon name="github" className="size-4 text-muted-foreground" />
-        <h3 className="font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
-      </div>
+      <h3 className="mb-4 font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
       <SourceRow
-        icon={"github"}
+        icon={personal ? "key" : "github"}
         label={personal ? t.settings.github.methodToken : t.library.sidebar.openshipGithubApp}
         sublabel={
           connected
@@ -208,7 +206,8 @@ function SelfHostedConnectionCard({
         const app = res?.state?.sources?.openshipApp;
         setAppStatus({ connected: Boolean(app?.connected), login: app?.login ?? null });
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/library/components/LibrarySidebar");
         // Cloud unreachable / no link — leave the row neutral rather than
         // asserting a false "disconnected".
         if (!cancelled) setAppStatus({ connected: false, login: null });
@@ -244,10 +243,7 @@ function SelfHostedConnectionCard({
 
   return (
     <div className="bg-card rounded-2xl border border-border/50 p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <UiIcon name="github" className="size-4 text-muted-foreground" />
-        <h3 className="font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
-      </div>
+      <h3 className="mb-4 font-semibold text-foreground text-sm">{t.library.sidebar.connection}</h3>
 
       <div className="space-y-2.5">
         {tokenRow}

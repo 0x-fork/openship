@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import { AppError } from "@repo/core";
 import type { RuntimeAdapter } from "@repo/adapters";
@@ -43,17 +44,14 @@ export async function containerIdForService(
   );
 }
 
-/** A service is a Docker container (including Cloud Compose) or an independent
- *  native Cloud workspace — never the app's bare host process. Resolve the platform
- *  with the runtime pinned to Docker so service start/stop/logs target the real
- *  service runtime even when the project's app deploys "bare". The persisted
- *  Cloud Docker binding selects the shared workspace; native Cloud keeps its runtime. */
+/** Image services use Docker even when the main application runs bare. Resolve
+ * the shared Docker engine on the deployment's connected or managed server. */
 export async function resolveServicePlatform(
   project: { id?: string; organizationId: string },
   dep: { meta: unknown },
 ) {
   const snapshot = { ...(dep.meta as DeploymentConfigSnapshot), runtimeMode: "docker" as const };
-  if (snapshot.cloudDockerWorkspace && project.id && snapshot.cloudDockerWorkspace.projectId !== project.id) {
+  if (snapshot.managedServer && project.id && snapshot.managedServer.projectId !== project.id) {
     throw new AppError("Cloud Docker workspace does not belong to this project", 404, "CLOUD_WORKSPACE_NOT_FOUND");
   }
   return resolveDeploymentPlatform(snapshot, { organizationId: project.organizationId });
@@ -70,12 +68,12 @@ export async function resolveServiceRuntimeForRead(
   dep: { meta: unknown },
 ): Promise<RuntimeAdapter | null> {
   return resolveDeploymentRuntimeForRead({
-    meta: dep.meta,
+    meta: { ...(dep.meta as DeploymentConfigSnapshot), runtimeMode: "docker" },
     organizationId: project.organizationId,
     projectId: project.id,
   })
     .then((r) => r.runtime)
-    .catch(() => null);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container"); return null; });
 }
 
 /** The runtime surface live identity resolution needs — anything that can list
@@ -181,8 +179,8 @@ export async function livePrimaryContainerId(
 ): Promise<string | null> {
   const recorded = isRealContainerRef(dep.containerId) ? dep.containerId : null;
   const [project, rows] = await Promise.all([
-    repos.project.findById(dep.projectId).catch(() => null),
-    repos.service.listByDeployment(dep.id).catch(() => []),
+    repos.project.findById(dep.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container"); return null; }),
+    repos.service.listByDeployment(dep.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container"); return []; }),
   ]);
   // THIS release's own rows decide whether it was a service deploy. The project's
   // current service list would misread a single-app release that later gained a
@@ -190,8 +188,8 @@ export async function livePrimaryContainerId(
   if (!project || rows.length === 0) return recorded;
 
   const [services, domainRows] = await Promise.all([
-    repos.service.listByProject(dep.projectId).catch(() => []),
-    repos.domain.listByProject(dep.projectId).catch(() => []),
+    repos.service.listByProject(dep.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container"); return []; }),
+    repos.domain.listByProject(dep.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container"); return []; }),
   ]);
   const candidates = services.filter(
     (svc) => svc.enabled && rows.some((r) => r.serviceId === svc.id && r.containerId),
@@ -210,7 +208,9 @@ export async function livePrimaryContainerId(
     tracked: row.containerId,
   });
   if (live && live !== row.containerId) {
-    await repos.service.updateServiceDeployment(row.id, { containerId: live }).catch(() => {});
+    await repos.service.updateServiceDeployment(row.id, { containerId: live }).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container");
+    });
   }
   return live;
 }
@@ -266,6 +266,8 @@ export async function liveContainerForService(
       tracked,
     });
   } finally {
-    void Promise.resolve(runtime.dispose?.()).catch(() => {});
+    void Promise.resolve(runtime.dispose?.()).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/services/service-container");
+    });
   }
 }

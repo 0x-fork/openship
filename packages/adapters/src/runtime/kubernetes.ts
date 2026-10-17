@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { createHash } from "node:crypto";
 import {
   listNamespaceResources,
@@ -109,6 +110,8 @@ export class KubernetesRuntime implements RuntimeAdapter {
       edgeSourceIps?: string[];
       servers?: ReadonlyArray<{ serverId: string; name: string; nodeName: string }>;
       config: ClusterWorkloadConfig;
+      /** Trusted connection grants, reread for deployment and release restoration. */
+      sharedDatabases?: () => Promise<readonly { databaseId: string; projectId: string }[]>;
       builder: () => Promise<DockerRuntime>;
       resolveRegistryAuth: (image: string) => Promise<DockerRegistryAuth | undefined>;
     },
@@ -239,14 +242,13 @@ export class KubernetesRuntime implements RuntimeAdapter {
         publishedTag,
         ...(ownsBuiltImage(result.imageRef) ? [result.imageRef] : []),
       ]) {
-        await builder
-          .removeImage(image)
-          .catch((error) =>
-            logger?.log(
-              `Local build image cleanup deferred: ${error instanceof Error ? error.message : String(error)}\n`,
-              "warn",
-            ),
+        await builder.removeImage(image).catch((error) => {
+          observeCaughtError(error, "adapters/runtime/kubernetes");
+          return logger?.log(
+            `Local build image cleanup deferred: ${error instanceof Error ? error.message : String(error)}\n`,
+            "warn",
           );
+        });
       }
     }
   }
@@ -518,7 +520,8 @@ export class KubernetesRuntime implements RuntimeAdapter {
       await this.activateService(name);
       return { deploymentId: config.deploymentId, containerId: this.ref(name), status: "running" };
     } catch (error) {
-      const observed = await this.status(this.ref(name)).catch(() => null);
+      observeCaughtError(error, "adapters/runtime/kubernetes");
+      const observed = await this.status(this.ref(name)).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "adapters/runtime/kubernetes"); return null; });
       const detail = observed?.pods
         .filter((pod) => !pod.ready)
         .map((pod) => `${pod.nodeName ?? pod.name}: ${pod.phase}`)
@@ -528,6 +531,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
       try {
         await this.destroy(this.ref(name));
       } catch (cleanup) {
+        observeCaughtError(cleanup, "adapters/runtime/kubernetes");
         onLog?.({
           timestamp: new Date().toISOString(),
           level: "warn",
@@ -546,6 +550,8 @@ export class KubernetesRuntime implements RuntimeAdapter {
       if (isMissing(error)) return;
       throw error;
     }
+    const deployment = await this.owned(`${this.base}/${name}`);
+    await this.validateSavedDatabases(deployment);
     const path = `${this.core}/services`;
     let current: KubernetesObject | null = null;
     try {
@@ -772,6 +778,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
         409,
         "CLUSTER_DATABASE_UNAVAILABLE",
       );
+    const shared = names.size ? ((await this.options.sharedDatabases?.()) ?? []) : [];
     for (const name of [...names].sort()) {
       const base = `/api/v1/namespaces/${name}`;
       const read = async (path: string) => {
@@ -783,24 +790,25 @@ export class KubernetesRuntime implements RuntimeAdapter {
         }
       };
       const namespace = await read(base);
-      const secret = await read(`${base}/secrets/credentials`);
-      if (!namespace || !secret) throw unavailable();
+      if (!namespace) throw unavailable();
       const databaseId = namespace.metadata.labels?.["openship.io/database"];
+      const projectId =
+        namespace.metadata.labels?.["openship.io/project"] ===
+        kubernetesIdLabel(this.options.projectId)
+          ? this.options.projectId
+          : shared.find((item) => item.databaseId === databaseId)?.projectId;
+      // Decide authorization from the namespace before reading another project's secret.
+      if (!projectId || !databaseId || clusterDatabaseNamespace(databaseId) !== name)
+        throw unavailable();
       const owned = (object: KubernetesObject) =>
         !!object.metadata.uid &&
         !object.metadata.deletionTimestamp &&
-        object.metadata.labels?.["openship.io/project"] ===
-          kubernetesIdLabel(this.options.projectId) &&
+        object.metadata.labels?.["openship.io/project"] === kubernetesIdLabel(projectId) &&
         object.metadata.labels?.["openship.io/runtime"] === this.options.runtimeId &&
         object.metadata.labels?.["openship.io/database"] === databaseId;
-      if (
-        !databaseId ||
-        clusterDatabaseNamespace(databaseId) !== name ||
-        !owned(namespace) ||
-        !owned(secret) ||
-        !secret.data?.password
-      )
-        throw unavailable();
+      if (!owned(namespace)) throw unavailable();
+      const secret = await read(`${base}/secrets/credentials`);
+      if (!secret || !owned(secret) || !secret.data?.password) throw unavailable();
       // A retained database keeps its namespace and credentials. Require the
       // actual database too, so retained data cannot look like a running target.
       let database: KubernetesObject | null = null;
@@ -1067,6 +1075,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
                 onLog(entry);
               }
             } catch (error) {
+              observeCaughtError(error, "adapters/runtime/kubernetes");
               if (isMissing(error) || followSignal.aborted) return;
               if (error instanceof KubernetesApiError && [401, 403].includes(error.statusCode)) {
                 onLog({
@@ -1077,9 +1086,13 @@ export class KubernetesRuntime implements RuntimeAdapter {
                 return;
               }
             }
-            await sleep(1000, followSignal).catch(() => {});
+            await sleep(1000, followSignal).catch((diagnosticFailure) => {
+              observeCaughtError(diagnosticFailure, "adapters/runtime/kubernetes");
+            });
           }
-        })().catch(() => {});
+        })().catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/kubernetes");
+        });
       }
     };
     const readPods = async () => {
@@ -1131,6 +1144,7 @@ export class KubernetesRuntime implements RuntimeAdapter {
         }
       }
     })().catch((error) => {
+      observeCaughtError(error, "adapters/runtime/kubernetes");
       if (!signal.aborted)
         onLog({
           timestamp: new Date().toISOString(),
@@ -1201,7 +1215,9 @@ export class KubernetesRuntime implements RuntimeAdapter {
       try {
         this.assertOwned(object);
         acceptable.add(object.metadata.uid!);
-      } catch {}
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/runtime/kubernetes");
+      }
     }
     for (let pass = 0; pass < objects.length; pass++) {
       let added = false;

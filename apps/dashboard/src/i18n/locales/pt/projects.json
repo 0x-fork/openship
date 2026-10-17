@@ -34,6 +34,7 @@
     "local": "Local"
   },
   "card": {
+    "more": "Mais",
     "liveVersion": "Versão ativa v{version}",
     "sourceLocal": "Local",
     "services": "Serviços",
@@ -103,9 +104,11 @@
     "deletionInProgress": "Já está a decorrer outra eliminação para este projeto",
     "deletionInProgressTitle": "Eliminação em curso",
     "confirmForceOrphan": "Não foi possível remover alguns recursos do servidor. Eliminar o projeto mesmo assim e limpá-los automaticamente mais tarde?",
-    "teardownFailedAt": "A desativação falhou em: {reasons}. Tente novamente ou force a eliminação para os deixar órfãos.",
+    "teardownFailedAt": "Não foi possível concluir a limpeza: {reasons}. O projeto continua guardado. Tente eliminá-lo novamente depois de resolver o problema.",
     "teardownFailed": "A desativação falhou",
     "cleanupFailedTitle": "A limpeza falhou",
+    "retryCleanup": "Tentar excluir novamente",
+    "cleanupPending": "A exclusão começou. O projeto ficará indisponível até a conclusão da limpeza.",
     "alreadyDeleted": "O projeto já foi eliminado",
     "forceModalTitle": "Não foi possível remover na origem",
     "forceModalBody": "Não foi possível alcançar o runtime (ou ele seguiu falhando), então este projeto não foi desmontado. Você pode excluí-lo do Openship de todo modo — o registro é removido agora e os recursos restantes são reclamados automaticamente quando o servidor estiver acessível.",
@@ -134,6 +137,7 @@
       "deployments": "Implementações",
       "health": "Saúde",
       "monitoring": "Monitorização",
+      "monitoringAndLogs": "Monitorização e registos",
       "source": "Fonte",
       "sourceAndTriggers": "Fonte e acionadores",
       "webhooks": "Webhooks",
@@ -194,7 +198,8 @@
     "targetPending": "Escolhido no deploy",
     "type": "Tipo",
     "typeApp": "App",
-    "typeProject": "Projeto"
+    "typeProject": "Projeto",
+    "subtextNoSource": "Conecte uma fonte para configurar seu primeiro deploy."
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -242,7 +247,10 @@
     "noTransfer": "Ainda não há transferência"
   },
   "analytics": {
-    "loadFailed": "Não foi possível carregar as análises de tráfego"
+    "loadFailed": "Não foi possível carregar as análises de tráfego",
+    "loadFailedDescription": "Tente novamente para carregar os dados mais recentes.",
+    "sectionsUnavailable": "Indisponível: {sections}.",
+    "staleData": "Exibindo os últimos dados disponíveis."
   },
   "monitoring": {
     "noDataTitle": "Ainda não há dados de monitorização",
@@ -307,7 +315,11 @@
       "disable": "Desativar principais caminhos"
     },
     "liveFeed": "Solicitações recentes",
-    "liveFeedHint": "Mostrar a lista de solicitações recentes no mapa (o detalhe completo está em Logs)"
+    "liveFeedHint": "Mostrar a lista de solicitações recentes no mapa (o detalhe completo está em Logs)",
+    "dataUnavailable": "Alguns dados de monitoramento estão indisponíveis",
+    "connecting": "Conectando…",
+    "liveUnavailable": "Requisições ao vivo indisponíveis",
+    "liveUnavailableDescription": "O tráfego histórico continua visível. Reconecte para ver as requisições ao vivo."
   },
   "services": {
     "failedLoad": "Falha ao carregar os serviços",
@@ -338,7 +350,10 @@
     "toastKeptEdits": "{name}: as suas edições foram mantidas",
     "failedResolveDrift": "Falha ao resolver a divergência",
     "failedCreateService": "Falha ao criar o serviço",
-    "requestFailed": "O pedido falhou"
+    "requestFailed": "O pedido falhou",
+    "application": "Aplicação",
+    "applicationHint": "Gerenciada pelos deploys deste projeto.",
+    "companionsTitle": "Adicionar outra aplicação ou serviço"
   },
   "serviceStatus": {
     "checking": "A verificar…",
@@ -348,7 +363,7 @@
     "failed": "Falhou",
     "starting": "A iniciar",
     "restarting": "Reiniciando",
-    "unknown": "Desconhecido"
+    "unknown": "Estado indisponível"
   },
   "routingRetry": {
     "title": "O encaminhamento do domínio precisa de atenção",
@@ -399,6 +414,8 @@
     "fixStep3": "Verifique o domínio e implemente."
   },
   "connections": {
+    "nativeClusterHint": "Escolha um projeto no cluster deste banco de dados. Apenas projetos vinculados recebem acesso privado.",
+    "nativeNoTargets": "Nenhum outro projeto usa este cluster ainda.",
     "useInProject": "Usar em um projeto",
     "title": "Usar em um projeto",
     "subtitle": "Compartilhe este serviço com outro projeto por meio de uma conexão.",

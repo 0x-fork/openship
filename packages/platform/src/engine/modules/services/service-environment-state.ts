@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { DockerRuntime, splitRuntimeEnv } from "@repo/adapters";
 import {
   AppError,
@@ -170,7 +171,7 @@ async function inspectServiceEnvironment(saved: SavedEnvironment) {
       "SERVICE_NOT_DEPLOYED",
     );
   }
-  const { runtime, serverId } = await resolveDeploymentRuntimeForRead(saved.deployment);
+  const { runtime, serverId } = await resolveDeploymentRuntimeForRead({ ...saved.deployment, meta: { ...(saved.deployment.meta as Record<string, unknown>), runtimeMode: "docker" } });
   try {
     if (!(runtime instanceof DockerRuntime)) {
       throw new AppError(
@@ -218,7 +219,7 @@ async function inspectServiceEnvironment(saved: SavedEnvironment) {
       // Use migration's provenance rules; image defaults are not recovered as overrides.
       recoverable: toDiscoveredService(detail, undefined, imageEnv).env,
       serverId,
-      cloudRuntime: runtime.name === "cloud",
+      cloudRuntime: !!saved.project.workspaceId,
     };
   } finally {
     disposeRuntime(runtime);
@@ -250,6 +251,7 @@ export async function getServiceEnvironment(
       .sort();
     view.status = view.changedKeys.length ? "pending" : "synced";
   } catch (error) {
+    observeCaughtError(error, "platform/engine/modules/services/service-environment-state");
     view.status =
       error instanceof AppError && error.code === "SERVICE_NOT_DEPLOYED"
         ? "not-deployed"

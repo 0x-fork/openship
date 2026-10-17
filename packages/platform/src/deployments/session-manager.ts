@@ -8,6 +8,7 @@
  *   - SSE heartbeat keep-alive for proxy compatibility
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { SYSTEM } from "@repo/core";
 import type { InstallPhaseEvent, InstallPhaseId } from "@repo/core";
 import { TtlCache } from "../state/cache";
@@ -479,7 +480,8 @@ export function createSessionManager(options: SessionManagerOptions = {}) {
     for (const writer of session.subscribers) {
       try {
         writer("prompt", payload);
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "platform/deployments/session-manager");
         session.subscribers.delete(writer);
       }
     }
@@ -491,10 +493,13 @@ export function createSessionManager(options: SessionManagerOptions = {}) {
    * Called from the API route handler.
    */
   function respondToPrompt(sessionId: string, action: string): boolean {
+    const session = sessions.get(sessionId);
+    // In particular, a delayed response to an earlier backup retry must not
+    // approve skipping a later failure. Callers publish attempt-specific ids.
+    if (!session?.currentPrompt?.actions.some((choice) => choice.id === action)) return false;
     const ok = promptRegistry.respond(sessionId, action);
     if (ok) {
-      const session = sessions.get(sessionId);
-      if (session) session.currentPrompt = undefined;
+      session.currentPrompt = undefined;
     }
     return ok;
   }
@@ -524,7 +529,8 @@ export function createSessionManager(options: SessionManagerOptions = {}) {
       for (const writer of session.subscribers) {
         try {
           writer("end", JSON.stringify({ message: "Platform closed" }));
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "platform/deployments/session-manager");
           /* Disconnected subscriber. */
         }
       }

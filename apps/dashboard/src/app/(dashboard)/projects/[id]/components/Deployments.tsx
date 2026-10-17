@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React from "react";
@@ -35,7 +36,7 @@ export const Deployments = () => {
   } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
-  const showCloudPricing = useCloudDeployPricing();
+  const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
   const { showModal, hideModal } = useModal();
   const router = useRouter();
 
@@ -70,7 +71,8 @@ export const Deployments = () => {
         if (cancelled) return;
         setBlockedAction(res?.data?.actions?.find((a) => a.kind === "deploy_blocked") ?? null);
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/Deployments");
         /* best-effort — the status badge already says Action Required */
       });
     return () => {
@@ -113,7 +115,7 @@ export const Deployments = () => {
         const res = await deployApi.trigger(body);
         openTriggeredBuild(router, res, projectData.id);
       } catch (error) {
-        if (showCloudPricing(error)) {
+        if (showCloudPricing(error, () => runRedeploy(mode))) {
           setIsRedeploying(false);
           return;
         }
@@ -129,7 +131,7 @@ export const Deployments = () => {
           router.push(`/projects/${projectData.id}/deployments`);
           return;
         }
-        console.error("Redeploy failed:", error);
+        errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/Deployments", "Redeploy failed:", error);
         showToast(
           getApiErrorMessage(
             error,
@@ -220,7 +222,7 @@ export const Deployments = () => {
 
       await runRedeploy();
     } catch (error) {
-      console.error("Error redeploying project:", error);
+      errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/Deployments", "Error redeploying project:", error);
       showToast(t.projects.redeploy.failedRedeploy, "error", t.projects.redeploy.errorTitle);
     } finally {
       setIsRedeploying(false);

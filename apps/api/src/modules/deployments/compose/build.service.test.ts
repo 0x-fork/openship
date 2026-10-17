@@ -130,7 +130,8 @@ async function run(
   buildEnvVars: Record<string, string> = {},
   imageRefFor?: (item: Captured) => string,
   composeInterpolationEnv: Record<string, string> = buildEnvVars,
-  options: { cloud?: boolean; targetServiceIds?: Set<string>; refreshServiceIds?: Set<string> } = {},
+  options: { cloud?: boolean; targetServiceIds?: Set<string>; refreshServiceIds?: Set<string>;
+    buildResources?: BuildConfig["resources"] } = {},
 ) {
   listByProjectMock.mockResolvedValue(services);
   const captured: Captured[] = [];
@@ -173,7 +174,7 @@ async function run(
     buildSessionId: "sess",
     composeInterpolationEnv,
     buildEnvVars,
-    buildResources: DEFAULT_RESOURCE_CONFIG,
+    buildResources: options.buildResources ?? DEFAULT_RESOURCE_CONFIG,
     targetServiceIds: options.targetServiceIds,
     refreshServiceIds: options.refreshServiceIds,
   });
@@ -185,6 +186,18 @@ function runCloud(services: unknown[], snapshot?: Partial<BuildConfigSnapshotLik
 }) {
   return run(services, undefined, snapshot, {}, undefined, {}, { ...options, cloud: true });
 }
+
+describe("shared host build budget", () => {
+  it.each([true, false])("forwards the resolved host budget to every sequential build (Cloud: %s)", async cloud => {
+    const buildResources = { cpuCores: 0.5, memoryMb: 768, diskMb: 8192 };
+    const { captured } = await run([
+      repoService({ name: "api", id: "api" }), repoService({ name: "web", id: "web" }),
+    ], undefined, undefined, {}, undefined, {}, { cloud, buildResources });
+    expect(captured.map(item => [item.serviceName, item.config.resources])).toEqual([
+      ["api", buildResources], ["web", buildResources],
+    ]);
+  });
+});
 
 describe("Cloud Docker uses the shared Compose source planner", () => {
   it("sends inline files into one shared workspace context without an API-host source path", async () => {
@@ -239,10 +252,10 @@ describe("Cloud Docker uses the shared Compose source planner", () => {
 
   it("preserves the uploaded source identity and Compose directory for the shared builder", async () => {
     const { prepareSource, captured } = await runCloud([repoService({ build: "../api" })], {
-      uploadWorkspaceId: "upload-a", sourceStaged: true, rootDirectory: "deploy",
+      localPath: "/uploads/upload-a", rootDirectory: "deploy",
     });
-    expect(prepareSource.mock.calls[0]![0]).toMatchObject({ cloudWorkspaceId: "upload-a", sourceStaged: true, rootDirectory: "deploy" });
-    expect(captured[0]!.config).toMatchObject({ cloudWorkspaceId: "upload-a", sourceStaged: true, rootDirectory: "api", buildContextDirectory: "api" });
+    expect(prepareSource.mock.calls[0]![0]).toMatchObject({ localPath: "/uploads/upload-a", rootDirectory: "deploy" });
+    expect(captured[0]!.config).toMatchObject({ localPath: "/uploads/upload-a", rootDirectory: "api", buildContextDirectory: "api" });
   });
 
   it("can restore inline configuration mounts without rebuilding the retained image", async () => {

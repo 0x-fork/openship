@@ -1,4 +1,5 @@
-import { describe, expect, test, vi } from "vitest";
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   NginxProvider,
@@ -29,6 +30,7 @@ import {
   EDGE_CHALLENGE_ROOT,
   EDGE_CHALLENGE_URL_PREFIX,
   ensureOpenRestyConfig,
+  edgeChallengeVhostConf,
   edgeDefaultCertPaths,
   type OpenRestyPaths,
 } from "./openresty-lua";
@@ -305,6 +307,31 @@ const PROXY: RouteConfig = {
 /** Same route, flagged as one whose TLS this box terminates (a custom domain). */
 const OURS: RouteConfig = { ...PROXY, terminatesTlsLocally: true };
 const BOOTSTRAP_DIR = "/etc/letsencrypt/openship-bootstrap/app.example.com";
+
+describe("NginxProvider path-only routes", () => {
+  test.each([false, true])("returns 404 outside explicit paths (existing TLS cert: %s)", async (withCert) => {
+    const { nginx, conf, files } = setup({ certDomains: withCert ? ["app.example.com"] : [] });
+    await nginx.registerRoute({
+      domain: "app.example.com",
+      tls: true,
+      terminatesTlsLocally: true,
+      notFound: true,
+      proxyLocations: [
+        { pathPrefix: "/v3", targetUrl: "http://10.0.0.2:9000" },
+        { pathPrefix: "/mcp", targetUrl: "http://10.0.0.3:4000", exact: true },
+        { pathPrefix: "/", targetUrl: "http://10.0.0.2:9000", exact: true },
+      ],
+    });
+    const config = conf("app-example-com")!;
+    expect(config).toMatch(/location \/ \{\s*(?:if[\s\S]*?\n\s*\}\s*)?return 404;/);
+    expect(config).toContain("location ^~ /v3 {");
+    expect(config).toContain("location = /mcp {");
+    expect(config).toContain("location = / {");
+    expect(config).not.toContain("proxy_pass undefined");
+    expect(config).toContain("listen 443 ssl;");
+    expect(JSON.parse(files.get(`${SITES}/app-example-com.route.json`)!)).toMatchObject({ notFound: true });
+  });
+});
 
 /**
  * Openship Cloud's shared edge proves this box controls a routing target by fetching
@@ -669,6 +696,50 @@ describe("NginxProvider.serveEdgeChallenge", () => {
     expect(r).toMatchObject({ served: true, via: "existing-vhost" });
     expect(files.get(`${SITES}/_oblien-challenge-app-example-com.conf`)).toBeUndefined();
     expect(files.get(`${SITES}/app-example-com.conf`)).toBe(before); // untouched
+  });
+
+  test("registering a real route retires the earlier single-purpose challenge vhost", async () => {
+    const { nginx, files, conf } = setup();
+    const challenge = `${SITES}/_oblien-challenge-app-example-com.conf`;
+    await nginx.serveEdgeChallenge({
+      host: "app.example.com",
+      tokens: ["tok-abcdef123456"],
+    });
+    expect(files.get(challenge)).toBeDefined();
+
+    await nginx.registerRoute(PROXY);
+
+    expect(files.get(challenge)).toBeUndefined();
+    expect(conf("app-example-com")).toContain(`location ^~ ${EDGE_CHALLENGE_URL_PREFIX} {`);
+    // Tokens stay in the shared directory because the full vhost serves them now.
+    expect(files.get(`${EDGE_CHALLENGE_DIR}/tok-abcdef123456`)).toBe("tok-abcdef123456");
+  });
+
+  test("restores the challenge vhost when the replacement route cannot reload", async () => {
+    const opts: FakeOpts = {};
+    const { nginx, files, conf } = setup(opts);
+    const challenge = `${SITES}/_oblien-challenge-app-example-com.conf`;
+    await nginx.serveEdgeChallenge({ host: "app.example.com" });
+    const before = files.get(challenge);
+    opts.failReload = true;
+
+    await expect(nginx.registerRoute(PROXY)).rejects.toThrow();
+
+    expect(files.get(challenge)).toBe(before);
+    expect(conf("app-example-com")).toBeUndefined();
+  });
+
+  test("the readiness sweep removes a stale challenge vhost beside a full route", async () => {
+    const { nginx, files } = setup();
+    const challenge = `${SITES}/_oblien-challenge-app-example-com.conf`;
+    await nginx.registerRoute(PROXY);
+    // What an older build left after the full route was registered.
+    files.set(challenge, edgeChallengeVhostConf("app.example.com"));
+
+    const r = await nginx.serveEdgeChallenge({ host: "app.example.com" });
+
+    expect(r).toMatchObject({ served: true, via: "existing-vhost" });
+    expect(files.get(challenge)).toBeUndefined();
   });
 
   test("refuses (with the file named) when a STALE vhost claims the host", async () => {
@@ -1755,7 +1826,7 @@ describe("the generated vhost carries the tunables in every server block", () =>
 describe("render → parse round-trip (the renderer and the read-back agree)", () => {
   /** Read our own edge back the way the live read-back and migrate both do. */
   async function scanBack(conf: string) {
-    const exec = async (cmd: string) => (cmd.startsWith("cat ") ? conf : "");
+    const exec = async (cmd: string) => (cmd.startsWith("sh -c ") ? conf : "");
     const result = await scanOpenshipEdge({ exec } as unknown as CommandExecutor);
     return result.sites.find((s) => s.serverNames.includes("app.example.com"))!;
   }
@@ -2180,7 +2251,7 @@ describe("a container edge refuses a mode it cannot aim at the file it wrote", (
    * inside the container, so `openresty -t` fails for EVERY domain on the edge.
    */
   test("a placeholder cert it cannot place is declined, not published", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const warn = vi.spyOn(errorDiagnostics, "warn").mockImplementation(() => {});
     try {
       const { nginx, conf, calls } = setup({
         provider: { containerEdge: true, certDir: OFF_MOUNT_CERT_DIR },
@@ -2196,7 +2267,7 @@ describe("a container edge refuses a mode it cannot aim at the file it wrote", (
       // own filesystem either.
       expect(calls.some((c) => c.startsWith("openssl "))).toBe(false);
 
-      const said = warn.mock.calls.map((a) => String(a[0])).join("\n");
+      const said = warn.mock.calls.map((a) => a.slice(1).map(String).join(" ")).join("\n");
       expect(said).toContain("not the same path");
       expect(said).toContain("serving HTTP only");
       // The real reason, not the openssl-missing guess the generic failure path prints.
@@ -2972,7 +3043,7 @@ describe("vercel.json path headers and URL shape", () => {
       expect(c).toContain(`add_header ${key} $${names[i]} always;`);
     }
     // The path lands in a regex, so an unescaped `.` would over-match.
-    expect(c).toContain('~^/a-b/ "dash";');
+    expect(c).toContain('~^/a-b/(?:\\?|$) "dash";');
   });
 
   test("escapes a dot in a path-scoped header's path", async () => {
@@ -3551,5 +3622,47 @@ describe("isAcmePortBindFailure", () => {
     expect(code).toContain("isAcmePortBindFailure(raw) && this.executor");
     // Exactly one place spells the pattern out.
     expect((code.match(/could not bind \(\?:tcp \)\?port/g) ?? []).length).toBe(1);
+  });
+});
+
+/**
+ * The containerized edge's nginx.conf is baked, so OPENSHIP_EDGE_TRUSTED_PROXIES has to
+ * reach it through sites-enabled. Behind a proxy outside Cloudflare's ranges (a tunnel
+ * connector on the same host, say) every visitor otherwise shares the connector's
+ * address: one rate-limit bucket, one ban target.
+ */
+describe("operator-trusted proxies on a container edge", () => {
+  const INCLUDE = `${SITES}/_openship-real-ip.conf`;
+  afterEach(() => {
+    delete process.env.OPENSHIP_EDGE_TRUSTED_PROXIES;
+  });
+
+  test("are written into sites-enabled before the edge reloads", async () => {
+    process.env.OPENSHIP_EDGE_TRUSTED_PROXIES = "172.17.0.0/16";
+    const { nginx, files, calls } = setup({ provider: { containerEdge: true } });
+    await nginx.registerRoute(PROXY);
+
+    expect(files.get(INCLUDE)).toContain("set_real_ip_from 172.17.0.0/16;");
+    const written = calls.findIndex((c) => c.includes("_openship-real-ip.conf"));
+    const reloaded = calls.findIndex((c) => c.includes("-s reload"));
+    expect(written).toBeGreaterThanOrEqual(0);
+    expect(written).toBeLessThan(reloaded);
+  });
+
+  test("follow the variable on the next apply, including its removal", async () => {
+    process.env.OPENSHIP_EDGE_TRUSTED_PROXIES = "172.17.0.0/16";
+    const { nginx, files } = setup({ provider: { containerEdge: true } });
+    await nginx.registerRoute(PROXY);
+
+    delete process.env.OPENSHIP_EDGE_TRUSTED_PROXIES;
+    await nginx.registerRoute({ ...PROXY, domain: "other.example.com" });
+    expect(files.get(INCLUDE)).not.toContain("set_real_ip_from");
+  });
+
+  test("are left to the bare edge's own include there", async () => {
+    process.env.OPENSHIP_EDGE_TRUSTED_PROXIES = "172.17.0.0/16";
+    const { nginx, files } = setup();
+    await nginx.registerRoute(PROXY);
+    expect(files.has(INCLUDE)).toBe(false);
   });
 });

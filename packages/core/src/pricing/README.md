@@ -1,116 +1,135 @@
-# Openship reseller catalog
+# Openship server pricing
 
-`pricing.json` defines Openship's prices, namespace credit allowances, application
-limits and top-up packs. The SaaS API publishes it at `GET /api/billing/plans`.
-Marketing, the Cloud dashboard and linked installations read that API. New
-checkout sends a generic Oblien `offer`; it does not buy the reseller account an
-Oblien platform plan. The existing $10 / $39 / $99 monthly prices are retained.
+`pricing.json` defines Openship retail prices, supported Custom sizes and application
+limits. The API serves those terms through `GET /api/billing/plans`; dashboard,
+website and linked installations share the catalog. Oblien owns provider pricing,
+payment settlement, resource admission, metering and paid coverage.
 
-## Authoring a plan
+## Monthly server offers (v10)
 
-```jsonc
-"price": { "monthly": 1000, "annual": null }, // USD cents
-"billing": {
-  "creditsPerCycle": 1200,                   // whole namespace credits
-  "yearlyCreditsPerCycle": null,
-  "overdraft": 0,
-  "suspendThreshold": 0,
-  "onOverdraftAction": "stop_workspaces",
-  "checkoutName": "Openship Starter",       // optional; localized name is the default
-  "checkoutDescription": "Your hosted application plan" // optional
-}
-```
+| Plan | Monthly price | vCPU | RAM | Disk | Managed servers |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Hobby | $5 | 1 | 2 GiB | 40 GiB | 1 |
+| Starter | $20 | 2 | 8 GiB | 128 GiB | 1 |
+| Pro | $39 | 4 | 16 GiB | 250 GiB | 1 |
+| Scale | $99 | 8 | 32 GiB | 600 GiB | 1 |
 
-Price and credits are independent. Paying $10 funds the reseller's Oblien wallet
-at Oblien's standard rate (currently 1,000 platform credits), while the customer
-receives this plan's configured namespace allowance. Neither amount is derived
-from project limits, build minutes or display text. Current monthly allowances
-are 1,200 / 3,000 / 15,000 namespace credits; they preserve the prior allowances
-while using Openship's prices. Review the allowance economics before changing
-these values.
+Each subscription covers its server's CPU, RAM and storage for the full paid
+month, without a second compute-credit allowance. CPU is shared vCPU, not a
+reserved physical core. Projects and services share the purchased resources,
+including the operating system and Docker. There is no project/service count
+limit or separate build-minute cap on new offers. One service can use the whole
+pool; optional container limits do not reserve another VM. Source builds run on
+the same host using measured headroom and the shared execution/activity locks.
+Another server requires its own namespace and subscription.
 
-Openship uses milli-credits internally (1,000 milli-credits = one Oblien credit).
-`billing.creditsPerCycle` and the generic offer use whole credits; API
-`monthlyCredits`, `annualCredits` and credit-pack `credits_milli` use milli-credits.
-Top-ups retain the authored packs: 5,000 credits for $5, 25,000 for $20 and 100,000
-for $70. Those namespace allowances are separate from wallet funding too.
+Monthly servers include the provider's managed internet-transfer benefit. Read
+`capacity.network` for its allowance and explicit unlimited flag; do not derive
+it from CPU counts or rewrite saved compute tariffs. Public app routes and
+backups are separate. Expired disks are retained for at least 30 days with no automatic deletion;
+retained storage remains billable until deletion. The UI discloses provider
+retention terms and amounts due instead of treating them as compute credits.
 
-Grace is zero by default. Set both `overdraft` and `suspendThreshold` to 60 to
-allow 60 extra credits. Suspension cannot occur before the blocking threshold.
-The provider's `balance` already includes grace. A top-up cannot change grace,
-project/service/build limits or VM caps.
+## PAYG resource tiers
 
-Annual checkout remains disabled. To enable it, publish an annual price, an
-explicit `yearlyCreditsPerCycle` and `annual.enabled: true`. A yearly payment
-delivers one annual allowance; it does not schedule twelve monthly grants.
+`pricing.json#payg` owns the PAYG resource tiers and suggested credit packages.
+The API publishes this catalog as `GET /api/billing/plans` → `payg`; the dashboard
+must not derive customer tiers from the reseller owner's Oblien account plan.
 
-## Limits and saved customer contracts
+| Tier | Credit purchases to unlock | Pool vCPU | Pool RAM | Pool disk | Servers |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | $5 | 2 | 8 GiB | 64 GiB | 2 |
+| 2 | $20 | 4 | 16 GiB | 128 GiB | 4 |
+| 3 | $50 | 8 | 32 GiB | 256 GiB | 8 |
 
-The `limits` object controls workloads, service stacks, service count, projects,
-per-service machine size, build minutes and free domains. Custom domains and seats
-remain uncapped; finite values are rejected because those admission gates are not
-implemented. `null` in an application limit means uncapped. Paid plans leave the legacy
-`computeMinutesPerMonth` field null: credit metering does not promise fixed CPU
-minutes or guarantee all allowed services can run continuously for a month.
+These are Openship pool allowances shared across servers, not monthly prices or
+provider account upgrades. Unlocking is based on cumulative verified credit
+purchases, not the declining spendable balance. One server may use the whole
+pool within effective provider limits. Adding servers does not multiply it.
+Usage rates and credit conversion remain provider-owned.
 
-Checkout saves the validated application limits as versioned metadata with the
-organization and immutable namespace identities. Oblien saves the offer's price,
-credits, grace and VM caps. Renewals reapply that saved offer, and Openship reads
-the saved application limits. Catalog edits affect new checkouts; they do not
-silently change existing customers' terms. A paid plan change creates a new,
-full-price cycle without automatic proration and replaces only that namespace's
-subscription. An existing catalog subscription remains readable until replaced.
-Its invoices and historical price remain in its own portal; the current catalog
-is not displayed as the price that an older customer purchased.
+The current PAYG surface previews this catalog and validates proposed allocations.
+It does not grant access, change namespaces or activate checkout. Persisted
+customer funding and runtime entitlement must be integrated before selling PAYG;
+the preview's package selection is never payment evidence.
 
-`billing.resourceLimits` is explicit policy in the catalog, passed unchanged to
-Oblien. `cloud-resource-limits.ts` copies it; it performs no budget calculation.
+## Provider checkout and authority
 
-| Oblien field | Scope and default |
-| --- | --- |
-| `max_workspaces` | Allocated namespace workspaces: explicitly 2 / 5 / 12 / 52 / null for Free / Starter / Pro / Team / Enterprise, including build workspace room |
-| `max_vcpus`, `max_ram_mb`, `max_disk_gb` | Per VM; null inherits Oblien capacity, or set an explicit stricter customer cap |
+New purchases use the existing tracked `/billing/checkout` flow:
 
-Oblien computes effective capacity from declared and saved paid limits, the
-owner account and platform ceilings. Actual build/Compose resource requests are
-workload sizing; they do not determine the namespace policy or credit allowance.
+- `kind: "subscription"`, `billingInterval: "monthly"`;
+- `offer.billingMode: "monthly"`, `offer.credits: 0`, no credit policy;
+- explicit `offer.capacity` and all seven `resourceLimits` fields;
+- the versioned reference plus server-derived organization, namespace and limits.
 
-Openship enforces application service/project/build rules and per-service CPU/RAM
-at mutation boundaries under organization locks. Oblien enforces namespace VM
-caps and spending, including directly scoped VM calls. The VM cap does not
-represent a per-container cap; raw VM API access is a different capability from
-Openship application operations. Restrict customer credentials accordingly.
+The subscription remains `tierId: "reseller"`; its entitlement is `tierId: "capacity"`.
+Openship checks the embedded capacity's namespace, provider, pool and paid period
+against the saved subscription before exposing access. Billing admission uses the
+provider's `blocking` flag. Empty legacy quotas or an empty owner wallet cannot
+cancel confirmed monthly compute; manual suspension and expiry still apply.
 
-Oblien intersects saved offer caps with configured namespace caps and account
-capacity. The Openship reconciler updates its namespace mirror from the saved
-offer before spending/token issuance; it never writes credits. Lowering caps
-does not delete or shrink existing resources. Stop/resize or remove resources
-as required before a downgrade, and keep cleanup available when access is blocked.
+Checkout returns are not proof of payment. Confirmation requires the specific
+checkout's completed fulfillment and matching live subscription. Monthly checkout
+legitimately grants zero namespace credits, so the UI verifies committed monthly
+coverage. Metered subscriptions and top-ups still require their delivered credits.
+Fully discounted, fulfilled purchases use the same checks. Pending, refunded,
+disputed or superseded payments never show a successful new subscription.
 
-Custom reseller plans do not inherit Oblien's Hobby/Pro/Scale edge traffic
-allowances. Traffic is measured, but no per-plan traffic ceiling or request cap
-is advertised without an enforced policy. Missing traffic capacity is unknown,
-not unlimited.
+`GET /billing/capacity/catalog` advertises deployed purchase capabilities and rates.
+Openship uses `oblien@2.10.0` and the existing SDK transport. Missing monthly Stripe
+support stops new sales without hiding existing subscription management. Provider
+price admission stays at Oblien; Openship does not copy its affordability or
+proration calculation into another pricing engine.
 
-## Product copy and provider requirements
+The published provider tariff currently exceeds Hobby, Starter and Pro retail
+prices. The company has chosen to keep those retail prices and arrange its tariff
+with Oblien. See [the provider handoff](../../../../docs/cloud-capacity-economics.md).
+An accepted tariff and real settlement still need verification before release.
 
-Localized plan names, descriptions and feature text live in `locales/*.json`.
-Optional `billing.checkoutName` / `checkoutDescription` override the checkout
-copy. They do not grant resources. Numeric feature placeholders come from the
-plan's limits. The current subscription view shows saved price, description and
-limits, rather than newly edited catalog feature claims.
+## Custom resources and plan changes
 
-`stripePriceEnv`, campaign/coupon helpers and historical direct-Stripe records
-remain for legacy compatibility. They do not control Cloud reseller checkout.
-This path does not apply coupons, promotions, trials or proration. Do not
-advertise a legacy campaign as a Cloud checkout discount.
+Custom reuses the same subscription and resize flow. Retail additions remain
+$5 per extra vCPU, $2.50 per extra GiB RAM and $0.10 per extra GiB disk. The quote
+compares every preset plus additions and selects the least expensive bundle.
+For example, 1 vCPU / 2 GiB / 50 GiB costs $6; 3 vCPU / 12 GiB / 80 GiB costs
+$35. A bundle discount does not enlarge the selected server. Custom starts at
+2 GiB RAM, matching Hobby. Current Custom CPU
+selection stops at the provider's 12-vCPU per-VM ceiling.
 
-The deployed Oblien API must report `reseller.contractVersion >= 2`,
-`offerPolicy: true`, `resourceLimits: true`, `effectiveResourceLimits: true`
-from `/billing/catalog`. Checkout and
-readiness checks enforce this capability; startup logs a missing capability. The
-published `oblien@2.4.0` SDK already transports the offer; no unpublished SDK is
-required by Openship's lockfile. Oblien SDK 2.5.0 adds the new exported types.
+`GET /api/billing/subscription/quote` returns the retail price and a fingerprint
+of the complete terms. Checkout accepts only the selected resources and that
+fingerprint, then recalculates the retail offer on the server. `custom-v2` saves
+monthly capacity and zero credits. Oblien still validates provider funding and
+physical admission; a local retail quote does not purchase coverage.
 
-See [Cloud release gate](../../../../docs/openship-cloud-launch.md) for deployment
-order, webhook/return configuration and acceptance checks.
+Existing subscriptions use the provider's plan-change preview and confirmation,
+never another replacement checkout. The UI shows its amount due, effective date
+and affected projects. Pure funded upgrades apply after payment. Resource
+reductions and billing-model changes wait for renewal, even when retail price
+increases. Openship uses the returned direction and date without local proration.
+The durable worker applies the approved resize once. Changed project membership
+requires a fresh restart review. Disk shrinking remains unavailable.
+
+## Saved contracts and metered compatibility
+
+Renewals use saved prices, resource limits, periods and billing mode. A catalog
+edit never rewrites paid terms. Existing v9 monthly subscriptions keep their
+original RAM and disk allocation; adopting v10 uses an explicit plan change.
+Older v1–v8 and `custom-v1` metered offers retain
+their finite allowances; they can adopt monthly capacity through the explicit
+provider plan-change flow at renewal. Older incomplete v1 snapshots retain their
+existing safety ceilings. Unknown references or ownership mismatches fail closed.
+
+Only eligible metered subscriptions expose credit packs and exhaustion warnings.
+They retain the existing allowance, signed webhook and renewal code. Internally,
+1,000 milli-credits equal one Oblien credit; these units never represent minutes.
+New monthly servers cannot be fabricated with the operator's complimentary-credit
+grant command. Previously saved grants can still be inspected, reused and revoked.
+
+PAYG displays the published active-vCPU-hour, reserved-GiB-hour, retained-GiB-month
+and managed-proxy rates. Customer PAYG checkout remains unavailable: the deployed
+capacity confirmation spends the reseller wallet, not a customer-specific funded
+balance. No purchase button is enabled for that flow.
+
+See [the Cloud release gate](../../../../docs/openship-cloud-launch.md) for payment,
+renewal, isolation and deployment acceptance requirements.

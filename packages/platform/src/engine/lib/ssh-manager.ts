@@ -25,12 +25,12 @@
  *   - Timers use unref() so they don't prevent graceful shutdown.
  */
 
+import { observedAllSettled, reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { readFileSync } from "node:fs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { repos } from "@repo/db";
 import {
   createExecutor,
+  resolveSshAuthSock,
   createHostExecutor,
   hostChannelHealth,
   HostChannelUnavailableError,
@@ -49,56 +49,15 @@ import { operatorSshKeyRoots, resolveSafeSshKeyPath } from "./ssh-key-path";
 import { isLocalHostRow } from "./box-org";
 import { assertSshDestination, normalizeSshTransport, parseSshTuningArgs, safeErrorMessage } from "@repo/core";
 import { assertNativeSshSettings } from "../native/execution-policy";
-
-const execFileAsync = promisify(execFile);
-
-/**
- * Resolve the SSH agent socket for "agent" auth.
- *
- * The orchestrator is often a GUI-launched desktop app that never inherited the
- * user's `SSH_AUTH_SOCK` from a login shell — so plain `process.env` is empty
- * even though `ssh` works fine in the user's terminal. When the env var is
- * unset, ask the OS for the per-user agent socket: on macOS `launchctl getenv
- * SSH_AUTH_SOCK` returns it even for GUI processes (the same trick VS Code uses).
- * Returns null when no agent can be found.
- */
-async function resolveSshAuthSock(): Promise<string | null> {
-  // 1. Inherited env — covers shell- and service-launched processes on every
-  //    platform (the common case for the dev server and self-hosted installs).
-  const fromEnv = process.env.SSH_AUTH_SOCK;
-  if (fromEnv) return fromEnv;
-
-  // 2. GUI-launched apps (the desktop shell) often don't inherit it. Ask the
-  //    OS session manager for the per-user value.
-  if (process.platform === "darwin") {
-    // macOS: the value lives in the launchd user session.
-    try {
-      const { stdout } = await execFileAsync("launchctl", ["getenv", "SSH_AUTH_SOCK"]);
-      const sock = stdout.trim();
-      if (sock) return sock;
-    } catch {
-      // launchctl missing / no value — fall through.
-    }
-  } else if (process.platform === "linux") {
-    // Linux desktops that run an ssh-agent under the systemd user manager
-    // (gnome-keyring, the ssh-agent.service unit) export it there.
-    try {
-      const { stdout } = await execFileAsync("systemctl", ["--user", "show-environment"]);
-      const line = stdout.split("\n").find((l) => l.startsWith("SSH_AUTH_SOCK="));
-      const sock = line?.slice("SSH_AUTH_SOCK=".length).trim();
-      if (sock) return sock;
-    } catch {
-      // systemctl missing (non-systemd) / no value — fall through.
-    }
-  }
-  // Windows OpenSSH resolves its agent named pipe and user configuration itself.
-  return null;
-}
+import { resolvePinnedHost } from "./ssrf-guard";
+import { AppError } from "@repo/core";
 
 // ─── Shared SSH config builder ───────────────────────────────────────────────
 
 /** Settings shape accepted by `buildSshConfig`. */
 export interface SshSettingsInput {
+  purpose?: string;
+  sshHostKey?: string | null;
   sshHost: string | null;
   sshPort?: number | null;
   sshUser?: string | null;
@@ -122,6 +81,7 @@ export interface SshSettingsInput {
  */
 export async function buildSshConfig(
   settings: SshSettingsInput,
+  options?: { trustOnFirstUse: (key: Buffer) => boolean },
 ): Promise<SshConfig | null> {
   if (!settings.sshHost) return null;
   assertNativeSshSettings(settings);
@@ -139,6 +99,20 @@ export async function buildSshConfig(
   if (settings.sshArgs?.trim()) config.sshArgs = settings.sshArgs.trim();
   assertSshDestination(config);
   parseSshTuningArgs(config.sshArgs);
+
+  if (settings.purpose === "migration_source") {
+    // These are customer-owned sources reached by the SaaS, never operator SSH
+    // configuration. Pin the actual dial address on EVERY reconnect (no DNS TOCTOU).
+    if (transport !== "direct" || settings.sshKeyPath || settings.sshJumpHost || settings.sshArgs ||
+        !["password", "key"].includes(settings.sshAuthMethod ?? "") ||
+        (!settings.sshHostKey && !options?.trustOnFirstUse)) {
+      throw new AppError("Migration sources require direct SSH with a password or uploaded private key", 400, "INVALID_MIGRATION_CONNECTION");
+    }
+    config.host = (await resolvePinnedHost(settings.sshHost)).ip;
+    config.hostVerifier = settings.sshHostKey
+      ? key => key.toString("base64") === settings.sshHostKey
+      : options!.trustOnFirstUse;
+  }
 
   if (settings.sshAuthMethod === "password" && settings.sshPassword) {
     // Stored encrypted on insert; decrypted only here at the moment we
@@ -164,13 +138,15 @@ export async function buildSshConfig(
         keyPath = resolveSafeSshKeyPath(settings.sshKeyPath!, {
           extraRoots: operatorSshKeyRoots(),
         });
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "platform/engine/lib/ssh-manager");
         return null;
       }
 
       try {
         config.privateKey = readFileSync(keyPath, "utf-8");
-      } catch {
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "platform/engine/lib/ssh-manager");
         return null;
       }
     }
@@ -476,7 +452,7 @@ export class SshConnectionManager {
     // API is containerized `createHostExecutor()` builds a NEW SshExecutor to the
     // host every call, so an unpooled path leaked one sshd session per call —
     // 8,000+ in hours, then OOM (#291). Every local row shares the one host channel.
-    const row = await repos.server.get(serverId).catch(() => undefined);
+    const row = await repos.server.get(serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/ssh-manager"); return undefined; });
     if (row && (await isLocalHostRow(row))) {
       return this.acquireLocalHost(serverId, startedAt);
     }
@@ -793,7 +769,8 @@ export class SshConnectionManager {
         return this.acquire(serverId);
       }
       if (connection.idleTimer) clearTimeout(connection.idleTimer);
-      try { connection.unsubDisconnect?.(); } catch { /* best-effort */ }
+      try { connection.unsubDisconnect?.(); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "platform/engine/lib/ssh-manager"); /* best-effort */ }
       this.retired.set(observed, key);
       this.cacheConnection(key, fresh);
       if (key === HOST_CHANNEL_KEY) {
@@ -949,7 +926,7 @@ export class SshConnectionManager {
     // host-channel health, whose cooldown path still has to carry the REASON.
     const inCooldown = this.cooldownRemaining(serverId) > 0;
 
-    const server = await repos.server.get(serverId).catch(() => undefined);
+    const server = await repos.server.get(serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/ssh-manager"); return undefined; });
     if (!server) return { reachable: false, code: "unknown" };
 
     // An isLocal row is THIS box (the auto-registered "This Server"). Its ssh*
@@ -1010,6 +987,7 @@ export class SshConnectionManager {
         await this.withExecutor(serverId, executor => executor.exec("true", { timeout: timeoutMs }));
         return { reachable: true, code: "ok" };
       } catch (error) {
+        observeCaughtError(error, "platform/engine/lib/ssh-manager");
         return { reachable: false, code: "unreachable", hint: safeErrorMessage(error) };
       }
     }
@@ -1159,7 +1137,8 @@ export class SshConnectionManager {
     for (const conn of this.servers.values()) {
       if (conn.idleTimer) clearTimeout(conn.idleTimer);
       if (conn.unsubDisconnect) {
-        try { conn.unsubDisconnect(); } catch { /* best-effort */ }
+        try { conn.unsubDisconnect(); } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "platform/engine/lib/ssh-manager"); /* best-effort */ }
       }
       executors.add(conn.executor);
     }
@@ -1167,15 +1146,16 @@ export class SshConnectionManager {
     this.retainCounts.clear();
     this.retired.clear();
 
-    await Promise.allSettled(
-      [...executors].map((exec) => this.disposeBounded(exec, disposeTimeoutMs)),
+    await observedAllSettled(
+      [...executors].map((exec) => this.disposeBounded(exec, disposeTimeoutMs)), "platform/engine/lib/ssh-manager",
     );
   }
 
   /** Dispose an executor, resolving after `timeoutMs` even if it hangs. */
   private disposeBounded(exec: CommandExecutor, timeoutMs: number): Promise<void> {
     if (!("dispose" in exec) || typeof exec.dispose !== "function") return Promise.resolve();
-    const disposed = Promise.resolve(exec.dispose()).catch(() => { /* teardown is best-effort */ });
+    const disposed = Promise.resolve(exec.dispose()).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/lib/ssh-manager"); /* teardown is best-effort */ });
     const timeout = new Promise<void>((resolve) => {
       const t = setTimeout(resolve, timeoutMs);
       if (typeof t.unref === "function") t.unref();
@@ -1223,6 +1203,7 @@ export class SshConnectionManager {
           q.ops.shift();
           op.resolve(result);
         } catch (err) {
+          observeCaughtError(err, "platform/engine/lib/ssh-manager");
           q.ops.shift();
           op.reject(err instanceof Error ? err : new Error(safeErrorMessage(err)));
         }
@@ -1354,7 +1335,8 @@ export class SshConnectionManager {
 
     if (conn.idleTimer) clearTimeout(conn.idleTimer);
     if (conn.unsubDisconnect) {
-      try { conn.unsubDisconnect(); } catch { /* best-effort */ }
+      try { conn.unsubDisconnect(); } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "platform/engine/lib/ssh-manager"); /* best-effort */ }
     }
     this.retainCounts.delete(serverId);
     // A BORROWED entry (a local row pointing at the shared host channel) must only

@@ -5,6 +5,7 @@ import type {
   ServiceEnvironment,
   ServiceEnvironmentInput,
   MergeServiceEnvVarsInput,
+  TUpdateServiceBody,
 } from "@repo/contracts";
 
 export type { ComposeAdvanced, ComposeAdvancedPatch, ComposeHealthcheck, OpenshipReadiness } from "@repo/core";
@@ -131,6 +132,8 @@ export interface ServiceContainer {
   serviceName: string;
   containerId: string | null;
   status: string;
+  /** Docker's reported healthcheck result; absent/null is not proof of health. */
+  health?: "healthy" | "starting" | "unhealthy" | null;
   ip: string | null;
   hostPort: number | null;
   imageRef: string | null;
@@ -193,6 +196,7 @@ export type ServiceInput = {
   environment?: Record<string, string | null> | null;
   volumes?: string[];
   command?: string;
+  commandArgv?: string[];
   restart?: string;
   advanced?: ComposeAdvancedPatch;
   exposed?: boolean;
@@ -226,6 +230,9 @@ export type ServiceInput = {
 /*  Services API (compose / multi-service projects)                   */
 /* ------------------------------------------------------------------ */
 
+type ServiceUpdateInput = Omit<Partial<ServiceInput>, "domain" | "customDomain"> &
+  Pick<TUpdateServiceBody, "domain" | "customDomain">;
+
 export const servicesApi = {
   /** List all services for a project */
   list: (projectId: string | number) =>
@@ -258,7 +265,7 @@ export const servicesApi = {
    * keep the ServiceEditorModal payload shape uniform between create
    * and edit without sprouting kind-omitting branches all over.
    */
-  update: (projectId: string | number, serviceId: string, data: Partial<ServiceInput>) => {
+  update: (projectId: string | number, serviceId: string, data: ServiceUpdateInput) => {
     // Strip `kind` defensively. The backend validator rejects unknown
     // and disallowed keys (additionalProperties:false on UpdateServiceBody),
     // but stripping client-side keeps a uniform payload shape between

@@ -14,7 +14,7 @@ import {
   isProject,
   isProjectPage,
   isProjectHome,
-  RuntimeLogsInputSchema,
+  ProjectRuntimeLogsInputSchema,
   ServerLogsInputSchema,
   isEnsureProjectResult,
   type ProjectOperations,
@@ -22,8 +22,12 @@ import {
 import { ApiError } from "./errors";
 import type { HttpClient } from "./http";
 import { createRemoteResourceOperations } from "./resource-client";
+import { streamWithToken } from "./stream-token";
 
-export function createRemoteProjectOperations(http: HttpClient): ProjectOperations {
+export function createRemoteProjectOperations(
+  http: HttpClient,
+  fetcher: typeof globalThis.fetch = (...args) => globalThis.fetch(...args),
+): ProjectOperations {
   const path = (id: string) => "/projects/" + encodeURIComponent(parseInput(ResourceIdSchema, id));
   function checked<T>(value: unknown, guard: (value: unknown) => value is T): T {
     if (!guard(value)) throw new ApiError("Invalid project response", 502, value);
@@ -36,8 +40,7 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
     });
     return checked(isRecord(response) ? response.data : undefined, isProject);
   }
-  return Object.freeze({
-    ...createRemoteResourceOperations(http, ProjectControlSchemas, {
+  const controls = createRemoteResourceOperations(http, ProjectControlSchemas, {
       getAppSettings: { method: "GET", path: (id) => path(id) + "/app-settings", envelope: "data" },
       updateAppSettings: {
         method: "PATCH",
@@ -263,6 +266,9 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
       disable: { method: "POST", path: (id) => path(id) + "/disable" },
       retryRouting: { method: "POST", path: (id) => path(id) + "/routing/retry" },
       runtimeLogs: { method: "GET", path: (id) => path(id) + "/logs", envelope: "data" },
+      getRuntimeRoles: { method: "GET", path: (id) => path(id) + "/roles", envelope: "data" },
+      getRuntimeRoleConfiguration: { method: "GET", path: (id) => path(id) + "/roles/configuration", envelope: "data" },
+      configureRuntimeRoles: { method: "POST", path: (id) => path(id) + "/roles/configuration", envelope: "data" },
       getCloneToken: { method: "GET", path: (id) => path(id) + "/clone-token" },
       updateCloneToken: { method: "PATCH", path: (id) => path(id) + "/clone-token" },
       deletionPreview: {
@@ -270,7 +276,9 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
         path: (id) => path(id) + "/deletion-preview",
         envelope: "preview",
       },
-    }),
+    });
+  return Object.freeze({
+    ...controls,
     async getHome() {
       return checked(await http.request("/projects/home"), isProjectHome);
     },
@@ -282,19 +290,34 @@ export function createRemoteProjectOperations(http: HttpClient): ProjectOperatio
     },
     async *retryRoutingStream(value, options = {}) {
       const id = parseInput(ResourceIdSchema, value);
-      yield* http.events(http.url(`${path(id)}/routing/retry/stream`).href, {
-        method: "POST",
+      const url = http.url(`${path(id)}/routing/retry/stream`);
+      if (options.sessionId !== undefined)
+        url.searchParams.set("sessionId", parseInput(ResourceIdSchema, options.sessionId));
+      else if (options.idempotencyKey !== undefined)
+        url.searchParams.set("idempotencyKey", parseInput(ResourceIdSchema, options.idempotencyKey));
+      yield* http.events(url.href, {
+        method: options.sessionId === undefined ? "POST" : "GET",
         signal: options.signal,
       });
     },
     async *streamRuntimeLogs(id, command = {}, options = {}) {
-      const input = parseInput(RuntimeLogsInputSchema, command);
+      const input = parseInput(ProjectRuntimeLogsInputSchema, command);
       const url = http.url(path(id) + "/logs/stream");
       if (input.tail !== undefined) url.searchParams.set("tail", String(input.tail));
+      if (input.role !== undefined) url.searchParams.set("role", input.role);
+      if (input.replica !== undefined) url.searchParams.set("replica", String(input.replica));
+      if (input.deploymentId !== undefined) url.searchParams.set("deploymentId", input.deploymentId);
       yield* http.events(url.href, { signal: options.signal });
     },
     async *streamServerLogs(id, command = {}, options = {}) {
       const input = parseInput(ServerLogsInputSchema, command);
+      const source = await controls.getServerLogStreamToken(id, input);
+      if (source.kind === "unavailable")
+        throw new ApiError("Request-log streaming is unavailable. Retry later or request recentServerLogs for a snapshot.", 503, { code: "SERVER_LOG_STREAM_UNAVAILABLE" });
+      if (source.kind === "cloud") {
+        yield* streamWithToken(source, fetcher, options);
+        return;
+      }
       const url = http.url(path(id) + "/server-logs/stream");
       if (input.domain !== undefined) url.searchParams.set("domain", input.domain);
       yield* http.events(url.href, { signal: options.signal });

@@ -28,6 +28,7 @@
  * machine its own organization's project deploys to.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { UNKNOWN_CAPACITY, type HostCapacity } from "@repo/core";
 import { env } from "../config/env";
 import { cacheStore } from "./cache-store/index";
@@ -48,9 +49,44 @@ function cacheKey(serverId: string | undefined, organizationId: string): string 
   return `${organizationId}:${serverId ?? "__default__"}`;
 }
 
+/**
+ * GPU signals in Docker `/info`, with no shell on the host.
+ *
+ *  - `Runtimes` is a map of registered container runtimes; an `nvidia` key means the NVIDIA Container
+ *    Toolkit is installed and registered — exactly what `DeviceRequests` needs on this daemon.
+ *  - `DiscoveredDevices` (Docker >= 28) lists CDI devices such as `nvidia.com/gpu=0`; counting them is
+ *    the only way to learn the number of cards without exec'ing `nvidia-smi`.
+ *
+ * Returns only the keys it actually learned: an older daemon that lists no devices must leave
+ * `gpuCount` absent (unknown), not 0 (none).
+ */
+export function gpuFromDockerInfo(
+  info: Record<string, unknown>,
+): Pick<HostCapacity, "gpuRuntime" | "gpuCount"> {
+  const out: Pick<HostCapacity, "gpuRuntime" | "gpuCount"> = {};
+  const runtimes = info.Runtimes;
+  if (runtimes && typeof runtimes === "object" && !Array.isArray(runtimes)) {
+    out.gpuRuntime = "nvidia" in (runtimes as Record<string, unknown>);
+  }
+  const discovered = info.DiscoveredDevices;
+  if (Array.isArray(discovered)) {
+    // CDI names ONE card several ways: by index (`gpu=0`), by UUID (`gpu=GPU-86fe…`) and the set alias
+    // (`gpu=all`). Measured on a single Tesla T4: three entries, one card. Counting entries would triple
+    // it, so count only index-named entries; the UUID/`all` spellings add nothing. (MIG instances are
+    // named `0:0`; they are not whole cards and are left out on purpose.)
+    const indexes = discovered
+      .map((d) => (d && typeof d === "object" ? (d as Record<string, unknown>).ID : undefined))
+      .filter((id): id is string => typeof id === "string")
+      .map((id) => id.match(/^nvidia\.com\/gpu=(\d+)$/i)?.[1])
+      .filter((i): i is string => i !== undefined);
+    if (indexes.length > 0) out.gpuCount = new Set(indexes).size;
+  }
+  return out;
+}
+
 /** Docker `/info` → HostCapacity. `NCPU`/`MemTotal` are the daemon's own view
  *  of the host (MemTotal in bytes). */
-function fromDockerInfo(info: Record<string, unknown>): HostCapacity | null {
+export function fromDockerInfo(info: Record<string, unknown>): HostCapacity | null {
   const ncpu = typeof info.NCPU === "number" ? info.NCPU : 0;
   const memBytes = typeof info.MemTotal === "number" ? info.MemTotal : 0;
   if (ncpu <= 0 && memBytes <= 0) return null;
@@ -58,6 +94,7 @@ function fromDockerInfo(info: Record<string, unknown>): HostCapacity | null {
     cpuCores: ncpu > 0 ? ncpu : 0,
     memoryMb: memBytes > 0 ? Math.floor(memBytes / (1024 * 1024)) : 0,
     source: "docker",
+    ...gpuFromDockerInfo(info),
   };
 }
 
@@ -71,7 +108,8 @@ async function fromLocalOs(): Promise<HostCapacity> {
     const memMb = Math.floor(os.totalmem() / (1024 * 1024));
     if (cores <= 0 && memMb <= 0) return { ...UNKNOWN_CAPACITY };
     return { cpuCores: cores, memoryMb: memMb, source: "local" };
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/lib/host-capacity");
     return { ...UNKNOWN_CAPACITY };
   }
 }
@@ -87,12 +125,15 @@ async function probe(
     const info = await runtime.info();
     const capacity = fromDockerInfo(info);
     if (capacity) return capacity;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/lib/host-capacity");
     // Unreachable box, no daemon, no server row yet — all non-fatal.
   } finally {
     // MUST dispose: createServerDockerRuntime opens a loopback SSH bridge for
     // remote targets and leaks the listener otherwise.
-    await runtime?.dispose?.().catch(() => {});
+    await runtime?.dispose?.().catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/lib/host-capacity");
+    });
   }
   return opts.localFallback ? await fromLocalOs() : { ...UNKNOWN_CAPACITY };
 }
@@ -130,7 +171,9 @@ export async function getHostCapacity(
       // Only cache a real answer. Caching "unknown" for the full TTL would keep
       // enforcing no-ceiling long after the box came back.
       if (value.source !== "unknown") {
-        await store.set(key, value, TTL_SECONDS).catch(() => {});
+        await store.set(key, value, TTL_SECONDS).catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "platform/engine/lib/host-capacity");
+        });
       }
       return value;
     })
@@ -163,7 +206,7 @@ export async function getTrustedHostCapacity(
 ): Promise<HostCapacity> {
   const capacity = await getHostCapacity(serverId, organizationId, {
     localFallback: opts.isLocalTarget,
-  }).catch(() => ({ ...UNKNOWN_CAPACITY }));
+  }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/host-capacity"); return ({ ...UNKNOWN_CAPACITY }); });
   if (capacity.source === "docker") return capacity;
   if (capacity.source === "local" && opts.isLocalTarget) return capacity;
   return { ...UNKNOWN_CAPACITY };

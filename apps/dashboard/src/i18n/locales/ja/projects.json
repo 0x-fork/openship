@@ -34,6 +34,7 @@
     "local": "ローカル"
   },
   "card": {
+    "more": "その他",
     "liveVersion": "稼働中のバージョン v{version}",
     "sourceLocal": "ローカル",
     "services": "サービス",
@@ -103,9 +104,11 @@
     "deletionInProgress": "このプロジェクトでは別の削除処理がすでに実行中です",
     "deletionInProgressTitle": "削除処理中",
     "confirmForceOrphan": "一部のリソースをサーバーから削除できませんでした。それでもプロジェクトを削除し、後で自動的にクリーンアップしますか？",
-    "teardownFailedAt": "次の箇所でティアダウンに失敗しました: {reasons}。再試行するか、強制削除してリソースを孤立させてください。",
+    "teardownFailedAt": "クリーンアップを完了できませんでした：{reasons}。プロジェクトは保存されています。問題を解決してから削除を再試行してください。",
     "teardownFailed": "ティアダウンに失敗しました",
     "cleanupFailedTitle": "クリーンアップに失敗しました",
+    "retryCleanup": "削除を再試行",
+    "cleanupPending": "削除を開始しました。クリーンアップが完了するまで、プロジェクトは利用できません。",
     "alreadyDeleted": "プロジェクトはすでに削除されています",
     "forceModalTitle": "ソースから削除できませんでした",
     "forceModalBody": "ランタイムに到達できなかった（または失敗が続いた）ため、このプロジェクトは削除処理されていません。それでも Openship から削除できます — レコードは今すぐ消え、残ったリソースはサーバーに到達できるようになり次第、自動的に回収されます。",
@@ -134,6 +137,7 @@
       "deployments": "デプロイ",
       "health": "ヘルス",
       "monitoring": "モニタリング",
+      "monitoringAndLogs": "モニタリングとログ",
       "source": "ソース",
       "sourceAndTriggers": "ソースとトリガー",
       "webhooks": "Webhook",
@@ -194,7 +198,8 @@
     "targetPending": "デプロイ時に選択",
     "type": "種類",
     "typeApp": "アプリ",
-    "typeProject": "プロジェクト"
+    "typeProject": "プロジェクト",
+    "subtextNoSource": "ソースを接続して最初のデプロイを設定します。"
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -242,7 +247,10 @@
     "noTransfer": "まだ転送がありません"
   },
   "analytics": {
-    "loadFailed": "トラフィック分析を読み込めませんでした"
+    "loadFailed": "トラフィック分析を読み込めませんでした",
+    "loadFailedDescription": "再試行して最新のデータを読み込んでください。",
+    "sectionsUnavailable": "取得できません: {sections}。",
+    "staleData": "最後に取得したデータを表示しています。"
   },
   "monitoring": {
     "noDataTitle": "まだモニタリングデータがありません",
@@ -307,7 +315,11 @@
       "disable": "トップパスを無効にする"
     },
     "liveFeed": "最近のヒット",
-    "liveFeedHint": "最近のヒット一覧を地図上に表示（詳細はログタブ）"
+    "liveFeedHint": "最近のヒット一覧を地図上に表示（詳細はログタブ）",
+    "dataUnavailable": "一部の監視データを取得できません",
+    "connecting": "接続中…",
+    "liveUnavailable": "ライブリクエストを取得できません",
+    "liveUnavailableDescription": "過去のトラフィックは引き続き表示されます。ライブリクエストを表示するには再接続してください。"
   },
   "services": {
     "failedLoad": "サービスの読み込みに失敗しました",
@@ -338,7 +350,10 @@
     "toastKeptEdits": "{name}: あなたの編集を保持しました",
     "failedResolveDrift": "ドリフトの解決に失敗しました",
     "failedCreateService": "サービスの作成に失敗しました",
-    "requestFailed": "リクエストに失敗しました"
+    "requestFailed": "リクエストに失敗しました",
+    "application": "アプリケーション",
+    "applicationHint": "このプロジェクトのデプロイを通じて管理されます。",
+    "companionsTitle": "別のアプリやサービスを追加"
   },
   "serviceStatus": {
     "checking": "確認中…",
@@ -348,7 +363,7 @@
     "failed": "失敗",
     "starting": "起動中",
     "restarting": "再起動中",
-    "unknown": "不明"
+    "unknown": "状態を確認できません"
   },
   "routingRetry": {
     "title": "ドメインのルーティングに対応が必要です",
@@ -399,6 +414,8 @@
     "fixStep3": "ドメインを検証してデプロイします。"
   },
   "connections": {
+    "nativeClusterHint": "このデータベースと同じクラスタのプロジェクトを選択してください。リンクされたプロジェクトのみがプライベートアクセスを利用できます。",
+    "nativeNoTargets": "このクラスタを使用する他のプロジェクトはまだありません。",
     "useInProject": "プロジェクトで使用",
     "title": "プロジェクトで使用",
     "subtitle": "接続を通じて、このサービスを別のプロジェクトと共有します。",

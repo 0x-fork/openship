@@ -1,9 +1,12 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { api, ApiError, getApiBaseUrl, getActiveOrganizationId } from "./client";
 import {
   isResourceOutput,
   ServerCollectionSchemas,
   ServerResourceSchemas,
   type ResourceOperationSchema,
+  type ServerOperations,
+  type ServerDetail,
 } from "@repo/contracts";
 import { endpoints } from "./endpoints";
 // Removal types + the timeout rule live with the pure helpers so the modal and this
@@ -187,38 +190,10 @@ export interface ServerReachability {
   intendedTarget?: string | null;
 }
 
-export interface ServerInfo {
-  id: string;
-  name: string | null;
-  /** The auto-registered host row (VPS / server-host mode) — "This Server".
-   *  Deploys to it run on the local host, and its SSH fields are placeholders. */
-  isLocal?: boolean;
-  sshHost: string;
-  sshPort: number;
-  sshUser: string;
-  sshAuthMethod: string | null;
-  sshKeyPath: string | null;
-  /** True when a pasted/uploaded private key is stored (encrypted) for this
-   *  server. The material itself is never returned — this is the only signal the
-   *  edit form gets, so it can offer "a key is stored; paste to replace". */
-  hasStoredKeyMaterial?: boolean;
-  sshJumpHost: string | null;
-  sshTransport: "direct" | "cloudflare";
-  sshArgs: string | null;
-  createdAt: string;
-  /** ISO-3166-1 alpha-2 country for the host IP, or null (hostname/private/unknown). */
-  country?: string | null;
-  /** Projects currently deployed to this server (active deployment → this host). */
-  projectCount?: number;
-  /**
-   * The local row's container→host SSH channel (#509) — null for a remote row, and
-   * null when the diagnosis couldn't run. An annotation, not a gate: `ok: false`
-   * means the host-only operations are unavailable, while ordinary container deploys
-   * to this row still work over the Docker socket. `hint` is the same string
-   * `GET /servers/:id/reachability` returns for the row.
-   */
-  hostChannel?: { ok: boolean; channel: HostChannelCode; hint: string | null } | null;
-}
+/** Shared API fields, with optional annotations for lightweight server entries. */
+type ServerAnnotation = "isLocal" | "hasStoredKeyMaterial" | "country" | "projectCount" | "hostChannel";
+export type ServerInfo = Omit<ServerDetail, ServerAnnotation> &
+  Partial<Pick<ServerDetail, ServerAnnotation>>;
 
 /** A native module's cached drift status on a server (server_module_status). */
 export interface ServerModuleStatus {
@@ -749,6 +724,37 @@ export const systemApi = {
 
   // ── Servers CRUD ─────────────────────────────────────────────────────────
 
+  listServerDestinations: () => checkedResponse(ServerCollectionSchemas.destinations, api.get(`${endpoints.system.servers}/destinations`)),
+  managedInfo: (id: string) => checkedResponse(ServerResourceSchemas.managedInfo, api.get(`${endpoints.system.server(id)}/managed/info`)),
+  managedBootLogs: (id: string, input: Parameters<ServerOperations["managedBootLogs"]>[1]) => checkedResponse(ServerResourceSchemas.managedBootLogs, api.post(`${endpoints.system.server(id)}/managed/boot-logs`, input)),
+  managedSshStatus: (id: string) => checkedResponse(ServerResourceSchemas.managedSshStatus, api.get(`${endpoints.system.server(id)}/managed/ssh`)),
+  setManagedSsh: (id: string, input: Parameters<ServerOperations["setManagedSsh"]>[1]) => checkedResponse(ServerResourceSchemas.setManagedSsh, api.patch(`${endpoints.system.server(id)}/managed/ssh`, input)),
+  setManagedSshKey: (id: string, input: Parameters<ServerOperations["setManagedSshKey"]>[1]) => checkedResponse(ServerResourceSchemas.setManagedSshKey, api.put(`${endpoints.system.server(id)}/managed/ssh/key`, input)),
+  setManagedSshPassword: (id: string, input: Parameters<ServerOperations["setManagedSshPassword"]>[1]) => checkedResponse(ServerResourceSchemas.setManagedSshPassword, api.put(`${endpoints.system.server(id)}/managed/ssh/password`, input)),
+  managedSshConnection: (id: string, input: Parameters<ServerOperations["managedSshConnection"]>[1]) => checkedResponse(ServerResourceSchemas.managedSshConnection, api.post(`${endpoints.system.server(id)}/managed/ssh/connection`, input)),
+  managedRuntimeStatus: (id: string) => checkedResponse(ServerResourceSchemas.managedRuntimeStatus, api.get(`${endpoints.system.server(id)}/managed/runtime-api`)),
+  enableManagedRuntime: (id: string, input: Parameters<ServerOperations["enableManagedRuntime"]>[1]) => checkedResponse(ServerResourceSchemas.enableManagedRuntime, api.post(`${endpoints.system.server(id)}/managed/runtime-api/enable`, input)),
+  managedRuntimeCredential: (id: string, input: Parameters<ServerOperations["managedRuntimeCredential"]>[1]) => checkedResponse(ServerResourceSchemas.managedRuntimeCredential, api.post(`${endpoints.system.server(id)}/managed/runtime-api/credential`, input)),
+  rotateManagedRuntimeCredential: (id: string, input: Parameters<ServerOperations["rotateManagedRuntimeCredential"]>[1]) => checkedResponse(ServerResourceSchemas.rotateManagedRuntimeCredential, api.post(`${endpoints.system.server(id)}/managed/runtime-api/rotate`, input)),
+  managedWorkloads: (id: string) => checkedResponse(ServerResourceSchemas.managedWorkloads, api.get(`${endpoints.system.server(id)}/managed/workloads`)),
+  managedWorkloadLogs: (id: string, input: Parameters<ServerOperations["managedWorkloadLogs"]>[1]) => checkedResponse(ServerResourceSchemas.managedWorkloadLogs, api.post(`${endpoints.system.server(id)}/managed/workloads/logs`, input)),
+  createManagedWorkload: (id: string, input: Parameters<ServerOperations["createManagedWorkload"]>[1]) => checkedResponse(ServerResourceSchemas.createManagedWorkload, api.post(`${endpoints.system.server(id)}/managed/workloads`, input)),
+  controlManagedWorkload: (id: string, input: Parameters<ServerOperations["controlManagedWorkload"]>[1]) => checkedResponse(ServerResourceSchemas.controlManagedWorkload, api.post(`${endpoints.system.server(id)}/managed/workloads/control`, input)),
+  getServerNetworkSettings: (id: string) => checkedResponse(ServerResourceSchemas.getNetworkSettings, api.get(`${endpoints.system.server(id)}/network-settings?details=true`)),
+  managedOutbound: (id: string) => checkedResponse(ServerResourceSchemas.managedOutbound, api.get(`${endpoints.system.server(id)}/managed/outbound`)),
+  managedOutboundOptions: (id: string) => checkedResponse(ServerResourceSchemas.managedOutboundOptions, api.get(`${endpoints.system.server(id)}/managed/outbound/options`)),
+  setManagedOutbound: (id: string, input: Parameters<ServerOperations["setManagedOutbound"]>[1]) => checkedResponse(ServerResourceSchemas.setManagedOutbound, api.patch(`${endpoints.system.server(id)}/managed/outbound`, input)),
+  updateServerNetworkSettings: (id: string, input: Parameters<ServerOperations["updateNetworkSettings"]>[1]) => checkedResponse(ServerResourceSchemas.updateNetworkSettings, api.patch(`${endpoints.system.server(id)}/network-settings`, input)),
+  createManagedServer: (input: Parameters<ServerOperations["createManaged"]>[0]) => checkedResponse(ServerCollectionSchemas.createManaged, api.post(`${endpoints.system.servers}/managed`, input)),
+  availableManagedServers: () => checkedResponse(ServerCollectionSchemas.availableManaged, api.get(`${endpoints.system.servers}/managed/available`)),
+  connectManagedServer: (input: Parameters<ServerOperations["connectManaged"]>[0]) => checkedResponse(ServerCollectionSchemas.connectManaged, api.post(`${endpoints.system.servers}/managed/connect`, input)),
+  serverUsage: (id: string) => checkedResponse(ServerResourceSchemas.usage, api.get(`${endpoints.system.server(id)}/usage`, { timeout: 45_000 })),
+  ensureServer: (id: string) => checkedResponse(ServerResourceSchemas.ensure, api.post(`${endpoints.system.server(id)}/ensure`)),
+  previewServerResize: (id: string) => checkedResponse(ServerResourceSchemas.previewResize, api.get(`${endpoints.system.server(id)}/resize`)),
+  resizeServer: (id: string, input: Parameters<ServerOperations["resize"]>[1]) => checkedResponse(ServerResourceSchemas.resize, api.post(`${endpoints.system.server(id)}/resize`, input)),
+  retryServerOperation: (id: string) => checkedResponse(ServerResourceSchemas.retry, api.post(`${endpoints.system.server(id)}/retry`)),
+  removeManagedServer: (id: string, input: Parameters<ServerOperations["removeManaged"]>[1]) => checkedResponse(ServerResourceSchemas.removeManaged, api.delete(`${endpoints.system.server(id)}/managed`, { body: input })),
+
   /** List all configured servers */
   listServers: () =>
     api.get<ServerInfo[]>(endpoints.system.servers),
@@ -861,7 +867,7 @@ export const systemApi = {
       signal,
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => "");
+      const text = await res.text().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "dashboard/lib/api/system"); return ""; });
       throw new Error(text || `Update failed: ${res.status}`);
     }
 

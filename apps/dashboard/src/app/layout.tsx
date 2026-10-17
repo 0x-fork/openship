@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { IconProvider } from "@repo/ui/icons";
+import { runtimeTarget } from "@repo/core";
+import { CLOUD_ICON_BASE_URL, IconProvider, LOCAL_ICON_BASE_URL } from "@repo/ui/icons";
 import { cookies, headers } from "next/headers";
 import "./globals.css";
 import { ThemeProvider, ThemeScript } from "@/components/theme-provider";
@@ -13,6 +14,7 @@ import { getDeploymentInfoOrNull } from "@/lib/server/session";
 import { NetworkErrorHandler } from "@/components/network-error-handler";
 import { ModalProvider } from "@/context/ModalContext";
 import { DesktopChrome } from "@/components/desktop-chrome";
+import { DesktopInstanceLinks } from "@/components/instance/DesktopInstanceLinks";
 import {
   baseDictionary,
   defaultLocale,
@@ -34,8 +36,7 @@ async function resolveRequestLocale(): Promise<Locale> {
   // empty in the SSR render. Fall back to cookies() (works in dev), then
   // Accept-Language, then the default.
   const cookieStore = await cookies();
-  const fromCookie =
-    hdrs.get("x-openship-locale") ?? cookieStore.get(LOCALE_COOKIE)?.value;
+  const fromCookie = hdrs.get("x-openship-locale") ?? cookieStore.get(LOCALE_COOKIE)?.value;
   if (fromCookie && (locales as readonly string[]).includes(fromCookie)) {
     return fromCookie as Locale;
   }
@@ -61,19 +62,17 @@ const BASE_METADATA: Metadata = {
   description: "Manage your deployments, domains, and infrastructure.",
   icons: {
     icon: [
-      { url: '/favicon.ico' },
-      { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
-      { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: "/favicon.ico" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
     ],
-    apple: [
-      { url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' },
-    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
     other: [
-      { url: '/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' },
+      { url: "/android-chrome-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/android-chrome-512x512.png", sizes: "512x512", type: "image/png" },
     ],
   },
-  manifest: '/site.webmanifest',
+  manifest: "/site.webmanifest",
 };
 
 /**
@@ -99,6 +98,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // per-request thanks to `force-dynamic` above.
   const localApiOrigin = process.env.OPENSHIP_LOCAL_API_URL;
   const deploymentInfo = await getDeploymentInfoOrNull();
+  // Resolve the asset host before SSR, including auth and API-unavailable pages.
+  // Cloud-connected desktop instances still use their bundled icons.
+  const cloudIcons =
+    !localApiOrigin &&
+    deploymentInfo?.deployMode !== "desktop" &&
+    !(deploymentInfo?.selfHosted ?? runtimeTarget.selfHosted);
 
   const locale = await resolveRequestLocale();
   const dir = isRtl(locale) ? "rtl" : "ltr";
@@ -108,13 +113,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const productView = await resolveRequestProductView(deploymentInfo);
   // English is the bundled base (no prop needed); for other locales load the
   // dictionary server-side so the very first render is already translated.
-  const initialDictionary =
-    locale === defaultLocale ? undefined : await loadDictionary(locale);
+  const initialDictionary = locale === defaultLocale ? undefined : await loadDictionary(locale);
 
   return (
     <html lang={locale} dir={dir} suppressHydrationWarning>
       <head>
         <ThemeScript />
+        {/* Fail closed until the serving API positively identifies Cloud SaaS.
+            Cloud-connected self-hosted and Desktop instances remain disabled. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.__OPENSHIP_ERROR_REPORTING__=${!localApiOrigin && deploymentInfo?.selfHosted === false && deploymentInfo.deployMode !== "desktop"};`,
+          }}
+        />
         {/* Set <html lang/dir> from the locale cookie BEFORE paint, so a reload
             in Arabic mirrors immediately even if SSR fell back to default —
             mirrors ThemeScript's no-flash approach. React reconciles the text. */}
@@ -132,10 +143,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         ) : null}
       </head>
       <body>
-        <IconProvider baseUrl={process.env.OPENSHIP_ICON_BASE_URL}>
-          <ThemeProvider>
-            <AuthProvider>
-              {!localApiOrigin && deploymentInfo?.selfHosted === false && deploymentInfo.deployMode !== "desktop" && deploymentInfo.cloudAnalytics ? (
+        <IconProvider
+          baseUrl={cloudIcons ? CLOUD_ICON_BASE_URL : process.env.OPENSHIP_ICON_BASE_URL}
+          fallbackBaseUrl={LOCAL_ICON_BASE_URL}
+        >
+          <AuthProvider>
+            <ThemeProvider>
+              {!localApiOrigin &&
+              deploymentInfo?.selfHosted === false &&
+              deploymentInfo.deployMode !== "desktop" &&
+              deploymentInfo.cloudAnalytics ? (
                 <CloudAnalytics config={deploymentInfo.cloudAnalytics} />
               ) : null}
               <I18nProvider
@@ -146,13 +163,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 <ToastProvider>
                   <ModalProvider>
                     <DesktopChrome />
+                    <DesktopInstanceLinks />
                     <NetworkErrorHandler />
                     {children}
                   </ModalProvider>
                 </ToastProvider>
               </I18nProvider>
-            </AuthProvider>
-          </ThemeProvider>
+            </ThemeProvider>
+          </AuthProvider>
         </IconProvider>
       </body>
     </html>

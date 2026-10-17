@@ -1,5 +1,8 @@
+import Link from "next/link";
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { PullRequestPreviews } from "@/components/project-settings/DeploymentAutomation";
 import { useProjectSettings } from "@/context/ProjectSettingsContext";
 import { useGitHub } from "@/context/GitHubContext";
 import type { GitHubRepo } from "@/context/GitHubContext";
@@ -11,6 +14,9 @@ import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
 import { getApiErrorMessage } from "@/lib/api/client";
 import { Modal } from "@/components/ui/Modal";
 import { Toggle } from "@/components/project-settings/ServerSideSwitch";
+import { GitHubChecksSettings } from "@/components/project-settings/GitHubChecksSettings";
+import { InstanceMoveLink } from "@/components/instance/InstanceMoveLink";
+import { usePlatform } from "@/context/PlatformContext";
 import { RepositoryList } from "../../../library/components/RepositoryList";
 import { AppSource } from "./AppSource";
 import { GitSettingsSkeleton } from "./GitSettingsSkeleton";
@@ -99,18 +105,34 @@ function GitProjectSettings({
         </div>
       )}
       <GitProjectSettingsBody onUseReleaseImage={onUseReleaseImage} />
+      <ProjectPreviewSettings />
     </div>
   );
 }
 
 const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () => void }) => {
-  const { gitData, refreshGit, id, projectData, updateProjectData } = useProjectSettings();
+  const { gitData, refreshGit, id, projectData, updateProjectData, servicesData } = useProjectSettings();
   const github = useGitHub();
   const { showToast } = useToast();
   const { t } = useI18n();
+  const { selfHosted } = usePlatform();
   const [isLinking, setIsLinking] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [togglingAuto, setTogglingAuto] = useState(false);
+  const [savingChecks, setSavingChecks] = useState(false);
+  const saveChecks = async (githubChecks: import("@repo/core").GitHubDeploymentChecks) => {
+    setSavingChecks(true);
+    try {
+      await projectsApi.setOptions(id, { githubChecks });
+      updateProjectData({ githubChecks });
+      invalidateProjectCaches(id);
+      await refreshGit();
+    } catch (error) {
+      showToast(getApiErrorMessage(error, t.projectSettings.deploymentChecks.saveFailed), "error");
+    } finally {
+      setSavingChecks(false);
+    }
+  };
   const hasRefreshed = useRef(false);
 
   // Auto-deploy on push: one toggle → the API registers/removes the GitHub repo
@@ -152,7 +174,8 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
     try {
       const res = await projectsApi.getCloneToken(id);
       setCloneToken(res);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/GitSettings");
       setCloneToken({ hasToken: false, setAt: null });
     } finally {
       setCloneTokenLoading(false);
@@ -455,26 +478,32 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
                     <div className="flex max-w-full shrink-0 flex-col items-end gap-1.5 pt-0.5">
                       <div className="flex items-center gap-2" aria-busy={togglingAuto || undefined}>
                         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                          {t.projectSettings.gitInfo.autoDeploy}
+                          {t.actions.integration.autoMode}
                           {togglingAuto && <UiIcon name="spinner" className="size-3.5 animate-spin" />}
                         </span>
                         <Toggle
                           checked={!!gitData.autoDeployEnabled}
-                          aria-label={t.projectSettings.gitInfo.autoDeploy}
+                          aria-label={t.actions.integration.autoMode}
                           onChange={() => void toggleAutoDeploy()}
                           disabled={disabled}
                         />
                       </div>
+                      <Link href={`/projects/${id}/actions`} className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">{t.actions.integration.configureRules}</Link>
                       {cannotReceive && (
-                        <details className="max-w-64 text-xs text-muted-foreground">
-                          <summary className="flex cursor-pointer list-none items-center justify-end gap-1.5 rounded-md hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
-                            {t.projectSettings.git.webhookBanner.summary}
-                            <UiIcon name="info" className="size-3.5 shrink-0" />
-                          </summary>
-                          <p className="mt-2 text-start leading-relaxed">
-                            {t.projectSettings.git.webhookBanner.description}
-                          </p>
-                        </details>
+                        <div className="max-w-72 space-y-2 text-end">
+                          <details className="text-xs text-muted-foreground">
+                            <summary className="flex cursor-pointer list-none items-center justify-end gap-1.5 rounded-md hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [&::-webkit-details-marker]:hidden">
+                              {t.projectSettings.git.webhookBanner.summary}
+                              <UiIcon name="info" className="size-3.5 shrink-0" />
+                            </summary>
+                            <p className="mt-2 text-start leading-relaxed">
+                              {selfHosted
+                                ? t.settings.instance.location.webhookAccessHint
+                                : t.projectSettings.git.webhookBanner.description}
+                            </p>
+                          </details>
+                          {selfHosted && <InstanceMoveLink />}
+                        </div>
                       )}
                     </div>
                   );
@@ -484,6 +513,14 @@ const GitProjectSettingsBody = ({ onUseReleaseImage }: { onUseReleaseImage?: () 
 
 
         </SectionCard>
+
+        <GitHubChecksSettings
+          value={projectData.githubChecks ?? gitData.githubChecks}
+          onChange={value => void saveChecks(value)}
+          disabled={savingChecks}
+          services={servicesData.services.map(service => service.name)}
+          deliveryError={gitData.githubChecksDelivery?.error}
+        />
 
         <SectionCard
           title={t.projectSettings.git.commits.title}
@@ -724,4 +761,9 @@ function ReleaseImageEntryButton({ onClick }: { onClick: () => void }) {
       <p className="mt-1.5 text-xs text-muted-foreground">{copy.description}</p>
     </div>
   );
+}
+
+function ProjectPreviewSettings() {
+  const { id, projectData } = useProjectSettings();
+  return projectData.environmentType !== "preview" && projectData.gitOwner && projectData.gitRepo ? <PullRequestPreviews key={id} projectId={id} /> : null;
 }

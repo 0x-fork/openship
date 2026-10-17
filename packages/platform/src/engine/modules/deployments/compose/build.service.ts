@@ -6,6 +6,7 @@
  * resolved directly without a build step.
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
@@ -175,7 +176,9 @@ async function materializeInlineBuildContexts(buildable: Service[], inMemory = f
   const root = inMemory ? undefined : await mkdtemp(join(tmpdir(), "openship-catalog-build-"));
   const files: NonNullable<BuildConfig["inlineSourceFiles"]> = [];
   const cleanup = async () => {
-    if (root) await rm(root, { recursive: true, force: true }).catch(() => {});
+    if (root) await rm(root, { recursive: true, force: true }).catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/compose/build.service");
+    });
   };
   const write = async (path: string, content: string) => {
     if (root) {
@@ -409,6 +412,7 @@ export interface ComposeBuildImagesResult {
    * Needed when a refresh reuses the prior deployment's host artifact. */
   staticServiceIds: Set<string>;
   buildFailures: Map<string, string>;
+  buildErrorCauses?: unknown[];
   /** Count of image-only (external) services included in imageRefs */
   externalCount: number;
   /**
@@ -464,6 +468,7 @@ export async function buildComposeImages(opts: {
       .map((service) => service.id),
   );
   const buildFailures = new Map<string, string>();
+  const buildErrorCauses: unknown[] = [];
   const cancelledServices = new Set<string>();
   const startedAt = Date.now();
 
@@ -612,6 +617,7 @@ export async function buildComposeImages(opts: {
           status: "built",
         });
       } catch (err) {
+        observeCaughtError(err, "platform/engine/modules/deployments/compose/build.service");
         const failureMessage =
           err instanceof Error ? err.message : `Invalid image for service "${service.name}"`;
         buildFailures.set(service.id, failureMessage);
@@ -719,7 +725,7 @@ export async function buildComposeImages(opts: {
         (data, streamId) => dnsDiagnostics?.observe(data, streamId),
       );
 
-      if (opts.runtime.name === "cloud" && !opts.project.localPath) {
+      if (opts.project.workspaceId != null && !opts.project.localPath) {
         opts.logger.log(
           `Resolving Dockerfile for compose service "${service.name}" from the build source checkout.\n`,
           "info",
@@ -735,6 +741,9 @@ export async function buildComposeImages(opts: {
       //     keeps the sub-app's stack/installCommand/buildCommand/startCommand/
       //     outputDirectory so the runtime synthesizes a Dockerfile from them.
       const buildSlug = `${sanitizeComposeImageName(opts.project.slug ?? opts.project.name)}-${sanitizeComposeImageName(service.name)}`;
+      // Docker builds these services sequentially on one host. Reuse the
+      // resolved host budget, including measured headroom on managed servers.
+      const resources = opts.buildResources;
       const buildConfig = isMonorepo
         ? createMonorepoSourceBuildConfig({
             project: opts.project,
@@ -742,7 +751,7 @@ export async function buildComposeImages(opts: {
             snapshot: opts.snapshot,
             sessionId: `${opts.buildSessionId}-${service.id}`,
             envVars: opts.buildEnvVars,
-            resources: opts.buildResources,
+            resources,
             gitToken: opts.gitToken,
             overrides: {
               slug: buildSlug,
@@ -765,7 +774,7 @@ export async function buildComposeImages(opts: {
                 ? {
                     isStatic: true,
                     hasServer: false,
-                    ...(opts.runtime.name === "cloud"
+                    ...(opts.project.workspaceId != null
                       ? {}
                       : {
                           staticExtractOnly: true,
@@ -781,7 +790,7 @@ export async function buildComposeImages(opts: {
             snapshot: opts.snapshot,
             sessionId: `${opts.buildSessionId}-${service.id}`,
             envVars: opts.buildEnvVars,
-            resources: opts.buildResources,
+            resources,
             gitToken: opts.gitToken,
             overrides: {
               slug: buildSlug,
@@ -821,8 +830,15 @@ export async function buildComposeImages(opts: {
       return { service, buildConfig, serviceLogger };
     };
 
+    const cacheReceipts: Array<{ serviceId: string; result: BuildResult }> = [];
     // Record a per-service build result: image refs / failures + status broadcast.
     const applyBuildResult = (service: Service, buildResult: BuildResult) => {
+      if (buildResult.status === "deploying" && buildResult.managedCacheTargets?.length) cacheReceipts.push({ serviceId: service.id, result: buildResult });
+      const previousDuration = opts.project.buildCacheReceipts?.[service.id]?.durationMs;
+      if (buildResult.status === "deploying" && buildResult.durationMs && previousDuration) {
+        const difference = (buildResult.durationMs - previousDuration) / 1000;
+        opts.logger.log(`Build time for ${service.name}: ${(buildResult.durationMs / 1000).toFixed(1)}s; ${Math.abs(difference).toFixed(1)}s ${difference < 0 ? "faster" : "slower"} than its previous successful managed build.\n`, "info", { serviceId: service.id, serviceName: service.name });
+      }
       const dnsDiagnostics = buildDnsDiagnostics.get(service.id);
       buildDnsDiagnostics.delete(service.id);
       // Cancelled ≠ failed: tracked separately so the pipeline can stop without
@@ -844,6 +860,7 @@ export async function buildComposeImages(opts: {
       }
 
       if (buildResult.status === "failed" || !buildResult.imageRef) {
+        if (buildResult.errorCause) buildErrorCauses.push(buildResult.errorCause);
         const originalFailure =
           buildResult.errorMessage ?? `Failed to build service "${service.name}"`;
         const hint = dnsDiagnostics?.finish(originalFailure);
@@ -924,6 +941,8 @@ export async function buildComposeImages(opts: {
       );
     }
 
+    for (const { serviceId, result } of cacheReceipts) await repos.project.recordBuildCacheReceipt(opts.project.id, serviceId, { targets: result.managedCacheTargets!, deploymentId: opts.dep.id, completedAt: new Date().toISOString(), durationMs: result.durationMs });
+
     // Non-empty only for services derived from `buildable`, so it implies there was
     // something to build.
     if (cancelledServices.size > 0) {
@@ -979,6 +998,7 @@ export async function buildComposeImages(opts: {
     staticArtifactRefs,
     staticServiceIds,
     buildFailures,
+    buildErrorCauses,
     externalCount: external.length,
     cancelled: cancelledServices.size > 0,
     durationMs: Date.now() - startedAt,

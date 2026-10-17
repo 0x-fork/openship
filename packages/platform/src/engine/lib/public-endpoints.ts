@@ -540,16 +540,7 @@ export function storedPublicEndpointsNeedCloud(
  * toggle never reads as introducing a route.
  */
 export function resolveServicePublicEndpoints(
-  service: Pick<
-    Service,
-    | "exposed"
-    | "exposedPort"
-    | "ports"
-    | "domain"
-    | "customDomain"
-    | "domainType"
-    | "publicEndpoints"
-  > & { name?: string | null; kind?: string | null },
+  service: ServiceRoutingPatch & Pick<Partial<Service>, "ports" | "name" | "kind">,
   opts?: { projectSlug?: string },
 ): StoredPublicEndpoint[] {
   if (!service.exposed) return [];
@@ -566,7 +557,7 @@ export function resolveServicePublicEndpoints(
         port: endpoint.port,
         domain: endpoint.domain,
         customDomain: endpoint.customDomain,
-        domainType: endpoint.domainType,
+        domainType: endpoint.domainType === "custom" ? "custom" : "free",
       })),
       normalizeOpts,
     );
@@ -856,8 +847,9 @@ export function mergeServiceRoutingPatch(opts: {
 }
 
 /**
- * Every public endpoint's assigned domain URL for a service, keyed by container
- * port. Free → https://<slug>.<routing base>, custom → https://<customDomain>.
+ * The first concrete public URL for each container port, in configured route
+ * order. Adding an alias must not replace the URL used by deployment templates.
+ * Free → https://<slug>.<routing base>, custom → https://<customDomain>.
  *
  * The one consumer is the compose deploy's `{{publicUrl:svc[:port]}}` substitution
  * (container env + generated config files — Convex's CONVEX_CLOUD_ORIGIN, a
@@ -875,13 +867,16 @@ export function resolveServiceEndpointUrls(
   service: Service,
 ): Array<{ port: number; url: string }> {
   const urls: Array<{ port: number; url: string }> = [];
+  const seenPorts = new Set<number>();
   for (const endpoint of resolveServicePublicEndpoints(service, {
     projectSlug: project.slug ?? project.name,
   })) {
-    if (endpoint.port === undefined) continue;
+    if (endpoint.port === undefined || seenPorts.has(endpoint.port)) continue;
     if (endpoint.domainType === "custom") {
-      if (endpoint.customDomain && !isWildcardHostname(endpoint.customDomain))
+      if (endpoint.customDomain && !isWildcardHostname(endpoint.customDomain)) {
         urls.push({ port: endpoint.port, url: `https://${endpoint.customDomain}` });
+        seenPorts.add(endpoint.port);
+      }
       continue;
     }
     const slug = resolveServiceHostnameLabel(
@@ -890,7 +885,10 @@ export function resolveServiceEndpointUrls(
       endpoint.domain ?? undefined,
       serviceKind(service),
     );
-    if (slug) urls.push({ port: endpoint.port, url: `https://${slug}.${getRoutingBaseDomain()}` });
+    if (slug) {
+      urls.push({ port: endpoint.port, url: `https://${slug}.${getRoutingBaseDomain()}` });
+      seenPorts.add(endpoint.port);
+    }
   }
   return urls;
 }

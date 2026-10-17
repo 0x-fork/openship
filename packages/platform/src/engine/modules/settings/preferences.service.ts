@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { ExecutionContext } from "../../../context";
 import type { Static } from "@sinclair/typebox";
 import { UserSettingsSchemas, ValidationError } from "@repo/contracts";
@@ -108,7 +109,7 @@ export async function updateRouteStrategy(ctx: ExecutionContext, body: Static<ty
  * never returned in settings responses.
  */
 async function getCloneCredentialsState(userId: string) {
-  const settings = await repos.settings.findByUser(userId).catch(() => null);
+  const settings = await repos.settings.findByUser(userId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/settings/preferences.service"); return null; });
   return {
     cloneToken: {
       hasToken: !!settings?.cloneTokenEncrypted,
@@ -187,9 +188,7 @@ export async function updateBuildMode(ctx: ExecutionContext, body: Static<typeof
  *   { defaultDeployTarget: "server" | "cloud" | null,
  *     defaultServerId?: string | null }
  *
- * Pass nulls to clear. When target="server", defaultServerId is required;
- * for other targets the server id is forced to null on the server side so
- * the row doesn't carry a stale association.
+ * Both connected and managed defaults identify a server. Pass null to clear.
  */
 export async function updateDeployDefaults(ctx: ExecutionContext, body: Static<typeof UserSettingsSchemas.setDeployDefaults.input>) {
 
@@ -203,11 +202,14 @@ export async function updateDeployDefaults(ctx: ExecutionContext, body: Static<t
   }
 
   let serverId: string | null = null;
-  if (target === "server") {
+  if (target) {
     const rawServerId = body?.defaultServerId;
     if (typeof rawServerId !== "string" || !rawServerId) {
-      throw new ValidationError("defaultServerId is required when defaultDeployTarget='server'");
+      throw new ValidationError("Choose a server for the deployment default");
     }
+    const server = await repos.server.getInOrganization(rawServerId, ctx.organizationId);
+    if (!server || (server.workspaceId ? "cloud" : "server") !== target)
+      throw new ValidationError("The deployment default does not match the selected server");
     serverId = rawServerId;
   }
 
@@ -271,7 +273,8 @@ export async function updateCloneCredentials(ctx: ExecutionContext, body: Static
     let report: Awaited<ReturnType<typeof inspectPatScope>>;
     try {
       report = await inspectPatScope(rawToken);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/settings/preferences.service");
       throw new ValidationError("Could not verify this GitHub token. Check that it is valid and GitHub is reachable, then try again.");
     }
     const verdict = classifyPatScope(report);

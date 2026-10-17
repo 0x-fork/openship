@@ -315,6 +315,13 @@ const cases: Array<{
     envelope: "data",
   },
   {
+    name: "getRuntimeRoles",
+    method: "GET",
+    path: "/roles",
+    output: { deploymentId: "dep_1", roles: [], error: null },
+    envelope: "data",
+  },
+  {
     name: "getCloneToken",
     method: "GET",
     path: "/clone-token",

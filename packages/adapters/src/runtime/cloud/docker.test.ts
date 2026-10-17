@@ -1,6 +1,13 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, mkdir, writeFile, readFile, access, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { commandToArgv } from "@repo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PassThrough } from "node:stream";
 import type { Oblien } from "oblien";
+import { NotFoundError } from "oblien";
 import { CloudDockerRuntime } from "./docker";
 import { DockerRuntime } from "../docker";
 import { BuildLogger } from "../build-pipeline";
@@ -16,9 +23,10 @@ const config: MultiServiceDeployConfig = { projectId: "project-a", deploymentId:
   environment: { SECRET: "test" }, publicPort: 8080, cloudEndpoints: [{ hostname: "project-a.opsh.io", port: 8080, custom: false }] };
 const group = { id: "network-project-a", kind: "docker-network" } as never;
 let runtime: CloudDockerRuntime;
+let infra: CloudInfraProvider;
 let status: string;
 let count: number;
-let rows: Array<{ Id: string; State: string; Labels: Record<string, string>; Ports: Array<{ PrivatePort: number; PublicPort: number; Type: string }> }>;
+let rows: Array<{ Id: string; State: string; Names?: string[]; Labels: Record<string, string>; Ports: Array<{ PrivatePort: number; PublicPort: number; Type: string }> }>;
 let stoppedPorts: Map<string, Record<string, Array<{ HostIp: string; HostPort: string }>>>;
 let captures: MultiServiceDeployConfig[];
 let pageRows: Map<string, Record<string, unknown>>;
@@ -28,44 +36,58 @@ let pages: Record<string, any>;
 let provider: Record<string, any>;
 let routes: ReturnType<typeof vi.fn<Oblien["routes"]["set"]>>;
 beforeEach(async () => {
-  status = "running"; count = 0; rows = []; captures = []; pageRows = new Map(); stoppedPorts = new Map(); spend = vi.fn(); routes = vi.fn();
+  status = "running"; count = 0; rows = []; captures = []; pageRows = new Map(); stoppedPorts = new Map(); spend = vi.fn(); routes = vi.fn().mockResolvedValue({ success: true } as never);
   ws = {
     get: vi.fn(async () => ({ id: "workspace-a", namespace: "namespace-a", status: "active", info: { status } })),
     start: vi.fn(async () => { status = "running"; }), resume: vi.fn(async () => { status = "running"; }),
     stop: vi.fn(), delete: vi.fn(), restart: vi.fn(),
     invalidateRuntime: vi.fn(),
-    network: { get: vi.fn(async () => ({ ingress_ports: [] })), update: vi.fn() },
+    network: { get: vi.fn(async () => ({ ingress_ports: [] })), update: vi.fn(async () => ({ success: true })) },
+    workloads: { list: vi.fn(async () => []), get: vi.fn(async () => { throw Object.assign(new Error("missing"), { status: 404 }); }) },
     runtime: vi.fn(async () => ({ proxy: () => ({ fetch: async () => new Response(CLOUD_DOCKER_BRIDGE_VERSION) }) })),
   };
   pages = {
     list: vi.fn(async () => ({ pages: [...pageRows.values()] })),
     get: vi.fn(async (slug: string) => {
       const page = pageRows.get(slug);
-      if (!page) throw Object.assign(new Error("missing"), { status: 404 });
+      if (!page) throw new NotFoundError("missing");
       return { page };
     }),
     create: vi.fn(async (input: { slug: string; workspace_id: string; path: string }) => {
       const page = { slug: input.slug, domain: "opsh.io", url: `https://${input.slug}.opsh.io`, namespace: "namespace-a", source_workspace_id: input.workspace_id, exported_path: input.path };
       pageRows.set(input.slug, page); return { page };
     }),
-    enable: vi.fn(), connectDomain: vi.fn(), delete: vi.fn(),
+    enable: vi.fn(async () => ({ success: true })), connectDomain: vi.fn(), delete: vi.fn(async () => ({ success: true })),
   };
   provider = { workspace: vi.fn(() => ws), workspaces: { get: ws.get, create: vi.fn(), delete: vi.fn() }, pages };
   runtime = await CloudDockerRuntime.forWorkspace(provider as unknown as Oblien, {
-    projectId: "project-a", workspaceId: "workspace-a", namespace: "namespace-a", beforeProvision: async () => { await spend(); },
+    projectId: "project-a", ownerWorkspaceId: "managed-a", workspaceId: "workspace-a", namespace: "namespace-a", beforeProvision: async () => { await spend(); },
     provisionLock: { run: fn => fn() }, resolveRegistryAuth: async () => undefined,
-    adminProxy: { createPage: pages.create, pages: pages as never, setRoutes: async (hostname, input) => routes(hostname, input) },
+
   });
-  vi.spyOn(runtime.executor, "exec").mockResolvedValue("");
+  infra = new CloudInfraProvider(provider as unknown as Oblien, {
+    namespace: "namespace-a", scope: runtime.routingScope(),
+    adminProxy: { pages: pages as never, setRoutes: async (hostname, input) => routes(hostname, input) },
+  });
+  vi.spyOn(runtime.executor, "exec").mockImplementation(async command => command.startsWith("docker ps -aq")
+    ? rows.map(row => JSON.stringify(stoppedPorts.get(row.Id) ?? Object.fromEntries(row.Ports.map(port => [`${port.PrivatePort}/tcp`, [{ HostIp: "0.0.0.0", HostPort: String(port.PublicPort) }]])))).join("\n")
+    : command.startsWith("ss -tulnp") ? 'Netid State Recv-Q Send-Q Local Address:Port Peer Address:Port Process\ntcp LISTEN 0 128 127.0.0.1:9990 0.0.0.0:* users:(("bridge",pid=10,fd=3))\n' : "");
   vi.spyOn(runtime.executor, "writeFile").mockResolvedValue();
   vi.spyOn(runtime, "docker", "get").mockReturnValue({
     listContainers: async () => rows,
+    getNetwork: () => ({ inspect: async () => ({ Labels: { "openship.project": "project-a" } }) }),
     getContainer: (id: string) => ({ inspect: async () => ({
+      Id: id, Config: { Labels: rows.find(row => row.Id === id)?.Labels ?? { "openship.project": "project-a" } },
       State: { Status: "exited", Running: false },
       HostConfig: { PortBindings: stoppedPorts.get(id) },
       NetworkSettings: { Ports: {} },
     }) }),
     getImage: () => ({ inspect: async () => ({ Config: { Volumes: { "/image-data": {} } } }) }),
+    getVolume: (name: string) => ({ inspect: async () => {
+      if (!name.startsWith("openship-project-a-"))
+        throw Object.assign(new Error("missing volume"), { statusCode: 404 });
+      return { Labels: { "openship.project": "project-a" } };
+    } }),
   } as never);
   vi.spyOn(DockerRuntime.prototype, "deployServiceWorkload").mockImplementation(async (_group, input) => {
     captures.push(input);
@@ -75,7 +97,7 @@ beforeEach(async () => {
     });
     const id = `container-${++count}`;
     rows = rows.filter(row => row.Labels["openship.service"] !== input.serviceName);
-    rows.push({ Id: id, State: "running", Ports: ports, Labels: { "openship.project": input.projectId, "openship.service": input.serviceName } });
+    rows.push({ Id: id, Names: [`/openship-${input.slug}-${input.serviceName}`], State: "running", Ports: ports, Labels: { "openship.project": input.projectId, "openship.service": input.serviceName } });
     return { containerId: id, status: "running", hostPortByContainerPort: Object.fromEntries(ports.map(port => [port.PrivatePort, port.PublicPort])) } as MultiServiceDeployResult;
   });
 });
@@ -86,7 +108,7 @@ describe("containers on one Oblien Docker workspace", () => {
       status: 404, headers: { "x-request-id": "provider-request-404" },
     }) }) });
     ws.workloads = { list: vi.fn(), create: vi.fn(), stop: vi.fn(), start: vi.fn() };
-    await expect(runtime["ensureBridge"]()).rejects.toMatchObject({
+    await expect(runtime.connection.ensureDocker()).rejects.toMatchObject({
       code: "CLOUD_RUNTIME_PROXY_UNAVAILABLE", statusCode: 502,
       message: expect.stringContaining("HTTP 404"),
     });
@@ -95,7 +117,7 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(ws.restart).not.toHaveBeenCalled();
     expect(ws.delete).not.toHaveBeenCalled();
     ws.runtime.mockResolvedValue({ proxy: () => ({ fetch: async () => new Response(CLOUD_DOCKER_BRIDGE_VERSION) }) });
-    await expect(runtime["ensureBridge"]()).resolves.toBeUndefined();
+    await expect(runtime.connection.ensureDocker()).resolves.toBeUndefined();
     expect(runtime.executor.writeFile).not.toHaveBeenCalled();
   });
   it("reports the failed health check instead of the provider's successful log-fetch envelope", async () => {
@@ -107,7 +129,7 @@ describe("containers on one Oblien Docker workspace", () => {
       logs: vi.fn(async () => ({ logs: "", success: true, _serverId: "node2" })),
     };
     try {
-      const result = runtime["ensureBridge"]().catch(error => error as Error);
+      const result = runtime.connection.ensureDocker().catch(error => error as Error);
       await vi.advanceTimersByTimeAsync(61_000);
       const error = await result;
       expect(error).toBeInstanceOf(Error);
@@ -132,6 +154,33 @@ describe("containers on one Oblien Docker workspace", () => {
     spend.mockRejectedValue(new Error("out of credits"));
     await expect(runtime.applyEnvironment("container-a", {}, options)).rejects.toThrow("out of credits");
     expect(apply).not.toHaveBeenCalled();
+  });
+  it("retains managed listener activation during an environment refresh using only published ports", async () => {
+    rows.push({
+      Id: "node-a",
+      State: "running",
+      Ports: [],
+      Labels: {
+        "openship.project": "project-a",
+        "io.openship.managed-node-listener": "1",
+      },
+    });
+    stoppedPorts.set("node-a", { "3000/tcp": [{ HostIp: "0.0.0.0", HostPort: "30001" }] });
+    const apply = vi
+      .spyOn(DockerRuntime.prototype, "applyEnvironment")
+      .mockResolvedValue({ containerId: "replacement-a" });
+    await runtime.applyEnvironment(
+      "node-a",
+      {
+        NODE_OPTIONS: "--max-old-space-size=128",
+        OPENSHIP_MANAGED_PUBLIC_PORTS: "9229",
+      },
+      { projectId: "project-a", serviceName: "app", onReplaced: vi.fn() },
+    );
+    expect(apply.mock.calls[0]?.[1]).toEqual({
+      NODE_OPTIONS: "--max-old-space-size=128",
+      OPENSHIP_MANAGED_PUBLIC_PORTS: "3000",
+    });
   });
   it.each(["running", "stopped"])("updates a %s bridge before accepting Docker connections", async initialState => {
     vi.useFakeTimers();
@@ -158,7 +207,7 @@ describe("containers on one Oblien Docker workspace", () => {
       logs: vi.fn(async () => ({})),
     };
     try {
-      const outcome = runtime["ensureBridge"]().then(() => "ready", error => error);
+      const outcome = runtime.connection.ensureDocker().then(() => "ready", error => error);
       await vi.advanceTimersByTimeAsync(61_000);
       expect(await outcome).toBe("ready");
       expect(runningVersion).toBe(CLOUD_DOCKER_BRIDGE_VERSION);
@@ -174,7 +223,7 @@ describe("containers on one Oblien Docker workspace", () => {
       status, headers: { "x-request-id": "provider-request-123" },
     }));
     ws.runtime.mockResolvedValue({ proxy: () => ({ fetch }) });
-    const error = await runtime["ensureBridge"]().catch(error => error);
+    const error = await runtime.connection.ensureDocker().catch(error => error);
     expect(error).toMatchObject([401, 403].includes(status)
       ? { statusCode: 503, code: "CLOUD_DOCKER_PROXY_UNAVAILABLE" }
       : { statusCode: 502, code: "CLOUD_RUNTIME_PROXY_UNAVAILABLE" });
@@ -191,13 +240,13 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(ws.delete).not.toHaveBeenCalled();
     // Failure is not cached; a provider repair allows the same VM to recover.
     ws.runtime.mockResolvedValue({ proxy: () => ({ fetch: async () => new Response(CLOUD_DOCKER_BRIDGE_VERSION) }) });
-    await expect(runtime["ensureBridge"]()).resolves.toBeUndefined();
+    await expect(runtime.connection.ensureDocker()).resolves.toBeUndefined();
   });
   it("refreshes a stale runtime credential once after a cold workspace restart", async () => {
     const stale = vi.fn(async () => new Response("unauthorized", { status: 401 }));
     const fresh = vi.fn(async () => new Response(CLOUD_DOCKER_BRIDGE_VERSION));
     ws.runtime.mockImplementation(async (options?: { force?: boolean }) => ({ proxy: () => ({ fetch: options?.force ? fresh : stale }) }));
-    await expect(runtime["ensureBridge"]()).resolves.toBeUndefined();
+    await expect(runtime.connection.ensureDocker()).resolves.toBeUndefined();
     expect(stale).toHaveBeenCalledOnce();
     expect(fresh).toHaveBeenCalledOnce();
     expect(ws.runtime).toHaveBeenCalledTimes(2);
@@ -212,7 +261,7 @@ describe("containers on one Oblien Docker workspace", () => {
       if (options?.force) throw Object.assign(new Error("private credential rejected"), { status: 403 });
       return { proxy: () => ({ fetch }) };
     });
-    const error = await runtime["ensureBridge"]().catch(error => error);
+    const error = await runtime.connection.ensureDocker().catch(error => error);
     expect(error).toMatchObject({ statusCode: 503, code: "CLOUD_DOCKER_PROXY_UNAVAILABLE" });
     expect(error.message).toContain("Runtime credential refresh failed");
     expect(error.message).not.toContain("private credential");
@@ -222,7 +271,7 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(ws.restart).not.toHaveBeenCalled();
   });
   it("revalidates a cached bridge after a failed handshake without replaying a Docker request", async () => {
-    await runtime["ensureBridge"]();
+    await runtime.connection.ensureDocker();
     let refreshed = false;
     const socket = {} as WebSocket;
     ws.runtime.mockImplementation(async (options?: { force?: boolean }) => {
@@ -237,7 +286,7 @@ describe("containers on one Oblien Docker workspace", () => {
       .mockRejectedValueOnce(new Error("Cloud Docker connection failed"))
       .mockResolvedValueOnce(upstream);
     try {
-      await expect(runtime["connectBridge"]()).resolves.toBe(upstream);
+      await expect(runtime.connection.connectDocker()).resolves.toBe(upstream);
       expect(open).toHaveBeenCalledTimes(2);
       expect(ws.runtime).toHaveBeenCalledWith({ force: true });
       expect(runtime.executor.exec).not.toHaveBeenCalled();
@@ -250,7 +299,7 @@ describe("containers on one Oblien Docker workspace", () => {
       fetch: async () => new Response(CLOUD_DOCKER_BRIDGE_VERSION), ws: () => ({} as WebSocket),
     }) });
     const open = vi.spyOn(dockerTransport, "dockerWebSocketStream").mockRejectedValue(new Error("Cloud Docker connection failed"));
-    await expect(runtime["connectBridge"]()).rejects.toThrow("Cloud Docker connection failed");
+    await expect(runtime.connection.connectDocker()).rejects.toThrow("Cloud Docker connection failed");
     expect(open).toHaveBeenCalledTimes(2);
     expect(runtime.executor.exec).not.toHaveBeenCalled();
     expect(ws.restart).not.toHaveBeenCalled();
@@ -268,7 +317,7 @@ describe("containers on one Oblien Docker workspace", () => {
       stop: vi.fn(), start: vi.fn(), logs: vi.fn(async () => ({ logs: "", success: true, _serverId: "node2" })),
     };
     try {
-      const outcome = runtime["ensureBridge"]().catch(error => error);
+      const outcome = runtime.connection.ensureDocker().catch(error => error);
       await vi.advanceTimersByTimeAsync(61_000);
       const error = await outcome;
       expect(error).toMatchObject({ statusCode: 503, code: "CLOUD_DOCKER_BRIDGE_NOT_READY" });
@@ -293,7 +342,7 @@ describe("containers on one Oblien Docker workspace", () => {
       list: vi.fn(async () => []),
       create: vi.fn(async () => { running = true; }),
     };
-    await expect(runtime["ensureBridge"]()).resolves.toBeUndefined();
+    await expect(runtime.connection.ensureDocker()).resolves.toBeUndefined();
     expect(cancel).toHaveBeenCalledOnce();
     expect(ws.workloads.create).toHaveBeenCalledOnce();
     expect(ws.restart).not.toHaveBeenCalled();
@@ -305,22 +354,121 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(first.hostPortByContainerPort![8080]).not.toBe(peer.hostPortByContainerPort![8080]);
     expect(first.hostPortByContainerPort![8080]).not.toBe(first.hostPortByContainerPort![9090]);
     expect(next.hostPortByContainerPort![8080]).toBe(first.hostPortByContainerPort![8080]);
+    await infra.publishRoute("project-a.opsh.io", next.hostPortByContainerPort![8080]!, false);
     expect(routes).toHaveBeenCalledWith("project-a.opsh.io", expect.objectContaining({ routes: [expect.objectContaining({ action: { kind: "proxy", workspace: "workspace-a", port: next.hostPortByContainerPort![8080] } })] }));
     expect(provider.workspaces.create).not.toHaveBeenCalled();
   });
   it("keeps named and image-declared volume identities across container replacements", async () => {
     await runtime.deployServiceWorkload(group, config);
     await runtime.deployServiceWorkload(group, { ...config, deploymentId: "d2", image: "test:2" });
-    expect(captures[0]!.volumes).toContain("data:/data");
+    expect(captures[0]!.volumes).toContain("openship-project-a-data:/data");
     expect(captures[0]!.volumes.some(volume => volume.endsWith(":/image-data"))).toBe(true);
     expect(captures[1]!.volumes).toEqual(captures[0]!.volumes);
     expect(ws.delete).not.toHaveBeenCalled();
   });
+  it("isolates a new WordPress installation from a previous project's volumes and keeps backup identities stable", async () => {
+    vi.mocked(DockerRuntime.prototype.deployServiceWorkload).mockRestore();
+    const legacy = "openship-wordpress-wordpress_db_data";
+    const stored = new Map<string, { Labels: Record<string, string> }>([
+      [legacy, { Labels: { "openship.project": "deleted-project" } }],
+    ]);
+    const createVolume = vi.fn(async (input: { Name: string; Labels: Record<string, string> }) => {
+      stored.set(input.Name, { Labels: input.Labels });
+    });
+    const docker = {
+      ...runtime.docker,
+      getContainer: () => ({
+        inspect: async () => {
+          throw Object.assign(new Error("missing container"), { statusCode: 404 });
+        },
+        stop: async () => {
+          throw Object.assign(new Error("missing container"), { statusCode: 404 });
+        },
+        remove: async () => {
+          throw Object.assign(new Error("missing container"), { statusCode: 404 });
+        },
+      }),
+      createContainer: vi.fn(async (_input: { HostConfig: { Binds: string[] } }) => ({
+        id: "wordpress-container",
+        start: async () => {},
+        inspect: async () => ({ NetworkSettings: { Networks: {}, Ports: {} } }),
+      })),
+      getVolume: (name: string) => ({
+        inspect: async () => {
+          const volume = stored.get(name);
+          if (!volume) throw Object.assign(new Error("missing volume"), { statusCode: 404 });
+          return volume;
+        },
+      }),
+      createVolume,
+    };
+    vi.spyOn(runtime, "docker", "get").mockReturnValue(docker as never);
+    const wordpress = {
+      ...config,
+      slug: "wordpress",
+      serviceName: "wordpress-db",
+      volumes: ["wordpress_db_data:/var/lib/mysql"],
+    };
+    await runtime.deployServiceWorkload(group, wordpress);
+    await runtime.deployServiceWorkload(group, { ...wordpress, deploymentId: "d2" });
+    const binds = docker.createContainer.mock.calls.map(([input]) => input.HostConfig.Binds);
+    const source = binds[0]!.find((volume) => volume.endsWith(":/var/lib/mysql"))!.split(":")[0]!;
+    expect(source).toMatch(/^openship-project-[a-f0-9]{32}-wordpress_db_data$/);
+    expect(binds[1]).toEqual(binds[0]);
+    expect(stored.get(legacy)).toEqual({ Labels: { "openship.project": "deleted-project" } });
+    expect(stored.get(source)).toEqual({ Labels: { "openship.project": "project-a" } });
+    const creates = createVolume.mock.calls.length;
+    const backup = new DockerBackupExecutor(runtime);
+    const sources = await backup.listSources({
+      id: "wordpress-db",
+      projectId: "project-a",
+      projectSlug: "wordpress",
+      name: "wordpress-db",
+      image: "test:1",
+      env: {},
+      volumes: wordpress.volumes,
+      containerId: null,
+      namespaceVolumes: true,
+    });
+    expect(sources.map((volume) => volume.source)).toEqual([source]);
+    expect(createVolume).toHaveBeenCalledTimes(creates);
+  });
+  it.each(["project-a", "project-b"])(
+    "preserves explicit backup source identity and checks its owner (%s)",
+    async (owner) => {
+      const source = "openship-project-00000000000000000000000000000000-data";
+      vi.spyOn(runtime, "docker", "get").mockReturnValue({
+        ...runtime.docker,
+        getVolume: (name: string) => ({
+          inspect: async () => {
+            if (name !== source)
+              throw Object.assign(new Error("missing volume"), { statusCode: 404 });
+            return { Labels: { "openship.project": owner } };
+          },
+        }),
+      } as never);
+      const pending = new DockerBackupExecutor(runtime).listSources({
+        id: "db",
+        projectId: "project-a",
+        projectSlug: "project-a",
+        name: "db",
+        image: "test:1",
+        env: {},
+        volumes: [`${source}:/data`],
+        containerId: null,
+        namespaceVolumes: false,
+      });
+      if (owner === "project-a")
+        expect((await pending).map((volume) => volume.source)).toEqual([source]);
+      else await expect(pending).rejects.toMatchObject({ code: "CLOUD_STORAGE_FORBIDDEN" });
+    },
+  );
   it("reserves a stopped sibling's ports and restores them when that service is redeployed", async () => {
     const first = await runtime.deployServiceWorkload(group, config);
     const reservedPort = first.hostPortByContainerPort![8080];
     const stopped = rows[0]!;
     stopped.Labels["openship.service"] = "reserved";
+    stopped.Names = ["/openship-project-a-reserved"];
     stopped.State = "exited";
     stopped.Ports = [];
     stoppedPorts.set(stopped.Id, { "8080/tcp": [{ HostIp: "0.0.0.0", HostPort: String(reservedPort) }] });
@@ -343,19 +491,21 @@ describe("containers on one Oblien Docker workspace", () => {
     const result = await runtime.deployServiceWorkload(group, config);
     expect(result.containerId).toBe("container-1");
     expect(result.status).toBe("running");
-    expect(result.routeWarnings).toHaveLength(1);
+    await expect(infra.publishRoute("project-a.opsh.io", result.hostPortByContainerPort![8080]!, false)).rejects.toThrow("edge unavailable");
     expect(ws.delete).not.toHaveBeenCalled();
   });
   it("does not take over another project's hostname in the same organization", async () => {
     pageRows.set("project-a", { namespace: "namespace-a", source_workspace_id: "workspace-other", exported_path: "/app" });
     const result = await runtime.deployServiceWorkload(group, config);
-    expect(result.routeWarnings).toHaveLength(1);
+    await expect(infra.publishRoute("project-a.opsh.io", result.hostPortByContainerPort![8080]!, false)).rejects.toThrow(/owned|belong/);
     expect(pages.enable).not.toHaveBeenCalled();
     expect(routes).not.toHaveBeenCalled();
   });
   it("creates separate route owners for custom domains without rebinding the shared workspace", async () => {
-    await runtime.publishRoute("one.example.com", 30001, true);
-    await runtime.publishRoute("two.example.com", 30002, true);
+    rows = [{ Id: "container-a", State: "running", Labels: { "openship.project": "project-a" },
+      Ports: [30001, 30002].map(port => ({ PrivatePort: 8080, PublicPort: port, Type: "tcp" })) }];
+    await infra.publishRoute("one.example.com", 30001, true);
+    await infra.publishRoute("two.example.com", 30002, true);
     const calls = pages.connectDomain.mock.calls;
     expect(calls[0][0]).not.toBe(calls[1][0]);
     expect(calls[0][1]).toEqual({ domain: "one.example.com" });
@@ -397,34 +547,107 @@ describe("containers on one Oblien Docker workspace", () => {
     await runtime.purge({ containerId: "old-container", imageRef: "openship/project-a:bld_old" } as never);
     expect(stop).toHaveBeenCalledWith("old-container");
     expect(destroy).toHaveBeenCalledWith("old-container");
-    expect(image).toHaveBeenCalledWith("openship/project-a:bld_old");
-    await expect(runtime.destroy("workspace-a")).rejects.toThrow("project teardown");
+    expect(image).not.toHaveBeenCalled(); // Retention owns image GC separately from unit cleanup.
+    await expect(runtime.destroy("workspace-a")).rejects.toThrow("cannot delete their Docker workspace");
     expect(ws.stop).not.toHaveBeenCalled();
     expect(ws.delete).not.toHaveBeenCalled();
     expect(runtime.supports("unitRestore")).toBe(false);
     expect(resolveExecutor(runtime.name, runtime)).toBeInstanceOf(DockerBackupExecutor);
   });
+  it.each(["api-container", "a".repeat(12), "a".repeat(64)])("deletes only the owned container when referenced by %s", async (reference) => {
+    runtime["options"].ownerWorkspaceId = "managed-a";
+    const id = "a".repeat(64);
+    const siblingId = "b".repeat(64);
+    rows = [
+      { Id: id, State: "running", Labels: { "openship.project": "project-a" }, Ports: [{ PrivatePort: 8080, PublicPort: 31001, Type: "tcp" }] },
+      { Id: siblingId, State: "running", Labels: { "openship.project": "project-b" }, Ports: [{ PrivatePort: 8080, PublicPort: 31002, Type: "tcp" }] },
+    ];
+    vi.spyOn(runtime, "docker", "get").mockReturnValue({
+      listContainers: async () => rows,
+      getContainer: (input: string) => ({ inspect: async () => ({
+        Id: input === siblingId ? siblingId : id,
+        Config: { Labels: { "openship.project": input === siblingId ? "project-b" : "project-a" } },
+      }) }),
+    } as never);
+    ws.network.get.mockResolvedValue({ ingress_ports: [31001, 31002, 443] });
+    const destroy = vi.spyOn(DockerRuntime.prototype, "destroy").mockResolvedValue();
+    await runtime.destroy(reference);
+    expect(ws.network.update).not.toHaveBeenCalled(); // Ingress teardown belongs to the shared routing operation.
+    expect(destroy).toHaveBeenCalledWith(id);
+    expect(ws.delete).not.toHaveBeenCalled();
+    await expect(runtime.destroy(siblingId)).rejects.toMatchObject({ code: "CONTAINER_NOT_FOUND" });
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(ws.network.update).not.toHaveBeenCalled();
+  });
   it("route teardown deletes only this workspace's routing anchor", async () => {
-    await runtime.publishRoute("project-a.opsh.io", 30001, false);
-    const infra = new CloudInfraProvider(provider as unknown as Oblien, { namespace: "namespace-a", dockerWorkspaceId: "workspace-a",
-      adminProxy: { createPage: pages.create, pages: pages as never, domainRoutes: async () => ({ data: [{ hostname: "project-a.opsh.io", namespace: "namespace-a", owner_type: "page", owner_id: "project-a" }] }) as never } });
-    await infra.removeRoute("project-a.opsh.io");
+    rows = [{ Id: "container-a", State: "running", Labels: { "openship.project": "project-a" },
+      Ports: [{ PrivatePort: 8080, PublicPort: 30001, Type: "tcp" }] }];
+    await infra.publishRoute("project-a.opsh.io", 30001, false);
+    const cleanup = new CloudInfraProvider(provider as unknown as Oblien, { namespace: "namespace-a", scope: runtime.routingScope(),
+      adminProxy: { pages: pages as never, domainRoutes: async () => ({ data: [{ hostname: "project-a.opsh.io", namespace: "namespace-a", owner_type: "page", owner_id: "project-a" }] }) as never } });
+    await cleanup.removeRoute("project-a.opsh.io");
     expect(pages.delete).toHaveBeenCalledWith("project-a");
     pageRows.get("project-a")!.source_workspace_id = "workspace-other";
-    await expect(infra.removeRoute("project-a.opsh.io")).rejects.toThrow("not owned");
+    await expect(cleanup.removeRoute("project-a.opsh.io")).rejects.toThrow("not owned");
   });
   it("inventories disabled routing Pages without confusing their numeric IDs with slugs", async () => {
-    await runtime.publishRoute("project-a.opsh.io", 30001, false);
+    rows = [{ Id: "container-a", State: "running", Labels: { "openship.project": "project-a" },
+      Ports: [{ PrivatePort: 8080, PublicPort: 30001, Type: "tcp" }] }];
+    await infra.publishRoute("project-a.opsh.io", 30001, false);
     pageRows.get("project-a")!.status = "disabled";
     pageRows.set("other", { slug: "other", domain: "opsh.io", namespace: "namespace-a", source_workspace_id: "workspace-other", exported_path: "/opt/openship/cloud-docker/routes/other" });
-    expect(await runtime.listProjectRouteHostnames()).toEqual(["project-a.opsh.io"]);
-    const infra = new CloudInfraProvider(provider as unknown as Oblien, { namespace: "namespace-a", dockerWorkspaceId: "workspace-a" });
-    await infra.removeRoute("project-a.opsh.io");
+    expect(await infra.listProjectRouteHostnames()).toEqual(["project-a.opsh.io"]);
+    const cleanup = new CloudInfraProvider(provider as unknown as Oblien, { namespace: "namespace-a", scope: runtime.routingScope() });
+    await cleanup.removeRoute("project-a.opsh.io");
     expect(pages.delete).toHaveBeenCalledWith("project-a");
   });
   it("does not read a control-plane path supplied as cloud build source", async () => {
     await expect(runtime.prepareComposeSource({ projectId: "project-a", localPath: "/etc" } as never)).rejects.toThrow("control-plane");
     expect(runtime.executor.writeFile).not.toHaveBeenCalled();
+  });
+  it("extracts a Pages build on the workspace without a serving container", async () => {
+    const build = vi
+      .spyOn(DockerRuntime.prototype, "build")
+      .mockResolvedValue({
+        sessionId: "build-pages",
+        status: "deploying",
+        imageRef: "builder-image",
+      });
+    const remove = vi.spyOn(runtime, "removeImage").mockResolvedValue();
+    const original = vi.mocked(runtime.executor.exec).getMockImplementation()!;
+    vi.mocked(runtime.executor.exec).mockImplementation(async (command) =>
+      command.startsWith("docker create ")
+        ? "extract-only"
+        : command.startsWith("ls -A ")
+          ? "index.html"
+          : original(command),
+    );
+    const out = runtime.staticBuildPath("build-pages");
+    const result = await runtime.buildStaticToHost(
+      {
+        projectId: "project-a",
+        sessionId: "build-pages",
+        repoUrl: "",
+        framework: "static",
+        outputDirectory: ".",
+        rootDirectory: "",
+        inlineSourceFiles: [{ path: "index.html", content: "<h1>exported</h1>" }],
+      } as never,
+      out,
+      new BuildLogger(),
+    );
+    expect(result).toMatchObject({ status: "deploying", imageRef: out });
+    expect(build).toHaveBeenCalledWith(
+      expect.objectContaining({ staticExtractOnly: true, cloneOnServer: true }),
+      expect.anything(),
+    );
+    expect(runtime.executor.exec).toHaveBeenCalledWith("docker rm 'extract-only'");
+    expect(remove).toHaveBeenCalledWith("builder-image");
+    expect(captures).toEqual([]);
+    expect(out).toBe(
+      runtime.routingScope().staticReleaseRoot!.replace(/\/releases$/, "/.builds/build-pages"),
+    );
+    expect(() => runtime.staticBuildPath("../sibling")).toThrow("Invalid build session");
   });
   it("stages inline source remotely and invokes the shared Docker builder with the cloud executor", async () => {
     const sharedBuild = vi.spyOn(DockerRuntime.prototype, "buildImages").mockResolvedValue([]);
@@ -458,6 +681,49 @@ describe("containers on one Oblien Docker workspace", () => {
       { path: "web/Dockerfile", content: "FROM alpine" }, { path, content: "invalid" },
     ] } as never)).rejects.toThrow("escapes");
     expect(runtime.executor.writeFile).not.toHaveBeenCalled();
-    expect(runtime.executor.exec).not.toHaveBeenCalled();
+    expect(runtime.executor.exec).toHaveBeenCalledTimes(2); // Allocate and remove only the isolated staging directory.
   });
+});
+
+it("removes failed static staging files while preserving application data and neighboring projects", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "openship-delete-static-"));
+  const project = join(directory, "project-a");
+  const staging = join(project, "bare", ".builds");
+  const data = join(project, "database", "keep.txt");
+  const neighbor = join(directory, "project-b", "keep.txt");
+  try {
+    await mkdir(join(staging, "failed-build"), { recursive: true });
+    await mkdir(join(project, "database"), { recursive: true });
+    await mkdir(join(directory, "project-b"), { recursive: true });
+    await writeFile(join(staging, "failed-build", "index.html"), "unused build");
+    await writeFile(data, "application data");
+    await writeFile(neighbor, "neighbor data");
+    Object.defineProperty(runtime, "projectPaths", {
+      get: () => ({
+        mounts: project,
+        bare: join(project, "bare"),
+        routes: join(project, "routes"),
+      }),
+    });
+    // Worker quiescence/cache ownership is covered by the cache teardown suite.
+    // This test executes the actual filesystem cleanup in a private directory.
+    Object.defineProperty(runtime, "clearManagedProjectBuildCache", { value: async () => {} });
+    vi.mocked(runtime.executor.exec).mockImplementation(async (command) => {
+      const args = commandToArgv(command);
+      if (
+        !args ||
+        args.slice(0, 3).join(" ") !== "rm -rf --" ||
+        args.length < 4 ||
+        args.slice(3).some((path) => !resolve(path).startsWith(`${resolve(project)}/`))
+      )
+        throw new Error("Unexpected command outside the private cleanup fixture");
+      return (await promisify(execFile)("/bin/rm", args.slice(1))).stdout;
+    });
+    await runtime.cleanupProject("project-a", { wipeVolumes: false });
+    await expect(access(staging)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(data, "utf8")).toBe("application data");
+    expect(await readFile(neighbor, "utf8")).toBe("neighbor data");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

@@ -34,6 +34,7 @@
     "local": "Local"
   },
   "card": {
+    "more": "Plus",
     "liveVersion": "Version en ligne v{version}",
     "sourceLocal": "Local",
     "services": "Services",
@@ -103,9 +104,11 @@
     "deletionInProgress": "Une autre suppression est déjà en cours pour ce projet",
     "deletionInProgressTitle": "Suppression en cours",
     "confirmForceOrphan": "Certaines ressources n'ont pas pu être supprimées du serveur. Supprimer quand même le projet et les nettoyer automatiquement plus tard ?",
-    "teardownFailedAt": "Le démantèlement a échoué à : {reasons}. Réessayez ou forcez la suppression pour les rendre orphelines.",
+    "teardownFailedAt": "Le nettoyage n’a pas pu se terminer : {reasons}. Le projet est toujours enregistré. Réessayez la suppression après avoir résolu le problème.",
     "teardownFailed": "Échec du démantèlement",
     "cleanupFailedTitle": "Échec du nettoyage",
+    "retryCleanup": "Réessayer la suppression",
+    "cleanupPending": "La suppression a commencé. Le projet reste indisponible jusqu’à la fin du nettoyage.",
     "alreadyDeleted": "Projet déjà supprimé",
     "forceModalTitle": "Suppression impossible à la source",
     "forceModalBody": "Le runtime était injoignable (ou a continué d'échouer), donc ce projet n'a pas été démonté. Vous pouvez tout de même le supprimer d'Openship — l'enregistrement part maintenant et les ressources restantes sont récupérées automatiquement dès que le serveur est joignable.",
@@ -134,6 +137,7 @@
       "deployments": "Déploiements",
       "health": "Santé",
       "monitoring": "Surveillance",
+      "monitoringAndLogs": "Surveillance et journaux",
       "source": "Source",
       "sourceAndTriggers": "Source et déclencheurs",
       "webhooks": "Webhooks",
@@ -194,7 +198,8 @@
     "services": "Services",
     "created": "Créé",
     "managedImages": "Images de conteneur gérées",
-    "managedImagesText": "Cette application s'exécute à partir d'images préconstruites — il n'y a pas de dépôt à connecter. Déployez simplement."
+    "managedImagesText": "Cette application s'exécute à partir d'images préconstruites — il n'y a pas de dépôt à connecter. Déployez simplement.",
+    "subtextNoSource": "Connectez une source pour configurer votre premier déploiement."
   },
   "overview": {
     "platformCloud": "Openship Cloud",
@@ -242,7 +247,10 @@
     "noTransfer": "Aucun transfert pour le moment"
   },
   "analytics": {
-    "loadFailed": "Impossible de charger les analyses de trafic"
+    "loadFailed": "Impossible de charger les analyses de trafic",
+    "loadFailedDescription": "Réessayez pour charger les dernières données.",
+    "sectionsUnavailable": "Indisponible : {sections}.",
+    "staleData": "Les dernières données disponibles sont affichées."
   },
   "monitoring": {
     "noDataTitle": "Aucune donnée de surveillance pour le moment",
@@ -307,7 +315,11 @@
       "disable": "Désactiver les chemins principaux"
     },
     "liveFeed": "Requêtes récentes",
-    "liveFeedHint": "Afficher la liste des requêtes récentes sur la carte (tout le détail est dans Journaux)"
+    "liveFeedHint": "Afficher la liste des requêtes récentes sur la carte (tout le détail est dans Journaux)",
+    "dataUnavailable": "Certaines données de surveillance sont indisponibles",
+    "connecting": "Connexion…",
+    "liveUnavailable": "Requêtes en direct indisponibles",
+    "liveUnavailableDescription": "Le trafic historique reste affiché. Reconnectez-vous pour voir les requêtes en direct."
   },
   "services": {
     "failedLoad": "Échec du chargement des services",
@@ -338,7 +350,10 @@
     "toastKeptEdits": "{name} : vos modifications ont été conservées",
     "failedResolveDrift": "Échec de la résolution de l'écart",
     "failedCreateService": "Échec de la création du service",
-    "requestFailed": "Échec de la requête"
+    "requestFailed": "Échec de la requête",
+    "application": "Application",
+    "applicationHint": "Gérée via les déploiements de ce projet.",
+    "companionsTitle": "Ajouter une autre application ou un service"
   },
   "serviceStatus": {
     "checking": "Vérification…",
@@ -348,7 +363,7 @@
     "failed": "Échec",
     "starting": "Démarrage",
     "restarting": "Redémarrage",
-    "unknown": "Inconnu"
+    "unknown": "État indisponible"
   },
   "routingRetry": {
     "title": "Le routage du domaine demande votre attention",
@@ -399,6 +414,8 @@
     "fixStep3": "Vérifiez le domaine et déployez."
   },
   "connections": {
+    "nativeClusterHint": "Choisissez un projet sur le cluster de cette base de données. Seuls les projets liés disposent d’un accès privé.",
+    "nativeNoTargets": "Aucun autre projet n’utilise encore ce cluster.",
     "useInProject": "Utiliser dans un projet",
     "title": "Utiliser dans un projet",
     "subtitle": "Partagez ce service avec un autre projet via une connexion.",

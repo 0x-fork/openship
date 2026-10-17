@@ -1,5 +1,6 @@
 import {
   ResourceIdSchema,
+  ServerMonitorFormatSchema,
   parseInput,
   ServerCollectionSchemas,
   ServerResourceSchemas,
@@ -195,7 +196,11 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
       applyingContainers: { method: "GET", path: () => "/system/containers/applying" },
       applyAllContainers: { method: "POST", path: () => "/system/containers/apply-all" },
       list: { method: "GET", path: () => "/system/servers" },
+      destinations: { method: "GET", path: () => "/system/servers/destinations" },
       create: { method: "POST", path: () => "/system/servers" },
+      createManaged: { method: "POST", path: () => "/system/servers/managed" },
+      availableManaged: { method: "GET", path: () => "/system/servers/managed/available" },
+      connectManaged: { method: "POST", path: () => "/system/servers/managed/connect" },
       testConnection: {
         method: "POST",
         path: () => "/system/test-connection",
@@ -256,6 +261,32 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
           path(id) +
           `/containers/${encodeURIComponent((input as { component: string }).component)}/apply/session`,
       },
+      usage: { method: "GET", path: id => path(id) + "/usage" },
+      managedInfo: { method: "GET", path: id => path(id) + "/managed/info" },
+      managedOutbound: { method: "GET", path: id => path(id) + "/managed/outbound", redactInvalidResponse: true },
+      managedOutboundOptions: { method: "GET", path: id => path(id) + "/managed/outbound/options", redactInvalidResponse: true },
+      setManagedOutbound: { method: "PATCH", path: id => path(id) + "/managed/outbound", redactInvalidResponse: true },
+      managedBootLogs: { method: "POST", path: id => path(id) + "/managed/boot-logs" },
+      managedSshStatus: { method: "GET", path: id => path(id) + "/managed/ssh" },
+      setManagedSsh: { method: "PATCH", path: id => path(id) + "/managed/ssh", redactInvalidResponse: true },
+      setManagedSshKey: { method: "PUT", path: id => path(id) + "/managed/ssh/key" },
+      setManagedSshPassword: { method: "PUT", path: id => path(id) + "/managed/ssh/password" },
+      managedSshConnection: { method: "POST", path: id => path(id) + "/managed/ssh/connection", redactInvalidResponse: true },
+      managedRuntimeStatus: { method: "GET", path: id => path(id) + "/managed/runtime-api" },
+      enableManagedRuntime: { method: "POST", path: id => path(id) + "/managed/runtime-api/enable" },
+      managedRuntimeCredential: { method: "POST", path: id => path(id) + "/managed/runtime-api/credential", redactInvalidResponse: true },
+      rotateManagedRuntimeCredential: { method: "POST", path: id => path(id) + "/managed/runtime-api/rotate", redactInvalidResponse: true },
+      managedWorkloads: { method: "GET", path: id => path(id) + "/managed/workloads" },
+      managedWorkloadLogs: { method: "POST", path: id => path(id) + "/managed/workloads/logs" },
+      createManagedWorkload: { method: "POST", path: id => path(id) + "/managed/workloads" },
+      controlManagedWorkload: { method: "POST", path: id => path(id) + "/managed/workloads/control" },
+      getNetworkSettings: { method: "GET", path: id => path(id) + "/network-settings" },
+      updateNetworkSettings: { method: "PATCH", path: id => path(id) + "/network-settings" },
+      ensure: { method: "POST", path: id => path(id) + "/ensure" },
+      previewResize: { method: "GET", path: id => path(id) + "/resize" },
+      resize: { method: "POST", path: id => path(id) + "/resize" },
+      retry: { method: "POST", path: id => path(id) + "/retry" },
+      removeManaged: { method: "DELETE", path: id => path(id) + "/managed" },
       get: { method: "GET", path },
       reachability: { method: "GET", path: (id) => path(id) + "/reachability" },
       update: { method: "PATCH", path },
@@ -363,7 +394,8 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
     },
     async *monitor(value, options = {}) {
       const id = parseInput(ResourceIdSchema, value);
-      yield* http.events(`/system/monitor/stream?serverId=${encodeURIComponent(id)}`, {
+      const format = options.format === undefined ? "" : `&format=${parseInput(ServerMonitorFormatSchema, options.format)}`;
+      yield* http.events(`/system/monitor/stream?serverId=${encodeURIComponent(id)}${format}`, {
         signal: options.signal,
       });
     },

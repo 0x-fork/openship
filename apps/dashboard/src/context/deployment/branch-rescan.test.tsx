@@ -51,6 +51,8 @@ vi.mock("@/lib/api", () => ({
   getApiErrorMessage: (error: Error) => error.message,
 }));
 vi.mock("@/lib/api/folder", () => ({ folderApi: { scan: api.folderScan } }));
+vi.mock("@/lib/api/system", () => ({ systemApi: { listServerDestinations: async () => ({ servers: [] }) } }));
+vi.mock("@/lib/auth-client", () => ({ useSession: () => ({ data: null }) }));
 vi.mock("@/lib/api/settings", () => ({ settingsApi: { get: async () => ({}) } }));
 vi.mock("@/lib/api/projects", () => ({ projectsApi: { getBranchPage: api.getBranchPage } }));
 vi.mock("@/lib/api/github", () => ({ githubApi: { listBranches: api.getBranchPage } }));
@@ -151,7 +153,7 @@ function Harness() {
         } satisfies DeploymentContextType
       }
     >
-      <Sidebar />
+      <Sidebar destinationReady />
       {current.config.projectType === "app" && <ProjectSettings />}
       {current.config.projectType === "app" && <BuildSettings />}
     </DeploymentContext.Provider>
@@ -241,6 +243,30 @@ afterEach(async () => {
 });
 
 describe("deploy branch detection", () => {
+  it.each([true, false])("preserves saved GitHub reporting through hydration, branch scan, save and deploy (self-hosted: %s)", async selfHosted => {
+    api.selfHosted = selfHosted;
+    const githubChecks = { enabled: false, deployment: true, services: ["web"], includeErrors: false };
+    const response = await api.getInfo();
+    api.getInfo.mockResolvedValue({ data: { project: { ...response.data.project, githubChecks } } });
+    await act(async () => { await current.initializeFromProject("project-1"); });
+    expect(current.config.githubChecks).toEqual(githubChecks);
+    await act(async () => current.updateConfig({ branches: ["main", "openship"] }));
+    await selectBranch("openship");
+    expect(current.config.githubChecks).toEqual(githubChecks);
+    await act(async () => button(baseDictionary.deploy.sidebar.saveChanges).click());
+    expect(api.setOptions).toHaveBeenCalledWith("project-1", expect.objectContaining({ githubChecks }));
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure).toHaveBeenCalledWith(expect.objectContaining({ githubChecks }));
+  });
+
+  it("keeps a new project's reporting opt-out while scanning a different Compose file", async () => {
+    await act(async () => { await current.initializeFromRepo("example", "fresh"); });
+    const githubChecks = { enabled: false, deployment: true, services: "all" as const, includeErrors: false };
+    await act(async () => current.updateConfig({ githubChecks }));
+    await act(async () => { await current.rescanWithComposePath("infra/compose.yml"); });
+    expect(current.config.githubChecks).toEqual(githubChecks);
+  });
+
   it.each([{ commands: ["migrate"] }, { commands: [] }])(
     "preserves explicit release settings through rescan, save and deploy: $commands",
     async ({ commands }) => {
@@ -263,6 +289,62 @@ describe("deploy branch detection", () => {
     api.listServices.mockResolvedValueOnce({ services: [] });
     await act(async () => { await current.initializeFromProject("project-1"); });
     expect(current.config.releaseCommands).toEqual(["node migrate.js"]);
+  });
+
+  it("hydrates saved roles when editing a project", async () => {
+    const roles = [{ name: "jobs", kind: "worker", command: "bin/jobs" }];
+    api.getInfo.mockResolvedValueOnce({ data: { project: {
+      id: "project-1", name: "Demo", framework: "node", gitOwner: "example", gitRepo: "demo",
+      gitBranch: "main", roles,
+    } } });
+    api.listServices.mockResolvedValueOnce({ services: [] });
+    await act(async () => { await current.initializeFromProject("project-1"); });
+    expect(current.config.roles).toEqual(roles);
+  });
+
+  it.each([{ roles: [{ name: "queue", kind: "worker", command: "bin/queue" }] }, { roles: [] }])(
+    "preserves a saved roles setting through rescan, save and deploy: $roles",
+    async ({ roles }) => {
+      await act(async () => current.updateConfig({ roles: roles as never }));
+      api.prepare.mockResolvedValueOnce(scan("openship", { roles: [{ name: "upstream", kind: "worker", command: "x" }] }));
+      await selectBranch("openship");
+      expect(current.config.roles).toEqual(roles);
+      await act(async () => button(baseDictionary.deploy.sidebar.saveChanges).click());
+      expect(api.setOptions).toHaveBeenCalledWith("project-1", expect.objectContaining({ roles }));
+      await act(async () => { await build.startDeployment(); });
+      expect(api.ensure).toHaveBeenCalledWith(expect.objectContaining({ roles }));
+    },
+  );
+
+  it.each([
+    { label: "declared roles", roles: [{ name: "jobs", kind: "worker" as const, command: "bin/jobs" }] },
+    { label: "a declared empty list", roles: [] },
+  ])("carries $label from a new project's scan through to the ensure request", async ({ roles }) => {
+    api.prepare.mockResolvedValueOnce(scan("main", { roles }));
+    await act(async () => { await current.initializeFromRepo("example", "fresh"); });
+    expect(current.config.roles).toEqual(roles);
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure).toHaveBeenCalledWith(expect.objectContaining({ roles }));
+  });
+
+  it("does not send roles for a scan that declared none", async () => {
+    await act(async () => { await current.initializeFromRepo("example", "fresh"); });
+    expect(current.config.roles).toBeUndefined();
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure.mock.calls.at(-1)?.[0]?.roles).toBeUndefined();
+  });
+
+  it.each([false, true])("keeps the managed server on Cloud draft restoration (empty service read: %s)", async empty => {
+    api.getInfo.mockResolvedValueOnce({ data: { project: {
+      id: "project-1", name: "Cloud app", framework: "docker-compose", gitOwner: "example", gitRepo: "demo",
+      gitBranch: "main", deployTarget: "cloud", serverId: "managed-server", workspaceId: "workspace", serverName: "Production",
+    } } });
+    api.listServices.mockResolvedValueOnce({ services: empty ? [] : services });
+    await act(async () => { await current.initializeFromProject("project-1"); });
+    expect(current.config).toMatchObject({ deployTarget: "cloud", serverId: "managed-server", workspaceId: "workspace", serverName: "Production" });
+    await act(async () => { await build.startDeployment(); });
+    expect(api.ensure).toHaveBeenCalledWith(expect.objectContaining({ serverId: "managed-server" }));
+    expect(api.buildAccess).toHaveBeenCalledWith(expect.objectContaining({ deployTarget: "cloud", serverId: "managed-server" }));
   });
 
   it("seeds a new project from openship.json and lets the operator remove a command", async () => {
@@ -296,6 +378,19 @@ describe("deploy branch detection", () => {
     });
     expect(current.config.releaseCommands).toEqual(["node migrate.js"]);
     expect(current.config.framework).toBe("node");
+  });
+
+  it.each([
+    { label: "with a stack selected", context: { stack: "node", name: "Uploaded app" } },
+    { label: "with the stack detected", context: undefined },
+  ])("imports roles from an uploaded folder $label", async ({ context }) => {
+    const roles = [{ name: "jobs", kind: "worker", command: "bin/jobs" }];
+    api.folderScan.mockResolvedValue({ ...scan("main"), name: "Uploaded app", roles });
+    await act(async () => {
+      const result = await current.initializeFromUpload("upload-1", context);
+      expect(result.success).toBe(true);
+    });
+    expect(current.config.roles).toEqual(roles);
   });
 
   it("rescans from the branch dropdown, replaces compose defaults, and preserves project edits", async () => {
@@ -470,6 +565,45 @@ describe("deploy branch detection", () => {
     expect(api.prepare.mock.lastCall?.[0].composePath).toBeUndefined();
   });
 
+  it("keeps Dockerfile defaults as a running service when rescanning single and monorepo apps", async () => {
+    const docker = scan("openship", {
+      stack: "docker",
+      projectType: "docker",
+      category: "docker",
+      startCommand: "",
+      buildCommand: "",
+      installCommand: "",
+      port: 20128,
+    });
+    api.prepare.mockResolvedValueOnce(docker);
+    await selectBranch("openship");
+    expect(current.config).toMatchObject({
+      framework: "docker",
+      projectType: "docker",
+      runtimeMode: "docker",
+      options: { startCommand: "", hasServer: true, productionPort: "20128" },
+    });
+
+    api.prepare.mockResolvedValueOnce({
+      ...docker,
+      projectType: "monorepo",
+      monorepoApps: [
+        { ...docker, id: "web", name: "web", rootDirectory: "apps/web" },
+      ],
+      monorepoWorkspace: {
+        packageManager: "pnpm",
+        prepareCommand: "pnpm install",
+      },
+    });
+    await selectBranch("main");
+    expect(current.config.monorepoApps?.[0]).toMatchObject({
+      framework: "docker",
+      startCommand: "",
+      hasServer: true,
+      port: "20128",
+    });
+  });
+
   it("replaces monorepo apps, workspace defaults, and mode snapshots when returning to a plain branch", async () => {
     const app = scan("openship");
     api.prepare.mockResolvedValueOnce(
@@ -556,7 +690,7 @@ describe("Cloud pricing is offered only at deployment time", () => {
     await selectBranch("openship");
     api.selfHosted = false;
     api.query = "";
-    await act(async () => current.updateConfig({ deployTarget: "cloud", serverId: undefined, noPublicRoute: true }));
+    await act(async () => current.updateConfig({ deployTarget: "cloud", serverId: "managed-server", workspaceId: "workspace", noPublicRoute: true }));
   }
   it("lets a paid Cloud deployment pass the former waitlist gate", async () => {
     await configureCloud();

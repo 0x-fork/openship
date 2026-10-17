@@ -1,10 +1,8 @@
 /**
- * Curated catalog for **local / self-hosted** Docker deployments.
+ * Curated upstream catalog for Docker deployments, including managed Cloud hosts.
  *
- * The Oblien `images.list()` catalog is cloud-specific (oblien/* images
- * running on managed workspaces). When the user deploys to their own
- * machine or server, those images don't apply - they need the plain
- * upstream Docker images instead.
+ * The Oblien `images.list()` catalog provides server images.
+ * Docker servers use these upstream images regardless of who hosts the server.
  *
  * This list is hand-curated to the things people actually add to apps:
  * databases, caches, search, vector stores, queues, storage, browsers
@@ -19,6 +17,14 @@
  */
 
 import type { ImageCatalogEntry } from "@/lib/api/images";
+import { getAppTemplate, appGpuEnvironment } from "@repo/core";
+
+// The app and companion-service entry points must use the same reviewed image
+// and its required command. Keep these defaults in the canonical app template.
+const ollamaTemplate = getAppTemplate("ollama")!;
+const ollama = ollamaTemplate.services![0]!;
+
+const minio = getAppTemplate("minio")!.services!.find((service) => service.name === "minio")!;
 
 function si(slug: string): string {
   // simpleicons.org auto-coloring CDN. Falls back to monochrome silently
@@ -269,12 +275,28 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
   {
     id: "ollama",
     name: "Ollama",
-    image: "ollama/ollama:latest",
+    image: ollama.image!,
     logo: si("ollama"),
     category: "vector",
     description: "Run local LLMs (Llama, Mistral, etc.) with an OpenAI-compatible API.",
     ports: [11434],
-    defaultVolumes: ["ollama_data:/root/.ollama"],
+    defaultVolumes: [...ollama.volumes!],
+    defaultEnv: Object.entries(appGpuEnvironment(ollama, false)).map(([key, value]) => ({ key, value })),
+    supportsCloud: ollamaTemplate.supportsCloud,
+  },
+  {
+    id: "ollama-gpu",
+    name: "Ollama (NVIDIA GPU)",
+    image: ollama.image!,
+    logo: si("ollama"),
+    category: "vector",
+    description:
+      "Ollama with one NVIDIA GPU on the server. Needs a GPU server with the NVIDIA Container Toolkit.",
+    ports: [11434],
+    defaultVolumes: [...ollama.volumes!],
+    defaultEnv: Object.entries(ollama.environment ?? {}).map(([key, value]) => ({ key, value })),
+    supportsCloud: ollamaTemplate.supportsCloud,
+    gpus: Array.isArray(ollama.gpus) ? ollama.gpus[0] : ollama.gpus,
   },
 
   /* ── Queues & Streams ─────────────────────────────────────────────── */
@@ -316,16 +338,17 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
   {
     id: "minio",
     name: "MinIO",
-    image: "minio/minio:latest",
+    image: minio.image,
+    commandArgv: minio.commandArgv ? [...minio.commandArgv] : undefined,
     logo: si("minio"),
     category: "storage",
     description: "S3-compatible object storage. Self-hosted alternative to AWS S3.",
     ports: [9000, 9001],
     defaultEnv: [
       { key: "MINIO_ROOT_USER", value: "minioadmin" },
-      { key: "MINIO_ROOT_PASSWORD", value: "minioadmin" },
+      { key: "MINIO_ROOT_PASSWORD", generate: "secret" },
     ],
-    defaultVolumes: ["minio_data:/data"],
+    defaultVolumes: minio.volumes ? [...minio.volumes] : undefined,
   },
 
   /* ── Auth & Identity ──────────────────────────────────────────────── */
@@ -345,10 +368,11 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
   {
     id: "authentik",
     name: "Authentik",
-    image: "ghcr.io/goauthentik/server:latest",
+    image: "ghcr.io/goauthentik/server:2026.8.3",
+    commandArgv: ["server"],
     logo: gh("goauthentik"),
     category: "auth",
-    description: "Modern open-source identity provider with SAML, OAuth2, LDAP.",
+    description: "Authentik server. Requires a separate worker and PostgreSQL service.",
     ports: [9000],
     defaultEnv: [
       { key: "AUTHENTIK_SECRET_KEY", value: "" },
@@ -356,7 +380,6 @@ export const LOCAL_SERVICE_CATALOG: ImageCatalogEntry[] = [
       { key: "AUTHENTIK_POSTGRESQL__USER", value: "authentik" },
       { key: "AUTHENTIK_POSTGRESQL__PASSWORD", value: "" },
       { key: "AUTHENTIK_POSTGRESQL__NAME", value: "authentik" },
-      { key: "AUTHENTIK_REDIS__HOST", value: "redis" },
     ],
   },
 

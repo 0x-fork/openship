@@ -1,6 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@repo/db", () => ({ repos: {} }));
+vi.mock("@repo/db", () => ({
+  repos: {
+    domain: { listByProject: vi.fn(async () => []) },
+    deployment: {
+      findById: vi.fn(async () => ({
+        id: "dep-1",
+        projectId: "proj-1",
+        organizationId: "org-1",
+        meta: { deployTarget: "local" },
+      })),
+    },
+  },
+}));
 
 import { NginxProvider, EDGE_HOST_PATHS, type RootChecked } from "@repo/adapters";
 import { reconcileProjectRoutes } from "@repo/platform/engine/lib/route-apply.service";
@@ -50,7 +62,7 @@ function fakeExecutor(files: Map<string, string>): RootChecked {
 const project = (proxy?: unknown) => ({
   id: "proj-1",
   organizationId: "org-1",
-  cloudWorkspaceId: null,
+  workspaceId: null,
   activeDeploymentId: "dep-1",
   webhookDomain: null,
   routingConfig: proxy ? ({ proxy } as never) : null,
