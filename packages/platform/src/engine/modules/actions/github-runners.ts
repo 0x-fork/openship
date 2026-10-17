@@ -533,7 +533,8 @@ async function reconcileSession(
       await execution.release();
     }
   } catch (error) {
-    if (!lost && observationUnavailable(error)) {
+    const retryable = observationUnavailable(error);
+    if (!lost && retryable && session.state !== "stopping") {
       errorReporter.capture(error, {
         component: "actions/github-runners",
         summary: "Runner observation unavailable; retrying without stopping the worker",
@@ -547,7 +548,11 @@ async function reconcileSession(
       return;
     }
     if (!lost) {
-      await update({ state: "stopping", error: session.error ?? safeErrorMessage(error) });
+      const failed = !session.finishedAt && !retryable;
+      await update({
+        state: "stopping",
+        error: failed ? (session.error ?? safeErrorMessage(error)) : session.error,
+      });
       // Even revoked GitHub credentials must not leave a paid VM running. Only
       // endpoint-owned resources are removed; stale registration is retried later.
       if (runner && session) {
@@ -573,7 +578,12 @@ async function reconcileSession(
           );
         }
       }
-      if (workflow) await repos.actions.workflowError(org, workflow.id, safeErrorMessage(error));
+      if (workflow && failed)
+        await repos.actions.workflowError(
+          org,
+          workflow.id,
+          session.error ?? safeErrorMessage(error),
+        );
     }
     diagnostics.warn("actions/github-runners", "GitHub runner reconciliation failed", error, {
       sessionId: candidate.id,

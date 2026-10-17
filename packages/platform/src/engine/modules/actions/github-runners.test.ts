@@ -294,6 +294,27 @@ async function assignmentFixture() {
 }
 describe("official GitHub runner reconciliation", () => {
   it.each([true, false])(
+    "continues an authorized stop through a GitHub outage without replacing the result (completed: %s)",
+    async (completed) => {
+      const f = await fixture(completed);
+      if (!completed) {
+        await repo.claimRunnerSession(f.org, f.id, "fixture");
+        await repo.updateRunnerSession(f.org, f.id, "fixture", { cancelRequestedAt: new Date() });
+        await repo.releaseRunnerSession(f.org, f.id, "fixture");
+      }
+      state.registrations.mockRejectedValueOnce(
+        Object.assign(new Error("GitHub unavailable"), { status: 503 }),
+      );
+      await reconcileGitHubRunners();
+      expect(state.remove).toHaveBeenCalledOnce();
+      expect(await f.get()).toMatchObject({ state: "stopping", error: null });
+      await reconcileGitHubRunners();
+      expect((await f.get())?.cleanedAt).toBeTruthy();
+      expect((await f.get())?.error).toBeNull();
+      expect(state.open).not.toHaveBeenCalled();
+    },
+  );
+  it.each([true, false])(
     "retains a terminal infrastructure error during GitHub sync only for the actual assigned runner (%s)",
     async (matchingRunner) => {
       const f = await assignmentFixture();
