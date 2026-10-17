@@ -125,7 +125,7 @@ export function prepareNodeOutputCommand(
   return `openship_output_runtime=$(command -v node || command -v bun) && "$openship_output_runtime" -e ${shellQuote(`eval(Buffer.from(${JSON.stringify(Buffer.from(script).toString("base64"))}, "base64").toString())`)}`;
 }
 
-export const AUTOMATIC_START = "sh .openship-start.sh";
+export const AUTOMATIC_START = "exec sh .openship-start.sh";
 export const START_SOURCE_LABEL = "io.openship.start-source";
 export const START_COMMAND_LABEL = "io.openship.start-command";
 export const startCommandDigest = (command: string | undefined) =>
@@ -137,7 +137,8 @@ export function imageStartCommand(
   command: string | undefined,
 ): string | undefined {
   return labels?.[START_SOURCE_LABEL] === startCommandDigest(command) &&
-    labels[START_COMMAND_LABEL] === AUTOMATIC_START
+    (labels[START_COMMAND_LABEL] === AUTOMATIC_START ||
+      labels[START_COMMAND_LABEL] === "sh .openship-start.sh")
     ? AUTOMATIC_START
     : command;
 }

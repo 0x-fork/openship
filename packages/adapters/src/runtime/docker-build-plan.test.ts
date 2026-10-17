@@ -225,7 +225,7 @@ describe("generateDockerfile — node_modules/.bin on PATH (#623)", () => {
   it("covers the CMD too — a bare `next start` would otherwise crash-loop at boot", () => {
     // Single stage: the build stage IS the runtime stage, so the one ENV serves both.
     const df = generateDockerfile(bunNext());
-    expect(df).toContain('CMD ["sh", "-c", "sh .openship-start.sh"]');
+    expect(df).toContain('CMD ["sh", "-c", "exec sh .openship-start.sh"]');
     expect(df.indexOf("ENV PATH=")).toBeLessThan(df.indexOf("CMD "));
   });
 

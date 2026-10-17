@@ -113,7 +113,7 @@ describeDockerE2E("managed deployment output and build environment", () => {
         "apps/web/next.config.js":
           "const path = require('node:path'); module.exports = { output: 'standalone', outputFileTracingRoot: path.join(__dirname, '../..'), experimental: { cpus: 1 } };",
         "apps/web/pages/index.js":
-          "import shared from '@fixture/shared'; export default function Home({ runtime }) { return <main><h1>{process.env.NEXT_PUBLIC_MARKER}</h1><p>{shared}</p><p>{runtime}</p></main>; } export function getServerSideProps(){ return {props:{runtime:process.env.RUNTIME_MARKER}}; }",
+          "import shared from '@fixture/shared'; export default function Home({ runtime, pid }) { return <main><h1>{process.env.NEXT_PUBLIC_MARKER}</h1><p>{shared}</p><p>{runtime}</p><p id=\"app-pid\">{pid}</p></main>; } export function getServerSideProps(){ return {props:{runtime:process.env.RUNTIME_MARKER,pid:process.pid}}; }",
         "apps/web/public/proof.txt": "public-asset-proof",
         "apps/web/.env.example": "MISSING_EXAMPLE=\nBUILD_TOKEN=\n",
       },
@@ -136,7 +136,7 @@ describeDockerE2E("managed deployment output and build environment", () => {
     } as never);
     containers.push(deploy.containerId!);
     const container = await runtime.docker.getContainer(deploy.containerId!).inspect();
-    expect(container.Config.Cmd).toEqual(["sh", "-c", "sh .openship-start.sh"]);
+    expect(container.Config.Cmd).toEqual(["sh", "-c", "exec sh .openship-start.sh"]);
     const port = container.NetworkSettings.Ports["3000/tcp"]![0]!.HostPort;
     const url = `http://127.0.0.1:${port}`;
     let html = "";
@@ -157,6 +157,7 @@ describeDockerE2E("managed deployment output and build environment", () => {
     expect(html).toContain("build-public-value");
     expect(html).toContain("workspace-dependency");
     expect(html).toContain("runtime-value");
+    expect(html).toContain('<p id="app-pid">1</p>');
     expect(html).not.toContain("runtime-must-not-replace-build");
     expect(await (await fetch(`${url}/proof.txt`)).text()).toBe("public-asset-proof");
     const asset = html.match(/src="([^" ]*\/_next\/static\/[^" ]+\.js)"/)?.[1];
@@ -170,6 +171,9 @@ describeDockerE2E("managed deployment output and build environment", () => {
     const logger = new BuildLogger();
     logger.observeBuildOutput(warm.stdout + warm.stderr);
     expect(logger.cacheSummary()).toMatch(/[1-9]\d* hit/);
+    const application = runtime.docker.getContainer(deploy.containerId!);
+    await application.stop({ t: 10 });
+    expect([0, 143]).toContain((await application.inspect()).State.ExitCode);
   }, 600_000);
 
   it("injects the same project environment and managed cache metadata for Python", async () => {

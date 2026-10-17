@@ -127,6 +127,12 @@ describe("shared application output", () => {
       [START_COMMAND_LABEL]: AUTOMATIC_START,
     };
     expect(imageStartCommand(labels, "next start")).toBe(AUTOMATIC_START);
+    expect(
+      imageStartCommand(
+        { ...labels, [START_COMMAND_LABEL]: "sh .openship-start.sh" },
+        "next start",
+      ),
+    ).toBe(AUTOMATIC_START);
     expect(imageStartCommand(labels, "node custom.js")).toBe("node custom.js");
     expect(imageStartCommand(undefined, "next start")).toBe("next start");
   });
