@@ -407,6 +407,14 @@ keeps the roles it has saved, so change those through the project API/SDK (`role
 
 ### Where roles run
 
+Source scans expose matching framework roles as `rolePresets`. These are suggestions,
+separate from enabled `roles`; scanning a repository never starts a queue or scheduler.
+An explicit `roles` array, including `[]`, suppresses suggestions. Presets use file and
+dependency evidence, which can include development dependencies: review a suggested
+command before enabling it. Explicit roles remain the saved project configuration.
+Alternative queue backends share a preset slot; if both match, neither is suggested.
+Independent workers do not exclude each other merely because both are workers.
+
 Roles run on **single-app projects deployed to a Docker server**. A deploy that declares
 roles is refused **before the build starts**, with no build, release command or container
 run, on:

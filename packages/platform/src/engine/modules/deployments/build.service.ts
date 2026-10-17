@@ -43,6 +43,7 @@ import {
   looksLikeSecretKey,
   mergeAdvanced,
   resolveProjectVolumes,
+  runtimeRoleDefinition,
   resolveTierResources,
   type StackId,
   type DeployTarget,
@@ -493,9 +494,9 @@ export function buildConfigSnapshot(project: Project, branch?: string): Deployme
       ? { releaseCommands: project.releaseCommands as string[] }
       : {}),
     // Same rule: only a non-empty list, so a project without roles snapshots
-    // byte-identical to before. when/unless are preset-only and never frozen.
+    // byte-identical to before. when/unless/slot are preset-only and never frozen.
     ...(Array.isArray(project.roles) && project.roles.length > 0
-      ? { roles: project.roles.map(({ when: _when, unless: _unless, ...role }) => role) }
+      ? { roles: project.roles.map(runtimeRoleDefinition) }
       : {}),
     resources: (project.resources as ResourceConfig) || null,
     buildResources: (project.buildResources as ResourceConfig) || null,

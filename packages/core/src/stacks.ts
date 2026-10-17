@@ -214,6 +214,8 @@ export interface StackRole {
   /** Wait after the stop signal before SIGKILL, compose duration (e.g. "90s", "10m"). */
   stopGracePeriod?: string;
   health?: RoleHealth;
+  /** Preset-only exclusive slot. Independent roles omit this; never runtime configuration. */
+  slot?: string;
   /** Preset gating only: every signal must match. Ignored for openship.json roles. */
   when?: {
     deps?: readonly string[];
@@ -796,6 +798,7 @@ export const STACKS = {
       {
         name: "jobs",
         kind: "worker",
+        slot: "queue",
         command: "exec bin/jobs",
         stopGracePeriod: "10s",
         when: { deps: ["solid_queue"], files: ["bin/jobs"] },
@@ -803,6 +806,7 @@ export const STACKS = {
       {
         name: "sidekiq",
         kind: "worker",
+        slot: "queue",
         command: "exec bundle exec sidekiq",
         stopGracePeriod: "45s",
         when: { deps: ["sidekiq"] },
@@ -887,6 +891,7 @@ export const STACKS = {
       {
         name: "queue",
         kind: "worker",
+        slot: "queue",
         command: "exec php artisan queue:work",
         stopGracePeriod: "90s",
         unless: { deps: ["laravel/horizon"] },
@@ -894,6 +899,7 @@ export const STACKS = {
       {
         name: "horizon",
         kind: "worker",
+        slot: "queue",
         command: "exec php artisan horizon",
         stopGracePeriod: "90s",
         when: { deps: ["laravel/horizon"] },
