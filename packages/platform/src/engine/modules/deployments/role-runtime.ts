@@ -84,6 +84,7 @@ export function runtimeRoleRolloutDeps(input: {
   signal?: AbortSignal;
   /** Read at failure time, not construction time. */
   keepProvisionedOnCancel: () => boolean;
+  reuse?: readonly RoleContainerRef[];
   recordCreated?: RoleRolloutDeps["recordCreated"];
   recordStopIntent?: RoleRolloutDeps["recordStopIntent"];
   /** Injected for tests; defaults to verifyDeployedContainers. */
@@ -95,6 +96,7 @@ export function runtimeRoleRolloutDeps(input: {
 
   return {
     roles,
+    reuse: input.reuse,
     previousRoles: input.previousRoles,
     previous: input.previous,
     recordCreated: input.recordCreated,

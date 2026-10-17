@@ -842,3 +842,29 @@ the required roots and start commands.
 
 - [Guide: deploy with openship.json](/docs/guides/openship-json)
 - [Deploy from GitHub](/docs/guides/deploy-from-github) · [Auto-deploy on push](/docs/guides/auto-deploy)
+
+## Edit running role configuration
+
+For a single-app Docker deployment, open **Apps & Services → Configure roles** to
+add workers or schedulers and adjust worker replicas. Apply creates a configuration
+deployment using the active container's immutable image and frozen environment.
+It does not rebuild, run release commands, restart web, or rewrite domains. Unchanged
+replicas keep their container identities; changed roles use the normal readiness,
+singleton handover, cancellation, monitoring and recovery flow. A scheduler remains
+one instance. Inspect the configuration deployment's logs if cleanup needs attention.
+
+The editor starts from the **active release's** definitions. Saving also updates the
+project's desired roles for later deployments. An explicit `roles` array in
+`openship.json` overrides those project settings on the next source deployment;
+update the repository when that file is your source of truth. Failed configuration
+attempts leave the active release unchanged; its frozen roles remain authoritative.
+A normal rollback restores the target release's frozen role definitions and replica
+counts through the existing retained-image deployment path.
+
+The SDK exposes `ship.projects.getRuntimeRoleConfiguration(id)` and
+`ship.projects.configureRuntimeRoles(id, { expectedDeploymentId, expectedUpdatedAt, roles })`.
+The expected release and project timestamp come from the configuration read and
+prevent stale edits. CLI equivalents are `openship project role-config <id>` and
+`openship project configure-roles <id> <file>`. The JSON file contains the same
+three fields. These controls do not enable runtime roles on Cloud, bare, cluster,
+static or multi-service deployments.

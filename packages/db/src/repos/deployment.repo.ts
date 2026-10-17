@@ -1,3 +1,4 @@
+import type { RoleContainerRef } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { ilike, type SQL, eq, and, asc, desc, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { generateId, AppError, summarizeDeploymentHistory, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
@@ -23,6 +24,12 @@ function pendingRoleHandoverCondition() {
     isNotNull(deployment.roleHandover),
     sql`coalesce(${deployment.roleHandover}->>'phase', '') <> 'complete'`,
   );
+}
+
+export interface DeploymentRoleChanges {
+  expectedActiveDeploymentId: string;
+  expectedProjectUpdatedAt: Date;
+  roles: import("@repo/core").StackRole[];
 }
 
 export interface DeploymentResourceChanges {
@@ -424,6 +431,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       data: Omit<NewDeployment, "id"> & { id?: string },
       resourceChanges?: DeploymentResourceChanges,
       actionLeaseOwner?: string,
+      roleChanges?: DeploymentRoleChanges,
     ): Promise<Deployment | undefined> {
       // `id` is normally generated; re-import (live re-attach) passes the ORIGINAL
       // deployment id so the still-running containers (labelled `openship.deployment=<id>`)
@@ -509,6 +517,16 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
           status: "superseded", error: "A newer deployment was started for this project.", updatedAt: new Date(),
         }).where(and(eq(actionDeployment.projectId, inserted.projectId), eq(actionDeployment.organizationId, inserted.organizationId),
           isNull(actionDeployment.deploymentId), inArray(actionDeployment.status, ["waiting", "blocked", "deploying"])));
+        if (inserted && roleChanges) {
+          const [owner] = await tx.select().from(project).where(eq(project.id, rest.projectId));
+          if (owner?.activeDeploymentId !== roleChanges.expectedActiveDeploymentId ||
+              owner.updatedAt.getTime() !== roleChanges.expectedProjectUpdatedAt.getTime()) {
+            throw new AppError("The active release or project changed. Reload the role settings.", 409, "ROLE_CONFIGURATION_CHANGED");
+          }
+          await tx.update(project).set({ roles: roleChanges.roles, updatedAt: new Date() }).where(eq(project.id, rest.projectId));
+          await tx.insert(buildSession).values({ id: generateId("bld"), deploymentId: id,
+            projectId: rest.projectId, status: "queued" });
+        }
         if (inserted && resourceChanges) {
           const [owner] = await tx.select().from(project).where(eq(project.id, rest.projectId));
           if (owner?.activeDeploymentId !== resourceChanges.expectedActiveDeploymentId ||
@@ -991,7 +1009,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
 
     async setRoleContainers(
       id: string,
-      roleContainers: { role: string; replica: number; containerId: string }[] | null,
+      roleContainers: RoleContainerRef[] | null,
     ) {
       await db
         .update(deployment)
@@ -1005,7 +1023,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       projectId: string;
       organizationId: string;
       value: Record<string, unknown>;
-      roleContainers?: { role: string; replica: number; containerId: string }[];
+      roleContainers?: RoleContainerRef[];
       committing?: boolean;
       expectedRevision: number | null;
     }) {

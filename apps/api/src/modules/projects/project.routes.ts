@@ -1132,6 +1132,12 @@ r.post(
   ctrl.connectDomain,
 );
 
+/* ─── Runtime role configuration ───────────────────────────────────────── */
+r.get("/:id/roles/configuration", { tag: "project:read", readOnly: true,
+  mcp: { description: "Read editable runtime role settings from the active Docker release." } }, ctrl.runtimeRoleConfiguration);
+r.post("/:id/roles/configuration", { tag: "project:write", body: ProjectControlSchemas.configureRuntimeRoles.input,
+  mcp: { description: "Apply runtime role settings using the active image without rebuilding or restarting web. Expected release and project revision prevent stale edits." } }, ctrl.configureRuntimeRoles);
+
 /* ─── Runtime logs ─────────────────────────────────────────────────────── */
 r.get(
   "/:id/roles",

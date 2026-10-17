@@ -20,7 +20,7 @@ import { projectClusterCommand, projectDatabaseCommand, projectVolumeCommand } f
 import {
   projectUpdateCommand, projectEnvironmentCommand, projectResourcesCommand,
   projectStorageCommand, projectConnectionsCommand, projectInspectionCommands,
-  projectOptionsCommand, projectCacheCommand, projectDeploymentsCommand, projectCloneCommand, projectLocalCommand, projectRoutingCommand,
+  projectRoleConfigurationCommand, projectOptionsCommand, projectCacheCommand, projectDeploymentsCommand, projectCloneCommand, projectLocalCommand, projectRoutingCommand,
 } from "./project-management";
 import {
   renderReleaseImage,
@@ -655,6 +655,6 @@ projectCommand.addCommand(serverLogsCmd);
 projectCommand.addCommand(projectClusterCommand);
 projectCommand.addCommand(projectDatabaseCommand);
 projectCommand.addCommand(projectVolumeCommand);
-for (const command of [projectOptionsCommand, projectCacheCommand, projectDeploymentsCommand, projectCloneCommand, projectLocalCommand, projectRoutingCommand]) projectCommand.addCommand(command);
+for (const command of [projectRoleConfigurationCommand, projectOptionsCommand, projectCacheCommand, projectDeploymentsCommand, projectCloneCommand, projectLocalCommand, projectRoutingCommand]) projectCommand.addCommand(command);
 for (const command of [projectUpdateCommand, projectEnvironmentCommand, projectResourcesCommand,
   projectStorageCommand, projectConnectionsCommand, ...projectInspectionCommands]) projectCommand.addCommand(command);

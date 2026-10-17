@@ -7,7 +7,7 @@ import { withDeploymentRuntime } from "../../lib/deployment-runtime";
 import { planRoleReplicas, type RoleContainerRef } from "./role-rollout";
 
 interface RoleHandover extends Record<string, unknown> {
-  version: 1;
+  version: 1 | 2;
   revision: number;
   phase: "preparing" | "committing" | "kept" | "complete";
   previousDeploymentId: string | null;
@@ -16,6 +16,8 @@ interface RoleHandover extends Record<string, unknown> {
   webName: string;
   webContainerId: string | null;
   stopPreviousWeb: boolean;
+  preserveWeb?: { containerId: string; ownerDeploymentId: string };
+  reused?: RoleContainerRef[];
 }
 
 export function pendingRoleHandover(dep: Pick<Deployment, "roleHandover">): boolean {
@@ -51,12 +53,27 @@ function readHandover(dep: Deployment): RoleHandover {
   const value = dep.roleHandover as RoleHandover | null;
   if (
     !value ||
-    value.version !== 1 ||
+    ![1, 2].includes(value.version) ||
     !Number.isInteger(value.revision) ||
     value.revision < 1 ||
     !["preparing", "committing", "kept", "complete"].includes(value.phase) ||
     !Array.isArray(value.candidates) ||
     !Array.isArray(value.stopped) ||
+    (value.preserveWeb !== undefined &&
+      (!value.preserveWeb ||
+        typeof value.preserveWeb.containerId !== "string" ||
+        typeof value.preserveWeb.ownerDeploymentId !== "string")) ||
+    (value.reused !== undefined &&
+      (!Array.isArray(value.reused) ||
+        !value.reused.every(
+          (ref) =>
+            ref &&
+            typeof ref.containerId === "string" &&
+            typeof ref.role === "string" &&
+            Number.isInteger(ref.replica) &&
+            ref.replica > 0 &&
+            typeof ref.ownerDeploymentId === "string",
+        ))) ||
     typeof value.webName !== "string" ||
     !(value.previousDeploymentId === null || typeof value.previousDeploymentId === "string") ||
     !(value.webContainerId === null || typeof value.webContainerId === "string") ||
@@ -114,25 +131,36 @@ export async function beginRoleHandover(input: {
   previous: Deployment | null | undefined;
   config: DeployConfig;
   roles?: readonly StackRole[];
+  reuse?: RoleContainerRef[];
+  preserveWeb?: { containerId: string; ownerDeploymentId: string };
 }) {
   const { dep, previous, config } = input;
   const plan = planRoleReplicas(input.roles);
   let value: RoleHandover = {
-    version: 1,
+    version: 2,
     revision: 0,
     phase: "preparing",
     previousDeploymentId: previous?.id ?? null,
-    candidates: [...plan.scalable, ...plan.singletons].map(({ role, replica }) => ({
-      role: role.name,
-      replica,
-      name: DockerRuntime.deploymentContainerName(config, { name: role.name, replica }),
-    })),
+    ...(input.preserveWeb ? { preserveWeb: input.preserveWeb } : {}),
+    reused: input.reuse ?? [],
+    candidates: [...plan.scalable, ...plan.singletons]
+      .filter(
+        (entry) =>
+          !input.reuse?.some(
+            (ref) => ref.role === entry.role.name && ref.replica === entry.replica,
+          ),
+      )
+      .map(({ role, replica }) => ({
+        role: role.name,
+        replica,
+        name: DockerRuntime.deploymentContainerName(config, { name: role.name, replica }),
+      })),
     stopped: [],
     webName: DockerRuntime.deploymentContainerName(config),
     webContainerId: null,
     stopPreviousWeb: false,
   };
-  value = await writeHandover(dep, value, []);
+  value = await writeHandover(dep, value, input.reuse ?? []);
   const save = async (patch: Partial<RoleHandover>, roles?: RoleContainerRef[]) => {
     const next = { ...value, ...patch };
     value = await writeHandover(dep, next, roles);
@@ -155,6 +183,7 @@ export async function beginRoleHandover(input: {
  * restart; an unreachable host leaves the journal pending for the next retry. */
 async function recoverHandover(dep: Deployment, project: Project, discard = false): Promise<void> {
   const value = readHandover(dep);
+  const reusedIds = new Set((value.reused ?? []).map((ref) => ref.containerId));
   if (value.phase === "complete") return;
   const keep = (dep.meta as { cancellation?: { keepProvisioned?: boolean } } | null)?.cancellation
     ?.keepProvisioned;
@@ -214,8 +243,10 @@ async function recoverHandover(dep: Deployment, project: Project, discard = fals
         });
         if (id) await runtime.destroy(id);
       }
-      const web = await runtime.findOwnedDeploymentContainer(value.webName, owner);
-      if (web) await runtime.destroy(web);
+      if (!value.preserveWeb) {
+        const web = await runtime.findOwnedDeploymentContainer(value.webName, owner);
+        if (web) await runtime.destroy(web);
+      }
       // Never restart a scheduler from a release superseded during recovery.
       if (
         project.activeDeploymentId === value.previousDeploymentId &&
@@ -228,7 +259,7 @@ async function recoverHandover(dep: Deployment, project: Project, discard = fals
               throw new Error("The previous role runtime changed");
             const id = await old.findOwnedDeploymentContainer(ref.containerId, {
               projectId: project.id,
-              deploymentId: previous.id,
+              deploymentId: ref.ownerDeploymentId ?? previous.id,
               role: ref.role,
             });
             if (!id)
@@ -243,7 +274,9 @@ async function recoverHandover(dep: Deployment, project: Project, discard = fals
               old instanceof DockerRuntime
                 ? await old.findOwnedDeploymentContainer(previous.containerId, {
                     projectId: project.id,
-                    deploymentId: previous.id,
+                    deploymentId:
+                      (previous.meta as { webOwnerDeploymentId?: string } | null)
+                        ?.webOwnerDeploymentId ?? previous.id,
                   })
                 : old.name === "bare"
                   ? previous.containerId
@@ -253,12 +286,14 @@ async function recoverHandover(dep: Deployment, project: Project, discard = fals
             await old.start(id);
           }
         });
-        const { retryProjectRouting } = await import("../projects/project-runtime.service");
-        const routing = await retryProjectRouting(project.id, project.organizationId);
-        if (!routing.ok)
-          throw new Error(routing.warning ?? "Previous routing could not be restored");
+        if (!value.preserveWeb) {
+          const { retryProjectRouting } = await import("../projects/project-runtime.service");
+          const routing = await retryProjectRouting(project.id, project.organizationId);
+          if (!routing.ok)
+            throw new Error(routing.warning ?? "Previous routing could not be restored");
+        }
       }
-      await writeHandover(dep, { ...value, phase: "complete" }, []);
+      await writeHandover(dep, { ...value, phase: "complete" }, value.reused ?? []);
       return;
     }
 
@@ -270,7 +305,9 @@ async function recoverHandover(dep: Deployment, project: Project, discard = fals
     ) {
       // A newer release owns the project. Only retire this stale candidate;
       // never move the active pointer back or restart its predecessor.
-      for (const ref of dep.roleContainers ?? []) {
+      for (const ref of (dep.roleContainers ?? []).filter(
+        (ref) => !reusedIds.has(ref.containerId),
+      )) {
         const id = await runtime.findOwnedDeploymentContainer(ref.containerId, {
           ...owner,
           role: ref.role,
@@ -282,7 +319,10 @@ async function recoverHandover(dep: Deployment, project: Project, discard = fals
     }
     const web =
       value.webContainerId &&
-      (await runtime.findOwnedDeploymentContainer(value.webContainerId, owner));
+      (await runtime.findOwnedDeploymentContainer(value.webContainerId, {
+        ...owner,
+        deploymentId: value.preserveWeb?.ownerDeploymentId ?? dep.id,
+      }));
     if (!web)
       throw new Error(
         "The published web container could not be verified; recovery remains pending",
@@ -301,11 +341,13 @@ async function recoverHandover(dep: Deployment, project: Project, discard = fals
       );
     if (previous) {
       await withDeploymentRuntime(previous, async (old) => {
-        for (const ref of previous.roleContainers ?? []) {
+        for (const ref of (previous.roleContainers ?? []).filter(
+          (ref) => !reusedIds.has(ref.containerId),
+        )) {
           if (!(old instanceof DockerRuntime)) throw new Error("The previous role runtime changed");
           const id = await old.findOwnedDeploymentContainer(ref.containerId, {
             projectId: project.id,
-            deploymentId: previous.id,
+            deploymentId: ref.ownerDeploymentId ?? previous.id,
             role: ref.role,
           });
           if (id) await old.destroy(id);
@@ -313,7 +355,9 @@ async function recoverHandover(dep: Deployment, project: Project, discard = fals
         if (old instanceof DockerRuntime && previous.containerId && previous.containerId !== web) {
           const id = await old.findOwnedDeploymentContainer(previous.containerId, {
             projectId: project.id,
-            deploymentId: previous.id,
+            deploymentId:
+              (previous.meta as { webOwnerDeploymentId?: string } | null)?.webOwnerDeploymentId ??
+              previous.id,
           });
           if (id) await old.destroy(id);
         }

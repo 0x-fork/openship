@@ -47,7 +47,7 @@
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { safeErrorMessage, withTimeout, type StackRole } from "@repo/core";
+import { safeErrorMessage, withTimeout, type StackRole, type RoleContainerRef } from "@repo/core";
 import { DeploymentCancelledError, throwIfDeploymentCancelled } from "./deployment-cancellation";
 
 const ROLE_ROLLOUT_SOURCE = "platform/engine/modules/deployments/role-rollout";
@@ -55,11 +55,7 @@ const ROLE_ROLLOUT_SOURCE = "platform/engine/modules/deployments/role-rollout";
 /** Same ceiling as the web pipeline's teardown, for the same reason (#629). */
 const DEFAULT_TEARDOWN_TIMEOUT_MS = 30_000;
 
-export interface RoleContainerRef {
-  role: string;
-  replica: number;
-  containerId: string;
-}
+export type { RoleContainerRef } from "@repo/core";
 
 /** True for kind "scheduler" or `singleton: true`. */
 export function isSingletonRole(role: Pick<StackRole, "kind" | "singleton">): boolean {
@@ -143,6 +139,8 @@ export interface RoleRolloutDeps {
    * singleton apart from a worker. Without them, only same-name handover applies.
    */
   previousRoles?: readonly StackRole[] | null;
+  /** Verified unchanged replicas carried into a configuration revision. */
+  reuse?: readonly RoleContainerRef[];
   /** The previous deployment's recorded role containers. */
   previous: readonly RoleContainerRef[] | null | undefined;
   /** Start one replica for the NEW deployment and resolve to its container id. */
@@ -213,7 +211,11 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
   const { signal, log } = deps;
   const teardownTimeoutMs = deps.teardownTimeoutMs ?? DEFAULT_TEARDOWN_TIMEOUT_MS;
   const plan = planRoleReplicas(deps.roles);
-  const previous = deps.previous ?? [];
+  const reuse = deps.reuse ?? [];
+  const reusedIds = new Set(reuse.map(ref => ref.containerId));
+  plan.scalable = plan.scalable.filter(entry => !reuse.some(ref => ref.role === entry.role.name && ref.replica === entry.replica));
+  plan.singletons = plan.singletons.filter(entry => !reuse.some(ref => ref.role === entry.role.name && ref.replica === entry.replica));
+  const previous = (deps.previous ?? []).filter(ref => !reusedIds.has(ref.containerId));
   const handover = planSingletonHandover(deps.roles, deps.previousRoles, previous);
   // With an outgoing singleton, changed workers start only after it stops.
   const handingOver = handover.outgoing.length > 0;
@@ -224,7 +226,7 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
     (r) => handingOver && handover.changed.has(r.role.name),
   );
 
-  if (plan.scalable.length === 0 && plan.singletons.length === 0 && previous.length === 0) {
+  if (plan.scalable.length === 0 && plan.singletons.length === 0 && previous.length === 0 && reuse.length === 0) {
     return NOOP_ROLLOUT;
   }
 
@@ -351,6 +353,10 @@ export async function rolloutRoles(deps: RoleRolloutDeps): Promise<RoleRollout> 
   };
 
   try {
+    if (reuse.length) {
+      await verifyContainers(reuse);
+      throwIfDeploymentCancelled(signal);
+    }
     // Scalable phase: beside the previous containers, checked before any singleton moves.
     const scalableRefs: RoleContainerRef[] = [];
     for (const { role, replica } of firstScalable) {

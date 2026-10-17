@@ -783,6 +783,7 @@ async function executeBuildAndDeploy(
   if (!snapshot) {
     throw new Error("Deployment has no config snapshot (meta is empty)");
   }
+  if (!snapshot.roleConfiguration) delete snapshot.webOwnerDeploymentId;
   const routeState = await resolveProjectRouteState(project);
 
   const logs: LogEntry[] = [...initialLogs];
@@ -1015,6 +1016,8 @@ async function executeBuildAndDeploy(
         errorDiagnostics.warn("platform/engine/modules/deployments/build-pipeline", `[build] failed to decrypt env var ${key}: ${safeErrorMessage(err)}`);
       },
     );
+    if (snapshot.roleConfiguration && failedEnvKeys.length)
+      throw new Error("The active environment could not be decrypted. Re-enter the affected variables before applying role settings.");
     // Surface dropped env in the BUILD LOG (not just the server console) so a
     // key-rotation data loss is visible to the operator instead of the build
     // silently running with missing env.
@@ -1526,6 +1529,16 @@ async function executeBuildAndDeploy(
       throw new Error("Cannot allocate a routed host port without a physical target identity");
     }
     const deployConfig = createServerDeployConfig(phase);
+    if (snapshot.roleConfiguration) {
+      if (!(runtime instanceof DockerRuntime) || !runtime.supports("roles") || willRunServices)
+        throw new Error("Runtime role configuration requires a single-app Docker deployment");
+      const { runRoleConfigurationRollout } = await import("./role-configuration-rollout");
+      await runRoleConfigurationRollout({ project, dep, runtime, config: deployConfig, logger, signal: cancellationSignal,
+        beforeStart: containerId => attachLinkedNetworks(project.id, runtime, (message, level) => logger.log(`${message}\n`, level), dep.id, [containerId]),
+        publish: (containerId, warningMessage) => onSuccess(ctx, { containerId, url: dep.url ?? undefined, durationMs: 0, warningMessage }) });
+      await archivePreviousDeployment(dep, project, logger);
+      return;
+    }
     const activate = async () => {
       await executeReleasePhase(phase, deployConfig);
       throwIfDeploymentCancelled(cancellationSignal);
