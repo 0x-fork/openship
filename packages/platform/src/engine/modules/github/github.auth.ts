@@ -783,7 +783,7 @@ export async function getUserStatus(userId: string, ctx?: RequestContext) {
   if (mode === "cloud-app") {
     if (ctx) await assertCloudTenantScope(ctx);
     const { cloudClient } = await import("../../lib/cloud/client");
-    const status = await cloudClient({ userId }).github.userStatus();
+    const status = await cloudClient(ctx ? { organizationId: ctx.organizationId } : { userId }).github.userStatus();
     if (!status?.connected) {
       // Diagnostic: the SaaS-side handler reported the user as not
       // connected. The most likely cause is that the local's
@@ -1461,31 +1461,6 @@ export async function consumeInstallState(
   };
 }
 
-/**
- * Resolve the GitHub OAuth start URL for this user.
- *
- * Cloud-app mode (self-hosted + Openship Cloud connected): proxies to the
- * SaaS's /oauth-handoff endpoint, which mints a single-use bridge URL.
- * The browser opens that URL and the SaaS handles the entire OAuth
- * round-trip — local never has GitHub OAuth credentials. After OAuth
- * completes, Cloud has a repository grant for this user.
- *
- * Direct SaaS connections start repository OAuth through
- * the controller's connectRedirect handler — the OAuth flow runs in the
- * same process. resolveOauthHandoffUrl is not used.
- *
- * cli mode (self-hosted + NO cloud): there's no GitHub OAuth flow
- * available — the user can only use gh CLI. Returns null.
- */
-export async function resolveOauthHandoffUrl(userId: string): Promise<{ url: string } | null> {
-  // userId-only path — the OAuth handoff is initiated before any org
-  // is in scope (it IS the connect flow). Use the internal resolver.
-  const mode = await resolveAuthModeForUserId(userId);
-  if (mode !== "cloud-app") return null;
-
-  const { cloudClient } = await import("../../lib/cloud/client");
-  return cloudClient({ userId }).github.oauthHandoff();
-}
 
 /**
  * Disconnect a user from a GitHub source.
