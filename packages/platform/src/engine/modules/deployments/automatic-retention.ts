@@ -1,11 +1,9 @@
 import type { Project } from "@repo/db";
 import { BUILD_STORAGE_GC_FREE_FRACTION } from "@repo/adapters";
+import { isArtifactRef, usableRef } from "../../lib/container-ref";
 import { hasRedactedFrozenConfiguration } from "./compose/redacted-frozen-env";
 import { planRestore } from "./rollback/restore-plan";
-import {
-  retainedArtifactReferences,
-  type retainedArtifacts,
-} from "./retained-artifacts";
+import { retainedArtifactReferences, type retainedArtifacts } from "./retained-artifacts";
 
 type Inventory = Awaited<ReturnType<typeof retainedArtifacts>>;
 type Disk = { totalBytes: number | null; freeBytes: number | null };
@@ -39,8 +37,7 @@ export async function reclaimAutomaticRollbackArtifacts(
   deps: AutomaticRetentionDependencies,
 ): Promise<{ purged: number; failed: number }> {
   const summary = { purged: 0, failed: 0 };
-  if (project.rollbackWindow != null || !project.activeDeploymentId)
-    return summary;
+  if (project.rollbackWindow != null || !project.activeDeploymentId) return summary;
   if (!rollbackStoragePressure(await deps.readDisk())) return summary;
   const inventory = await deps.load();
   const ownedImages = await deps.ownedImages();
@@ -60,12 +57,10 @@ export async function reclaimAutomaticRollbackArtifacts(
       unitRestore: false,
       imagePresent: () => false,
       pathPresent: () => false,
-      serviceImages: (inventory.services.get(candidate.id) ?? []).map(
-        (row) => ({
-          serviceName: row.serviceName ?? null,
-          imageRef: row.imageRef,
-        }),
-      ),
+      serviceImages: (inventory.services.get(candidate.id) ?? []).map((row) => ({
+        serviceName: row.serviceName ?? null,
+        imageRef: row.imageRef,
+      })),
     });
     const frozen = candidate.meta as {
       repoUrl?: string;
@@ -75,20 +70,15 @@ export async function reclaimAutomaticRollbackArtifacts(
     const reproducible =
       plan.mode === "rebuild"
         ? !!frozen?.repoUrl && !frozen.localPath && !frozen.uploadSessionId
-        : plan.mode === "reacquire-image" &&
-          /@sha256:[a-f0-9]{64}$/.test(plan.releaseImageRef);
+        : plan.mode === "reacquire-image" && /@sha256:[a-f0-9]{64}$/.test(plan.releaseImageRef);
     if (!reproducible) continue;
-    const candidateArtifacts = [
-      candidate,
-      ...(inventory.services.get(candidate.id) ?? []),
-    ];
+    const candidateArtifacts = [candidate, ...(inventory.services.get(candidate.id) ?? [])];
     if (
-      !candidateArtifacts.some(
-        (row) =>
-          row.imageRef &&
-          (ownedImages.has(row.imageRef) || row.imageRef.startsWith("/")),
-      ) &&
-      !candidate.containerId?.startsWith("/")
+      !candidateArtifacts.some((row) => {
+        const image = usableRef(row.imageRef);
+        return image && (ownedImages.has(image) || isArtifactRef(image));
+      }) &&
+      !isArtifactRef(candidate.containerId)
     )
       continue;
 
@@ -105,17 +95,15 @@ export async function reclaimAutomaticRollbackArtifacts(
     // Only project-label-verified images and managed release files are candidates.
     for (const dep of inventory.retained) {
       for (const artifact of [dep, ...(inventory.services.get(dep.id) ?? [])]) {
-        if (
-          artifact.imageRef &&
-          !artifact.imageRef.startsWith("/") &&
-          !ownedImages.has(artifact.imageRef)
-        )
-          refs.images.add(artifact.imageRef);
-        if (artifact.containerId && !artifact.containerId.startsWith("/"))
-          refs.containers.add(artifact.containerId);
+        const image = usableRef(artifact.imageRef);
+        const container = usableRef(artifact.containerId);
+        if (image && !isArtifactRef(image) && !ownedImages.has(image)) refs.images.add(image);
+        if (container && !isArtifactRef(container)) refs.containers.add(container);
       }
-      for (const role of dep.roleContainers ?? [])
-        refs.containers.add(role.containerId);
+      for (const role of dep.roleContainers ?? []) {
+        const container = usableRef(role.containerId);
+        if (container) refs.containers.add(container);
+      }
     }
     const result = await deps.purge({
       ...refs,

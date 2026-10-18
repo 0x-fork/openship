@@ -23,7 +23,7 @@ const h = vi.hoisted(() => ({
   project: null as Record<string, unknown> | null,
   ready: [] as Array<Record<string, unknown>>,
   /** deploymentId → service_deployment rows (per-service images). */
-  serviceRows: {} as Record<string, Array<{ imageRef: string | null; serviceName?: string | null }>>,
+  serviceRows: {} as Record<string, Array<{ imageRef: string | null; containerId?: string | null; serviceName?: string | null }>>,
   purged: [] as Array<{ id: string; imageRef: string | null }>,
   purgedContainers: [] as Array<string | null>,
   /** Per-service artifact refs the prune asked the runtime to destroy. */
@@ -536,6 +536,29 @@ describe("automatic rollback storage pressure", () => {
     expect(
       h.ready.find((row) => row.id === "d5")!.artifactRetainedAt,
     ).toBeInstanceOf(Date);
+  });
+
+  it("normalizes legacy refs before protecting containers and unowned service images", async () => {
+    automatic();
+    Object.assign(h.ready.find((row) => row.id === "d1")!, {
+      containerId: " old-main ",
+      roleContainers: [{ name: "worker", containerId: " old-worker " }],
+    });
+    h.serviceRows.d1 = [
+      {
+        serviceName: "external",
+        containerId: " old-service ",
+        imageRef: " ghcr.io/example/custom:v1 ",
+      },
+    ];
+    await reconcileProjectRetention("p1");
+    expect(h.retainedCleared).toEqual(["d1"]);
+    expect(h.destroyed).toEqual([]);
+    expect(h.purgedContainers).toEqual([null, null]);
+    expect(h.purged).toEqual([
+      { id: "d1", imageRef: image("d1") },
+      { id: "d1", imageRef: null },
+    ]);
   });
 
   it("protects shared live service images, pins, and unverified releases", async () => {
