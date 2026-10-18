@@ -435,7 +435,7 @@
     "connected": "连接已保存。请检查目标的部署状态。",
     "failed": "无法连接该服务。",
     "cardTitle": "已连接的服务",
-    "removed": "已移除连接 — 重新部署以生效。",
+    "removed": "已移除连接。请检查目标项目的部署状态。",
     "remove": "移除",
     "modeInternalShort": "内部",
     "modePublicShort": "公开",

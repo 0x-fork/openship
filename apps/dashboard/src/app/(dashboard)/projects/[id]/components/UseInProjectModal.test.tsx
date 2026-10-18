@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppConnectionOutput } from "@/lib/api/apps";
+import { EnvVarsEditor } from "./EnvVarsEditor";
 import { ProjectConnectionForm, UseInProjectModal } from "./UseInProjectModal";
 
 /**
@@ -20,12 +21,25 @@ const h = vi.hoisted(() => ({
   candidates: vi.fn(),
   bundle: vi.fn(),
   showToast: vi.fn(),
+  getEnv: vi.fn(),
+  list: vi.fn(),
+  remove: vi.fn(),
+  trigger: vi.fn(),
 }));
 vi.mock("@/lib/api/apps", () => ({ appsApi: { getConnection: h.getConnection } }));
 vi.mock("@/lib/api/connections", () => ({
-  connectionsApi: { candidates: h.candidates, bundle: h.bundle },
+  connectionsApi: { candidates: h.candidates, bundle: h.bundle, list: h.list, remove: h.remove },
 }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: h.showToast }) }));
+
+vi.mock("@/lib/api", () => ({
+  projectsApi: { getEnv: h.getEnv },
+  deployApi: { trigger: h.trigger },
+}));
+vi.mock("@/context/ProjectSettingsContext", () => ({
+  useProjectSettings: () => ({ projectData: { activeDeploymentId: "active", workspaceId: null } }),
+}));
+vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => () => false }));
 
 const HINT =
   "If the target is already deployed, Openship tries to redeploy it right away. Save other environment changes first.";
@@ -61,6 +75,10 @@ beforeEach(() => {
   h.candidates.mockReset();
   h.bundle.mockReset().mockResolvedValue({});
   h.showToast.mockReset();
+  h.getEnv.mockReset().mockResolvedValue({ data: [] });
+  h.list.mockReset().mockResolvedValue({ data: [] });
+  h.remove.mockReset().mockResolvedValue({});
+  h.trigger.mockReset();
   onClose.mockReset();
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -144,4 +162,26 @@ describe("connection form copy", () => {
     expect(message).toBe("Connection saved. Check the target's deployment status.");
     expect(message).not.toMatch(/redeploy/i);
   });
+});
+
+it("does not offer a second apply after unlinking a live connection", async () => {
+  h.getEnv.mockResolvedValueOnce({
+    data: [{ key: "DATABASE_URL", value: "masked", isSecret: true, environment: "production" }],
+  });
+  h.list.mockResolvedValueOnce({
+    data: [{ id: "link", envKey: "DATABASE_URL", sourceName: "Postgres", mode: "internal" }],
+  });
+  await act(async () => root.render(<EnvVarsEditor projectId="web" isOpen onClose={onClose} />));
+  const row = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
+    b.textContent?.includes("DATABASE_URL"),
+  )!;
+  await click(row);
+  await click(button(document, "Remove connection"));
+  expect(h.remove).toHaveBeenCalledWith("web", "link");
+  expect(h.showToast).toHaveBeenCalledWith(
+    "Connection removed. Check the target's deployment status.",
+    "success",
+  );
+  expect(document.body.textContent).not.toContain("Apply (restart, no rebuild)");
+  expect(h.trigger).not.toHaveBeenCalled();
 });

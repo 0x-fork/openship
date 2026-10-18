@@ -435,7 +435,7 @@
     "connected": "Conexión guardada. Revisa el estado del despliegue del destino.",
     "failed": "No se pudo conectar el servicio.",
     "cardTitle": "Servicios conectados",
-    "removed": "Conexión eliminada: vuelve a desplegar para aplicar.",
+    "removed": "Conexión eliminada. Revisa el estado del despliegue del proyecto de destino.",
     "remove": "Eliminar",
     "modeInternalShort": "Interno",
     "modePublicShort": "Público",

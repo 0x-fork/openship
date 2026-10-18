@@ -435,7 +435,7 @@
     "connected": "Verbindung gespeichert. Prüfe den Deployment-Status des Ziels.",
     "failed": "Dienst konnte nicht verbunden werden.",
     "cardTitle": "Verbundene Dienste",
-    "removed": "Verbindung entfernt – neu bereitstellen, um anzuwenden.",
+    "removed": "Verbindung entfernt. Prüfe den Bereitstellungsstatus des Zielprojekts.",
     "remove": "Entfernen",
     "modeInternalShort": "Intern",
     "modePublicShort": "Öffentlich",

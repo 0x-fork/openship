@@ -435,7 +435,7 @@
     "connected": "Connexion enregistrée. Vérifiez le statut du déploiement de la cible.",
     "failed": "Impossible de connecter le service.",
     "cardTitle": "Services connectés",
-    "removed": "Connexion supprimée — redéployez pour appliquer.",
+    "removed": "Connexion supprimée. Vérifiez l’état du déploiement du projet cible.",
     "remove": "Supprimer",
     "modeInternalShort": "Interne",
     "modePublicShort": "Public",

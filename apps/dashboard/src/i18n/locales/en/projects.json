@@ -139,7 +139,7 @@
     "connected": "Connection saved. Check the target's deployment status.",
     "failed": "Couldn't connect the service.",
     "cardTitle": "Connected services",
-    "removed": "Connection removed — redeploy to apply.",
+    "removed": "Connection removed. Check the target's deployment status.",
     "remove": "Remove",
     "modeInternalShort": "Internal",
     "modePublicShort": "Public",

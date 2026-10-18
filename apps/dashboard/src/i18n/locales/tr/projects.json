@@ -486,7 +486,7 @@
     "connected": "Bağlantı kaydedildi. Hedefin dağıtım durumunu kontrol edin.",
     "failed": "Servis bağlanamadı.",
     "cardTitle": "Bağlı servisler",
-    "removed": "Bağlantı kaldırıldı — uygulamak için yeniden dağıtın.",
+    "removed": "Bağlantı kaldırıldı. Hedef projenin dağıtım durumunu kontrol edin.",
     "remove": "Kaldır",
     "modeInternalShort": "Dahili",
     "modePublicShort": "Genel",
