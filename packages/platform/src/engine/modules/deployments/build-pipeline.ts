@@ -162,6 +162,7 @@ import { RELEASE_COMMAND_TIMEOUT_MS, releasePhaseSkipReason, resolveReleaseComma
 import { createBuildConfig } from "./build-config";
 import {
   pinnedAppImage,
+  pinnedImageForService,
   pinnedStaticDir,
   refreshAppDeploymentId,
   snapshotNeedsGitSource,
@@ -840,6 +841,11 @@ async function executeBuildAndDeploy(
     // persisted "docker" would make rollback/purge 404-no-op on the release dir and
     // leak it). Cloud static + Docker-less desktop-local static keep their own mode.
     const serviceMode = await resolveServicePipelineMode(project, snapshot);
+    if (serviceMode.primaryApp && !pinnedAppImage(snapshot)) {
+      // Older retained releases store the same primary app image in the
+      // service-name map. Reuse it when selecting the single-app engine.
+      snapshot.handoverAppImage = pinnedImageForService(snapshot, serviceMode.primaryApp.app.name);
+    }
     const willRunServices = serviceMode.useServicePipeline || !!serviceMode.primaryApp;
     const managedTarget = resolveEffectiveTarget(plat.target, snapshot) === "cloud";
     await assertCloudDeploymentLimits(dep.organizationId, {

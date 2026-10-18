@@ -427,4 +427,27 @@ describeDockerE2E("primary source app with attached infrastructure (#1312)", () 
     ).toBe(primary.hostPort);
     live = again;
   });
+  it("restores an older primary service image pin without cloning or rebuilding it", async () => {
+    if (!live)
+      live = await deploy([
+        `${sql} -c 'CREATE TABLE marker (value text); INSERT INTO marker VALUES (current_user)'`,
+      ]);
+    const database = await dbRow(live);
+    const build = vi.spyOn(runtime, "build").mockImplementation(async () => {
+      throw new Error("A retained primary image must not be rebuilt");
+    });
+    try {
+      const restored = await deploy(["echo must-not-run; exit 99"], "rollback", {
+        handoverAppImage: undefined,
+        handoverImages: { [project.slug]: image },
+      });
+      expect(restored.status, restored.errorMessage ?? "").toBe("ready");
+      expect(build).not.toHaveBeenCalled();
+      expect((await dbRow(restored)).containerId).toBe(database.containerId);
+      expect(await query(restored.containerId!, "SELECT value FROM marker")).toBe("app");
+      live = restored;
+    } finally {
+      build.mockRestore();
+    }
+  });
 });
