@@ -1411,7 +1411,12 @@ describe("single-app prebuilt release-image pipeline", () => {
     }
   });
 
-  it("inventories migrated edge routes before reserving a loopback host port", async () => {
+  it.each([false, true])("inventories loopback claims with routed=%s, preparing edge only for routes", async (routed) => {
+    vi.mocked(buildProjectRouteDomains).mockReturnValueOnce(routed ? [{
+      hostname: "app.example.com", tls: false, provisionSsl: false,
+      requiresSslTooling: false, terminatesTlsLocally: false, isCloud: false,
+      targetPort: 8080,
+    }] : []);
     mocks.runDeployPipeline.mockImplementationOnce(async (env, input) => {
       await env.preflight(input.config, async () => "migrate");
       const result = await env.activate(input.config, () => undefined);
@@ -1425,12 +1430,14 @@ describe("single-app prebuilt release-image pipeline", () => {
     await run(deployment(), { routeStrategy: "loopback-port" });
     await vi.waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledTimes(1));
 
-    expect(mocks.ensureRoutingReady).toHaveBeenCalledTimes(1);
+    expect(mocks.ensureRoutingReady).toHaveBeenCalledTimes(routed ? 1 : 0);
     expect(mocks.prepareTargetPinnedHostPorts).toHaveBeenCalledTimes(1);
     expect(mocks.allocateAndReservePinnedHostPort).toHaveBeenCalledTimes(1);
-    expect(mocks.ensureRoutingReady.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.prepareTargetPinnedHostPorts.mock.invocationCallOrder[0]!,
-    );
+    if (routed) {
+      expect(mocks.ensureRoutingReady.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.prepareTargetPinnedHostPorts.mock.invocationCallOrder[0]!,
+      );
+    }
     expect(mocks.prepareTargetPinnedHostPorts.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.allocateAndReservePinnedHostPort.mock.invocationCallOrder[0]!,
     );
