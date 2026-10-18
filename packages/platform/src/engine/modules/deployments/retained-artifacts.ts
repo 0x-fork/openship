@@ -69,24 +69,33 @@ export async function retainedArtifacts(project: RetentionProject, loaders: Rete
     if (active) retained.push(active);
   }
 
+  return { ...await retainedArtifactReferences(retained, listServices), retained, overflow };
+}
+
+/** Shared protection inventory for count-based and storage-pressure cleanup. */
+export async function retainedArtifactReferences(
+  retained: Deployment[],
+  listServices: NonNullable<RetentionLoaders["listByDeployment"]> = repos.service.listByDeployment,
+) {
   const images = new Set<string>();
   const containers = new Set<string>();
+  const services = new Map<string, ServiceArtifact[]>();
   for (const dep of retained) {
     for (const role of dep.roleContainers ?? []) {
       const container = usableRef(role.containerId);
       if (container) containers.add(container);
     }
-    const artifacts = [dep, ...await effectiveServiceArtifacts(dep, await listServices(dep.id))];
-    for (const artifact of artifacts) {
+    const serviceRows = await effectiveServiceArtifacts(dep, await listServices(dep.id));
+    services.set(dep.id, serviceRows);
+    for (const artifact of [dep, ...serviceRows]) {
       const image = usableRef(artifact.imageRef);
       const container = usableRef(artifact.containerId);
       if (image) images.add(image);
       if (container) containers.add(container);
-      // Static releases use their document root as the container id.
       if (isArtifactRef(container)) images.add(container!);
     }
   }
-  return { images, containers, retained, overflow };
+  return { images, containers, services };
 }
 
 export async function computeKeepSet(project: RetentionProject, loaders?: RetentionLoaders): Promise<Set<string>> {
