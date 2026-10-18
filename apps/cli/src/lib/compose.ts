@@ -624,6 +624,12 @@ ${edgeVolumeYaml("      ")}
       INTERNAL_API_URL: http://api:\${API_PORT:-4000}
     depends_on:
       api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/',{redirect:'manual'}).then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
 
   edge:
     image: \${OPENSHIP_IMAGE_REGISTRY:-ghcr.io/oblien}/openship-edge:\${OPENSHIP_VERSION:-latest}
@@ -638,6 +644,9 @@ ${edgeVolumeYaml("      ")}
     restart: unless-stopped
     logging: *default-logging
     network_mode: host
+    depends_on:
+      api: { condition: service_healthy }
+      dashboard: { condition: service_healthy }
     volumes:
 ${edgeVolumeYaml("      ")}
 
@@ -3503,6 +3512,7 @@ export async function composeUp(
   // "unchanged". See ComposePrefetchResult.envChanged.
   const envChanged = opts.envChanged ?? rendered;
   const shouldRecreate = opts.forceRecreate || envChanged;
+  // The edge container mounts EDGE_SITES_HOST_DIR. A conf left there by an older or
   // failed attempt (a carried catch-all claiming `default_server`) crash-loops it with
   // `[emerg] a duplicate default server` — every time, forever, because the file is on
   // the host and outlives the container. Compose never carried anything, so it never
@@ -3511,7 +3521,14 @@ export async function composeUp(
   const up = (extra: { withBuildOverride?: boolean } = {}) =>
     compose(
       shouldRecreate
-        ? ["up", "-d", "--force-recreate", ...ENV_CONSUMING_SERVICES]
+        ? [
+            "up",
+            "-d",
+            "--force-recreate",
+            // An explicit update is not applied until the replacements are ready.
+            ...(opts.forceRecreate ? ["--wait", "--wait-timeout", "180"] : []),
+            ...ENV_CONSUMING_SERVICES,
+          ]
         : ["up", "-d"],
       extra,
     );
