@@ -44,7 +44,8 @@ import { repos, type Deployment, type Project } from "@repo/db";
 import { BareRuntime, DockerRuntime, ownsBuiltImage, sharedMountExecutor, type DeploymentRef, type ResourceConfig, type RuntimeAdapter } from "@repo/adapters";
 import { AppError, safeErrorMessage, withTimeout } from "@repo/core";
 import { isArtifactRef, usableRef } from "../../../lib/container-ref";
-import { resolveDeploymentRuntime, resolveDeploymentRuntimeForRead } from "../../../lib/deployment-runtime";
+import { acquireLocalHostExecutor, resolveDeploymentRuntime, resolveDeploymentRuntimeForRead } from "../../../lib/deployment-runtime";
+import { LOCAL_HOST_PORT_TARGET } from "../../../lib/host-port-target";
 import { withProjectRuntimeLock } from "../../../lib/project-runtime-lock";
 import {
   checkNoActiveBuild,
@@ -651,8 +652,13 @@ export async function reconcileProjectRetention(projectId: string) {
       // destinations keep their existing retention behavior.
       if (!(runtime instanceof DockerRuntime) || !hostPortTarget?.stable) return { ...reaped, purged: result.purged };
       const serverId = destination.serverId ?? undefined;
+      // A socket runtime may not retain an executor. Its disk is on this host,
+      // never an implicit/repurposed org server selected by an alias lookup.
+      const executor = runtime.connectionOptions?.executor ??
+        (hostPortTarget.targetKey === LOCAL_HOST_PORT_TARGET.targetKey ? await acquireLocalHostExecutor() : null);
+      if (!executor) return { ...reaped, purged: result.purged };
       const automatic = await reclaimAutomaticRollbackArtifacts(project, {
-        readDisk: () => getHostDisk(serverId, project.organizationId, { refresh: true, executor: runtime.connectionOptions?.executor }),
+        readDisk: () => getHostDisk(serverId, project.organizationId, { refresh: true, executor }),
         load: () => retainedArtifacts(project),
         ownedImages: async () => new Set((await runtime.listProjectImages(project.id)).flatMap(image => image.repoTags.filter(ownsBuiltImage))),
         purge: async (inventory) => {

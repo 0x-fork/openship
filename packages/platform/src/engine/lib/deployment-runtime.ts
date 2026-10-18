@@ -871,7 +871,7 @@ export function hostChannelDeployNotice(executor?: CommandExecutor | null): stri
  *
  * Any other acquire failure still propagates.
  */
-async function acquireLocalHostExecutor(serverId?: string): Promise<CommandExecutor> {
+export async function acquireLocalHostExecutor(serverId?: string): Promise<CommandExecutor> {
   try {
     // One pooled channel either way — `acquire(localRow)` resolves to the very same
     // executor `acquireHostChannel()` returns, and the row id only adds the borrow

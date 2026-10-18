@@ -41,6 +41,9 @@ const h = vi.hoisted(() => ({
   diskReads: 0,
   ownedImages: [] as string[],
   resolutions: [] as string[],
+  remoteExecutor: { exec: async () => "" },
+  localExecutor: { exec: async () => "" },
+  diskExecutors: [] as unknown[],
 }));
 
 vi.mock("@repo/db", () => ({
@@ -81,13 +84,16 @@ vi.mock("@repo/db", () => ({
 
 vi.mock("@repo/platform/engine/lib/deployment-runtime", async () => {
   const { DockerRuntime } = await import("@repo/adapters");
-  const resolve = async (dep: { id: string; meta?: { testHost?: string } }) => {
+  const resolve = async (dep: { id: string; meta?: { testHost?: string; withoutExecutor?: boolean } }) => {
     h.resolutions.push(dep.id);
     return ({
     serverId: null,
     hostPortTarget: { targetKey: dep.meta?.testHost ?? "host-1", stable: dep.meta?.testHost !== "unverified" },
     runtime: Object.assign(Object.create(DockerRuntime.prototype), {
       name: "docker",
+      connectionOptions: {
+        executor: dep.meta?.testHost === "local" || dep.meta?.withoutExecutor ? undefined : h.remoteExecutor,
+      },
       supports: (cap: string) => cap === "rollback",
       purge: async (ref: { imageRef: string | null; containerId: string | null }) => {
         h.purged.push({ id: dep.id, imageRef: ref.imageRef });
@@ -104,10 +110,15 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", async () => {
     }),
     });
   };
-  return { resolveDeploymentRuntime: resolve, resolveDeploymentRuntimeForRead: resolve };
+  return {
+    resolveDeploymentRuntime: resolve,
+    resolveDeploymentRuntimeForRead: resolve,
+    acquireLocalHostExecutor: async () => h.localExecutor,
+  };
 });
 vi.mock("@repo/platform/engine/lib/host-disk", () => ({
-  getHostDisk: async () => {
+  getHostDisk: async (_serverId: unknown, _orgId: unknown, options: { executor?: unknown }) => {
+    h.diskExecutors.push(options?.executor);
     h.diskReads++;
     return h.disk.length > 1 ? h.disk.shift()! : h.disk[0] ?? { totalBytes: null, freeBytes: null };
   },
@@ -154,6 +165,7 @@ beforeEach(() => {
   h.diskReads = 0;
   h.ownedImages = [];
   h.resolutions = [];
+  h.diskExecutors = [];
   h.project = {
     id: "p1",
     organizationId: "org1",
@@ -542,7 +554,7 @@ describe("automatic rollback storage pressure", () => {
     automatic();
     Object.assign(h.ready.find((row) => row.id === "d1")!, {
       containerId: " old-main ",
-      roleContainers: [{ name: "worker", containerId: " old-worker " }],
+      roleContainers: [{ role: "worker", replica: 1, containerId: " old-worker " }],
     });
     h.serviceRows.d1 = [
       {
@@ -593,6 +605,24 @@ describe("automatic rollback storage pressure", () => {
     };
     await reconcileProjectRetention("p1");
     expect(h.retainedCleared).toEqual(["d2"]);
+  });
+
+  it("measures local Docker through the host channel without selecting a server alias", async () => {
+    automatic();
+    for (const row of h.ready) {
+      row.meta = { ...(row.meta as object), testHost: "local" };
+    }
+    await reconcileProjectRetention("p1");
+    expect(h.retainedCleared).toEqual(["d1"]);
+    expect(h.diskExecutors).toEqual([h.localExecutor, h.localExecutor]);
+  });
+
+  it("defers pressure cleanup if the verified remote runtime has no executor", async () => {
+    automatic();
+    h.ready.find((row) => row.id === "d5")!.meta = { withoutExecutor: true };
+    await reconcileProjectRetention("p1");
+    expect(h.retainedCleared).toEqual([]);
+    expect(h.diskReads).toBe(0);
   });
 
   it("preserves artifacts when the execution host identity cannot be verified", async () => {
