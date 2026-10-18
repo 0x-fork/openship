@@ -779,3 +779,26 @@ describe("parseOpenshipConfig", () => {
     });
   });
 });
+
+
+describe("automatic deploy path overrides", () => {
+  it("accepts repo-relative includes and exclusions", () => {
+    const parsed = parseOpenshipConfig({
+      autoDeployPaths: { include: ["apps/web/**", "shared/**"], exclude: ["**/*.md"] },
+    });
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.config?.autoDeployPaths).toEqual({
+      include: ["apps/web/**", "shared/**"],
+      exclude: ["**/*.md"],
+    });
+  });
+  it("bounds pattern counts and rejects wrong types", () => {
+    for (const autoDeployPaths of [
+      { include: Array(51).fill("src/**") },
+      { exclude: "src/**" },
+      [],
+    ])
+      expect(parseOpenshipConfig({ autoDeployPaths }).errors.length).toBeGreaterThan(0);
+  });
+});

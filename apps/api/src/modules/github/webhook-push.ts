@@ -12,11 +12,12 @@ import {
 } from "@repo/platform/engine/modules/github/github.service";
 import { cloudFetchAsOrgOwner } from "@repo/platform/engine/lib/cloud/transport";
 import { fetchOrgCloudProjects } from "@repo/platform/engine/lib/cloud/projects";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, normalizeProjectRootDirectory } from "@repo/core";
 import {
   extractChangedFiles,
   routeServicesByChanges,
 } from "@repo/platform/engine/modules/github/webhook-changed-files";
+import { resolveProjectChangeImpact } from "@repo/platform/engine/modules/github/project-change-impact";
 import { webhookActorCtx } from "./webhook-shared";
 import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
 import { notification } from "@repo/platform/engine/lib/notification-dispatcher";
@@ -48,7 +49,7 @@ function recordPushDelivery(
   p: Project | null,
   input: BranchDeploymentTrigger,
   outcome: string,
-  opts?: { organizationId?: string | null; actionRef?: string | null; error?: string | null },
+  opts?: { organizationId?: string | null; actionRef?: string | null; error?: string | null; reason?: string },
 ): Promise<void> {
   return repos.webhookDelivery
     .record({
@@ -64,6 +65,7 @@ function recordPushDelivery(
         repo: `${input.owner}/${input.repo}`,
         branch: input.branch,
         commit: input.commitSha ?? undefined,
+        ...(opts?.reason ? { reason: opts.reason } : {}),
       },
     })
     .then(() => {})
@@ -157,6 +159,7 @@ async function deployProjectFromPush(
   let routingReason: string | undefined;
   let changedPathsTruncated = false;
   let changedPaths: string[] | undefined;
+  let changeReason: string | undefined;
 
   if (input.payload) {
     const extracted = await extractChangedFiles(input.payload, {
@@ -198,6 +201,22 @@ async function deployProjectFromPush(
       routingReason = routingReason ?? "force-deploy-next";
     }
 
+    if (!forceAll && routableServices.length === 0 && normalizeProjectRootDirectory(p.rootDirectory ?? undefined)) {
+      // Compare with the deployed release, not just this push's before SHA: a
+      // previous failed deployment may contain app changes still waiting to ship.
+      const active = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
+      const compare = active?.projectId === p.id && active.commitSha && input.commitSha
+        ? await compareCommits(webhookActorCtx(actorUserId, p.organizationId, "webhook:project-impact"), input.owner, input.repo, active.commitSha, input.commitSha)
+            .catch(error => { observeCaughtError(error, "api/modules/github/webhook-push"); return null; })
+        : null;
+      const impact = compare && !compare.truncated
+        ? await resolveProjectChangeImpact(webhookActorCtx(actorUserId, p.organizationId, "webhook:project-impact"), p, compare.files, input.commitSha)
+        : { affected: true, reason: active ? "unknown-deployed-diff" : "first-deployment" };
+      changeReason = impact.reason;
+      console.log(`[GitHub Webhook] project ${p.id}: ${impact.affected ? "deploying" : "skipping"} (${impact.reason}).`);
+      if (!impact.affected) return { skipped: true as const, projectId: p.id, reason: impact.reason };
+    }
+
     if (!forceAll && routableServices.length > 0) {
       const routed = routeServicesByChanges(routableServices, extracted.files);
       if (routed.mode === "skip") {
@@ -231,6 +250,8 @@ async function deployProjectFromPush(
       `[GitHub Webhook] ${input.owner}/${input.repo}#${input.branch} project ${p.id}: forceAll=true (${routingReason})`,
     );
   }
+
+  changeReason ??= routingReason;
 
   // Rollback context (strategy + commit_sha_before anchor) is resolved inside
   // triggerDeployment via the shared resolveRollbackContext helper — no need to
@@ -270,7 +291,7 @@ async function deployProjectFromPush(
       });
   }
 
-  return triggered;
+  return { ...triggered, ...(changeReason && !triggered?.skipped ? { reason: changeReason } : {}) };
 }
 
 async function triggerBranchDeployments(
@@ -367,13 +388,13 @@ async function triggerBranchDeployments(
       const p = pendingProjects[i];
       if (r.status === "fulfilled") {
         handledProjectIds.add(p.id);
-        const v = r.value as { deployment?: { id?: string }; skipped?: boolean } | undefined;
+        const v = r.value as { deployment?: { id?: string }; skipped?: boolean; reason?: string } | undefined;
         if (v?.skipped) {
           skipped++;
-          await recordPushDelivery(p, input, "skipped");
+          await recordPushDelivery(p, input, "skipped", { reason: v.reason });
         } else {
           succeeded++;
-          await recordPushDelivery(p, input, "dispatched", { actionRef: v?.deployment?.id });
+          await recordPushDelivery(p, input, "dispatched", { actionRef: v?.deployment?.id, reason: v?.reason });
         }
       } else {
         failed++;
@@ -403,7 +424,7 @@ async function triggerBranchDeployments(
     message:
       `Triggered ${succeeded} deployment(s) for ${input.owner}/${input.repo}#${input.branch}` +
       `${alreadyHandled ? `, ${alreadyHandled} already handled by this delivery` : ""}` +
-      `${skipped ? `, ${skipped} skipped (no affected services)` : ""}` +
+      `${skipped ? `, ${skipped} skipped (no relevant changes)` : ""}` +
       `${failed ? `, ${failed} failed` : ""}`,
   };
 }

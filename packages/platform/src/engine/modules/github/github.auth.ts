@@ -611,6 +611,7 @@ export async function getUserToken(userId: string): Promise<string | null> {
 // ─── GitHub API fetch helper ─────────────────────────────────────────────────
 
 export interface GitHubFetchOptions {
+  signal?: AbortSignal;
   /** Caller's request context. Carries userId + organizationId for the
    *  underlying `tokenFor` dispatcher (PAT → installation → OAuth chain).
    *  See `github.token.ts` for the resolution order. */
@@ -696,7 +697,7 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
       try {
         return await ghFetch<T>(ghToken, {
           url: opts.url, method, params: opts.params, headers: opts.headers,
-          response: opts.response,
+          response: opts.response, signal: opts.signal,
         });
       } catch (error) {
         if (!rejectedCredential(error)) throw error;
@@ -734,7 +735,7 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
     try {
       return await ghFetch<T>(result.token, {
         url, method, params: opts.params, headers: opts.headers,
-        response: opts.response,
+        response: opts.response, signal: opts.signal,
       });
     } catch (error) {
       // Never replay mutations, rate limits, outages, or ordinary not-found
@@ -750,7 +751,7 @@ export async function githubFetch<T = unknown>(opts: GitHubFetchOptions): Promis
   if (readOnly && (!opts.response || opts.response === "json") &&
       !customApiBase && opts.url.startsWith("https://api.github.com/")) {
     const publicData = await ghFetchPublic<T>({
-      url: opts.url, params: opts.params, headers: opts.headers,
+      url: opts.url, params: opts.params, headers: opts.headers, signal: opts.signal,
     });
     if (publicData !== null) return publicData;
   }

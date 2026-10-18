@@ -788,3 +788,5 @@ only to new custom domains and must be explicit in the deployment and Add domain
 Existing hostnames keep their Access choice when server defaults change. Close or reset
 private dialogs on account/organization switches, discard late results, and guard
 backdrop, Escape and close buttons while a write is in flight.
+
+Webhook delivery rows show a short, localized explanation below the repository when change analysis records a decision. Reuse the existing feed; keep unknown reason codes out of user-facing text.

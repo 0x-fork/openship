@@ -521,7 +521,17 @@
     "authHmacDesc": "Os chamadores assinam o corpo com um segredo compartilhado (X-Signature-256).",
     "authNone": "Aberto",
     "authNoneDesc": "Sem auth — qualquer pessoa com a URL pode dispará-lo. Use com cuidado.",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "changeReasons": {
+      "unrelated": "Só foram alterados espaços de trabalho independentes.",
+      "application": "Os arquivos da aplicação foram alterados.",
+      "shared": "As entradas de compilação compartilhadas foram alteradas.",
+      "included": "Um caminho incluído na configuração foi alterado.",
+      "excluded": "As alterações não correspondem às regras de caminhos.",
+      "unknown": "Não foi possível verificar as alterações; a implantação será mantida.",
+      "initial": "Primeira implantação.",
+      "forced": "Foi solicitada uma implantação completa."
+    }
   },
   "health": {
     "title": "Saúde",

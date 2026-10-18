@@ -158,6 +158,8 @@ export interface OpenshipConfig {
   framework?: StackId;
   packageManager?: string;
   rootDirectory?: string;
+  /** Push-only repo-relative path overrides. Root build configuration still triggers deployment. */
+  autoDeployPaths?: { include?: string[]; exclude?: string[] };
   /**
    * Where the compose file lives, when it isn't at the project root — either the
    * file itself (`"deploy/stack.yml"`, which also covers non-standard filenames)
