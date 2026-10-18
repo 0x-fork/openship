@@ -665,6 +665,14 @@ describe("self-hosted hosted-App connection over the real Cloud transport", () =
     expect(await repos.gitInstallation.listByOrganization(owner.orgId)).toHaveLength(1);
   });
 
+  it.each(["{", "null", "[]"])("rejects a malformed OAuth bridge request %s", async body => {
+    const owner = await actor();
+    const response = await app.request(`${apiOrigin}/api/cloud/github/oauth-handoff`, {
+      method: "POST", headers: { authorization: `Bearer ${owner.sessionToken}`, "content-type": "application/json" }, body,
+    });
+    expect(response.status).toBe(400);
+  });
+
   it("refuses to bridge or claim an attempt bound to another Cloud workspace", async () => {
     const owner = await actor();
     const other = await actor();
