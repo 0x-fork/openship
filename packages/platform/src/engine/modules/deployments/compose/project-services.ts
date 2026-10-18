@@ -199,6 +199,10 @@ export function primaryAppWithInfrastructure(
   if (
     !isMaterializedAppRow(project, app) ||
     (app.rootDirectory ?? ".") !== (project.rootDirectory ?? ".") ||
+    Object.keys(app.buildArgs ?? {}).length ||
+    app.namespaceVolumes === false ||
+    app.alwaysRebuildGlobs?.length ||
+    (app.restart && !["unless-stopped", "always"].includes(app.restart)) ||
     app.ports?.length ||
     (app.exposedPort && Number(app.exposedPort) !== project.port) ||
     resolveServicePublicEndpoints(app).some(
@@ -227,6 +231,8 @@ export function primaryAppWithInfrastructure(
         composeNamespaceDependencies(service.advanced).includes(app.name),
     )
   )
+    return null;
+  if (app.dependsOn?.some((name) => !infrastructure.some((service) => service.name === name)))
     return null;
   return { app, infrastructure };
 }
