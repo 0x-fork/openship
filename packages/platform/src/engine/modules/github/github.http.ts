@@ -30,6 +30,7 @@ export { GitHubApiError, isGitHubCredentialRejected } from "./github.error";
 
 export interface GhRequest {
   url: string;
+  signal?: AbortSignal;
   method?: string;
   /** GET → serialized to the query string; non-GET → JSON request body. */
   params?: Record<string, unknown>;
@@ -63,7 +64,7 @@ async function timedFetch(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GH_FETCH_TIMEOUT_MS);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -83,6 +84,7 @@ export async function ghSend(token: string, req: GhRequest): Promise<Response> {
   const method = req.method ?? "GET";
   return timedFetch(withQuery(req.url, method, req.params), {
     method,
+    signal: req.signal,
     headers: ghHeaders(token, req.headers),
     body: method !== "GET" ? JSON.stringify(req.params ?? {}) : undefined,
   });
@@ -96,6 +98,7 @@ export async function ghFetch<T = unknown>(token: string, req: GhRequest): Promi
   const method = req.method ?? "GET";
   const res = await timedFetch(withQuery(req.url, method, req.params), {
     method,
+    signal: req.signal,
     headers: ghHeaders(token, req.headers),
     body: method !== "GET" ? JSON.stringify(req.params ?? {}) : undefined,
     ...(req.response === "redirect" && { redirect: "manual" as const }),
@@ -136,6 +139,7 @@ export async function ghFetchSoft<T = unknown>(token: string, req: GhRequest): P
     const method = req.method ?? "GET";
     const res = await timedFetch(withQuery(req.url, method, req.params), {
       method,
+      signal: req.signal,
       headers: ghHeaders(token, req.headers),
     });
     if (!res.ok) return null;
@@ -167,6 +171,7 @@ export async function ghFetchPublic<T = unknown>(req: GhRequest): Promise<T | nu
     };
     const res = await timedFetch(withQuery(req.url, "GET", req.params), {
       method: "GET",
+      signal: req.signal,
       headers,
     });
     if (res.status === 204) return { success: true } as T;

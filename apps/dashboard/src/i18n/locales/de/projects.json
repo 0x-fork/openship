@@ -521,7 +521,17 @@
     "authHmacDesc": "Aufrufer signieren den Body mit einem gemeinsamen Secret (X-Signature-256).",
     "authNone": "Offen",
     "authNoneDesc": "Keine Auth — jeder mit der URL kann ihn auslösen. Mit Vorsicht verwenden.",
-    "cancel": "Abbrechen"
+    "cancel": "Abbrechen",
+    "changeReasons": {
+      "unrelated": "Nur unabhängige Arbeitsbereiche wurden geändert.",
+      "application": "Anwendungsdateien wurden geändert.",
+      "shared": "Gemeinsame Build-Eingaben wurden geändert.",
+      "included": "Ein eingeschlossener Pfad wurde geändert.",
+      "excluded": "Die Änderungen entsprechen nicht den konfigurierten Pfadregeln.",
+      "unknown": "Änderungen konnten nicht geprüft werden; die Bereitstellung bleibt aktiviert.",
+      "initial": "Erste Bereitstellung.",
+      "forced": "Eine vollständige Bereitstellung wurde angefordert."
+    }
   },
   "health": {
     "title": "Zustand",
