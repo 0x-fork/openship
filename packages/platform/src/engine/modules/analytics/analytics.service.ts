@@ -40,6 +40,7 @@ interface CloudAnalyticsBucket {
   requests: number;
   bandwidth_in: number;
   bandwidth_out: number;
+  /** Total request duration in seconds, not a per-request average. */
   response_time_sum: number;
   unique_visitors: number;
 }
@@ -55,7 +56,7 @@ interface MgmtAnalyticsBucket {
   unique_requests: number;
   bandwidth_in: number;
   bandwidth_out: number;
-  /** Total response time of the minute's requests in seconds (a sum, not an average). */
+  /** Total request duration in seconds, not a per-request average. */
   response_time: number;
 }
 
@@ -122,6 +123,10 @@ function toMgmtBucket(b: {
   };
 }
 
+function averageResponseTimeMs(totalSeconds: number, requests: number): number {
+  return requests > 0 ? (totalSeconds / requests) * 1000 : 0;
+}
+
 /** Reduce an array of buckets into a summary. */
 export function summariseBuckets(
   buckets: MgmtAnalyticsBucket[],
@@ -131,14 +136,14 @@ export function summariseBuckets(
   const totalUnique = buckets.reduce((s, b) => s + b.unique_requests, 0);
   const totalIn = buckets.reduce((s, b) => s + b.bandwidth_in, 0);
   const totalOut = buckets.reduce((s, b) => s + b.bandwidth_out, 0);
-  const totalRt = buckets.reduce((s, b) => s + b.response_time, 0);
+  const totalResponseTimeSeconds = buckets.reduce((s, b) => s + b.response_time, 0);
   return {
     totalRequests: totalReqs,
     pageRequests: totalUnique,
     uniqueVisitors: null,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
-    avgResponseTimeMs: totalReqs > 0 ? Math.round((totalRt / totalReqs) * 1000) : 0,
+    avgResponseTimeMs: averageResponseTimeMs(totalResponseTimeSeconds, totalReqs),
     lastUpdated,
   };
 }
@@ -151,7 +156,10 @@ function summariseCloudBuckets(
   const totalUnique = buckets.reduce((sum, bucket) => sum + bucket.unique_visitors, 0);
   const totalIn = buckets.reduce((sum, bucket) => sum + bucket.bandwidth_in, 0);
   const totalOut = buckets.reduce((sum, bucket) => sum + bucket.bandwidth_out, 0);
-  const totalResponseTime = buckets.reduce((sum, bucket) => sum + bucket.response_time_sum, 0);
+  const totalResponseTimeSeconds = buckets.reduce(
+    (sum, bucket) => sum + bucket.response_time_sum,
+    0,
+  );
 
   return {
     totalRequests: totalReqs,
@@ -161,7 +169,7 @@ function summariseCloudBuckets(
     uniqueVisitors: totalUnique,
     bandwidthIn: totalIn,
     bandwidthOut: totalOut,
-    avgResponseTimeMs: totalReqs > 0 ? Math.round(totalResponseTime / totalReqs) : 0,
+    avgResponseTimeMs: averageResponseTimeMs(totalResponseTimeSeconds, totalReqs),
     lastUpdated,
   };
 }
@@ -179,7 +187,7 @@ export function buildHourlyPeriods(
       uniqueVisitors: number;
       bandwidthIn: number;
       bandwidthOut: number;
-      responseTimeTotal: number;
+      responseTimeSeconds: number;
     }
   >();
 
@@ -190,14 +198,14 @@ export function buildHourlyPeriods(
       uniqueVisitors: 0,
       bandwidthIn: 0,
       bandwidthOut: 0,
-      responseTimeTotal: 0,
+      responseTimeSeconds: 0,
     };
 
     current.requests += bucket.requests;
     current.uniqueVisitors += bucket.unique_requests;
     current.bandwidthIn += bucket.bandwidth_in;
     current.bandwidthOut += bucket.bandwidth_out;
-    current.responseTimeTotal += bucket.response_time;
+    current.responseTimeSeconds += bucket.response_time;
     hourly.set(hourKey, current);
   }
 
@@ -217,10 +225,10 @@ export function buildHourlyPeriods(
       uniqueVisitors: current?.uniqueVisitors ?? 0,
       bandwidthIn: current?.bandwidthIn ?? 0,
       bandwidthOut: current?.bandwidthOut ?? 0,
-      avgResponseTimeMs:
-        current && current.requests > 0
-          ? Math.round((current.responseTimeTotal / current.requests) * 1000)
-          : 0,
+      avgResponseTimeMs: averageResponseTimeMs(
+        current?.responseTimeSeconds ?? 0,
+        current?.requests ?? 0,
+      ),
       topPaths: [],
       trafficByHour: {},
     });
@@ -265,8 +273,10 @@ function buildCloudHourlyPeriods(
       uniqueVisitors: bucket?.unique_visitors ?? 0,
       bandwidthIn: bucket?.bandwidth_in ?? 0,
       bandwidthOut: bucket?.bandwidth_out ?? 0,
-      avgResponseTimeMs:
-        bucket && bucket.requests > 0 ? Math.round(bucket.response_time_sum / bucket.requests) : 0,
+      avgResponseTimeMs: averageResponseTimeMs(
+        bucket?.response_time_sum ?? 0,
+        bucket?.requests ?? 0,
+      ),
       topPaths: [],
       trafficByHour: {},
     });
