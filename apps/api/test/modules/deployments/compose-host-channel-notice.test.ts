@@ -2308,3 +2308,29 @@ it("rejects an invalid GPU request before pulling images or replacing any siblin
   expect(fixture.activate).not.toHaveBeenCalled();
   expect(fixture.runtime.destroy).not.toHaveBeenCalled();
 });
+
+it.each([{ ports: [] }, { ports: ["127.0.0.1:25774:25774"] }])(
+  "deploys private services without taking over the edge ($ports)",
+  async ({ ports }) => {
+    h.services = [{ ...h.services[0], exposed: false, customDomain: null, ports }];
+    h.previousServiceRows = [];
+    const runtime = startingRuntime();
+    const exec = vi.fn(async () => {
+      throw new Error("foreign proxy must not be touched");
+    });
+    const system = { ensureFeature: vi.fn(async (_feature: string) => undefined) };
+    const { logger, lines } = recordingLogger();
+    const result = await deployComposeServices(project, dep, runtime, logger, {
+      executor: { exec } as unknown as CommandExecutor,
+      hostPortTarget: localHostPortTarget,
+      system: system as never,
+    });
+    expect(result.status).toBe("ready");
+    expect(system.ensureFeature.mock.calls.map((call) => call[0])).toEqual(["deploy"]);
+    expect(h.prepareTargetPinnedHostPorts).not.toHaveBeenCalled();
+    expect(h.allocateAndReservePinnedHostPort).not.toHaveBeenCalled();
+    expect(runtime.deployServiceWorkload).toHaveBeenCalled();
+    expect(vi.mocked(runtime.deployServiceWorkload).mock.calls[0]?.[1].ports).toEqual(ports);
+    expect(lines.some((line) => line.message.includes("Edge/routing setup failed"))).toBe(false);
+  },
+);

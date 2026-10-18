@@ -145,7 +145,7 @@ import { isRealContainerRef } from "../../../lib/container-ref";
 import { resolveServicePort } from "./domain-helpers";
 import { mergeServiceDeployEnv } from "./service-env-layers";
 import { compileProjectRoutingFields } from "../../../lib/project-routing-fields";
-import { buildCompositeRegistration, buildDomainFanoutRegistrations } from "./composite-route";
+import { buildCompositeRegistration, buildDomainFanoutRegistrations, resolveDomainFanoutRoutes } from "./composite-route";
 import { collectComposeRoutePortDemands } from "./route-port-demands";
 import { newerThanRestoredRelease, serviceKind } from "./project-services";
 import {
@@ -1136,14 +1136,16 @@ async function deployComposeServicesUnlocked(
         usesManagedRouting: opts.usesManagedRouting ?? false,
       }),
     ];
-    const needsStrictLoopbackInventory = usesHostLoopback && Boolean(opts.executor);
+    const hasFanoutRoutes = resolveDomainFanoutRoutes({
+      routes: project.compositeRoutes, services: enabled, domainByHostname,
+    }).length > 0;
 
     await opts.system.ensureFeature("deploy", systemLog);
     // Routing/SSL toolchain is best-effort — domains are optional, so failing to
     // install OpenResty/certbot must NOT fail the deploy. The services still run;
     // routing is flagged action-required and retried later.
     try {
-      if (plannedRoutes.length > 0 || needsStrictLoopbackInventory) {
+      if (plannedRoutes.length > 0 || hasFanoutRoutes) {
         // Components + edge convergence as ONE step — see ensureRoutingReady for why
         // the second half can't live inside ensureFeature. Without an executor
         // there's no box to converge (cloud), so components alone are correct.
@@ -1871,8 +1873,14 @@ async function deployComposeServicesUnlocked(
     }
   }
 
+  // A private service with only fixed/no host publishes allocates nothing.
+  // Inventory must not bootstrap an edge just to establish an empty claim set.
+  // Automatic publishes retain the strict inventory guard, even without domains.
+  const needsHostPortAllocation = hostLoopbackRoutePortDemands.size > 0 || enabled.some(
+    service => portOnlyTcpContainerPorts((service.ports as string[] | null) ?? []).length > 0,
+  );
   const pinnedHostPortClaims =
-    usesHostLoopback && opts?.executor
+    usesHostLoopback && opts?.executor && needsHostPortAllocation
       ? hostPortTarget
         ? await prepareTargetPinnedHostPorts({
             target: hostPortTarget,
