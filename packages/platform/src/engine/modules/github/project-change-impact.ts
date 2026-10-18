@@ -164,6 +164,9 @@ export async function resolveProjectChangeImpact(
     }
     if (serviceMatchesChanges(root, remaining)) return { affected: true, reason: "project-files" };
 
+    if (project.framework === "docker" || project.buildKind === "dockerfile")
+      return { affected: true, reason: "custom-build-context" };
+
     const catalog = await requestMemo(`impact:workspace:${key}`, async () => {
       const tree = await listRepositoryTree(ctx, project.gitOwner!, project.gitRepo!, {
         branch: commitSha,
@@ -290,11 +293,14 @@ export async function resolveProjectChangeImpact(
     visit(selected.name);
     for (const dependency of catalog.globalDependencies) visit(dependency);
     for (const file of remaining) {
-      const pkg = catalog.packages
-        .filter((pkg) => serviceMatchesChanges(pkg.root, [file]))
-        .sort((a, b) => b.root.length - a.root.length)[0];
-      if (!pkg) return { affected: true, reason: "shared-or-unknown-file" };
-      if (affectedRoots.has(pkg.root)) return { affected: true, reason: "workspace-dependency" };
+      const knownWorkspace = catalog.packages.some((pkg) =>
+        serviceMatchesChanges(pkg.root, [file]),
+      );
+      if (!knownWorkspace) return { affected: true, reason: "shared-or-unknown-file" };
+      // A parent package can consume files in a nested workspace through its
+      // own build context. A more specific workspace must not hide that input.
+      if ([...affectedRoots].some((root) => serviceMatchesChanges(root, [file])))
+        return { affected: true, reason: "workspace-dependency" };
     }
     return { affected: false, reason: "unrelated-workspaces" };
   } catch (error) {

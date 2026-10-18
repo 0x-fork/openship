@@ -256,3 +256,27 @@ it.each(["workspace-alias", "cross-package-input"])(
     });
   },
 );
+
+it("keeps nested workspace files in the build context of a required parent package", async () => {
+  put("package.json", { workspaces: ["apps/*", "packages/**"] });
+  put("packages/ui/fixture/package.json", { name: "nested-fixture" });
+  expect(await impact("packages/ui/fixture/index.ts")).toEqual({
+    affected: true,
+    reason: "workspace-dependency",
+  });
+});
+
+it.each([{ framework: "docker" }, { buildKind: "dockerfile" }])(
+  "does not infer a custom Docker build context from package dependencies: %j",
+  async (custom) => {
+    expect(
+      await resolveProjectChangeImpact(
+        ctx,
+        { ...project, ...custom },
+        ["apps/admin/index.ts"],
+        sha,
+      ),
+    ).toEqual({ affected: true, reason: "custom-build-context" });
+    expect(h.tree).not.toHaveBeenCalled();
+  },
+);

@@ -140,6 +140,7 @@ deployment therefore remain relevant on the next push. The initial deployment, f
 incomplete comparisons and uncertain dependency analysis always deploy. Analysis is bounded to 50
 workspaces, 256 KiB per manifest and a ten-second request budget. Unsupported configurations, including
 JSONC Turbo files, path-linked packages and unsupported glob syntax, retain full deployment behavior.
+Custom Dockerfile builds also retain full deployment unless explicit path rules are provided.
 
 The project's webhook delivery history explains why a deployment was triggered or skipped. The update
 banner uses the same impact policy. Manual Deploy and custom incoming hooks are not suppressed by these

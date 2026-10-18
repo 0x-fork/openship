@@ -117,7 +117,7 @@ function DeliveryRow({ d }: { d: WebhookDelivery }) {
     "workspace-dependency": "shared", "shared-package": "shared", "root-config": "shared",
     "turbo-global-input": "shared", "shared-or-unknown-file": "shared",
     "explicitly-included": "included", "explicitly-excluded": "excluded", "outside-explicit-includes": "excluded",
-    "analysis-unavailable": "unknown", "unknown-deployed-diff": "unknown", "unknown-changes": "unknown", "unknown-revision": "unknown",
+    "custom-build-context": "unknown", "analysis-unavailable": "unknown", "unknown-deployed-diff": "unknown", "unknown-changes": "unknown", "unknown-revision": "unknown",
     "first-deployment": "initial", "force-push": "forced", "commit-token": "forced", "force-deploy-next": "forced",
   };
   const reasonKey = d.summary?.reason ? reasonKeys[d.summary.reason] : undefined;
