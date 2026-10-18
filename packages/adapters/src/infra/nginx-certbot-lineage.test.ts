@@ -102,6 +102,7 @@ async function setup() {
   commands.length = 0;
   return {
     nginx,
+    executor,
     root,
     commands,
     certDir,
@@ -252,12 +253,50 @@ describe("Certbot renewal after adopting a certificate", () => {
     );
   });
 
-  test("cleans up obsolete renewal conf when direct manual cert is installed over lineage", async () => {
+  test("removes only the replaced lineage's renewal config and preserves its archive", async () => {
     const s = await setup();
     await s.put(DOMAIN, s.old, true);
     const renewalConf = join(s.root, "renewal", `${DOMAIN}.conf`);
-    await s.nginx.installCert(DOMAIN, s.old);
-    await expect(readFile(renewalConf, "utf8")).rejects.toThrow();
+    const otherConf = join(s.root, "renewal", "other.example.com.conf");
+    await writeFile(otherConf, "unrelated renewal");
+    const archiveCert = join(s.root, "archive", DOMAIN, "fullchain1.pem");
+    const archiveBefore = await readFile(archiveCert, "utf8");
+
+    await s.nginx.installCert(DOMAIN, s.renewed);
+
+    await expect(readFile(renewalConf, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(otherConf, "utf8")).toBe("unrelated renewal");
+    expect(await readFile(archiveCert, "utf8")).toBe(archiveBefore);
+    expect(await s.served()).toBe(s.renewed.certPem);
+  });
+
+  test("does not remove renewal ownership when certificate validation fails", async () => {
+    const s = await setup();
+    await s.put(DOMAIN, s.old, true);
+    const conf = join(s.root, "renewal", `${DOMAIN}.conf`);
+    const before = await readFile(conf, "utf8");
+    await expect(
+      s.nginx.installCert(DOMAIN, { ...s.old, keyPem: s.renewed.keyPem }),
+    ).rejects.toThrow(/Invalid certificate/);
+    expect(await readFile(conf, "utf8")).toBe(before);
+    expect(await s.served()).toBe(s.old.certPem);
+    expect(s.reload).not.toHaveBeenCalled();
+  });
+
+  test("does not report successful installation when obsolete renewal cleanup fails", async () => {
+    const s = await setup();
+    await s.put(DOMAIN, s.old, true);
+    const conf = join(s.root, "renewal", `${DOMAIN}.conf`);
+    const remove = s.executor.rm.bind(s.executor);
+    vi.spyOn(s.executor, "rm").mockImplementation(async (path) => {
+      if (path === conf) throw new Error("renewal cleanup permission denied");
+      return remove(path);
+    });
+    await expect(s.nginx.installCert(DOMAIN, s.renewed)).rejects.toThrow(
+      /renewal cleanup permission denied/,
+    );
+    expect(await readFile(conf, "utf8")).toBeTruthy();
+    expect(s.reload).not.toHaveBeenCalled();
   });
 
   test("renews the linked lineage even when its certificate has already expired", async () => {
