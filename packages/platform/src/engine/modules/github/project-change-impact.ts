@@ -98,7 +98,8 @@ function dependencyNames(manifest: Manifest): string[] {
  * skipping. Callers already handle forced deploys and incomplete push diffs. */
 export async function resolveProjectChangeImpact(
   ctx: ExecutionContext,
-  project: Pick<Project, "id" | "rootDirectory" | "gitOwner" | "gitRepo" | "monorepoSharedPaths">,
+  project: Pick<Project, "id" | "rootDirectory" | "gitOwner" | "gitRepo" | "monorepoSharedPaths"> &
+    Partial<Pick<Project, "framework" | "buildKind">>,
   files: readonly string[],
   commitSha?: string | null,
 ): Promise<ProjectChangeImpact> {
