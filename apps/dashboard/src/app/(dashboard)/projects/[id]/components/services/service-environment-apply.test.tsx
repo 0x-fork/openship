@@ -399,6 +399,124 @@ describe("service environment apply", () => {
     expect(mocks.restart).not.toHaveBeenCalled();
   });
 
+  it("does not redisplay the old revealed value after saving a secret", async () => {
+    await render();
+    mocks.post.mockResolvedValueOnce({
+      success: true,
+      environment: { TOKEN: "old-token" },
+    });
+    await click(baseDictionary.projectSettings.envVars.showValue);
+    const input = host.querySelector(
+      'input[value="old-token"]',
+    ) as HTMLInputElement;
+    expect(input.type).toBe("text");
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "new-token");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(input.value).toBe("new-token");
+    await click(copy.saveEnvironment);
+    expect(mocks.mergeEnv).toHaveBeenCalledWith("project-stack", "svc-api", {
+      environment: "production",
+      upserts: [
+        {
+          key: "TOKEN",
+          value: "new-token",
+          isSecret: true,
+          sourceId: "saved-secret",
+        },
+      ],
+      deletes: [],
+    });
+    expect(
+      [...host.querySelectorAll("input")].map((item) => item.value),
+    ).not.toContain("old-token");
+    mocks.post.mockResolvedValueOnce({
+      success: true,
+      environment: { TOKEN: "new-token" },
+    });
+    await click(baseDictionary.projectSettings.envVars.showValue);
+    expect(host.querySelector('input[value="new-token"]')).not.toBeNull();
+    expect(mocks.post).toHaveBeenCalledTimes(2);
+    expect(button(copy.saveEnvironment).disabled).toBe(true);
+  });
+
+  it("ignores a reveal started before a value was edited and saved", async () => {
+    await render();
+    let finishReveal!: (value: unknown) => void;
+    mocks.post.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishReveal = resolve;
+      }),
+    );
+    await click(baseDictionary.projectSettings.envVars.showValue);
+    const input = host.querySelector(
+      'input[value="••••••••"]',
+    ) as HTMLInputElement;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "new-token");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(copy.saveEnvironment);
+    let finishCurrentReveal!: (value: unknown) => void;
+    mocks.post.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishCurrentReveal = resolve;
+      }),
+    );
+    await click(baseDictionary.projectSettings.envVars.showValue);
+    await act(async () =>
+      finishReveal({ success: true, environment: { TOKEN: "old-token" } }),
+    );
+    expect(
+      [...host.querySelectorAll("input")].map((item) => item.value),
+    ).not.toContain("old-token");
+    expect(
+      button(baseDictionary.projectSettings.envVars.showValue).disabled,
+    ).toBe(true);
+    await act(async () =>
+      finishCurrentReveal({ success: true, environment: { TOKEN: "new-token" } }),
+    );
+    expect(host.querySelector('input[value="new-token"]')).not.toBeNull();
+    expect(button(copy.saveEnvironment).disabled).toBe(true);
+    expect(mocks.toast).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "error",
+      expect.anything(),
+    );
+  });
+
+  it("keeps an untouched secret revealed when another variable is edited", async () => {
+    await render();
+    mocks.post.mockResolvedValueOnce({
+      success: true,
+      environment: { TOKEN: "saved-token" },
+    });
+    await click(baseDictionary.projectSettings.envVars.showValue);
+    await editFlag("true");
+    expect(host.querySelector('input[value="saved-token"]')).not.toBeNull();
+    mocks.getEnvironment.mockResolvedValue(
+      environmentState([{ ...savedEnv[0]!, value: "true" }, savedEnv[1]!]),
+    );
+    await click(copy.saveEnvironment);
+    expect(host.querySelector('input[value="saved-token"]')).not.toBeNull();
+    expect(mocks.post).toHaveBeenCalledOnce();
+    expect(mocks.mergeEnv.mock.calls[0]![2].upserts).toEqual([
+      {
+        sourceId: "billing-flag",
+        key: "BILLING_ENABLED",
+        value: "true",
+        isSecret: false,
+      },
+    ]);
+  });
+
   it("opens the Environment panel after a refused restart and waits for Apply", async () => {
     mocks.restart.mockRejectedValue(stale());
     await render("settings");
