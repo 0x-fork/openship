@@ -101,6 +101,7 @@ import { decryptEnvMap } from "../../lib/encryption";
 import {
   auditRoutedDomainTls,
   buildProjectRouteDomains,
+  buildServiceRouteDomains,
   createTrackedSslProvider,
   ensureRouteDomainRecord,
   toRoutedDomainInputs,
@@ -175,6 +176,7 @@ import {
   resolveProjectServicePreflightServices,
   shouldUseProjectServicePipeline,
 } from "./compose/index";
+import { primaryAppWithInfrastructure } from "./compose/project-services";
 import { serviceKind, type DeployableService } from "../../lib/deployable-service";
 import { resolveProjectRouteState } from "../domains/project-route.service";
 import { type DeploymentConfigSnapshot } from "./build.service";
@@ -235,6 +237,7 @@ export async function resolveServicePipelineMode(
   useSingleAppPipeline: boolean;
   useServicePipeline: boolean;
   servicePreflightServices: DeployableService[];
+  primaryApp?: NonNullable<ReturnType<typeof primaryAppWithInfrastructure>>;
 }> {
   // A deploy that TARGETS specific service IDs is a per-service action — "add
   // service", or redeploy one service. Those services are their own workspaces/
@@ -254,7 +257,17 @@ export async function resolveServicePipelineMode(
     shouldUseProjectServicePipeline(project, snapshot.composeServices),
   ]);
 
-  return { useSingleAppPipeline: false, useServicePipeline, servicePreflightServices };
+  const primaryApp = useServicePipeline && !env.CLOUD_MODE && !project.workspaceId &&
+    !snapshot.managedWorkspaceId && !snapshot.managedServer && !snapshot.clusterId &&
+    snapshot.deployTarget !== "cloud" && snapshot.deployTarget !== "cluster" &&
+    snapshot.source !== "image" && !snapshot.releaseImageRef &&
+    snapshotToClass(snapshot).workload !== "static"
+    ? primaryAppWithInfrastructure({ ...project, ...snapshot },
+        await repos.service.listByProject(project.id)) : null;
+  const eligible = primaryApp && (!targetsSpecificServices ||
+    snapshot.targetServiceIds!.every(id => primaryApp.infrastructure.some(service => service.id === id)));
+  return { useSingleAppPipeline: false, useServicePipeline: useServicePipeline && !eligible,
+    servicePreflightServices, ...(eligible ? { primaryApp: primaryApp! } : {}) };
 }
 
 /**
@@ -827,7 +840,7 @@ async function executeBuildAndDeploy(
     // persisted "docker" would make rollback/purge 404-no-op on the release dir and
     // leak it). Cloud static + Docker-less desktop-local static keep their own mode.
     const serviceMode = await resolveServicePipelineMode(project, snapshot);
-    const willRunServices = serviceMode.useServicePipeline;
+    const willRunServices = serviceMode.useServicePipeline || !!serviceMode.primaryApp;
     const managedTarget = resolveEffectiveTarget(plat.target, snapshot) === "cloud";
     await assertCloudDeploymentLimits(dep.organizationId, {
       projectId: project.id,
@@ -951,6 +964,11 @@ async function executeBuildAndDeploy(
                 : "direct (host process)"
         }\n`,
     );
+
+    if (serviceMode.primaryApp && snapshot.targetServiceIds?.length) {
+      const { prepareInfrastructureScopeSnapshot } = await import("./primary-app-infrastructure");
+      await prepareInfrastructureScopeSnapshot(project, dep, snapshot, runtime);
+    }
 
     // Runtime roles (#935) run beside the single-app web container on a Docker
     // server. Refuse before the build, so a refused deploy runs no build, no
@@ -1083,10 +1101,17 @@ async function executeBuildAndDeploy(
 
     // Resolved up front so the relay-fallback gate below can exclude
     // multi-service builds (whose clone path differs).
-    const { useServicePipeline, servicePreflightServices } = await resolveServicePipelineMode(
+    const { useServicePipeline, servicePreflightServices, primaryApp } = await resolveServicePipelineMode(
       project,
       snapshot,
     );
+
+    if (serviceMode.primaryApp && !primaryApp)
+      throw new Error("Project services changed during deployment preparation. Retry the deployment.");
+    if (primaryApp) {
+      snapshot.attachedInfrastructureServiceIds = primaryApp.infrastructure.map(service => service.id);
+      await repos.deployment.updateStatus(dep.id, "building", { meta: snapshot });
+    }
 
     // "Clone on the server" — clone the repo directly on the remote build host
     // instead of cloning on the orchestrator and transferring the context. The
@@ -1530,6 +1555,7 @@ async function executeBuildAndDeploy(
       deployRouting: servedRouting,
       transports,
       cancellationSignal,
+      primaryApp,
     };
 
     if (hostPortTargetLockHeld && !phase.hostPortTarget) {
@@ -1537,16 +1563,39 @@ async function executeBuildAndDeploy(
     }
     const deployConfig = createServerDeployConfig(phase);
     if (snapshot.roleConfiguration) {
-      if (!(runtime instanceof DockerRuntime) || !runtime.supports("roles") || willRunServices)
+      if (!(runtime instanceof DockerRuntime) || !runtime.supports("roles") || useServicePipeline)
         throw new Error("Runtime role configuration requires a single-app Docker deployment");
-      const { runRoleConfigurationRollout } = await import("./role-configuration-rollout");
-      await runRoleConfigurationRollout({ project, dep, runtime, config: deployConfig, logger, signal: cancellationSignal,
-        beforeStart: containerId => attachLinkedNetworks(project.id, runtime, (message, level) => logger.log(`${message}\n`, level), dep.id, [containerId]),
-        publish: (containerId, warningMessage) => onSuccess(ctx, { containerId, url: dep.url ?? undefined, durationMs: 0, warningMessage }) });
+      const roleRuntime = runtime;
+      const configure = async () => {
+        if (primaryApp && (await repos.project.findById(project.id))?.activeDeploymentId !== snapshot.roleConfiguration!.sourceDeploymentId)
+          throw new Error("The active app changed. Retry this infrastructure or role configuration.");
+        if (primaryApp) {
+          const { prepareAttachedInfrastructure, carryAttachedInfrastructure } = await import("./primary-app-infrastructure");
+          if (snapshot.targetServiceIds?.length) await prepareAttachedInfrastructure(phase);
+          else await carryAttachedInfrastructure(phase);
+        }
+        const { runRoleConfigurationRollout } = await import("./role-configuration-rollout");
+        await runRoleConfigurationRollout({ project, dep, runtime: roleRuntime, config: deployConfig, logger, signal: cancellationSignal,
+          beforeStart: containerId => attachLinkedNetworks(project.id, roleRuntime, (message, level) => logger.log(`${message}\n`, level), dep.id, [containerId]),
+          publish: async (containerId, warningMessage) => {
+            if (primaryApp) {
+              const { recordPrimaryAppService } = await import("./primary-app-infrastructure");
+              await recordPrimaryAppService(phase, containerId);
+            }
+            await onSuccess(ctx, { containerId, url: dep.url ?? undefined, durationMs: 0, warningMessage });
+          } });
+      };
+      if (primaryApp) await withProjectRuntimeTransition(project.id, configure, cancellationSignal);
+      else await configure();
       await archivePreviousDeployment(dep, project, logger);
       return;
     }
     const activate = async () => {
+      if (primaryApp) {
+        const { prepareAttachedInfrastructure } = await import("./primary-app-infrastructure");
+        await prepareAttachedInfrastructure(phase);
+        throwIfDeploymentCancelled(cancellationSignal);
+      }
       await executeReleasePhase(phase, deployConfig);
       throwIfDeploymentCancelled(cancellationSignal);
       return hostPortTargetLockHeld
@@ -1561,7 +1610,7 @@ async function executeBuildAndDeploy(
     if (
       runtime instanceof DockerRuntime &&
       runtime.supports("roles") &&
-      (snapshot.roles?.length || previous?.roleContainers?.length)
+      (snapshot.roles?.length || previous?.roleContainers?.length || primaryApp)
     ) {
       // Runtime/project precedes host-port ownership, matching teardown. The
       // wait is cancellable: deletion may hold this lock while stopping workers.
@@ -1572,6 +1621,8 @@ async function executeBuildAndDeploy(
           throwIfDeploymentCancelled(cancellationSignal);
           await recoverProjectRoleHandovers(project.id);
           const liveProject = await repos.project.findById(project.id);
+          if (primaryApp && liveProject?.activeDeploymentId !== project.activeDeploymentId)
+            throw new Error("The active app changed while building. Retry this deployment.");
           if (!liveProject || liveProject.deletionInProgress)
             throw new Error("Project cleanup is pending");
           Object.assign(project, liveProject);
@@ -1636,7 +1687,8 @@ async function executeBuildAndDeploy(
   }
 }
 
-interface DeployPhaseInputs {
+export interface DeployPhaseInputs {
+  primaryApp?: NonNullable<ReturnType<typeof primaryAppWithInfrastructure>>;
   ctx: LifecycleContext;
   project: Project;
   dep: Deployment;
@@ -1954,7 +2006,7 @@ function buildDeployEnvironment(
           target: phase.hostPortTarget,
           projectId: project.id,
           runtime,
-          routes: [{ targetUrl, serviceId: null, containerId: id, containerPort: port }],
+          routes: [{ targetUrl, serviceId: phase.primaryApp?.app.id ?? null, containerId: id, containerPort: port }],
         });
       }
       return targetUrl;
@@ -2332,7 +2384,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
             // inventory → reservation → Docker bind atomic against other deploys.
             const owner = {
               projectId: project.id,
-              serviceId: null,
+              serviceId: phase.primaryApp?.app.id ?? null,
               containerPort: snapshot.port,
             } as const;
             const allocation = await allocateAndReservePinnedHostPort({
@@ -2374,12 +2426,12 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
               .filter((port): port is number => Number.isSafeInteger(port) && port > 0),
           );
           for (const port of barePorts) {
-            const owner = { projectId: project.id, serviceId: null, containerPort: port } as const;
+            const owner = { projectId: project.id, serviceId: phase.primaryApp?.app.id ?? null, containerPort: port } as const;
             const exact = findOwnedPinnedHostPort(claims, owner);
             const legacy = claims.find(
               (claim) =>
                 claim.projectId === project.id &&
-                claim.serviceId === null &&
+                claim.serviceId === (phase.primaryApp?.app.id ?? null) &&
                 claim.containerPort === null &&
                 claim.port === port,
             );
@@ -2427,7 +2479,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   const domainByHostname = new Map(
     projectDomains.map((domain) => [domain.hostname.toLowerCase(), domain]),
   );
-  const plannedDomains = buildProjectRouteDomains({
+  const projectPlannedDomains = buildProjectRouteDomains({
     project,
     projectDomains,
     managedSlug: routeState.publicEndpoints.length > 0 ? routeState.primarySlug : undefined,
@@ -2449,6 +2501,16 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
         ? deployConfig.port
         : undefined,
   });
+  const servicePlannedDomains = phase.primaryApp ? buildServiceRouteDomains({
+    project, service: phase.primaryApp.app, runtimeName: runtime.name,
+    certificateManagement: ssl.certificateManagement, usesManagedRouting, domainByHostname,
+  }) : [];
+  // Keep the existing service row as hostname owner. Project-level aliases still
+  // work, while a mirrored endpoint cannot silently rebind a service domain.
+  const plannedDomains = phase.primaryApp
+    ? [...new Map([...projectPlannedDomains, ...servicePlannedDomains]
+        .map(route => [route.hostname, route])).values()]
+    : projectPlannedDomains;
   if (isStaticFileServe && phase.effectiveTarget === "cloud" && plannedDomains.length === 0) {
     throw new Error(
       "Cloud Pages requires a public endpoint. Configure a free or custom domain before deploying.",
@@ -2547,7 +2609,8 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   if (prevDep) {
     const prevServiceDeps = await repos.service.listByDeployment(prevDep.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline"); return []; });
     for (const sd of prevServiceDeps) {
-      if (!isRealContainerRef(sd.containerId) || sd.containerId === prevDep.containerId) {
+      if (!isRealContainerRef(sd.containerId) || sd.containerId === prevDep.containerId ||
+        phase.primaryApp?.infrastructure.some(service => service.id === sd.serviceId)) {
         continue;
       }
       try {
@@ -2851,10 +2914,10 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     const desiredPublishes = needsHostLoopbackClaim
       ? runtime.name === "bare"
         ? [...new Set(attemptedHostPortAllocations.map((allocation) => allocation.claim.port))].map(
-            (port) => ({ serviceId: null, containerPort: port, hostPort: port }),
+            (port) => ({ serviceId: phase.primaryApp?.app.id ?? null, containerPort: port, hostPort: port }),
           )
         : pinnedHostPort !== undefined
-          ? [{ serviceId: null, containerPort: snapshot.port, hostPort: pinnedHostPort }]
+          ? [{ serviceId: phase.primaryApp?.app.id ?? null, containerPort: snapshot.port, hostPort: pinnedHostPort }]
           : []
       : [];
     const convergence = {
@@ -3020,6 +3083,10 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     logger.log(`Deployment completed with warnings: ${warningMessage}\n`, "warn");
   }
 
+  if (phase.primaryApp) {
+    const { recordPrimaryAppService } = await import("./primary-app-infrastructure");
+    await recordPrimaryAppService(phase, deployResult.containerId!);
+  }
   await onSuccess(ctx, {
     containerId: deployResult.containerId!,
     url: deployResult.url,

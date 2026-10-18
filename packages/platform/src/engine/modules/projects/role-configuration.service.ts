@@ -4,7 +4,7 @@ import { DockerRuntime } from "@repo/adapters";
 import { repos, type Deployment, type Project } from "@repo/db";
 import type { RuntimeRoleConfigurationInput } from "@repo/contracts";
 import type { ExecutionContext } from "@repo/platform";
-import { shouldUseProjectServicePipeline } from "../deployments/compose/project-services";
+import { primaryAppWithInfrastructure, shouldUseProjectServicePipeline } from "../deployments/compose/project-services";
 import { snapshotToClass } from "../deployments/deployment-class";
 import { findActiveDeployment } from "../../lib/active-deployment";
 import { assertResourceInOrg, assertNotControlPlane } from "../../lib/resource-access";
@@ -27,13 +27,13 @@ async function unsupported(
   if (project.disabledAt) return "Resume this app before configuring runtime roles.";
   if (
     meta.runtimeMode !== "docker" ||
-    meta.deployTarget === "cloud" ||
+    meta.deployTarget === "cloud" || project.workspaceId ||
     meta.clusterId ||
-    meta.composeServices?.length ||
     snapshotToClass(meta).workload === "static"
   )
     return "Runtime role configuration requires a single-app Docker deployment.";
-  if (await shouldUseProjectServicePipeline(project, meta.composeServices))
+  if (await shouldUseProjectServicePipeline(project, meta.composeServices) &&
+    !primaryAppWithInfrastructure(project, await repos.service.listByProject(project.id)))
     return "Runtime role configuration requires a single-app Docker deployment.";
   return null;
 }
@@ -116,6 +116,10 @@ export async function configureRuntimeRoles(
       const identity = await inspectRoleConfigurationImage(runtime, live, active!);
       const snapshot: DeploymentConfigSnapshot = {
         ...(active!.meta as DeploymentConfigSnapshot),
+        // A roles-only revision must never inherit an earlier service refresh.
+        targetServiceIds: undefined,
+        refreshServiceIds: undefined,
+        strictServiceScope: undefined,
         roles,
         handoverAppImage: identity.imageId,
         refreshAppDeploymentId: active!.id,

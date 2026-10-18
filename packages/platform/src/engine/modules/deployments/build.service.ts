@@ -318,6 +318,9 @@ export interface DeploymentConfigSnapshot {
   adopt?: boolean;
   /** Project services fan-out mode captured for this deployment. */
   serviceDeploymentMode?: "services" | "single";
+  /** Derived by the worker before infrastructure reconciliation; automatic
+   * application failure/recovery must not destroy these independent services. */
+  attachedInfrastructureServiceIds?: string[];
   /**
    * Deployable services captured at deploy request time. Mixed shape:
    * compose-source rows AND monorepo sub-app rows travel through the
@@ -1015,9 +1018,9 @@ async function resolveLifecycleSourceEnv(
  * this helper because resolveServicePipelineMode returns false for it. */
 function freezeResolvedServicePipeline(
   snapshot: DeploymentConfigSnapshot,
-  resolved: { useServicePipeline: boolean; servicePreflightServices: DeployableService[] },
+  resolved: { useServicePipeline: boolean; servicePreflightServices: DeployableService[]; primaryApp?: unknown },
 ): void {
-  if (!resolved.useServicePipeline) return;
+  if (!resolved.useServicePipeline && !resolved.primaryApp) return;
   snapshot.serviceDeploymentMode ??= "services";
   if (!snapshot.composeServices?.length && resolved.servicePreflightServices.length > 0) {
     snapshot.composeServices = resolved.servicePreflightServices;

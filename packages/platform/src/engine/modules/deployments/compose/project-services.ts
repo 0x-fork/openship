@@ -13,8 +13,10 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { repos, type Project, type Service } from "@repo/db";
-import { getProjectType, type ComposeAdvanced, type StackId } from "@repo/core";
-import { serviceKind, type DeployableService } from "../../../lib/deployable-service";
+import { getProjectType, composeNamespaceDependencies, type ComposeAdvanced, type StackId } from "@repo/core";
+import { hasSourceBuildRecipe, serviceKind, type DeployableService } from "../../../lib/deployable-service";
+import { resolveServicePublicEndpoints } from "../../../lib/public-endpoints";
+import { isMaterializedAppRow } from "../../services/materialized-app-row";
 export { serviceKind } from "../../../lib/deployable-service";
 
 export function isMultiServiceProject(
@@ -164,4 +166,67 @@ export async function shouldUseProjectServicePipeline(
 
   // Fallback for compose projects that don't have synced service rows.
   return isMultiServiceProject(project);
+}
+
+/** One inherited source app plus image-only infrastructure, not general Compose.
+ * Overrides on the app row belong to the multi-app pipeline and are never lost
+ * by treating that row as its parent project's single app. */
+export function primaryAppWithInfrastructure(
+  project: Pick<
+    Project,
+    | "slug"
+    | "rootDirectory"
+    | "framework"
+    | "composePath"
+    | "buildCommand"
+    | "startCommand"
+    | "port"
+    | "compositeRoutes"
+  >,
+  services: Service[],
+) {
+  if (
+    (isMultiServiceProject(project) && project.framework !== "docker") ||
+    project.composePath?.trim() ||
+    project.compositeRoutes?.length ||
+    !hasSourceBuildRecipe(project)
+  )
+    return null;
+  const enabled = services.filter((service) => service.enabled);
+  const apps = enabled.filter((service) => serviceKind(service) === "monorepo");
+  if (apps.length !== 1) return null;
+  const app = apps[0]!;
+  if (
+    !isMaterializedAppRow(project, app) ||
+    (app.rootDirectory ?? ".") !== (project.rootDirectory ?? ".") ||
+    app.ports?.length ||
+    (app.exposedPort && Number(app.exposedPort) !== project.port) ||
+    resolveServicePublicEndpoints(app).some(
+      (endpoint) => endpoint.port != null && endpoint.port !== project.port,
+    ) ||
+    Object.keys(app.environment ?? {}).length ||
+    app.volumes?.length ||
+    Object.keys(app.advanced ?? {}).length ||
+    app.command ||
+    app.commandArgv?.length ||
+    app.buildImage ||
+    app.packageManager
+  )
+    return null;
+  const infrastructure = enabled.filter((service) => service.id !== app.id);
+  if (
+    !infrastructure.length ||
+    infrastructure.some(
+      (service) =>
+        serviceKind(service) !== "compose" ||
+        !service.image ||
+        service.exposed ||
+        service.build ||
+        service.dockerfile ||
+        service.dependsOn?.includes(app.name) ||
+        composeNamespaceDependencies(service.advanced).includes(app.name),
+    )
+  )
+    return null;
+  return { app, infrastructure };
 }

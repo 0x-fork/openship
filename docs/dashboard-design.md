@@ -788,3 +788,8 @@ only to new custom domains and must be explicit in the deployment and Add domain
 Existing hostnames keep their Access choice when server defaults change. Close or reset
 private dialogs on account/organization switches, discard late results, and guard
 backdrop, Escape and close buttons while a write is in flight.
+
+The project Apps & Services view keeps runtime-role configuration and live role replicas
+available when the primary app is represented by a service row. The existing role editor
+reads support from the API; do not add a duplicate primary application card. Service-only
+changes retain the web process and roles, while the toolbar wraps on narrow screens.
