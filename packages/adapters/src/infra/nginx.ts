@@ -900,7 +900,7 @@ function assertValidDomain(domain: string): void {
   }
 }
 
-export function parentWildcardDomain(domain: string): string | null {
+function parentWildcardDomain(domain: string): string | null {
   if (domain.startsWith("*.")) return null;
   const firstDot = domain.indexOf(".");
   if (firstDot <= 0) return null;
@@ -3248,7 +3248,25 @@ ${serveLocation}
   private async resolveCertDomain(domain: string): Promise<string | null> {
     if (await this.certsExistDirect(domain)) return domain;
     const wildcard = parentWildcardDomain(domain);
-    if (wildcard && (await this.certsExistDirect(wildcard))) return wildcard;
+    if (wildcard && (await this.certsExistDirect(wildcard))) {
+      // Existence alone is insufficient: an unusable shared pair would break
+      // this vhost's TLS (or the edge reload). Reuse the same coverage, expiry
+      // and key checks as exact-domain certificate verification.
+      const dir = join(this.certDir, wildcard);
+      try {
+        const candidate = validateCertFor(
+          domain,
+          {
+            certPem: await this._readFile(join(dir, "fullchain.pem")),
+            keyPem: await this._readFile(join(dir, "privkey.pem")),
+          },
+          dir,
+        );
+        if (candidate.cert) return wildcard;
+      } catch (error) {
+        observeCaughtError(error, "adapters/infra/nginx");
+      }
+    }
     return null;
   }
 

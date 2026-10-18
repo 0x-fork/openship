@@ -932,6 +932,52 @@ describe("NginxProvider config generation", () => {
     expect(sslInfo.verified).toBe(true);
   });
 
+  test.each(["wrong-host", "wrong-key", "expired", "missing-key"])(
+    "does not serve an unusable wildcard certificate (%s)",
+    async (failure) => {
+      const { nginx, conf, files } = setup();
+      const pair = makeTestCert([failure === "wrong-host" ? "*.elsewhere.test" : "*.example.com"], {
+        days: 1,
+      });
+      files.set("/etc/letsencrypt/live/*.example.com/fullchain.pem", pair.certPem);
+      if (failure !== "missing-key") {
+        files.set(
+          "/etc/letsencrypt/live/*.example.com/privkey.pem",
+          failure === "wrong-key" ? makeTestCert(["other.test"]).keyPem : pair.keyPem,
+        );
+      }
+      if (failure === "expired") vi.setSystemTime(Date.now() + 2 * 86_400_000);
+      try {
+        await nginx.registerRoute(PROXY);
+        expect(conf("app-example-com")).not.toContain(
+          "ssl_certificate /etc/letsencrypt/live/*.example.com/",
+        );
+        expect((await nginx.verifyCert(PROXY.domain)).verified).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  test("keeps exact certificates preferred and never reuses a wildcard across two labels", async () => {
+    const { nginx, conf, files } = setup();
+    const exact = makeTestCert(["app.example.com"]),
+      wildcard = makeTestCert(["*.example.com"]);
+    for (const [name, pair] of [
+      ["app.example.com", exact],
+      ["*.example.com", wildcard],
+    ] as const) {
+      files.set(`/etc/letsencrypt/live/${name}/fullchain.pem`, pair.certPem);
+      files.set(`/etc/letsencrypt/live/${name}/privkey.pem`, pair.keyPem);
+    }
+    await nginx.registerRoute(PROXY);
+    expect(conf("app-example-com")).toContain(
+      "ssl_certificate /etc/letsencrypt/live/app.example.com/fullchain.pem;",
+    );
+    expect((await nginx.verifyCert("deep.app.example.com")).verified).toBe(false);
+    expect(files.get("/etc/letsencrypt/live/*.example.com/fullchain.pem")).toBe(wildcard.certPem);
+  });
+
   test("static route → root + try_files, app is not proxied", async () => {
     const { nginx, conf } = setup();
     await nginx.registerRoute({
