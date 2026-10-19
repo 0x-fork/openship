@@ -6,6 +6,8 @@ export interface RedisEndpoint {
   mode: "standalone" | "replication" | "cluster";
   /** Required for verified recovery into a non-sharded replicated destination. */
   replicas?: number;
+  /** Private operator discovery endpoint; never infer the primary from a stale Service route. */
+  sentinel?: { host: string; port: number; masterName: string };
 }
 export interface ArchiveFile {
   key: string;

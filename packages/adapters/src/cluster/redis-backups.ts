@@ -231,7 +231,14 @@ export class DatabaseArchiveTasks {
               port: 6379,
               mode: this.config.mode,
               ...(this.config.mode === "replication"
-                ? { replicas: this.config.instances - 1 }
+                ? {
+                    replicas: this.config.instances - 1,
+                    sentinel: {
+                      host: `database-sentinel.${this.namespace}.svc.cluster.local`,
+                      port: 26379,
+                      masterName: "mymaster",
+                    },
+                  }
                 : {}),
             },
           }),

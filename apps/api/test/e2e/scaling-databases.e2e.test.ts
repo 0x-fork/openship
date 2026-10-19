@@ -799,6 +799,9 @@ done
         await query(recovered, 'redis-cli --raw -h "$REDIS_HOST" -n 1 GET session:accepted'),
       ).toBe("original-value");
       expect(
+        await query(recovered, 'redis-cli --raw -h "$REDIS_HOST" -n 1 GET session:after-recovery'),
+      ).toBe("new-live-value");
+      expect(
         await query(recovered, 'redis-cli --raw -h "$REDIS_HOST" GET session:after-failover'),
       ).toBe("survived");
       expect((await remove(recovered, true)).status).toBe("deleted");
