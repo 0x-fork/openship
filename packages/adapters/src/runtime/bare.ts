@@ -321,15 +321,14 @@ export class BareRuntime implements RuntimeAdapter {
    * `framework/cache`, `framework/sessions`, …) and an app handed an empty
    * directory instead would fail on write.
    *
-   * Best-effort per path: a box without the shared dir writable is a storage
-   * problem to report, not a reason to fail an otherwise good release.
+   * Declared persistence must be ready before application or release commands
+   * run. Continuing without it would put new data in a replaceable release.
    */
   private async linkPersistentPaths(
     releaseDir: string,
     projectId: string,
     volumes: string[] | undefined,
     log?: LogCallback,
-    strict = false,
     signal?: AbortSignal,
   ): Promise<void> {
     const targets = this.persistentPaths(projectId, volumes ?? []);
@@ -340,7 +339,7 @@ export class BareRuntime implements RuntimeAdapter {
       const releasePath = `${releaseDir}/${relative}`;
       try {
         if (!(await this.executor.exists(sharedPath))) {
-          await this.executor.mkdir(parentPath(sharedPath));
+          await ensureOwnedDir(this.executor, parentPath(sharedPath));
           if (await this.executor.exists(releasePath)) {
             await this.executor.exec(`cp -a ${sq(releasePath)} ${sq(sharedPath)}`);
           } else {
@@ -361,12 +360,7 @@ export class BareRuntime implements RuntimeAdapter {
       } catch (err) {
         observeCaughtError(err, "adapters/runtime/bare");
         signal?.throwIfAborted();
-        if (strict || this.options.projectId) throw new Error(`Could not persist ${relative}: ${safeErrorMessage(err)}`);
-        log?.({
-          timestamp: new Date().toISOString(),
-          message: `Could not persist ${relative}: ${safeErrorMessage(err)}\n`,
-          level: "warn",
-        });
+        throw new Error(`Could not persist ${relative}: ${safeErrorMessage(err)}`);
       }
     }
   }
@@ -964,7 +958,7 @@ export class BareRuntime implements RuntimeAdapter {
           if (copy.code !== 0) throw new Error(`Could not stage retained release: ${copy.output.trim().slice(-1000)}`);
         }
         await this.linkPersistentPaths(
-          workDir, config.projectId, config.volumes, onLog, true, deadline.signal,
+          workDir, config.projectId, config.volumes, onLog, deadline.signal,
         );
       };
       if (this.executor.runWithAbortSignal) await this.executor.runWithAbortSignal(deadline.signal, prepare);
