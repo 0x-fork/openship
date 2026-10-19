@@ -94,6 +94,7 @@ export * from "./data-transfer";
 export * from "./instance-address";
 export * from "./analytics-domain";
 export * from "./deployment-events";
+export * from "./deployment-resource-issue";
 export * from "./operation-limits";
 export type { ExecutionAuthority } from "./execution-authority";
 export * from "./sse";

@@ -41,6 +41,7 @@ import { detectAndStoreFavicon } from "../../lib/favicon-detector";
 import { trackBackgroundWork } from "../../lib/background-work";
 import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
 import { computeCleanupKeepSet } from "../projects/cleanup-keep-set";
+import { deploymentResourceFailure, type DeploymentFailureMeta } from "./resource-failure";
 
 /**
  * Shared routing/TLS advisory for a deploy whose workloads succeeded. Connection
@@ -85,6 +86,8 @@ export interface LifecycleContext {
   /** The deployment's single logger. Optional for startup/recovery callers that
    * have no live log stream; normal build pipelines always provide it. */
   logger?: Pick<BuildLogger, "log">;
+  /** Trusted runtime facts kept independently of bounded/collapsed build logs. */
+  resourceEvidence?: readonly LogEntry[];
   /** Provisioned resources - set by the orchestrator as phases progress. */
   provisioned: { imageRef?: string };
   /**
@@ -99,7 +102,7 @@ export interface LifecycleContext {
 
 /** Build the persistable log array. Collapsing/sanitizing it is observability
  *  work, so a crash in it degrades to a one-line explanation, never a failure. */
-function collectLogs(ctx: LifecycleContext): LogEntry[] {
+export function collectLogs(ctx: LifecycleContext): LogEntry[] {
   try {
     return ctx.persistLogs();
   } catch (err) {
@@ -535,6 +538,15 @@ export async function onFailure(
     await protectRoleHandoverOutcome(ctx);
     return;
   }
+  if (project.workspaceId) {
+    errorMeta = {
+      ...errorMeta,
+      ...deploymentResourceFailure({
+        project, message: error ?? "", meta: errorMeta,
+        logs: ctx.resourceEvidence ?? collectLogs(ctx),
+      }),
+    };
+  }
   reportError(error ?? "Deployment failed", { kind: "deployment", component: "deployment-lifecycle",
     operation: "deployment.failed", organizationId: dep.organizationId, projectId: project.id,
     deploymentId: dep.id, serverId: project.serverId ?? undefined, durationMs, code: errorMeta?.errorCode, handled: true });
@@ -761,6 +773,8 @@ export async function onSuccess(
     warningMessage?: string;
     decisionPending?: boolean;
     metaPatch?: Record<string, unknown>;
+    /** Evidence for failed services in an otherwise published partial rollout. */
+    failureMeta?: DeploymentFailureMeta;
   },
 ): Promise<void> {
   const { project, dep, buildSessionId } = ctx;
@@ -806,8 +820,14 @@ export async function onSuccess(
   const outcome = await recordOutcome(
     dep.id,
     "ready",
-    { errorMessage: null, meta: mergedMeta, version, buildDurationMs: result.durationMs },
-    ["meta"],
+    {
+      errorMessage: null, meta: mergedMeta, version, buildDurationMs: result.durationMs,
+      ...(result.failureMeta ? {
+        errorCode: result.failureMeta.errorCode,
+        errorDetails: sanitizeStorableStrings(result.failureMeta.errorDetails),
+      } : {}),
+    },
+    ["meta", "errorDetails"],
   );
   const outcomeError = outcome.error;
 
@@ -886,6 +906,7 @@ export async function onSuccess(
   }
   await finishSession(buildSessionId, "ready", result.durationMs, collectLogs(ctx));
   sessionManager.updateStatus(dep.id, "ready", {
+    ...result.failureMeta,
     // The deploy WORKED whether or not the row took the write, and the terminal
     // event has to go out either way — but say so, because the row the dashboard
     // re-reads on refresh may still say "deploying".

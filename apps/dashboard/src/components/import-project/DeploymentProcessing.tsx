@@ -3,6 +3,7 @@
 import React, { useCallback } from "react";
 import type { Terminal } from "@xterm/xterm";
 import { CloudBuildQueueNotice } from "./CloudBuildQueueNotice";
+import { CloudDeploymentResourceNotice } from "./CloudDeploymentResourceNotice";
 import BuildTerminal from "./BuildTerminal";
 import { DeploymentHeader } from "./DeploymentHeader";
 import { DeploymentLayout } from "./DeploymentLayout";
@@ -54,7 +55,11 @@ const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy 
   return (
     <PageContainer>
       <DeploymentHeader onRedeploy={onRedeploy} />
-      <DeploymentLayout details={<DeploymentDetails />} navigation={<DeploymentStepper />}>
+      <DeploymentLayout
+        details={<DeploymentDetails />}
+        navigation={<DeploymentStepper />}
+        notice={<CloudDeploymentResourceNotice />}
+      >
         {state.queue && state.isDeploying && <CloudBuildQueueNotice queue={state.queue} />}
         {hasWarning && (
           <div className="rounded-2xl border border-warning-border bg-warning-bg px-4 py-3">

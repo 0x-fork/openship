@@ -699,6 +699,83 @@ describe("triggerDeployment", () => {
     kickoffBuild.mockResolvedValue("session-1");
   });
 
+  it.each(
+    ["manual", "retry", "latest retry"].flatMap((entry) =>
+      ["compose", "single"].map((mode) => ({ entry, mode })),
+    ),
+  )(
+    "keeps $mode source configuration at the selected commit during $entry",
+    async ({ entry, mode }) => {
+      const sha = "a".repeat(40);
+      const project = baseProject({
+        gitProvider: "github",
+        gitOwner: "acme",
+        gitRepo: "app",
+        gitUrl: "https://github.com/acme/app.git",
+        localPath: null,
+        framework: mode === "compose" ? "docker-compose" : "node",
+        composePath: mode === "compose" ? "compose.production.yml" : null,
+      });
+      repos.project.findById.mockResolvedValue(project);
+      const currentEnv = { MANUAL_ENV: encrypt("current-setting") };
+      repos.project.getEnvMap.mockResolvedValue(currentEnv);
+      const state =
+        mode === "compose" ? installStatefulComposeRepo(criticalApiService()) : undefined;
+      resolveProjectInfo.mockImplementation(async ({ branch }) => {
+        // HEAD has since removed the deployment's Compose file. Reading it
+        // must not block rebuilding the selected commit where it still exists.
+        if (branch !== sha)
+          throw new ComposeConfigurationError("Compose file no longer exists at HEAD");
+        return {
+          services: [{ ...criticalApiService(), image: "example/api:selected-commit" }],
+          openshipEnv: { SOURCE_DEFAULT: "selected-commit" },
+        };
+      });
+      resolveProjectSourceEnv.mockImplementation(async ({ branch }) => ({
+        openshipEnv: { SOURCE_DEFAULT: branch === sha ? "selected-commit" : "wrong-head" },
+      }));
+      const actualPipeline = await vi.importActual<
+        typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+      >("@repo/platform/engine/modules/deployments/build-pipeline");
+      resolveServicePipelineMode.mockImplementation(actualPipeline.resolveServicePipelineMode);
+      if (entry === "manual") {
+        await triggerDeployment(ctx, { projectId: project.id, branch: "main", commitSha: sha });
+      } else {
+        repos.deployment.findById.mockResolvedValue({
+          id: "dep-old",
+          projectId: project.id,
+          organizationId: project.organizationId,
+          branch: "main",
+          environment: "production",
+          commitSha: sha,
+          envVars: { MANUAL_ENV: encrypt("old-release-setting") },
+          meta: {
+            ...baseSnapshot(),
+            localPath: undefined,
+            repoUrl: project.gitUrl,
+            serviceDeploymentMode: mode === "single" ? "single" : "services",
+          },
+        });
+        if (entry === "latest retry")
+          getLatestCommit.mockResolvedValueOnce({ sha, message: "selected commit" });
+        await redeployBuildSession(ctx, "dep-old", { useExistingCommit: entry === "retry" });
+      }
+      const queued = repos.deployment.create.mock.calls.at(-1)![0];
+      expect(queued).toMatchObject({ branch: "main", commitSha: sha });
+      expect(decrypt(queued.envVars.SOURCE_DEFAULT)).toBe("selected-commit");
+      expect(decrypt(queued.envVars.MANUAL_ENV)).toBe("current-setting");
+      if (mode === "compose") {
+        expect(state!.stored().image).toBe("example/api:selected-commit");
+        expect(queued.meta.composeServices).toEqual([
+          expect.objectContaining({ image: "example/api:selected-commit" }),
+        ]);
+      } else {
+        expect(resolveProjectInfo).not.toHaveBeenCalled();
+      }
+      expect(kickoffBuild).toHaveBeenCalledOnce();
+    },
+  );
+
   it("returns a required-check receipt without starting a deployment or reconciling configuration", async () => {
     queueActionDeployment.mockResolvedValue({ id: "receipt-1", status: "waiting" });
     const result = await triggerDeployment(ctx, { projectId: "project-1", trigger: "webhook", branch: "main", commitSha: "a".repeat(40) });
@@ -1362,7 +1439,7 @@ describe("triggerDeployment", () => {
         source: "github",
         owner: "acme",
         repo: "app",
-        branch: "main",
+        branch: commitSha,
         composePath: "deploy/stack.yml",
         rootDirectory: "deploy",
       }),

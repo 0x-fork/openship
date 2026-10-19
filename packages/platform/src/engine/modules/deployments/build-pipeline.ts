@@ -27,6 +27,7 @@ import {
   withProjectRuntimeTransition,
 } from "../../lib/project-runtime-lock";
 import { resolveDeploymentEnvironment } from "./deployment-environment";
+import { deploymentResourceFailure } from "./resource-failure";
 import {
   BUILD_ENV_VARS,
   AppError,
@@ -788,8 +789,10 @@ async function executeBuildAndDeploy(
 
   const logs: LogEntry[] = [...initialLogs];
   const MAX_LOG_ENTRIES = 50_000;
+  const resourceEvidence: LogEntry[] = [];
 
   const logCallback = (entry: LogEntry) => {
+    if (entry.resourceIssue) resourceEvidence.push(entry);
     if (logs.length < MAX_LOG_ENTRIES) logs.push(entry);
     sessionManager.appendLog(dep.id, entry);
   };
@@ -816,6 +819,7 @@ async function executeBuildAndDeploy(
     persistLogs,
     logger,
     provisioned,
+    resourceEvidence,
   };
 
   let buildResourcesForRecovery: ResourceConfig | null | undefined;
@@ -1472,7 +1476,8 @@ async function executeBuildAndDeploy(
     if (buildResult.status === "failed") {
       const capacityError = cloudCapacityFailure(buildResult.errorCause, project.id, buildResourcesForRecovery, project.workspaceId);
       if (capacityError) throw capacityError;
-      await onFailure(ctx, buildResult.errorMessage ?? "Build failed", buildResult.durationMs);
+      await onFailure(ctx, buildResult.errorMessage ?? "Build failed", buildResult.durationMs,
+        deploymentResourceFailure({ project, message: buildResult.errorMessage ?? "", cause: buildResult.errorCause }));
       return;
     }
 
@@ -1624,7 +1629,8 @@ async function executeBuildAndDeploy(
     // invert a working deploy and tear its containers down.
     const capacityError = cloudCapacityFailure(err, project.id, buildResourcesForRecovery, project.workspaceId);
     await reportPipelineError(ctx, capacityError?.message ?? message, logger, capacityError
-      ? { errorCode: capacityError.code, errorDetails: capacityError.details } : undefined);
+      ? { errorCode: capacityError.code, errorDetails: capacityError.details }
+      : deploymentResourceFailure({ project, message, cause: err }));
   } finally {
     await finishBuildCancellation?.();
     // The deploy is over either way — release the loopback bridges it opened.

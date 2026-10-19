@@ -2502,13 +2502,16 @@ export async function redeployBuildSession(
   // materialize compose rows as a side effect of redeploying it.
   await (await import("../projects/project-connection.service")).refreshConnectionEnv(ctx, project.id, oldDep.environment);
   let currentProjectEnv = await repos.project.getEnvMap(project.id, oldDep.environment, null);
+  // Configuration and code must come from the same selected revision. A branch
+  // may have moved or removed Compose since an exact-commit retry was requested.
+  const sourceRef = commitSha ?? branch;
   let currentSourceInfo: SourceEnvInfo | undefined;
   if (meta.serviceDeploymentMode !== "single") {
-    currentSourceInfo = await reconcileComposeSource(ctx, project, branch, {
+    currentSourceInfo = await reconcileComposeSource(ctx, project, sourceRef, {
       interpolationEnv: decryptEnvMap(currentProjectEnv),
     });
   }
-  currentSourceInfo ??= await resolveLifecycleSourceEnv(ctx, project, branch);
+  currentSourceInfo ??= await resolveLifecycleSourceEnv(ctx, project, sourceRef);
   const sourceEnv = mergeSourceEnvDefaults(currentProjectEnv, currentSourceInfo);
   currentProjectEnv = sourceEnv.encrypted ?? {};
   if (sourceEnv.additions.length > 0) {
@@ -2839,9 +2842,9 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   }
 
   if (!data.reuseSnapshot && data.trigger !== "rollback") {
-    // Required checks approve the entire source tree at this commit, including
-    // Compose and lifecycle configuration. Do not re-read those files at HEAD.
-    const sourceRef = (data.actionRequestId || data.previewAdmission) ? requestedCommitSha! : branch;
+    // A pinned commit selects configuration as well as code, including for
+    // manual deployments, required checks, and admitted previews.
+    const sourceRef = requestedCommitSha ?? branch;
     let sourceInfo: SourceEnvInfo | undefined = await reconcileComposeSource(ctx, project, sourceRef, {
       changedPaths: data.changedPaths,
       interpolationEnv: decryptEnvMap(encryptedEnvVars ?? {}),
