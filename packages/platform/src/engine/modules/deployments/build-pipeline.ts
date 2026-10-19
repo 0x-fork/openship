@@ -174,6 +174,7 @@ import { collapseTerminalLogs } from "./terminal-logs";
 import { sanitizeLogsForPersistence } from "./build-log-sanitize";
 import {
   executeComposePipeline,
+  listProjectComposeServices,
   resolveProjectServicePreflightServices,
   shouldUseProjectServicePipeline,
 } from "./compose/index";
@@ -253,18 +254,23 @@ export async function resolveServicePipelineMode(
     return { useSingleAppPipeline: true, useServicePipeline: false, servicePreflightServices: [] };
   }
 
-  const [servicePreflightServices, useServicePipeline] = await Promise.all([
-    resolveProjectServicePreflightServices(project.id, snapshot.composeServices),
-    shouldUseProjectServicePipeline(project, snapshot.composeServices),
-  ]);
-
-  const primaryApp = useServicePipeline && !env.CLOUD_MODE && !project.workspaceId &&
+  const supportsPrimaryApp = !env.CLOUD_MODE && !project.workspaceId &&
     !snapshot.managedWorkspaceId && !snapshot.managedServer && !snapshot.clusterId &&
     snapshot.deployTarget !== "cloud" && snapshot.deployTarget !== "cluster" &&
     snapshot.source !== "image" && !snapshot.releaseImageRef &&
-    snapshotToClass(snapshot).workload !== "static"
-    ? primaryAppWithInfrastructure({ ...project, ...snapshot },
-        await repos.service.listByProject(project.id)) : null;
+    snapshotToClass(snapshot).workload !== "static";
+  // Classify one canonical topology per decision. Re-reading between preflight
+  // and primary-app selection can combine different concurrent service edits.
+  // Other runtimes with frozen services keep their existing query-free path.
+  const services = supportsPrimaryApp || !snapshot.composeServices?.length
+    ? await listProjectComposeServices(project.id) : [];
+  const [servicePreflightServices, useServicePipeline] = await Promise.all([
+    resolveProjectServicePreflightServices(project.id, snapshot.composeServices, services),
+    shouldUseProjectServicePipeline(project, snapshot.composeServices, services),
+  ]);
+
+  const primaryApp = useServicePipeline && supportsPrimaryApp
+    ? primaryAppWithInfrastructure({ ...project, ...snapshot }, services) : null;
   const eligible = primaryApp && (!targetsSpecificServices ||
     snapshot.targetServiceIds!.every(id => primaryApp.infrastructure.some(service => service.id === id)));
   return { useSingleAppPipeline: false, useServicePipeline: useServicePipeline && !eligible,

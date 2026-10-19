@@ -136,9 +136,10 @@ export function newerThanRestoredRelease(dep: {
 export async function resolveProjectServicePreflightServices(
   projectId: string,
   requestServices?: DeployableService[] | null,
+  savedServices?: Service[],
 ): Promise<DeployableService[]> {
   if (requestServices?.length) return requestServices;
-  const services = await listProjectComposeServices(projectId);
+  const services = savedServices ?? (await listProjectComposeServices(projectId));
   // One round trip for "has this service EVER produced a service_deployment
   // row" — distinguishes a saved row nobody has ever deployed (eligible for
   // the dead-row preflight carve-out) from a fresh row about to be deployed
@@ -154,13 +155,15 @@ export async function resolveProjectServicePreflightServices(
 export async function shouldUseProjectServicePipeline(
   project: Project,
   requestServices?: DeployableService[] | null,
+  savedServices?: Service[],
 ): Promise<boolean> {
   if (requestServices?.length) return true;
   // Both compose AND monorepo rows trigger the unified pipeline, but disabled
   // rows are retained configuration rather than deployable topology. Counting
   // them here routes a single-app project with only disabled sidecars into an
   // empty service deploy (notably after switching it to a release image).
-  if ((await listProjectComposeServices(project.id)).some((service) => service.enabled !== false)) {
+  const services = savedServices ?? (await listProjectComposeServices(project.id));
+  if (services.some((service) => service.enabled !== false)) {
     return true;
   }
 

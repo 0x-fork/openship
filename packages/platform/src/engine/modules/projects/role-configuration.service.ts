@@ -4,7 +4,11 @@ import { DockerRuntime } from "@repo/adapters";
 import { repos, type Deployment, type Project } from "@repo/db";
 import type { RuntimeRoleConfigurationInput } from "@repo/contracts";
 import type { ExecutionContext } from "@repo/platform";
-import { primaryAppWithInfrastructure, shouldUseProjectServicePipeline } from "../deployments/compose/project-services";
+import {
+  listProjectComposeServices,
+  primaryAppWithInfrastructure,
+  shouldUseProjectServicePipeline,
+} from "../deployments/compose/project-services";
 import { snapshotToClass } from "../deployments/deployment-class";
 import { findActiveDeployment } from "../../lib/active-deployment";
 import { assertResourceInOrg, assertNotControlPlane } from "../../lib/resource-access";
@@ -32,8 +36,11 @@ async function unsupported(
     snapshotToClass(meta).workload === "static"
   )
     return "Runtime role configuration requires a single-app Docker deployment.";
-  if (await shouldUseProjectServicePipeline(project, meta.composeServices) &&
-    !primaryAppWithInfrastructure(project, await repos.service.listByProject(project.id)))
+  const services = await listProjectComposeServices(project.id);
+  if (
+    (await shouldUseProjectServicePipeline(project, meta.composeServices, services)) &&
+    !primaryAppWithInfrastructure(project, services)
+  )
     return "Runtime role configuration requires a single-app Docker deployment.";
   return null;
 }
