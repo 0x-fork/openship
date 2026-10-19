@@ -80,6 +80,8 @@ type DatabaseTarget = {
   hosts: Pick<ClusterRuntimeHost, "serverId" | "name" | "nodeName">[];
   backupStorage?: ClusterDatabaseBackupStorage;
   restoreSource?: ClusterDatabaseRestoreSource | null;
+  /** Durable controller checkpoint: keep provenance without replaying imported data. */
+  restoreCompleted?: boolean;
   restoreStorage?: ClusterDatabaseBackupStorage;
   consumerProjectIds?: () => Promise<readonly string[]>;
 };
@@ -597,7 +599,13 @@ export class ClusterDatabaseAdapter {
   async apply(password: string) {
     if (this.target.config.backup && !this.target.backupStorage)
       throw new Error("The database backup destination could not be loaded.");
-    if (this.target.restoreSource && !this.target.restoreStorage)
+    if (
+      this.target.restoreSource &&
+      (!this.target.restoreCompleted ||
+        !this.target.restoreSource.format ||
+        this.target.restoreSource.format === "postgres-physical") &&
+      !this.target.restoreStorage
+    )
       throw new Error("The original backup destination could not be loaded for recovery.");
     await this.declare("/api/v1/namespaces", {
       apiVersion: "v1",
@@ -700,6 +708,7 @@ export class ClusterDatabaseAdapter {
 
   async restore(log: (message: string) => Promise<void>) {
     if (
+      this.target.restoreCompleted ||
       !this.target.restoreSource ||
       !["redis-rdb-set", "postgres-logical", "backup-artifact"].includes(
         this.target.restoreSource.format ?? "",
@@ -1339,7 +1348,9 @@ export class ClusterDatabaseAdapter {
   }
 
   private async assertNoApplicationReferences(
-    hosts: readonly string[] = Object.values(clusterDatabaseHosts(this.target.id, this.target.config)).filter(Boolean) as string[],
+    hosts: readonly string[] = Object.values(
+      clusterDatabaseHosts(this.target.id, this.target.config),
+    ).filter(Boolean) as string[],
     purpose: "database" | "reader" = "database",
   ) {
     // A disconnected consumer can still have an old running release. Inspect

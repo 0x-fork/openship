@@ -101,7 +101,7 @@ describeDockerE2E.sequential(
         if (!["provisioning", "deleting"].includes(current.status)) {
           if (current.status === "failed") expect(current.error).toBeTruthy();
           else expect(current.error).toBeNull();
-          expect(accepted).toContain(current.status);
+          expect(accepted, current.error ?? undefined).toContain(current.status);
           return current;
         }
       }
@@ -719,6 +719,12 @@ done
       expect(
         await query(replicated, 'redis-cli --raw -h "$REDIS_HOST" SET forbidden:reader 1', "read"),
       ).toContain("READONLY");
+      expect(
+        await query(
+          replicated,
+          'printf "SELECT 1\\nSET session:after-recovery new-live-value\\nWAIT 2 10000\\n" | redis-cli --raw -h "$REDIS_HOST"',
+        ),
+      ).toBe("OK\nOK\n2");
       expect((await remove(original, true)).status).toBe("deleted");
       replicated = await finish(
         await client.projects.updateClusterDatabase(project.id, {
@@ -731,6 +737,9 @@ done
       expect(
         await query(replicated, 'redis-cli --raw -h "$REDIS_HOST" -n 1 GET session:accepted'),
       ).toBe("original-value");
+      expect(
+        await query(replicated, 'redis-cli --raw -h "$REDIS_HOST" -n 1 GET session:after-recovery'),
+      ).toBe("new-live-value");
       await expect(
         client.projects.updateClusterDatabase(project.id, {
           databaseId: replicated.id,
@@ -752,6 +761,12 @@ done
         expect(
           await query(replicated, 'redis-cli --raw -h "$REDIS_HOST" -n 1 GET session:accepted'),
         ).toBe("original-value");
+        expect(
+          await query(
+            replicated,
+            'redis-cli --raw -h "$REDIS_HOST" -n 1 GET session:after-recovery',
+          ),
+        ).toBe("new-live-value");
         expect(
           await query(
             replicated,

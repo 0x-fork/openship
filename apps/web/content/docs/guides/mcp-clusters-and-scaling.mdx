@@ -320,10 +320,22 @@ Connect both in one operation with different production environment variables:
 
 ```json
 {
-  "databaseId": "database_id",
-  "expectedSequence": 7,
-  "envKey": "DATABASE_URL",
-  "readEnvKey": "DATABASE_READ_URL"
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "tools/call",
+  "params": {
+    "name": "post_projects_by_id_cluster_databases_connect",
+    "arguments": {
+      "organizationId": "org_example",
+      "id": "project_id",
+      "body": {
+        "databaseId": "database_id",
+        "expectedSequence": 7,
+        "envKey": "DATABASE_URL",
+        "readEnvKey": "DATABASE_READ_URL"
+      }
+    }
+  }
 }
 ```
 

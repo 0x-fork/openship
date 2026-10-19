@@ -33,6 +33,73 @@ const adapter = (
     vi.fn(),
   );
 describe("operator database manifests", () => {
+  it.each(["redis-rdb-set", "postgres-logical", "backup-artifact"] as const)(
+    "keeps a completed %s import while applying updated resources",
+    async (format) => {
+      const saved = new Map<string, any>();
+      const request = vi.fn(async (method: string, path: string, body?: any) => {
+        if (method === "GET") {
+          const current = saved.get(path);
+          if (!current) throw new KubernetesApiError(404, "Not found");
+          return structuredClone(current);
+        }
+        const key = method === "POST" ? `${path}/${body.metadata.name}` : path;
+        const current = saved.get(key);
+        const object = {
+          ...body,
+          metadata: { ...body.metadata, uid: current?.metadata.uid ?? key, resourceVersion: "1" },
+        };
+        saved.set(key, object);
+        return structuredClone(object);
+      });
+      const original = adapter(
+        format === "redis-rdb-set" ? { engine: "redis", mode: "replication", instances: 3 } : {},
+        { request } as unknown as KubernetesApi,
+      );
+      await original.apply("password");
+      const changed = new ClusterDatabaseAdapter(
+        original.api,
+        {
+          ...original.target,
+          generation: 2,
+          config: { ...original.target.config, memoryMiB: 768 },
+          restoreCompleted: true,
+          restoreSource: {
+            format,
+            databaseId: "original-source",
+            backupName: "saved",
+            backupId: "original/manifest.json",
+            destinationId: "removed-destination",
+            destinationPath: "s3://original/backup",
+            serverName: "original",
+            endpoint: null,
+          },
+        },
+        original.signal,
+        async () => {},
+      );
+      await changed.apply("password");
+      const recover = vi.spyOn(changed.dataTasks, "restore");
+      await changed.restore(async () => {});
+      expect(recover).not.toHaveBeenCalled();
+      const write = request.mock.calls.findLast(
+        ([method, path]) =>
+          method === "PATCH" && /\/(?:clusters|redisreplications)\/database$/.test(path),
+      );
+      expect(write?.[2].spec).toMatchObject(
+        format === "redis-rdb-set"
+          ? { kubernetesConfig: { resources: { limits: { memory: "768Mi" } } } }
+          : { resources: { limits: { memory: "768Mi" } } },
+      );
+      expect(request.mock.calls.some(([method]) => method === "DELETE")).toBe(false);
+      expect(
+        request.mock.calls.some(
+          ([, path]) => path.includes("restore-destination") || path.includes("/jobs"),
+        ),
+      ).toBe(false);
+    },
+  );
+
   it("uses a fresh newer database for a logical upgrade instead of physical recovery across major versions", () => {
     const original = adapter();
     const upgraded = new ClusterDatabaseAdapter(

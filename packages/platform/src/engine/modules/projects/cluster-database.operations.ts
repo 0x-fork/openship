@@ -120,6 +120,11 @@ export async function runClusterDatabase(
     ...(parentSignal ? [parentSignal] : []),
   ]);
   const progress = structuredClone(row.progress);
+  // Recovery loads data once. This durable checkpoint survives retries and
+  // later configuration changes; provenance is not a request to import again.
+  const restored = row.progress.steps.some(
+    (item) => item.id === "restore" && item.status === "completed",
+  );
   const active = async () => {
     signal.throwIfAborted();
     await fleetAdmin(ctx);
@@ -187,12 +192,15 @@ export async function runClusterDatabase(
       connection!.api,
       {
         ...row,
+        restoreCompleted: restored,
         hosts: connection!.runtime.plan.hosts,
         consumerProjectIds: () => nativeDatabaseConsumers(row),
         ...(row.intent !== "remove" && row.config.backup
           ? { backupStorage: await backupStorage(ctx, row.config.backup.destinationId) }
           : {}),
-        ...(row.intent === "apply" && row.restoreSource
+        ...(row.intent === "apply" &&
+        row.restoreSource &&
+        (!restored || !row.restoreSource.format || row.restoreSource.format === "postgres-physical")
           ? {
               restoreStorage: await backupStorage(
                 ctx,
@@ -257,45 +265,48 @@ export async function runClusterDatabase(
           row.restoreSource.format ?? "",
         )
       ) {
-        const loaded = row.progress.steps.some(
-          (item) => item.id === "restore" && item.status === "completed",
-        );
-        await step("restore", "Recovering the saved data into this new database.", async () => {
-          if (!loaded && row.restoreSource?.format === "postgres-logical") {
-            const source = await repos.clusterDatabase.get(
-              ctx.organizationId,
-              row.projectId,
-              row.restoreSource.databaseId,
-            );
-            if (
-              source.status !== "ready" ||
-              !isDeepStrictEqual(source.config, row.restoreSource.sourceConfig)
-            )
-              throw new Error(
-                "The original database changed while its copy was being prepared. Keep its saved settings until recovery finishes.",
+        if (!restored)
+          await step("restore", "Recovering the saved data into this new database.", async () => {
+            if (row.restoreSource?.format === "postgres-logical") {
+              const source = await repos.clusterDatabase.get(
+                ctx.organizationId,
+                row.projectId,
+                row.restoreSource.databaseId,
               );
-            const sourceAdapter = new ClusterDatabaseAdapter(
-              connection!.api,
-              {
-                ...source,
-                hosts: connection!.runtime.plan.hosts,
-                backupStorage: await backupStorage(
-                  ctx,
-                  row.restoreSource.destinationId,
-                  row.restoreSource,
-                ),
-              },
-              signal,
-              active,
-            );
-            await sourceAdapter.dataTasks.secret(
-              "backup-destination",
-              await backupStorage(ctx, row.restoreSource.destinationId, row.restoreSource),
-            );
-            await sourceAdapter.dataTasks.run(row.requestId, source.generation, log, row.requestId);
-          }
-          await adapter.restore(log);
-        });
+              if (
+                source.status !== "ready" ||
+                !isDeepStrictEqual(source.config, row.restoreSource.sourceConfig)
+              )
+                throw new Error(
+                  "The original database changed while its copy was being prepared. Keep its saved settings until recovery finishes.",
+                );
+              const sourceAdapter = new ClusterDatabaseAdapter(
+                connection!.api,
+                {
+                  ...source,
+                  hosts: connection!.runtime.plan.hosts,
+                  backupStorage: await backupStorage(
+                    ctx,
+                    row.restoreSource.destinationId,
+                    row.restoreSource,
+                  ),
+                },
+                signal,
+                active,
+              );
+              await sourceAdapter.dataTasks.secret(
+                "backup-destination",
+                await backupStorage(ctx, row.restoreSource.destinationId, row.restoreSource),
+              );
+              await sourceAdapter.dataTasks.run(
+                row.requestId,
+                source.generation,
+                log,
+                row.requestId,
+              );
+            }
+            await adapter.restore(log);
+          });
         observation = await step(
           "verify",
           "Verifying the recovered database and its private connection.",
