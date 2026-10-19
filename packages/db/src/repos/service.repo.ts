@@ -1379,17 +1379,65 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
     }) {
       await db.transaction(async tx => {
         await assertProjectConfigurationWritable(tx, eq(project.id, input.projectId));
-        const [parent] = await tx.select().from(deployment).where(and(
-          eq(deployment.id, input.deploymentId),
-          eq(deployment.projectId, input.projectId),
-          eq(deployment.organizationId, input.organizationId),
-        )).for("update");
-        const [row] = await tx.select().from(serviceDeployment).where(and(
-          eq(serviceDeployment.deploymentId, input.deploymentId),
-          eq(serviceDeployment.serviceId, input.serviceId),
-        )).for("update");
-        if (!parent || !row || row.containerId !== input.expectedContainerId) {
-          throw new Error("The service changed while its environment was being applied. Try again.");
+        const [parent] = await tx
+          .select()
+          .from(deployment)
+          .where(
+            and(
+              eq(deployment.id, input.deploymentId),
+              eq(deployment.projectId, input.projectId),
+              eq(deployment.organizationId, input.organizationId),
+            ),
+          )
+          .for("update");
+        let [row] = await tx
+          .select()
+          .from(serviceDeployment)
+          .where(
+            and(
+              eq(serviceDeployment.deploymentId, input.deploymentId),
+              eq(serviceDeployment.serviceId, input.serviceId),
+            ),
+          )
+          .for("update");
+        if (!parent || (row?.containerId ?? null) !== input.expectedContainerId) {
+          throw new Error(
+            "The service changed while its environment was being applied. Try again.",
+          );
+        }
+        // Repair legacy bookkeeping only after the replacement is ready. The
+        // project lock and scoped parent/service checks keep another release or
+        // project from being adopted by this write.
+        const [owner] = await tx
+          .select({ id: project.id })
+          .from(project)
+          .where(
+            and(
+              eq(project.id, input.projectId),
+              eq(project.organizationId, input.organizationId),
+              eq(project.activeDeploymentId, input.deploymentId),
+            ),
+          );
+        const [target] = await tx
+          .select({ name: service.name })
+          .from(service)
+          .where(and(eq(service.id, input.serviceId), eq(service.projectId, input.projectId)));
+        if (!owner || !target) {
+          throw new Error(
+            "The service changed while its environment was being applied. Try again.",
+          );
+        }
+        if (!row) {
+          [row] = await tx
+            .insert(serviceDeployment)
+            .values({
+              id: generateId("sd"),
+              deploymentId: input.deploymentId,
+              serviceId: input.serviceId,
+              serviceName: target.name,
+              status: "success",
+            })
+            .returning();
         }
         const now = new Date();
         await tx.update(serviceDeployment).set({
@@ -1410,7 +1458,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
         const oldIds = new Set([input.expectedContainerId, input.previousContainerId]);
         const composeServices = Array.isArray(meta.composeServices)
           ? meta.composeServices.map((item: Record<string, unknown>) =>
-              item.name === row.serviceName
+              item.name === target.name
                 ? { ...item, containerId: input.containerId, ...(input.ip ? { ip: input.ip } : {}) }
                 : item)
           : undefined;

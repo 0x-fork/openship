@@ -85,7 +85,10 @@ export interface Screenshot {
  * change it. The dashboard's deployment context uses this name for
  * legacy reasons; new code should reach for PrepareComposeService.
  */
-export type ComposeServiceInfo = PrepareComposeService;
+export type ComposeServiceInfo = PrepareComposeService & {
+  /** UI-only draft of the same effective environment edited in the service panel. */
+  environmentDraft?: import("@/lib/service-environment-editor").ServiceEnvironmentDraft;
+};
 
 /**
  * Loosely-typed compose service as it arrives from any saved source — a DB
