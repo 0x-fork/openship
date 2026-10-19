@@ -3,7 +3,8 @@ import { BareRuntime } from "./bare";
 import { NohupSupervisor } from "./supervisor/nohup";
 import { SystemdSupervisor } from "./supervisor/systemd";
 import { probeOutput } from "../system/environment.fixtures";
-import type { BuildConfig, CommandExecutor } from "../types";
+import type { BuildConfig, CommandExecutor, DeployConfig } from "../types";
+import type { ProcessSupervisor } from "./supervisor/types";
 
 vi.mock("../toolchain", () => ({
   checkToolchainForStack: async () => ({ ready: true }),
@@ -95,7 +96,68 @@ function buildConfig(buildStrategy: "server" | "local" = "server"): BuildConfig 
   } as BuildConfig;
 }
 
+function persistentDeploy(): DeployConfig {
+  return {
+    projectId: "project",
+    deploymentId: "next",
+    buildSessionId: "build",
+    environment: "production",
+    port: 3000,
+    startCommand: "true",
+    envVars: {},
+    volumes: ["uploads:/app/uploads"],
+    resources: { cpuCores: 0, memoryMb: 0, diskMb: 0 },
+  };
+}
+
 describe("direct runtime deployment directory permissions (#1359)", () => {
+  it("provisions project persistence before handing the release to its supervisor", async () => {
+    const target = host();
+    target.owned.add(`${ROOT}/project`);
+    const activate = vi.fn();
+    const runtime = new BareRuntime({
+      executor: target.executor,
+      supervisorFactory: async () => ({ deploy: activate }) as unknown as ProcessSupervisor,
+    });
+    await expect(runtime.deploy(persistentDeploy())).resolves.toMatchObject({ status: "running" });
+    expect(activate).toHaveBeenCalledOnce();
+    expect(target.owned.has(`${ROOT}/shared/project`)).toBe(true);
+    expect(target.owned.has(ROOT)).toBe(false);
+  });
+
+  it("refuses activation when the login cannot provision persistent storage", async () => {
+    const target = host({ sudo: false });
+    target.owned.add(`${ROOT}/project`);
+    const source = `${ROOT}/project/uploads`;
+    target.files.set(source, "release seed");
+    const supervisor = vi.fn(async () => ({ deploy: vi.fn() }) as unknown as ProcessSupervisor);
+    const runtime = new BareRuntime({ executor: target.executor, supervisorFactory: supervisor });
+    await expect(runtime.deploy(persistentDeploy())).rejects.toThrow(
+      /Could not persist uploads.*passwordless sudo/s,
+    );
+    expect(supervisor).not.toHaveBeenCalled();
+    expect(target.files.get(source)).toBe("release seed");
+  });
+
+  it("preserves existing shared data and refuses activation when its link fails", async () => {
+    const target = host({ writable: true });
+    const shared = `${ROOT}/shared/project/uploads`;
+    target.files.set(shared, "customer data");
+    const exec = target.executor.exec.bind(target.executor);
+    target.executor.exec = async (command) => {
+      if (command.startsWith("ln -sfn ")) throw new Error("Read-only file system");
+      return exec(command);
+    };
+    const supervisor = vi.fn(async () => ({ deploy: vi.fn() }) as unknown as ProcessSupervisor);
+    const runtime = new BareRuntime({ executor: target.executor, supervisorFactory: supervisor });
+    await expect(runtime.deploy(persistentDeploy())).rejects.toThrow(
+      /Could not persist uploads.*Read-only file system/,
+    );
+    expect(supervisor).not.toHaveBeenCalled();
+    expect(target.files.get(shared)).toBe("customer data");
+    expect(target.commands.some((command) => command.startsWith("sudo -n "))).toBe(false);
+  });
+
   it.each(["server", "local"] as const)(
     "builds with %s strategy under a root-owned installation",
     async (strategy) => {
