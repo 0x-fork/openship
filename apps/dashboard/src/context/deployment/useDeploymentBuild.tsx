@@ -354,6 +354,8 @@ export function useDeploymentBuild(
         queue: null,
         failureMessage: "",
         warningMessage,
+        errorCode: data?.errorCode || "",
+        errorDetails: data?.errorDetails ?? null,
         // THE SERVER'S FLAG ONLY. Never inferred from the presence of a warning.
         //
         // This used to read `?? !!warningMessage`, on the premise that "a warning on success means
@@ -1172,6 +1174,7 @@ export function useDeploymentBuild(
                   portCheck: data.portCheck ?? prev.portCheck,
                   portCheckSkipped: data.portCheckSkipped ?? prev.portCheckSkipped,
                   errorCode: data.errorCode || prev.errorCode,
+                  errorDetails: data.errorDetails ?? null,
                 }
               : {}),
           };
@@ -1405,7 +1408,7 @@ export function useDeploymentBuild(
           portCheck: !isActive ? (data.portCheck ?? []) : [],
           portCheckSkipped: !isActive ? (data.portCheckSkipped ?? []) : [],
           errorCode: !isActive ? (data.errorCode || "") : "",
-          errorDetails: null,
+          errorDetails: !isActive ? (data.errorDetails ?? null) : null,
           buildLogs,
           // Authoritative per-phase durations computed server-side from the
           // step events (live tracking is best-effort until this lands).
