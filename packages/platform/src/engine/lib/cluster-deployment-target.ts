@@ -2,7 +2,7 @@ import net from "node:net";
 import { parse } from "yaml";
 import {
   AppError,
-  clusterWorkloadNeedsOperator,
+  clusterWorkloadUnsupportedReason,
   infrastructureCidr,
   validateClusterWorkload,
 } from "@repo/core";
@@ -67,17 +67,8 @@ export async function assertClusterWorkloadSupported(input: {
   image?: string;
   imageRepository?: string;
 }) {
-  if (
-    input.workload === "static" ||
-    input.volumes?.length ||
-    input.services?.length ||
-    clusterWorkloadNeedsOperator(input.framework, input.image)
-  )
-    throw new AppError(
-      "Scaling currently supports applications and workers that can run independently. Databases and applications with persistent storage need a separate replication and storage setup. Compose stacks must stay on their current target.",
-      422,
-      "CLUSTER_WORKLOAD_UNSUPPORTED",
-    );
+  const reason = clusterWorkloadUnsupportedReason(input);
+  if (reason) throw new AppError(reason, 422, "CLUSTER_WORKLOAD_UNSUPPORTED");
   if (!input.image && !input.imageRepository)
     throw new AppError(
       "Choose a registry repository for this project's source builds. Cluster nodes need a shared image to pull.",
@@ -102,11 +93,7 @@ export async function openClusterApi(
   clusterId: string,
   runtimeId?: string,
 ) {
-  const { runtime } = await requireClusterDeploymentTarget(
-    organizationId,
-    clusterId,
-    runtimeId,
-  );
+  const { runtime } = await requireClusterDeploymentTarget(organizationId, clusterId, runtimeId);
   const gateway = runtime.plan.hosts.find((host) => host.role === "server")!;
   const target = await resolveServerExecutor(gateway.serverId, organizationId);
   if ((await inspectHostIssuedIdentity(target.executor)) !== gateway.hostIdentity)
@@ -188,12 +175,29 @@ export async function resolveClusterDeploymentRuntime(
   snapshot: DeploymentMeta,
   organizationId?: string,
 ) {
-  if (!organizationId || !snapshot.clusterId || !snapshot.clusterRuntimeId || !snapshot.clusterProjectId || !snapshot.clusterConfig)
-    throw new AppError("This deployment is missing its saved cluster target.", 409, "CLUSTER_TARGET_REQUIRED");
+  if (
+    !organizationId ||
+    !snapshot.clusterId ||
+    !snapshot.clusterRuntimeId ||
+    !snapshot.clusterProjectId ||
+    !snapshot.clusterConfig
+  )
+    throw new AppError(
+      "This deployment is missing its saved cluster target.",
+      409,
+      "CLUSTER_TARGET_REQUIRED",
+    );
   validateClusterWorkload(snapshot.clusterConfig);
-  const project = await repos.project.findByIdInOrganization(snapshot.clusterProjectId, organizationId);
+  const project = await repos.project.findByIdInOrganization(
+    snapshot.clusterProjectId,
+    organizationId,
+  );
   if (!project) throw new AppError("Cluster project not found.", 404, "PROJECT_NOT_FOUND");
-  const { api, runtime, gateway, target, edgeSourceIps } = await openClusterApi(organizationId, snapshot.clusterId, snapshot.clusterRuntimeId);
+  const { api, runtime, gateway, target, edgeSourceIps } = await openClusterApi(
+    organizationId,
+    snapshot.clusterId,
+    snapshot.clusterRuntimeId,
+  );
   try {
     const workload = new KubernetesRuntime({
       api,

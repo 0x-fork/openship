@@ -1,4 +1,5 @@
 import {
+  clusterDatabasePodCount,
   resolveWorkload,
   type ClusterWorkloadStatus,
   type ClusterWorkloadConfig,
@@ -133,6 +134,18 @@ export const environmentNodeId = (projectId: string) => `environment:${projectId
 export const databaseNodeId = (id: string) => `database:${id}`;
 export const volumeNodeId = (name: string) => `volume:${name}`;
 
+/** Auxiliary failover voters are workloads, not database data replicas. */
+export function databaseInstanceStatus(database: ClusterDatabase) {
+  const desired = clusterDatabasePodCount(database.config);
+  const dataPods = database.observation?.pods.filter((pod) => pod.role !== "sentinel");
+  const ready = dataPods?.filter((pod) => pod.ready).length;
+  return {
+    desired,
+    ready,
+    settled: database.status === "ready" && !!database.observation?.ready && ready === desired,
+  };
+}
+
 export function addClusterVolumes(
   graph: ProjectTopologyGraph,
   project: TopologyProject,
@@ -183,11 +196,16 @@ export function addClusterDatabases(
   const edges = [...graph.edges];
   for (const database of databases) {
     if (database.status === "deleted" || database.projectId !== project.id) continue;
+    const instances = databaseInstanceStatus(database);
     const state: TopologyState =
       database.status === "ready"
-        ? database.observation?.ready
-          ? "running"
-          : "failed"
+        ? !database.observation
+          ? "unknown"
+          : instances.settled
+            ? "running"
+            : database.observation.ready
+              ? "starting"
+              : "failed"
         : ["failed", "interrupted"].includes(database.status)
           ? "failed"
           : database.status === "retained"
@@ -199,10 +217,17 @@ export function addClusterDatabases(
       name: database.name,
       projectId: project.id,
       tone: database.config.engine,
-      description: `${database.config.engine === "postgres" ? "PostgreSQL" : "Redis"} · ${database.config.mode === "cluster" ? "Cluster" : "Standalone"}`,
+      description:
+        database.config.engine === "postgres"
+          ? `PostgreSQL · 1 primary${database.config.instances > 1 ? ` + ${database.config.instances - 1} read replicas` : ""}`
+          : database.config.mode === "cluster"
+            ? `Redis · ${database.config.instances} shards`
+            : database.config.mode === "replication"
+              ? `Redis · 1 primary + ${database.config.instances - 1} replicas`
+              : "Redis · Standalone",
       state,
       database,
-      instances: database.observation?.pods.length,
+      instances: instances.ready,
     });
     if (database.envKey && nodes.some((node) => node.id === applicationNodeId(project.id)))
       edges.push({
@@ -214,6 +239,17 @@ export function addClusterDatabases(
         databaseId: database.id,
         label: database.envKey,
         description: `${database.envKey} connects this application to the database over its private network. Redeploy the application after changing the connection.`,
+      });
+    if (database.readEnvKey && nodes.some((node) => node.id === applicationNodeId(project.id)))
+      edges.push({
+        id: `database-read-connection:${database.id}`,
+        source: applicationNodeId(project.id),
+        target: databaseNodeId(database.id),
+        kind: "binding",
+        scope: "database",
+        databaseId: database.id,
+        label: database.readEnvKey,
+        description: `${database.readEnvKey} connects this application to read replicas over its private network. Queries must use this connection explicitly; replicas may lag.`,
       });
   }
   return { nodes, edges };
@@ -228,7 +264,14 @@ export function buildDatabaseReplicaTopology(
     id: `database-pod:${database.id}:${pod.name}`,
     kind: "instance",
     projectId: project.id,
-    name: pod.role === "primary" ? "Primary" : pod.role === "replica" ? "Replica" : pod.name,
+    name:
+      pod.role === "primary"
+        ? "Primary"
+        : pod.role === "replica"
+          ? "Replica"
+          : pod.role === "sentinel"
+            ? "Failover voter"
+            : pod.name,
     description: pod.serverName ?? "Assigning a server",
     state: pod.ready ? "running" : pod.phase === "Failed" ? "failed" : "starting",
     tone: database.config.engine,
@@ -246,8 +289,13 @@ export function buildDatabaseReplicaTopology(
           target: `database-pod:${database.id}:${pod.name}`,
           kind: "route",
           scope: "instances",
-          label: "Replication",
-          description: "PostgreSQL streaming replication managed by the database operator.",
+          label: pod.role === "sentinel" ? "Failover monitoring" : "Replication",
+          description:
+            pod.role === "sentinel"
+              ? "Sentinel monitors the primary and coordinates failover; it does not store application data."
+              : database.config.engine === "postgres"
+                ? "PostgreSQL streaming replication managed by the database operator."
+                : "Redis asynchronous replication managed by the database operator.",
         }))
     : [];
   return { nodes, edges };

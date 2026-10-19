@@ -3,7 +3,9 @@
 export interface RedisEndpoint {
   host: string;
   port: number;
-  mode: "standalone" | "cluster";
+  mode: "standalone" | "replication" | "cluster";
+  /** Required for verified recovery into a non-sharded replicated destination. */
+  replicas?: number;
 }
 export interface ArchiveFile {
   key: string;

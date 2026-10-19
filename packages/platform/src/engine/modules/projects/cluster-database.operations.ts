@@ -71,6 +71,7 @@ export function presentClusterDatabase(row: ClusterDatabaseRecord): ClusterDatab
     observation: row.observation,
     error: row.error,
     envKey: row.envKey,
+    readEnvKey: row.readEnvKey,
     sourceDatabaseId:
       row.restoreSource && row.restoreSource.format !== "backup-artifact"
         ? row.restoreSource.databaseId
@@ -160,7 +161,13 @@ export async function runClusterDatabase(
         if (!signal.aborted && !(await repos.clusterDatabase.heartbeat(row.id, row.generation)))
           cancelled.abort();
       })
-      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/cluster-database.operations"); return cancelled.abort(); });
+      .catch((diagnosticFailure) => {
+        observeCaughtError(
+          diagnosticFailure,
+          "platform/engine/modules/projects/cluster-database.operations",
+        );
+        return cancelled.abort();
+      });
   }, 20_000);
   timer.unref();
   let connection: Awaited<ReturnType<typeof openClusterApi>> | undefined;
@@ -313,7 +320,10 @@ export async function runClusterDatabase(
       const message = safe(error);
       updateNetworkSetupStep(progress, current, "failed", message);
       await persist().catch((diagnosticFailure) => {
-        observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/cluster-database.operations");
+        observeCaughtError(
+          diagnosticFailure,
+          "platform/engine/modules/projects/cluster-database.operations",
+        );
       });
       await repos.clusterDatabase.finish(row.id, row.generation, "failed", null, message);
     }
@@ -636,7 +646,10 @@ export function createClusterDatabaseOperations(
                 )
                   await undoPin();
               } catch (diagnosticFailure) {
-                observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/cluster-database.operations");
+                observeCaughtError(
+                  diagnosticFailure,
+                  "platform/engine/modules/projects/cluster-database.operations",
+                );
               }
             }
             throw error;
@@ -668,9 +681,19 @@ export function createClusterDatabaseOperations(
           input.envKey,
           value,
           input.replace,
+          input.readEnvKey === undefined
+            ? undefined
+            : {
+                envKey: input.readEnvKey,
+                encryptedValue: input.readEnvKey
+                  ? encrypt(
+                      clusterDatabaseUrl(row.id, row.config, decrypt(row.secretEncrypted), "read"),
+                    )
+                  : null,
+              },
         );
         notifyClusterDatabase(ctx.organizationId, id);
-        audit(ctx, id, row.id, input.envKey ? "connected" : "disconnected");
+        audit(ctx, id, row.id, updated.envKey || updated.readEnvKey ? "connected" : "disconnected");
         return presentClusterDatabase(updated);
       });
       if (!result) throw new AppError("The project is being removed.", 409, "PROJECT_UNAVAILABLE");

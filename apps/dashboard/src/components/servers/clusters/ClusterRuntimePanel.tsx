@@ -23,9 +23,12 @@ export function ClusterRuntimePanel({
   cluster,
   canManage,
   onReadyChange,
+  embedded = false,
 }: {
   cluster: ComputeCluster;
   canManage: boolean;
+  /** Workload setup does not offer infrastructure removal or leave its draft. */
+  embedded?: boolean;
   onReadyChange?: (ready: boolean) => void;
 }) {
   const { t } = useI18n();
@@ -175,7 +178,7 @@ export function ClusterRuntimePanel({
                   {t.servers.clusters.retry}
                 </Button>
               )}
-              {runtime && !available && !running && (
+              {!embedded && runtime && !available && !running && (
                 <Button
                   variant="ghost"
                   disabled={busy}
@@ -216,13 +219,13 @@ export function ClusterRuntimePanel({
             {runtime?.status === "ready" && (
               <div className="mt-4 space-y-3">
                 <p className="text-sm text-muted-foreground">{c.readyHint}</p>
-                <Link
+                {!embedded && <Link
                   href="/projects"
                   className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
                 >
                   {c.scaleProject}
                   <UiIcon name="arrow-right" className="size-4 rtl:rotate-180" />
-                </Link>
+                </Link>}
                 {runtime.verifiedAt && (
                   <p className="text-xs text-muted-foreground">
                     {c.lastChecked}{" "}

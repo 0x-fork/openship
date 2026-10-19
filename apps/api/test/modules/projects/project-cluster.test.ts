@@ -15,13 +15,14 @@ const h = vi.hoisted(() => ({
   builds: vi.fn(),
   audit: vi.fn(),
   available: vi.fn(),
+  services: vi.fn(async () => [] as Array<{ enabled: boolean }>),
 }));
 vi.mock("@repo/db", () => ({
   repos: {
     project: { findById: h.find },
     clusterRuntime: { bindProject: h.bind },
     clusterDatabase: { list: vi.fn(async () => []) },
-    service: { listByProject: vi.fn(async () => []) },
+    service: { listByProject: h.services },
   },
 }));
 vi.mock("@repo/platform/engine/lib/active-deployment", () => ({ findActiveDeployment: h.active }));
@@ -95,6 +96,24 @@ describe("project cluster lifecycle admission", () => {
       expect(h.trigger).not.toHaveBeenCalled();
     },
   );
+  it("reports unsupported service environments without mutating their destination", async () => {
+    h.services.mockResolvedValue([{ enabled: true }]);
+    const result = await operations.getClusterWorkload(ctx, "project");
+    expect(result.unavailableReason).toContain("Per-service replication");
+    expect(h.bind).not.toHaveBeenCalled();
+    expect(h.trigger).not.toHaveBeenCalled();
+  });
+  it("recognizes database images in generic Docker projects before offering replicas", async () => {
+    h.find.mockResolvedValue({
+      ...project(),
+      framework: "docker",
+      releaseSource: { mode: "url", artifactKind: "image", imageTemplate: "redis:7" },
+    });
+    expect((await operations.getClusterWorkload(ctx, "project")).unavailableReason).toContain(
+      "Database replication",
+    );
+    expect(h.bind).not.toHaveBeenCalled();
+  });
   it("scales through a configuration release, using the existing deployment lifecycle", async () => {
     expect(
       await operations.scaleClusterWorkload(ctx, "project", {

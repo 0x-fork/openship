@@ -77,7 +77,9 @@ const options = (password?: string): RedisOptions => ({
 });
 export function redisConnection(endpoint: RedisEndpoint, password = process.env.REDISCLI_AUTH) {
   const client = new Redis(endpoint.port, endpoint.host, options(password));
-  client.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/cluster/tasks/redis"); });
+  client.on("error", (eventDiagnosticError) => {
+    observeCaughtError(eventDiagnosticError, "adapters/cluster/tasks/redis");
+  });
   return client;
 }
 export function validateRedisManifest(
@@ -108,6 +110,31 @@ export function validateRedisManifest(
   )
     throw new Error("The Redis archive does not match this recovery request.");
 }
+/** A non-sharded backup must come from the elected primary, not a lagging
+ * replica or a connection that changed roles during snapshot transfer. */
+export function redisReplicationIdentity(info: string): string {
+  const values = Object.fromEntries(
+    info
+      .split(/\r?\n/)
+      .filter((line) => line.includes(":"))
+      .map((line) => {
+        const at = line.indexOf(":");
+        return [line.slice(0, at), line.slice(at + 1)];
+      }),
+  );
+  const connectedReplicas = Number(values.connected_slaves);
+  if (
+    values.role !== "master" ||
+    !/^[a-f0-9]{40}$/.test(values.master_replid ?? "") ||
+    !Number.isSafeInteger(connectedReplicas) ||
+    connectedReplicas < 1
+  )
+    throw new Error(
+      "Redis replication has no verified primary with a connected replica. Retry after its health recovers.",
+    );
+  return values.master_replid;
+}
+
 export async function captureRedis(
   endpoint: RedisEndpoint,
   store: TaskArchiveStore,
@@ -118,6 +145,10 @@ export async function captureRedis(
 ): Promise<RedisArchiveManifest> {
   const source = redisConnection(endpoint);
   try {
+    const replicationIdentity =
+      endpoint.mode === "replication"
+        ? redisReplicationIdentity(String(await source.call("INFO", "replication")))
+        : null;
     const primaries =
       endpoint.mode === "cluster"
         ? redisPrimaries(String(await source.call("CLUSTER", "NODES")))
@@ -125,7 +156,8 @@ export async function captureRedis(
     const manifest: RedisArchiveManifest = {
       format: "openship-redis-rdb-v1",
       ...identity,
-      mode: endpoint.mode,
+      // Replication uses the existing one-RDB format; topology is not part of the archive payload.
+      mode: endpoint.mode === "cluster" ? "cluster" : "standalone",
       createdAt: new Date().toISOString(),
       files: [],
     };
@@ -161,6 +193,14 @@ export async function captureRedis(
       throw new Error(
         "Redis changed its data partitions during backup. No recovery point was committed; retry after it settles.",
       );
+    if (
+      replicationIdentity &&
+      redisReplicationIdentity(String(await source.call("INFO", "replication"))) !==
+        replicationIdentity
+    )
+      throw new Error(
+        "Redis changed primary during backup. No recovery point was committed; retry after it settles.",
+      );
     return manifest;
   } finally {
     source.disconnect();
@@ -185,7 +225,9 @@ export async function restoreRedis(
           maxRedirections: 16,
         })
       : redisConnection(endpoint);
-  target.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/cluster/tasks/redis"); });
+  target.on("error", (eventDiagnosticError) => {
+    observeCaughtError(eventDiagnosticError, "adapters/cluster/tasks/redis");
+  });
   try {
     for (const [index, file] of manifest.files.entries()) {
       const folder = join(directory, `restore-${index}`);
@@ -230,7 +272,8 @@ export async function restoreRedis(
         error = (error + data).slice(-2000);
       });
       let failure: Error | undefined;
-      process.on("error", (reason) => { observeCaughtError(reason, "adapters/cluster/tasks/redis");
+      process.on("error", (reason) => {
+        observeCaughtError(reason, "adapters/cluster/tasks/redis");
         failure = reason;
       });
       process.once("exit", (code) => {
@@ -243,7 +286,9 @@ export async function restoreRedis(
         maxRetriesPerRequest: null,
         enableOfflineQueue: true,
       });
-      temporary.on("error", (eventDiagnosticError) => { observeCaughtError(eventDiagnosticError, "adapters/cluster/tasks/redis"); });
+      temporary.on("error", (eventDiagnosticError) => {
+        observeCaughtError(eventDiagnosticError, "adapters/cluster/tasks/redis");
+      });
       try {
         await Promise.race([
           temporary.ping(),
@@ -267,7 +312,7 @@ export async function restoreRedis(
         let restored = 0;
         for (const db of dbs) {
           await temporary.select(db);
-          if (endpoint.mode === "standalone") await (target as Redis).select(db);
+          if (endpoint.mode !== "cluster") await (target as Redis).select(db);
           let cursor = "0";
           do {
             store.signal.throwIfAborted();
@@ -310,6 +355,15 @@ export async function restoreRedis(
         }
         await rm(folder, { recursive: true, force: true });
       }
+    }
+    if (endpoint.mode === "replication") {
+      if (!Number.isInteger(endpoint.replicas) || endpoint.replicas! < 2 || endpoint.replicas! > 8)
+        throw new Error("The Redis replication recovery request has an invalid replica count.");
+      redisReplicationIdentity(String(await target.call("INFO", "replication")));
+      if (Number(await target.call("WAIT", endpoint.replicas!, 10000)) < endpoint.replicas!)
+        throw new Error(
+          "Restored Redis data has not reached every replica. Retry after replication is healthy.",
+        );
     }
     if (target instanceof Cluster)
       for (const primary of target.nodes("master")) {

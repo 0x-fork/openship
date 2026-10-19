@@ -6,6 +6,7 @@ import {
   resolveProjectVolumes,
   safeErrorMessage,
   validateClusterWorkload,
+  clusterWorkloadUnsupportedReason,
 } from "@repo/core";
 import { KubernetesRuntime, kubernetesProjectNamespace } from "@repo/adapters";
 import { ProjectClusterSchemas, type ProjectCluster } from "@repo/contracts";
@@ -38,6 +39,18 @@ export function createProjectClusterOperations(
     const active = await findActiveDeployment(project);
     const meta = active?.meta as DeploymentMeta | null;
     const result: ProjectCluster = {
+      unavailableReason:
+        project.appTemplateId === "openship"
+          ? "The OpenShip control plane cannot be replicated through application scaling."
+          : clusterWorkloadUnsupportedReason({
+              workload: projectToClass(project).workload,
+              framework: project.framework,
+              image: project.releaseSource?.imageTemplate,
+              volumes: resolveProjectVolumes(project.volumes, project.framework),
+              services: (await repos.service.listByProject(id)).filter(
+                (service) => service.enabled,
+              ),
+            }),
       clusterId: project.clusterId,
       serverId: project.serverId,
       config: project.clusterConfig,
@@ -124,7 +137,7 @@ export function createProjectClusterOperations(
             services: (await repos.service.listByProject(id)).filter((service) => service.enabled),
             image:
               project.releaseSource && releaseArtifactKind(project.releaseSource) === "image"
-                ? "prebuilt"
+                ? (project.releaseSource.imageTemplate ?? "prebuilt")
                 : undefined,
             imageRepository: input.config.imageRepository,
           });
@@ -185,7 +198,8 @@ export function createProjectClusterOperations(
         // A configuration release reuses the immutable image. It uses the same
         // admission, cancellation, logs, history and recovery as every deploy.
         const deployed = await triggerDeployment(ctx, { projectId: id, refresh: true });
-        if (!deployed.deployment) throw new AppError("Deployment was not queued", 409, "ACTIONS_CHECKS_PENDING");
+        if (!deployed.deployment)
+          throw new AppError("Deployment was not queued", 409, "ACTIONS_CHECKS_PENDING");
         return { deploymentId: deployed.deployment.id };
       });
       if (!result) throw new AppError("Project is being removed.", 409, "PROJECT_UNAVAILABLE");
