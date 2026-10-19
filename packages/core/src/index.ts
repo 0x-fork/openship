@@ -128,3 +128,6 @@ export * from "./appearance";
 export * from "./command-environment";
 
 export * from "./build-caches";
+
+export * from "./compose-interpolation";
+export * from "./service-env-layers";

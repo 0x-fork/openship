@@ -741,6 +741,12 @@ export function ServiceDetailPanel({
             operationBusy={serviceOperationBusy}
             onDirtyChange={setEnvDirty}
             onApply={() => environmentApply.apply(service)}
+            onDeploy={usesDeployPipeline ? (activeDeploymentId ? handleRedeployService : undefined) : handleDeployStart}
+            deployLabel={
+              usesDeployPipeline
+                ? t.projectDetail.services.detail.redeploy
+                : t.projectDetail.services.detail.start
+            }
           />
         </div>
       )}
