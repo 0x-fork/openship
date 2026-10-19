@@ -202,15 +202,6 @@ function hasBackendMarker(fileSet: Set<string>): boolean {
   );
 }
 
-function hasComposeMarker(fileSet: Set<string>): boolean {
-  return (
-    fileSet.has("docker-compose.yml") ||
-    fileSet.has("docker-compose.yaml") ||
-    fileSet.has("compose.yml") ||
-    fileSet.has("compose.yaml")
-  );
-}
-
 /** Prefer the project's explicit `.ruby-version`,
  *  then the lockfile stanza, then the Gemfile directive. First hit wins;
  *  undefined leaves the language default in place. */
@@ -275,7 +266,7 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
   // through to its own rule below — otherwise stock `laravel new` detects as a
   // bare Vite SPA (empty start command → deploy refused). Veto the Vite match
   // when a backend marker is present. #231
-  { stack: "vite", fileMatch: (fs) => hasAnyRootMarker(STACKS.vite.detection, fs) && !hasBackendMarker(fs) && !hasComposeMarker(fs) },
+  { stack: "vite", fileMatch: (fs) => hasAnyRootMarker(STACKS.vite.detection, fs) && !hasBackendMarker(fs) },
   // CRA has no durable file marker - depMatch alone is authoritative.
   {
     stack: "cra",
@@ -513,12 +504,17 @@ export function detectStack(
   // The Docker builder uses a repository Dockerfile when present. Classify it
   // before deriving language commands, otherwise an inferred package-manager
   // command overrides an image whose runtime may not contain that tool.
-  // Keep Compose's existing selection and apply explicit metadata below.
+  // A root Compose file alongside that Dockerfile owns the service topology,
+  // even when a framework matched first. Without a Dockerfile, keep framework
+  // detection: the Compose file may only provide local-development dependencies.
+  // Explicit metadata is applied below.
   if (
     matched !== "docker-compose" &&
     files.some((file) => file.type === "file" && file.name === "Dockerfile")
   ) {
-    matched = "docker";
+    matched = hasAnyRootMarker(STACKS["docker-compose"].detection, fileSet)
+      ? "docker-compose"
+      : "docker";
   }
 
   const pm = detectPackageManager(files, packageJson as Record<string, unknown> & {
