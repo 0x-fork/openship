@@ -558,6 +558,7 @@ export class BareRuntime implements RuntimeAdapter {
           }
         },
         transferOutput: async (buildDir) => {
+          await ensureOwnedDir(this.executor, parentPath(remoteDir));
           await this.executor.rm(remoteDir);
           await this.executor.mkdir(remoteDir);
 
@@ -657,6 +658,9 @@ export class BareRuntime implements RuntimeAdapter {
   ): Promise<BuildResult> {
     log.log("Build strategy: server (build on target)\n");
     const dir = this.buildDir(config.sessionId);
+    // Provision the staging parent before cleanup or source writes. Handing
+    // over only the session leaf would still prevent promotion's later rename.
+    await ensureOwnedDir(this.executor, parentPath(dir));
     await this.executor.rm(dir);
     await this.executor.mkdir(dir);
 
@@ -954,6 +958,7 @@ export class BareRuntime implements RuntimeAdapter {
       // await preparation to settle before acknowledging cancellation.
       const prepare = async () => {
         if (temporaryCopy) {
+          await ensureOwnedDir(this.executor, parentPath(workDir));
           await this.executor.mkdir(workDir);
           const copy = await execute(`cd ${sq(workDir)} && cp -a ${sq(artifactPath)}/. .`);
           if (copy.code !== 0) throw new Error(`Could not stage retained release: ${copy.output.trim().slice(-1000)}`);
