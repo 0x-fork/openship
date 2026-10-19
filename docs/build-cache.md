@@ -73,9 +73,10 @@ deployment gates before cutover.
 
 ## Storage policy
 
-Managed Cloud caches have a 5 GiB host retention target and a seven-day idle
-expiry. Collection removes the least recently used idle state first. BuildKit
-workers also receive cache size and free-space GC policies. Collection runs
+Managed Cloud idle caches retain at most 10% of Docker’s filesystem, capped at
+5 GiB, with a seven-day idle expiry. Collection removes the least recently used idle state first. BuildKit
+workers also receive that cache ceiling and a native BuildKit GC target of
+20% free space. Attached state and active build records remain protected. Collection runs
 before and after builds and in the daily cache sweep. Project deletion handles
 deleted-project state; the daily Cloud sweep also discovers ready owned hosts
 whose last project was moved or deleted.
@@ -117,3 +118,44 @@ application writes can consume space after a measurement. The collector does not
 delete active or retained release images, database volumes, or arbitrary Docker
 resources to make a build fit. The existing release-image retention collector
 continues to remove expired managed images separately.
+
+
+## Automatic rollback artifacts
+
+A project without an explicit rollback count uses **Automatic** retention. The
+instance default (initially five past releases) is a ceiling. On Docker hosts,
+existing retention reconciliation also reclaims eligible historical artifacts
+when Docker’s filesystem has less than 20% available space. This is shared free
+space on the actual host or Cloud space, not a separate allowance per project.
+
+The existing deployment-admission/retention lock covers selection and removal.
+Cleanup defers while deployments or role handovers are unsettled. It considers
+oldest retained releases first, measures fresh available bytes after each
+successful reclaim, and stops once the target is met or measurement is unknown.
+It does not estimate reclaimed bytes by adding Docker image sizes: shared layers
+make that arithmetic misleading.
+
+Pressure cleanup never stops or removes containers or volumes. It protects
+active, pinned and reconciling releases and shared references, and only selects
+project-owned generated images or managed static release files. An image still
+referenced by a container is refused by Docker; failure keeps its artifact marker
+and stops additional pressure eviction so recovery can retry safely.
+
+Only releases that the existing restore planner can recover from a saved Git
+commit/configuration or an immutable registry digest are eligible. Upload-only
+sources, missing historical configuration, and legacy redacted credentials stay
+protected. Deployment history and frozen configuration are preserved. Rollback
+uses the normal rebuild/reacquisition path when the local artifact is absent;
+source or registry availability is still required.
+
+This runs after successful, failed and cancelled workers acknowledge completion,
+when retention settings change, and in the existing artifact-cleanup job. It does
+not introduce a cleanup worker or hold a lock throughout a build. Projects using
+other runtimes keep their existing count-based behavior. Explicit project counts
+and pins remain authoritative; **Automatic** in the shared project/wizard
+settings clears an explicit override.
+
+The 20% free-space target is a cleanup policy, not an additional admission limit
+or a promise that a build will fit. Running workloads, protected artifacts and
+active build layers can use the remaining disk; failed builds retain the current
+release. No customer plans, daemon configuration or running services are changed.

@@ -521,7 +521,17 @@
     "authHmacDesc": "Les appelants signent le corps avec un secret partagé (X-Signature-256).",
     "authNone": "Ouvert",
     "authNoneDesc": "Aucune auth — quiconque a l'URL peut le déclencher. À utiliser avec prudence.",
-    "cancel": "Annuler"
+    "cancel": "Annuler",
+    "changeReasons": {
+      "unrelated": "Seuls des espaces de travail indépendants ont changé.",
+      "application": "Les fichiers de l’application ont changé.",
+      "shared": "Les entrées de compilation partagées ont changé.",
+      "included": "Un chemin inclus dans la configuration a changé.",
+      "excluded": "Les modifications ne correspondent pas aux règles de chemins.",
+      "unknown": "Vérification impossible ; le déploiement reste activé.",
+      "initial": "Premier déploiement.",
+      "forced": "Un déploiement complet a été demandé."
+    }
   },
   "health": {
     "title": "Santé",

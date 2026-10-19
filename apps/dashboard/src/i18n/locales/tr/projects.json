@@ -462,7 +462,17 @@
     "authHmacDesc": "Çağıranlar gövdeyi paylaşılan bir gizli anahtarla imzalar (X-Signature-256).",
     "authNone": "Açık",
     "authNoneDesc": "Kimlik doğrulama yok — URL'ye sahip herkes tetikleyebilir. Dikkatli kullanın.",
-    "cancel": "İptal"
+    "cancel": "İptal",
+    "changeReasons": {
+      "unrelated": "Yalnızca ilgisiz çalışma alanları değişti.",
+      "application": "Uygulama dosyaları değişti.",
+      "shared": "Paylaşılan derleme girdileri değişti.",
+      "included": "Yapılandırmada dahil edilen bir yol değişti.",
+      "excluded": "Değişiklikler yapılandırılan yol kurallarıyla eşleşmiyor.",
+      "unknown": "Değişiklikler doğrulanamadı; dağıtım etkin tutuldu.",
+      "initial": "İlk dağıtım.",
+      "forced": "Tam dağıtım istendi."
+    }
   },
   "connections": {
     "nativeClusterHint": "Bu veritabanının kümesindeki bir projeyi seçin. Yalnızca bağlı projeler özel erişim alır.",

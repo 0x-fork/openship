@@ -521,7 +521,17 @@
     "authHmacDesc": "调用方使用共享密钥对请求体签名（X-Signature-256）。",
     "authNone": "开放",
     "authNoneDesc": "无认证 — 任何拥有该 URL 的人都能触发。请谨慎使用。",
-    "cancel": "取消"
+    "cancel": "取消",
+    "changeReasons": {
+      "unrelated": "仅无关的工作区发生了更改。",
+      "application": "应用文件发生了更改。",
+      "shared": "共享构建输入发生了更改。",
+      "included": "配置中包含的路径发生了更改。",
+      "excluded": "更改不符合配置的路径规则。",
+      "unknown": "无法验证更改，将继续部署。",
+      "initial": "首次部署。",
+      "forced": "已请求完整部署。"
+    }
   },
   "health": {
     "title": "健康状况",
