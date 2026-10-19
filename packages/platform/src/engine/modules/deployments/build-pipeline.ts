@@ -174,11 +174,10 @@ import { collapseTerminalLogs } from "./terminal-logs";
 import { sanitizeLogsForPersistence } from "./build-log-sanitize";
 import {
   executeComposePipeline,
-  listProjectComposeServices,
   resolveProjectServicePreflightServices,
   shouldUseProjectServicePipeline,
 } from "./compose/index";
-import { primaryAppWithInfrastructure } from "./compose/project-services";
+import { listProjectComposeServices, primaryAppWithInfrastructure } from "./compose/project-services";
 import { serviceKind, type DeployableService } from "../../lib/deployable-service";
 import { resolveProjectRouteState } from "../domains/project-route.service";
 import { type DeploymentConfigSnapshot } from "./build.service";
