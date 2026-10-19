@@ -29,10 +29,12 @@ import type {
   SystemManager,
 } from "@repo/adapters";
 import { BuildLogger } from "@repo/adapters";
+import { deploymentResourceFailure } from "../resource-failure";
 
 import type { BuildConfigSnapshotLike } from "../build-config";
 import {
   cleanupBuildArtifact,
+  collectLogs,
   onCancelled,
   onFailure,
   onNoChanges,
@@ -347,7 +349,8 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
       logger,
     });
     await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
-    await onFailure(ctx, message, composeBuild.durationMs);
+    await onFailure(ctx, message, composeBuild.durationMs,
+      deploymentResourceFailure({ project, message, causes: composeBuild.buildErrorCauses }));
     return;
   }
   if (composeBuild.buildFailures.size > 0) {
@@ -481,7 +484,8 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
 
   if (composeResult.status === "failed") {
     await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger, publishedServiceIds);
-    await onFailure(ctx, composeResult.error ?? "Compose deploy failed", composeBuild.durationMs);
+    await onFailure(ctx, composeResult.error ?? "Compose deploy failed", composeBuild.durationMs,
+      deploymentResourceFailure({ project, message: composeResult.error ?? "", causes: composeBuild.buildErrorCauses }));
     return;
   }
 
@@ -554,6 +558,13 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     durationMs: composeBuild.durationMs,
     warningMessage,
     decisionPending,
+    failureMeta: project.workspaceId && composeResult.summary.failed > 0 ? deploymentResourceFailure({
+      project,
+      message: composeResult.services.filter(service => service.status === "failed")
+        .map(service => service.error ?? "").join("\n"),
+      logs: collectLogs(ctx),
+      causes: composeBuild.buildErrorCauses,
+    }) : undefined,
     metaPatch: {
       composeDeployment: {
         totalServices: composeResult.summary.total,

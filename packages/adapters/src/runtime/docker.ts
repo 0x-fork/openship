@@ -2865,6 +2865,7 @@ export class DockerRuntime implements RuntimeAdapter {
         status: "failed",
         durationMs: Date.now() - startTime,
         errorMessage: `Docker build failed: ${msg}`,
+        errorCause: err,
       };
     } finally {
       releaseDockerBuild(config.sessionId, abort);
@@ -2942,6 +2943,7 @@ export class DockerRuntime implements RuntimeAdapter {
         status: "failed",
         durationMs: Date.now() - startTime,
         errorMessage: `Image pull failed: ${message}`,
+        errorCause: err,
         artifactOwned: false,
       };
     } finally {
@@ -3069,6 +3071,7 @@ export class DockerRuntime implements RuntimeAdapter {
         status: "failed",
         durationMs: elapsed(),
         errorMessage: `Static extract failed: ${msg}`,
+        errorCause: err,
       };
     } finally {
       releaseDockerBuild(config.sessionId, abort);
@@ -3784,6 +3787,7 @@ export class DockerRuntime implements RuntimeAdapter {
             status: "failed",
             durationMs: Date.now() - startedAt,
             errorMessage: `Docker build failed: ${msg}`,
+            errorCause: err,
           };
           spec.onResult?.(result);
           results.push({ serviceName: spec.serviceName, result });

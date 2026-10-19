@@ -132,6 +132,23 @@ afterEach(async () => {
 });
 
 describe("persisted port review", () => {
+  it.each(["failed", "ready"])("restores resource recovery after a %s deployment is reopened", async status => {
+    await mount();
+    const errorDetails = { resourceIssue: "storage-full", workspaceId: "original-space", projectId: "project-1" };
+    await load({ status, is_active: false, decisionPending: status === "ready",
+      errorCode: "DEPLOYMENT_RESOURCE_FAILURE", errorDetails });
+    expect(build.state).toMatchObject({ errorCode: "DEPLOYMENT_RESOURCE_FAILURE", errorDetails });
+  });
+
+  it("preserves resource recovery on live partial completion", async () => {
+    await mount();
+    await load();
+    const errorDetails = { resourceIssue: "container-oom", workspaceId: "original-space" };
+    await act(async () => api.callbacks.onSuccess({ decisionPending: true,
+      errorCode: "DEPLOYMENT_RESOURCE_FAILURE", errorDetails }));
+    expect(build.state).toMatchObject({ deploymentSuccess: true, decisionPending: true, errorDetails });
+  });
+
   it("restores the binding finding and scopes a late dismissal to its original deployment", async () => {
     const portCheck = [{ port: 3000, checked: true, listening: true, loopbackOnly: true }];
     await mount();
@@ -439,6 +456,8 @@ describe("deployment counter (#919)", () => {
         is_active: false,
         buildDurationMs: 3000,
         buildStartedAt: new Date(START.getTime() + 1000).toISOString(),
+        errorCode: "DEPLOYMENT_RESOURCE_FAILURE",
+        errorDetails: { resourceIssue: "memory-allocation", workspaceId: "original-space" },
       }),
     );
     await act(async () => {
@@ -449,6 +468,8 @@ describe("deployment counter (#919)", () => {
       isDeploying: false,
       buildDurationMs: 3000,
       buildStartedAt: new Date(START.getTime() + 1000).toISOString(),
+      errorCode: "DEPLOYMENT_RESOURCE_FAILURE",
+      errorDetails: { resourceIssue: "memory-allocation", workspaceId: "original-space" },
     });
     expect(clockText()).toBe("0:03");
   });

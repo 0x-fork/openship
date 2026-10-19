@@ -501,6 +501,7 @@ describe("executeComposePipeline — cancellation", () => {
       expect.anything(),
       expect.stringMatching(/aborted before cutover.*worker image did not compile/i),
       17,
+      undefined,
     );
   });
 
