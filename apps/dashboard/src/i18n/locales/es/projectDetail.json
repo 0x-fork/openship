@@ -317,7 +317,20 @@
         "automaticStorage": "Gestionado automáticamente",
         "invalidMount": "Introduce una ruta que empiece por / dentro del servicio. Las rutas y los nombres de volúmenes no pueden contener :.",
         "mountTooLong": "Cada entrada de volumen debe tener 500 caracteres o menos.",
-        "saveAndBackup": "Guardar y crear copia"
+        "saveAndBackup": "Guardar y crear copia",
+        "emptyVolume": {
+          "menu": "Acciones del volumen",
+          "title": "Iniciar con almacenamiento vacío",
+          "description": "El servicio se desplegará con un volumen nuevo. Se conservarán los datos anteriores y las copias de seguridad.",
+          "retained": "Volumen anterior — conservado",
+          "newVolume": "Volumen nuevo vacío",
+          "recoveryHint": "Para recuperar los datos anteriores, edita este montaje y restaura el nombre del volumen anterior. Los demás servicios que lo usan no se verán afectados.",
+          "confirm": "Escribe {name} para confirmar",
+          "action": "Guardar y redesplegar",
+          "retry": "Reintentar despliegue",
+          "retryHint": "La configuración del volumen nuevo está guardada, pero el despliegue no ha comenzado. Reintenta para continuar. El servicio en ejecución sigue usando el volumen anterior.",
+          "failed": "No se pudo preparar el almacenamiento vacío. No se borraron datos."
+        }
       },
       "internalAddress": "Dirección interna",
       "internalAddressHint": "Los contenedores de este proyecto acceden a este servicio aquí",

@@ -321,7 +321,20 @@
         "automaticStorage": "Géré automatiquement",
         "invalidMount": "Saisissez un chemin commençant par / dans le service. Les chemins et noms de volumes ne peuvent pas contenir :.",
         "mountTooLong": "Chaque entrée de volume doit comporter au maximum 500 caractères.",
-        "saveAndBackup": "Enregistrer et sauvegarder"
+        "saveAndBackup": "Enregistrer et sauvegarder",
+        "emptyVolume": {
+          "menu": "Actions du volume",
+          "title": "Démarrer avec un stockage vide",
+          "description": "Ce service sera redéployé avec un nouveau volume. Ses anciennes données et sauvegardes seront conservées.",
+          "retained": "Ancien volume — conservé",
+          "newVolume": "Nouveau volume vide",
+          "recoveryHint": "Pour récupérer les données, modifiez ce montage et rétablissez l’ancien nom du volume. Les autres services utilisant l’ancien volume ne sont pas affectés.",
+          "confirm": "Saisissez {name} pour confirmer",
+          "action": "Enregistrer et redéployer",
+          "retry": "Réessayer le déploiement",
+          "retryHint": "Le nouveau volume est configuré, mais le déploiement n’a pas démarré. Réessayez pour continuer. Le service en cours utilise toujours son ancien volume.",
+          "failed": "Impossible de préparer un stockage vide. Aucune donnée n’a été effacée."
+        }
       }
     },
     "settingsForm": {

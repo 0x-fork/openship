@@ -317,7 +317,20 @@
         "automaticStorage": "自动管理",
         "invalidMount": "服务内的路径必须以 / 开头。路径和存储卷名称不能包含 :。",
         "mountTooLong": "每个存储卷条目不得超过 500 个字符。",
-        "saveAndBackup": "保存并备份"
+        "saveAndBackup": "保存并备份",
+        "emptyVolume": {
+          "menu": "卷操作",
+          "title": "使用空存储启动",
+          "description": "此服务将使用新卷重新部署。原有数据和备份将保留。",
+          "retained": "原有卷 — 保留",
+          "newVolume": "新的空卷",
+          "recoveryHint": "如需恢复原有数据，请编辑此挂载并改回原有卷名。使用旧卷的其他服务不受影响。",
+          "confirm": "输入 {name} 以确认",
+          "action": "保存并重新部署",
+          "retry": "重试部署",
+          "retryHint": "新卷设置已保存，但部署尚未开始。请重试。运行中的服务仍使用原有卷。",
+          "failed": "无法准备空存储。未删除任何数据。"
+        }
       },
       "internalAddress": "内部地址",
       "internalAddressHint": "此项目中的容器在此处访问此服务",
