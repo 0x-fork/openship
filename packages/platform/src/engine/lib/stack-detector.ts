@@ -202,6 +202,15 @@ function hasBackendMarker(fileSet: Set<string>): boolean {
   );
 }
 
+function hasComposeMarker(fileSet: Set<string>): boolean {
+  return (
+    fileSet.has("docker-compose.yml") ||
+    fileSet.has("docker-compose.yaml") ||
+    fileSet.has("compose.yml") ||
+    fileSet.has("compose.yaml")
+  );
+}
+
 /** Prefer the project's explicit `.ruby-version`,
  *  then the lockfile stanza, then the Gemfile directive. First hit wins;
  *  undefined leaves the language default in place. */
@@ -266,7 +275,7 @@ const FRAMEWORK_RULES: FrameworkRule[] = [
   // through to its own rule below — otherwise stock `laravel new` detects as a
   // bare Vite SPA (empty start command → deploy refused). Veto the Vite match
   // when a backend marker is present. #231
-  { stack: "vite", fileMatch: (fs) => hasAnyRootMarker(STACKS.vite.detection, fs) && !hasBackendMarker(fs) },
+  { stack: "vite", fileMatch: (fs) => hasAnyRootMarker(STACKS.vite.detection, fs) && !hasBackendMarker(fs) && !hasComposeMarker(fs) },
   // CRA has no durable file marker - depMatch alone is authoritative.
   {
     stack: "cra",

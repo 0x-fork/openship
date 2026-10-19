@@ -656,6 +656,14 @@ describe("detectStack - rule ordering & gate disambiguation", () => {
     expect(result.stack).toBe("docker-compose");
   });
 
+  it("Docker Compose wins over Vite + Dockerfile when all are present at root (#1355)", () => {
+    const result = detectStack(
+      files("package.json", "vite.config.ts", "Dockerfile", "docker-compose.yml"),
+      { devDependencies: { vite: "^6.0.0" } },
+    );
+    expect(result.stack).toBe("docker-compose");
+  });
+
   it("Static site does NOT match when package.json is also present (falls to a JS stack)", () => {
     const result = detectStack(files("index.html", "package.json"), {
       dependencies: { express: "^5.0.0" },
