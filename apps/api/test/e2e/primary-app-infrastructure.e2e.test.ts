@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { LOCAL_HOST_PORT_TARGET } from "@repo/platform/engine/lib/host-port-target";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { DockerRuntime, NoopInfraProvider, createHostExecutor } from "@repo/adapters";
-import { parseOpenshipConfig } from "@repo/core";
+import { parseOpenshipConfig, SYSTEM } from "@repo/core";
 import { repos, type Project, type Deployment } from "@repo/db";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
 import { describeDockerE2E, requireDocker } from "../helpers/docker-e2e";
@@ -316,18 +316,32 @@ describeDockerE2E("primary source app with attached infrastructure (#1312)", () 
   });
   it("leaves the live app, database and previous roles intact after a candidate worker fails", async () => {
     const database = await dbRow(live);
-    const failed = await deploy([`${sql} -c 'SELECT 1'`], "manual", {
-      roles: [{ ...roles[0]!, command: "exit 9" }, roles[1]!],
+    const readiness = (await current()).readiness;
+    // Healthy cases use a shortened watch to keep this suite fast. A crash-loop
+    // assertion needs the normal window: Docker can be between restarts at 1s,
+    // before the restart count proves a loop.
+    await repos.project.update(project.id, {
+      readiness: {
+        ...readiness,
+        stabilizationSeconds: SYSTEM.DEPLOYMENTS.STABILIZE_WINDOW_MS / 1000,
+      },
     });
-    expect(failed.status).toBe("failed");
-    expect((await current()).activeDeploymentId).toBe(live.id);
-    expect((await dbRow(failed)).containerId).toBe(database.containerId);
-    for (const id of [
-      database.containerId!,
-      live.containerId!,
-      ...live.roleContainers!.map((role) => role.containerId),
-    ])
-      expect((await runtime.getContainerInfo(id)).status).toBe("running");
+    try {
+      const failed = await deploy([`${sql} -c 'SELECT 1'`], "manual", {
+        roles: [{ ...roles[0]!, command: "exit 9" }, roles[1]!],
+      });
+      expect(failed.status).toBe("failed");
+      expect((await current()).activeDeploymentId).toBe(live.id);
+      expect((await dbRow(failed)).containerId).toBe(database.containerId);
+      for (const id of [
+        database.containerId!,
+        live.containerId!,
+        ...live.roleContainers!.map((role) => role.containerId),
+      ])
+        expect((await runtime.getContainerInfo(id)).status).toBe("running");
+    } finally {
+      await repos.project.update(project.id, { readiness });
+    }
   });
   it("skips release commands on rollback and preserves live infrastructure", async () => {
     const database = await dbRow(live);
