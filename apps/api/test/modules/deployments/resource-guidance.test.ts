@@ -40,13 +40,18 @@ async function attempt(cloud = true) {
     status: "deploying",
   });
   const logs: LogEntry[] = [];
-  const logger = new BuildLogger((entry) => logs.push(entry));
+  const resourceEvidence: LogEntry[] = [];
+  const logger = new BuildLogger((entry) => {
+    logs.push(entry);
+    if (entry.resourceIssue) resourceEvidence.push(entry);
+  });
   return {
     project,
     dep,
     buildSessionId: session.id,
     persistLogs: () => sanitizeLogsForPersistence(collapseTerminalLogs(logs)),
     logs,
+    resourceEvidence,
     logger,
     provisioned: {},
   };
@@ -72,7 +77,7 @@ it("persists the diagnosis with failure and restores it without an active stream
   });
 });
 
-it("retains authoritative container OOM evidence before cleanup", async () => {
+it("retains authoritative container OOM evidence even when no terminal logs can be retained", async () => {
   const ctx = await attempt();
   const runtime = {
     supports: (cap: string) => cap === "stabilityProbe",
@@ -93,6 +98,7 @@ it("retains authoritative container OOM evidence before cleanup", async () => {
     ctx.logger,
     { windowMs: 10, pollMs: 1 },
   );
+  ctx.persistLogs = () => [];
   await onFailure(ctx, finding!.detail);
   expect((await repos.deployment.findById(ctx.dep.id))?.errorDetails).toMatchObject({
     resourceIssue: "container-oom",
@@ -108,6 +114,7 @@ it("keeps an unrelated OOM out of another failing service's diagnosis", async ()
     resourceIssue: "container-oom",
     serviceName: "other",
   });
+  ctx.resourceEvidence.push(ctx.logs[0]!);
   await onFailure(ctx, "api: failed to reach its database");
   expect((await repos.deployment.findById(ctx.dep.id))?.errorDetails).toBeNull();
 });

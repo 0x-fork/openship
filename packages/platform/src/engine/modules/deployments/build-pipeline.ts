@@ -789,8 +789,10 @@ async function executeBuildAndDeploy(
 
   const logs: LogEntry[] = [...initialLogs];
   const MAX_LOG_ENTRIES = 50_000;
+  const resourceEvidence: LogEntry[] = [];
 
   const logCallback = (entry: LogEntry) => {
+    if (entry.resourceIssue) resourceEvidence.push(entry);
     if (logs.length < MAX_LOG_ENTRIES) logs.push(entry);
     sessionManager.appendLog(dep.id, entry);
   };
@@ -817,6 +819,7 @@ async function executeBuildAndDeploy(
     persistLogs,
     logger,
     provisioned,
+    resourceEvidence,
   };
 
   let buildResourcesForRecovery: ResourceConfig | null | undefined;

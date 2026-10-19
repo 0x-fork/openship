@@ -86,6 +86,8 @@ export interface LifecycleContext {
   /** The deployment's single logger. Optional for startup/recovery callers that
    * have no live log stream; normal build pipelines always provide it. */
   logger?: Pick<BuildLogger, "log">;
+  /** Trusted runtime facts kept independently of bounded/collapsed build logs. */
+  resourceEvidence?: readonly LogEntry[];
   /** Provisioned resources - set by the orchestrator as phases progress. */
   provisioned: { imageRef?: string };
   /**
@@ -540,7 +542,8 @@ export async function onFailure(
     errorMeta = {
       ...errorMeta,
       ...deploymentResourceFailure({
-        project, message: error ?? "", meta: errorMeta, logs: collectLogs(ctx),
+        project, message: error ?? "", meta: errorMeta,
+        logs: ctx.resourceEvidence ?? collectLogs(ctx),
       }),
     };
   }

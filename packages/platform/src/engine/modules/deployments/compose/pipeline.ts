@@ -562,7 +562,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
       project,
       message: composeResult.services.filter(service => service.status === "failed")
         .map(service => service.error ?? "").join("\n"),
-      logs: collectLogs(ctx),
+      logs: ctx.resourceEvidence ?? collectLogs(ctx),
       causes: composeBuild.buildErrorCauses,
     }) : undefined,
     metaPatch: {

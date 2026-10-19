@@ -8,7 +8,8 @@ retry the deployment.
 Detection uses evidence from the failing attempt:
 
 - A failed container's existing Docker stabilization probe supplies its `OOMKilled`
-  flag. The controller attaches typed evidence before cleanup. A different service's
+  flag. The controller keeps typed evidence independently of bounded terminal logs,
+  before cleanup. A different service's
   OOM cannot explain an unrelated failing operation.
 - Explicit allocation errors such as `ENOMEM` are distinguished from a process's
   JavaScript heap limit. Review configured build/application limits before upgrading.
