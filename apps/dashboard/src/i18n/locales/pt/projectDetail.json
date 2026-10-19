@@ -317,7 +317,20 @@
         "automaticStorage": "Gerenciado automaticamente",
         "invalidMount": "Informe um caminho que comece com / dentro do serviço. Caminhos e nomes de volumes não podem conter :.",
         "mountTooLong": "Cada entrada de volume deve ter no máximo 500 caracteres.",
-        "saveAndBackup": "Salvar e fazer backup"
+        "saveAndBackup": "Salvar e fazer backup",
+        "emptyVolume": {
+          "menu": "Ações do volume",
+          "title": "Iniciar com armazenamento vazio",
+          "description": "O serviço será reimplantado com um volume novo. Os dados anteriores e backups serão mantidos.",
+          "retained": "Volume anterior — mantido",
+          "newVolume": "Novo volume vazio",
+          "recoveryHint": "Para recuperar os dados anteriores, edite esta montagem e restaure o nome do volume anterior. Outros serviços que usam o volume antigo não serão afetados.",
+          "confirm": "Digite {name} para confirmar",
+          "action": "Salvar e reimplantar",
+          "retry": "Tentar implantação novamente",
+          "retryHint": "A configuração do novo volume foi salva, mas a implantação não começou. Tente novamente para continuar. O serviço em execução ainda usa o volume anterior.",
+          "failed": "Não foi possível preparar o armazenamento vazio. Nenhum dado foi apagado."
+        }
       },
       "internalAddress": "Endereço interno",
       "internalAddressHint": "Os contêineres deste projeto acessam este serviço aqui",

@@ -321,7 +321,20 @@
         "automaticStorage": "Managed automatically",
         "invalidMount": "Enter a path starting with / inside the service. Paths and volume names cannot contain :.",
         "mountTooLong": "Each volume entry must be 500 characters or fewer.",
-        "saveAndBackup": "Save and back up"
+        "saveAndBackup": "Save and back up",
+        "emptyVolume": {
+          "menu": "Volume actions",
+          "title": "Start with empty storage",
+          "description": "This service will redeploy with a new volume. Its previous data and backups will be kept.",
+          "retained": "Previous volume — kept",
+          "newVolume": "New empty volume",
+          "recoveryHint": "To recover the previous data later, edit this mount and restore the previous volume name. Other services using the old volume are unaffected.",
+          "confirm": "Type {name} to confirm",
+          "action": "Save & redeploy",
+          "retry": "Retry deployment",
+          "retryHint": "The new volume setting is saved, but deployment has not started. Retry to continue. The running service has not switched volumes.",
+          "failed": "Could not prepare empty storage. No data was erased."
+        }
       }
     },
     "settingsForm": {

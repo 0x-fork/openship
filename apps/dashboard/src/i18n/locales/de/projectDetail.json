@@ -317,7 +317,20 @@
         "automaticStorage": "Automatisch verwaltet",
         "invalidMount": "Der Pfad innerhalb des Dienstes muss mit / beginnen. Pfade und Volume-Namen dürfen kein : enthalten.",
         "mountTooLong": "Jeder Volume-Eintrag darf höchstens 500 Zeichen enthalten.",
-        "saveAndBackup": "Speichern und sichern"
+        "saveAndBackup": "Speichern und sichern",
+        "emptyVolume": {
+          "menu": "Volume-Aktionen",
+          "title": "Mit leerem Speicher starten",
+          "description": "Dieser Dienst wird mit einem neuen Volume bereitgestellt. Vorherige Daten und Backups bleiben erhalten.",
+          "retained": "Vorheriges Volume — behalten",
+          "newVolume": "Neues leeres Volume",
+          "recoveryHint": "Um die bisherigen Daten wiederherzustellen, tragen Sie hier wieder den vorherigen Volume-Namen ein. Andere Dienste mit dem alten Volume bleiben unverändert.",
+          "confirm": "Geben Sie {name} zur Bestätigung ein",
+          "action": "Speichern & neu bereitstellen",
+          "retry": "Bereitstellung wiederholen",
+          "retryHint": "Die neue Volume-Einstellung ist gespeichert, die Bereitstellung wurde jedoch nicht gestartet. Wiederholen Sie den Vorgang. Der laufende Dienst nutzt weiterhin das bisherige Volume.",
+          "failed": "Leerer Speicher konnte nicht vorbereitet werden. Es wurden keine Daten gelöscht."
+        }
       },
       "internalAddress": "Interne Adresse",
       "internalAddressHint": "Container in diesem Projekt erreichen diesen Dienst hier",

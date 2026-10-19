@@ -321,7 +321,20 @@
         "automaticStorage": "Otomatik yönetilir",
         "invalidMount": "Servis içinde / ile başlayan bir yol girin. Yollar ve birim adları : içeremez.",
         "mountTooLong": "Her birim girdisi en fazla 500 karakter olmalıdır.",
-        "saveAndBackup": "Kaydet ve yedekle"
+        "saveAndBackup": "Kaydet ve yedekle",
+        "emptyVolume": {
+          "menu": "Birim işlemleri",
+          "title": "Boş depolamayla başlat",
+          "description": "Bu hizmet yeni bir birimle yeniden dağıtılır. Önceki veriler ve yedekler korunur.",
+          "retained": "Önceki birim — korunur",
+          "newVolume": "Yeni boş birim",
+          "recoveryHint": "Önceki verileri geri almak için bu bağlamayı düzenleyip eski birim adını girin. Eski birimi kullanan diğer hizmetler etkilenmez.",
+          "confirm": "Onaylamak için {name} yazın",
+          "action": "Kaydet ve yeniden dağıt",
+          "retry": "Dağıtımı yeniden dene",
+          "retryHint": "Yeni birim ayarı kaydedildi, ancak dağıtım başlamadı. Devam etmek için yeniden deneyin. Çalışan hizmet hâlâ önceki birimi kullanıyor.",
+          "failed": "Boş depolama hazırlanamadı. Hiçbir veri silinmedi."
+        }
       }
     },
     "settingsForm": {
