@@ -162,6 +162,7 @@ import { isArtifactPathRef, removeManagedArtifact } from "./managed-artifact";
 import { githubTarballUrl, downloadTarballOnRemote } from "./source-tarball";
 import { GIT_SUBMODULE_UPDATE_ARGS } from "./git-clone";
 import { scopeVolumeBinds, isHostPathSource } from "./volume-namespace";
+import { resolveImageVolumeBinds } from "./docker-image-volumes";
 import {
   createDockerBuildContext,
   missingContextDockerfileMessage,
@@ -3873,17 +3874,57 @@ export class DockerRuntime implements RuntimeAdapter {
       : [{ port: config.port, hostIp: "127.0.0.1", hostPort: config.hostPort }];
   }
 
+  // Per-operation preparation, not a host inventory cache. The pipeline can
+  // remove the outgoing service before activation, so keep its verified binds
+  // on this exact configuration object until the handover completes.
+  private readonly preparedVolumes = new WeakMap<DeployConfig | MultiServiceDeployConfig, string[]>();
+
+  async prepareDeploymentVolumes(config: DeployConfig): Promise<void> {
+    this.preparedVolumes.set(config, await this.deploymentVolumeBinds(config));
+  }
+
+  async prepareServiceVolumes(config: MultiServiceDeployConfig): Promise<void> {
+    this.preparedVolumes.set(config, await this.serviceVolumeBinds(config));
+  }
+
+  private deploymentBinds(config: DeployConfig): Promise<string[]> {
+    const prepared = this.preparedVolumes.get(config);
+    return prepared ? Promise.resolve(prepared) : this.deploymentVolumeBinds(config);
+  }
+
   protected async deploymentVolumeBinds(config: DeployConfig): Promise<string[]> {
-    return scopeVolumeBinds(
+    const binds = scopeVolumeBinds(
       config.slug || config.runtimeName || config.projectId,
       config.volumes ?? [],
       true,
     );
+    const image = await this.inspectDeploymentImage(config.imageRef!);
+    return resolveImageVolumeBinds(this.docker, binds, Object.keys(image.Config?.Volumes ?? {}), {
+      projectId: config.projectId,
+      workload: "app",
+      ...(config.previousContainerId ? {
+        previous: { containerId: config.previousContainerId },
+      } : {}),
+    });
   }
 
   /** Resolve service mounts before stopping the existing workload. */
   protected async serviceVolumeBinds(config: MultiServiceDeployConfig): Promise<string[]> {
-    return scopeVolumeBinds(config.slug, config.volumes, config.namespaceVolumes);
+    const image = await this.inspectDeploymentImage(config.image);
+    return resolveImageVolumeBinds(
+      this.docker,
+      scopeVolumeBinds(config.slug, config.volumes, config.namespaceVolumes),
+      Object.keys(image.Config?.Volumes ?? {}),
+      {
+        projectId: config.projectId,
+        workload: config.serviceName,
+        previous: {
+          containerId: config.previousContainerId ?? `openship-${config.slug}-${config.serviceName}`,
+          serviceName: config.serviceName,
+          required: Boolean(config.previousContainerId),
+        },
+      },
+    );
   }
 
   /** A managed host can narrow container operations to its project. Local and
@@ -3948,7 +3989,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // a volume that outlives the container. Named volumes are project-scoped
     // through the same helper the multi-service path uses, so two projects can't
     // land on one daemon-level volume; bind mounts pass through.
-    const scopedBinds = await this.deploymentVolumeBinds(config);
+    const scopedBinds = await this.deploymentBinds(config);
     const binds = scopedBinds.length > 0 ? scopedBinds : undefined;
 
     log({
@@ -4120,7 +4161,7 @@ export class DockerRuntime implements RuntimeAdapter {
       });
     }
 
-    const scopedBinds = await this.deploymentVolumeBinds(config);
+    const scopedBinds = await this.deploymentBinds(config);
     const binds = scopedBinds.length > 0 ? scopedBinds : undefined;
 
     log({
@@ -4261,7 +4302,7 @@ export class DockerRuntime implements RuntimeAdapter {
         timestamp: new Date().toISOString(), level: "warn",
         message: droppedRuntimeEnvMessage(dropped),
       });
-      const scopedBinds = await deadline.wait(() => this.deploymentVolumeBinds(config));
+      const scopedBinds = await deadline.wait(() => this.deploymentBinds(config));
       const networkId = config.networkAlias
         ? await deadline.wait(() => this.ensureNetwork(
             config.slug || config.runtimeName || config.projectId, deadline.signal,
@@ -6132,8 +6173,6 @@ export class DockerRuntime implements RuntimeAdapter {
     if (!config.namespaceVolumes) {
       await this.assertNoForeignNamedVolumeCollision(config);
     }
-    const scopedBinds = await this.serviceVolumeBinds(config);
-    const binds = scopedBinds.length > 0 ? scopedBinds : undefined;
     const restartPolicy = resolveRestartPolicy(config.restart);
     const healthcheck = toDockerHealthcheck(config.advanced?.healthcheck);
     const stopConfig = toStopConfig(config.advanced);
@@ -6170,6 +6209,9 @@ export class DockerRuntime implements RuntimeAdapter {
       // a mutable substitute or contacting the registry during cutover.
       await this.inspectDeploymentImage(config.image);
     }
+
+    const scopedBinds = this.preparedVolumes.get(config) ?? await this.serviceVolumeBinds(config);
+    const binds = scopedBinds.length > 0 ? scopedBinds : undefined;
 
     // Labels belong to the replacement image. Resolve them after acquisition,
     // before stopping the live service, including on a fresh deployment host.

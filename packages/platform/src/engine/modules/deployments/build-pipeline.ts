@@ -1552,6 +1552,11 @@ async function executeBuildAndDeploy(
       return;
     }
     const activate = async () => {
+      if (runtime instanceof DockerRuntime && servedRouting.deployMode !== "static-file-serve") {
+        const previous = await findActiveDeployment(project);
+        deployConfig.previousContainerId = previous?.containerId ?? undefined;
+        await runtime.prepareDeploymentVolumes(deployConfig);
+      }
       await executeReleasePhase(phase, deployConfig);
       throwIfDeploymentCancelled(cancellationSignal);
       return hostPortTargetLockHeld

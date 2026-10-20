@@ -3195,9 +3195,13 @@ async function deployComposeServicesUnlocked(
         // service only once its own failure handler is active.
         pendingPreparedHostPortServiceIds.delete(svc.id);
         const previous = previousByServiceId.get(svc.id);
+        serviceRuntimeConfig.previousContainerId = previous?.containerId ?? undefined;
         const serviceLogger = createServicePipelineLogger(logger, svc.name, svc.id);
         const routeDomains = toRoutedDomainInputs(proxyRoutes);
         const deployEnv: DeployEnvironment = {
+          ...(runtime instanceof DockerRuntime ? {
+            preflight: () => runtime.prepareServiceVolumes(serviceRuntimeConfig),
+          } : {}),
           activate: async (_cfg, onLog) => {
             opts?.onArtifactActivationStart?.(svc.id);
             const result = await runtime.deployServiceWorkload(

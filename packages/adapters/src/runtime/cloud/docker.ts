@@ -5,6 +5,7 @@ import { posix } from "node:path";
 import type { Oblien } from "oblien";
 import { AppError, SYSTEM, safeErrorMessage, isHostPathSource } from "@repo/core";
 import { DockerRuntime } from "../docker";
+import { imageVolumeName } from "../docker-image-volumes";
 import { BareRuntime } from "../bare";
 import { CloudServerConnection } from "./server-connection";
 import { CloudProcessSupervisor } from "./process-supervisor";
@@ -528,6 +529,10 @@ export class CloudDockerRuntime extends DockerRuntime {
     );
     return this.ownedVolumeBinds(config.slug || config.projectId, volumes);
   }
+  // Managed mounts are already resolved and ownership-checked by Cloud
+  // activation. They never relied on Docker's anonymous-volume allocation.
+  override async prepareDeploymentVolumes(_config: DeployConfig): Promise<void> {}
+  override async prepareServiceVolumes(_config: MultiServiceDeployConfig): Promise<void> {}
   override async deploy(config: DeployConfig, onLog?: LogCallback) {
     this.assertProject(config.projectId);
     await this.canSpend();
@@ -753,11 +758,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     for (const target of new Set(imageVolumes)) {
       if (!target.startsWith("/")) throw new Error("Invalid anonymous volume destination");
       if (targets.has(target)) continue;
-      const key = createHash("sha256")
-        .update(`${config.serviceName}:${target}`)
-        .digest("hex")
-        .slice(0, 24);
-      volumes.push(`data-${key}:${target}`);
+      volumes.push(`${imageVolumeName(config.serviceName, target)}:${target}`);
     }
     return volumes;
   }
