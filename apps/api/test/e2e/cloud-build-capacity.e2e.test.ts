@@ -52,6 +52,22 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       streamExec(privileged(command), logger, { ...options, killProcessTree: true });
     runtime = await DockerRuntime.create({ transport: "socket", executor });
     Object.assign(runtime, { connectionOptions: { transport: "cloud", executor } });
+    // Every case needs the same kernel prerequisite. Fail fixture setup once
+    // with the worker's trusted startup logs instead of timing out each build.
+    const bootstrap = runtime as unknown as {
+      startProtectedBuildWorker(config: BuildConfig, logger: BuildLogger): Promise<void>;
+      cleanupProtectedBuildWorker(projectId: string): Promise<void>;
+    };
+    try {
+      await bootstrap.startProtectedBuildWorker({ projectId, resources } as BuildConfig, new BuildLogger());
+      expect((await docker("logs", worker)).stderr).toContain("OPENSHIP_BUILD_METADATA_GUARD_READY:1");
+    } catch (error) {
+      console.error("Protected BuildKit fixture startup:",
+        await docker("logs", worker).catch(cause => ({ error: String(cause) })));
+      throw error;
+    } finally {
+      await bootstrap.cleanupProtectedBuildWorker(projectId);
+    }
     await docker("run", "-d", "--name", sibling, "alpine:3.20", "sleep", "600");
   });
 
@@ -190,6 +206,11 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
         "sysctl -w net.ipv6.conf.lo.disable_ipv6=0 >/dev/null",
         "ip -6 addr add fd00:ec2::254/128 dev lo",
         "ip -6 addr add fd20:ce::254/128 dev lo",
+        // The fake resolver also lives on loopback. Give DNS requests a
+        // different local source, like a real VM querying a remote resolver,
+        // so replies do not target the metadata IP's blocked ephemeral ports.
+        "ip -6 route replace local fd20:ce::254/128 dev lo src ::1 table local",
+        "ip -6 route get fd20:ce::254 | grep -F 'src ::1'",
         "ip -o addr show dev lo | grep -F '169.254.169.254/32'",
         "ip -o -6 addr show dev lo | grep -F 'fd00:ec2::254/128'",
         "ip -o -6 addr show dev lo | grep -F 'fd20:ce::254/128'",
