@@ -429,12 +429,14 @@ export const ProjectControlSchemas = {
       enabled: Type.Boolean(),
       comments: Type.Boolean(),
       baseDomain: Type.Optional(Type.String({ maxLength: 200 })),
+      protectionHostname: Type.Optional(Type.String({ minLength: 1, maxLength: 253 })),
     }),
     output: Type.Object({
       settings: Type.Object({
         enabled: Type.Boolean(),
         comments: Type.Boolean(),
         baseDomain: Type.Optional(Type.String()),
+        protectionHostname: Type.Optional(Type.String()),
       }),
     }),
   },
@@ -446,6 +448,7 @@ export const ProjectControlSchemas = {
           enabled: Type.Boolean(),
           comments: Type.Boolean(),
           baseDomain: Type.Optional(Type.String()),
+          protectionHostname: Type.Optional(Type.String()),
         }),
         Type.Null(),
       ]),

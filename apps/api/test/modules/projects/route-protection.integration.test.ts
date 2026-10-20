@@ -1,6 +1,11 @@
 import { expect, it } from "vitest";
 import { Hono } from "hono";
 import { repos, seedOwner } from "../jobs/_harness";
+import { db, schema } from "@repo/db";
+import { eq } from "drizzle-orm";
+import { createRouteProtection } from "@repo/adapters";
+import { registerProtectedProjectRoute } from "@repo/platform/engine/lib/route-protection";
+import { previewEnvironmentInput } from "@repo/platform/engine/modules/projects/pull-request-previews";
 import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
@@ -76,4 +81,89 @@ it("shares pending protection through real native/HTTP operations without leakin
   expect(await native.projects.listRouteProtection(project.id)).toEqual([
     { hostname: input.hostname, enabled: false, status: "pending" },
   ]);
+});
+
+it("protects two native preview identities before first publication and cascades their private policy on cleanup", async () => {
+  const owner = await seedOwner();
+  const group = await repos.projectGroup.create({
+    organizationId: owner.orgId,
+    name: "Previews",
+    slug: "private-previews",
+  });
+  const source = await repos.project.create({
+    organizationId: owner.orgId,
+    groupId: group.id,
+    name: "Source",
+    slug: "private-source",
+    environmentType: "development",
+    gitOwner: "owner",
+    gitRepo: "repo",
+    gitBranch: "main",
+    previewSettings: {
+      enabled: true,
+      comments: false,
+      baseDomain: "preview.test",
+      protectionHostname: "dev.test",
+    },
+  });
+  const policy = await createRouteProtection("native-preview-test-password");
+  await repos.routeProtection.save(source.id, "dev.test", "source-first", JSON.stringify(policy));
+  const keys: string[] = [];
+  const children: string[] = [];
+  for (const number of [1, 2]) {
+    await repos.pullRequestPreview.enqueue({
+      organizationId: owner.orgId,
+      sourceProjectId: source.id,
+      owner: "owner",
+      repo: "repo",
+      number,
+    });
+    const intent = (await repos.pullRequestPreview.list(source.id, owner.orgId)).find(
+      (row) => row.number === number,
+    )!;
+    const token = `lease-${number}`;
+    await repos.pullRequestPreview.claim(intent.id, token);
+    const child = await repos.pullRequestPreview.createEnvironment(
+      intent.id,
+      token,
+      previewEnvironmentInput(source, [], number, `feature-${number}`),
+    );
+    children.push(child.id);
+    expect((await repos.pullRequestPreview.findByProject(child.id))?.sourceProjectId).toBe(
+      source.id,
+    );
+    const hostname = `${child.slug}.preview.test`;
+    await repos.domain.create({ projectId: child.id, hostname, domainType: "custom" });
+    let publications = 0;
+    const routing = {
+      registerRoute: async (route: { protection?: unknown }) => {
+        const stored = await repos.routeProtection.readPrivate(child.id, hostname);
+        expect(stored?.enabled).toBe(true);
+        expect(JSON.parse(stored!.secret!)).toEqual(route.protection);
+        keys.push(JSON.parse(stored!.secret!).signingKey);
+        publications++;
+      },
+    };
+    await registerProtectedProjectRoute(child, routing, {
+      domain: hostname,
+      tls: true,
+      targetUrl: "http://127.0.0.1:3000",
+    });
+    expect(publications).toBe(1);
+    expect(await repos.project.getEnvMap(child.id, "production", null)).toEqual({});
+    const [stored] = await db
+      .select()
+      .from(schema.routeProtection)
+      .where(eq(schema.routeProtection.projectId, child.id));
+    expect(stored.secret).not.toContain(policy.verifier);
+    expect(stored.secret).not.toContain(keys.at(-1)!);
+  }
+  expect(new Set(keys).size).toBe(2);
+  expect(keys).not.toContain(policy.signingKey);
+  for (const id of children) {
+    expect(await repos.routeProtection.list(id)).toHaveLength(1);
+    await db.delete(schema.project).where(eq(schema.project.id, id));
+    expect(await repos.routeProtection.list(id)).toEqual([]);
+    expect(await repos.pullRequestPreview.findByProject(id)).toBeUndefined();
+  }
 });

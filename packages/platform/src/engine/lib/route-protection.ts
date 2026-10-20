@@ -8,7 +8,7 @@ import {
   type RoutingProvider,
 } from "@repo/adapters";
 import { repos, type Project } from "@repo/db";
-import { randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { assertResourceInOrg } from "./resource-access";
 import { withProjectRuntimeLock } from "./project-runtime-lock";
 import { findActiveDeployment } from "./active-deployment";
@@ -94,6 +94,109 @@ function privatePolicy(row: { enabled: boolean; secret: string | null }): RouteP
   }
 }
 
+/** Preview settings contain only a reference to an existing encrypted policy. */
+export async function readPreviewRouteProtection(
+  ctx: ExecutionContext,
+  source: Project,
+  settings = source.previewSettings,
+) {
+  if (!settings?.protectionHostname) return null;
+  const hostname = hostnameOf(settings.protectionHostname);
+  if (!settings.baseDomain)
+    throw new AppError(
+      "Protected previews require a custom preview base domain.",
+      400,
+      "PREVIEW_ROUTE_PROTECTION_REQUIRED",
+    );
+  await selfHostedProject(ctx, source.id);
+  const owner = await repos.domain.findByHostname(hostname);
+  if (
+    owner &&
+    (owner.projectId !== source.id || owner.externalIngress || owner.domainType === "free")
+  )
+    throw new AppError(
+      "Choose a protected custom hostname owned by this source project.",
+      400,
+      "PREVIEW_ROUTE_PROTECTION_REQUIRED",
+    );
+  const row = await repos.routeProtection.readPrivate(source.id, hostname);
+  const policy = row && privatePolicy(row);
+  if (!policy)
+    throw new AppError(
+      "Save a password for the selected source hostname before enabling protected previews.",
+      409,
+      "PREVIEW_ROUTE_PROTECTION_REQUIRED",
+    );
+  return { row: row!, policy };
+}
+
+/** No plaintext password or source session key is copied into a preview. A
+ * deterministic child key makes duplicate deliveries and concurrent retries safe. */
+export async function inheritPreviewRouteProtection(projectId: string, hostname: string) {
+  const intent = await repos.pullRequestPreview.findByProject(projectId);
+  if (!intent) return;
+  const source = await repos.project.findByIdInOrganization(
+    intent.sourceProjectId,
+    intent.organizationId,
+  );
+  if (!source)
+    throw new AppError("Preview source is unavailable.", 409, "PREVIEW_ROUTE_PROTECTION_REQUIRED");
+  if (!source.previewSettings?.protectionHostname) return;
+  if (!source.previewSettings.enabled || source.deletedAt || source.deletionInProgress)
+    throw new AppError(
+      "Preview deployments are disabled.",
+      409,
+      "PREVIEW_ROUTE_PROTECTION_REQUIRED",
+    );
+  const child = await repos.project.findByIdInOrganization(projectId, intent.organizationId);
+  if (!child || child.environmentType !== "preview")
+    throw new AppError("Preview ownership is invalid.", 409, "PREVIEW_ROUTE_PROTECTION_REQUIRED");
+  await selfHostedProject({ organizationId: intent.organizationId } as ExecutionContext, child.id);
+  const inherited = (await readPreviewRouteProtection(
+    { organizationId: intent.organizationId } as ExecutionContext,
+    source,
+  ))!;
+  const domain = hostnameOf(hostname);
+  const scope = JSON.stringify([source.id, inherited.row.revision, child.id, domain]);
+  const revision = createHash("sha256").update(scope).digest("hex");
+  const prior = await repos.routeProtection.readPrivate(child.id, domain);
+  if (prior?.revision === revision && prior.enabled && prior.secret) {
+    privatePolicy(prior);
+    return prior;
+  }
+  const derive = (purpose: string) =>
+    createHmac("sha256", Buffer.from(inherited.policy.signingKey, "hex"))
+      .update(`${purpose}:${scope}`)
+      .digest("hex");
+  const policy = {
+    ...inherited.policy,
+    version: derive("preview-version").slice(0, 32),
+    signingKey: derive("preview-signing-key"),
+  };
+  const secret = JSON.stringify(policy);
+  await repos.routeProtection.save(child.id, domain, revision, secret);
+  return { hostname: domain, revision, appliedRevision: null, enabled: true, secret };
+}
+
+/** Rotation/revocation is retried by the existing durable preview reconciler. */
+export async function syncPreviewRouteProtection(ctx: ExecutionContext, projectId: string) {
+  for (const domain of await repos.domain.listByProject(projectId)) {
+    const row = await inheritPreviewRouteProtection(projectId, domain.hostname);
+    if (row && row.appliedRevision !== row.revision) {
+      const status = await changeRouteProtection(ctx, projectId, {
+        hostname: domain.hostname,
+        action: "retry",
+      });
+      if (status.status !== "applied")
+        throw new AppError(
+          "Preview password protection is pending on the edge.",
+          409,
+          "PREVIEW_ROUTE_PROTECTION_REQUIRED",
+        );
+    }
+  }
+}
+
 /** The same registration entry point serves deploy, retry, and live route edits. */
 export async function registerProtectedProjectRoute(
   project: Pick<Project, "id">,
@@ -101,6 +204,7 @@ export async function registerProtectedProjectRoute(
   route: RouteConfig,
 ): Promise<void> {
   const projectId = project.id;
+  await inheritPreviewRouteProtection(projectId, route.domain);
   const row = await repos.routeProtection.readPrivate(projectId, route.domain.toLowerCase());
   // The database owns the policy for managed project routes. Do not inherit a
   // sidecar password left by a previous project that used this hostname.
@@ -148,6 +252,25 @@ export async function changeRouteProtection(
     input.action === "protect" ? await createRouteProtection(input.password) : undefined;
   return withProjectRuntimeLock(projectId, async () => {
     const project = await selfHostedProject(ctx, projectId);
+    const intent = await repos.pullRequestPreview.findByProject(projectId);
+    if (intent) {
+      const source = await repos.project.findByIdInOrganization(
+        intent.sourceProjectId,
+        ctx.organizationId,
+      );
+      if (source?.previewSettings?.protectionHostname && input.action !== "retry")
+        throw new AppError(
+          "Manage inherited preview passwords and sessions on the source hostname.",
+          409,
+          "PREVIEW_ROUTE_PROTECTION_MANAGED",
+        );
+    }
+    if (input.action === "unlock" && project.previewSettings?.protectionHostname === hostname)
+      throw new AppError(
+        "Remove the preview protection reference after cleaning up its previews before unlocking this hostname.",
+        409,
+        "PREVIEW_ROUTE_PROTECTION_MANAGED",
+      );
     const domain = await repos.domain.findByHostname(hostname);
     if (domain && domain.projectId !== projectId)
       throw new NotFoundError("Project domain", hostname);
@@ -177,6 +300,9 @@ export async function changeRouteProtection(
         revision,
         policy === null ? null : JSON.stringify(policy),
       );
+    if (project.previewSettings?.protectionHostname === hostname)
+      for (const preview of await repos.pullRequestPreview.list(project.id, ctx.organizationId))
+        if (preview.projectId) await repos.pullRequestPreview.enqueue(preview);
     const result: RouteProtectionStatus = { hostname, enabled: policy !== null, status: "pending" };
     const deployment = await findActiveDeployment(project);
     if (!domain || !deployment) return result;
