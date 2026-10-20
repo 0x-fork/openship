@@ -85,9 +85,9 @@ describe("getProjectStatus — a blocked deploy needs attention", () => {
 
   // GH-672: the deploy said ready, then the background watch saw a service keep
   // restarting. The row is still `ready`, so only this flag stops a green "Live".
-  it("flags a live release that started restart-looping after it reported ready", () => {
-    expect(getProjectStatus({ activeDeploymentId: "d", restartLooping: true })).toBe("attention");
-    expect(getProjectStatus({ activeDeploymentId: "d", restartLooping: false })).toBe("live");
+  it("flags current runtime health and clears when its incident resolves", () => {
+    expect(getProjectStatus({ activeDeploymentId: "d", runtimeUnhealthy: true })).toBe("attention");
+    expect(getProjectStatus({ activeDeploymentId: "d", runtimeUnhealthy: false })).toBe("live");
   });
 });
 
@@ -178,9 +178,9 @@ describe("projectActionHref — every action badge has an owner", () => {
       "/projects/p1/domains",
     ],
     [
-      "restart loop after deploy",
-      { id: "p1", activeDeploymentId: "live", restartLooping: true },
-      "/projects/p1/deployments",
+      "runtime health needs attention",
+      { id: "p1", activeDeploymentId: "live", runtimeUnhealthy: true },
+      "/projects/p1/health",
     ],
     [
       "blocked deployment",

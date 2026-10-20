@@ -565,5 +565,5 @@
     }
   },
   "migrationAwaitingHint": "A migração está à sua espera — conclua a transição ou reverta-a em Definições → Avançado do projeto",
-  "restartLoopHint": "Um serviço continua a reiniciar após a última implementação — verifique os registos e volte a implementar"
+  "runtimeHealthHint": "Um serviço da versão ativa precisa de atenção — verifique o estado e os registros"
 }

@@ -25,7 +25,7 @@ export type IssueKind =
   | "prompt"
   | "partial_decision"
   | "routing_unsynced"
-  | "restart_loop"
+  | "runtime_health"
   | "domain_unverified"
   | "ssl_error"
   | "port_advisory"

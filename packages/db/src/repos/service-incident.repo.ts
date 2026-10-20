@@ -1,7 +1,7 @@
-import { and, desc, eq, isNull, isNotNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, isNotNull, lt, lte, sql, inArray, or, ne, notExists } from "drizzle-orm";
 import { generateId } from "@repo/core";
 import type { Database } from "../client";
-import { serviceIncident, type IncidentKind } from "../schema";
+import { serviceIncident, project, deployment, service, serviceDeployment, type IncidentKind } from "../schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -57,6 +57,98 @@ export function createServiceIncidentRepo(db: Database) {
       return db.query.serviceIncident.findMany({
         where: and(eq(serviceIncident.status, "open"), isNotNull(serviceIncident.projectId)),
       });
+    },
+
+    /** Current workload incidents for an authorized project batch. One query,
+     * no history cap and no runtime polling. An incident for a retired container
+     * or an intentionally stopped/disabled workload is not current attention. */
+    async listOpenForActiveProjects(
+      scopes: ReadonlyArray<{
+        id: string;
+        organizationId: string;
+        activeDeploymentId: string;
+      }>,
+    ): Promise<ServiceIncident[]> {
+      if (scopes.length === 0) return [];
+      const rows = await db
+        .select({ incident: serviceIncident })
+        .from(serviceIncident)
+        .innerJoin(
+          project,
+          and(
+            eq(project.id, serviceIncident.projectId),
+            eq(project.organizationId, serviceIncident.organizationId),
+          ),
+        )
+        .innerJoin(
+          deployment,
+          and(
+            eq(deployment.id, project.activeDeploymentId),
+            eq(deployment.projectId, project.id),
+            eq(deployment.organizationId, project.organizationId),
+          ),
+        )
+        .leftJoin(
+          service,
+          and(
+            eq(service.id, serviceIncident.serviceId),
+            eq(service.projectId, project.id),
+          ),
+        )
+        .leftJoin(
+          serviceDeployment,
+          and(
+            eq(serviceDeployment.serviceId, service.id),
+            eq(serviceDeployment.deploymentId, deployment.id),
+          ),
+        )
+        .where(
+          and(
+            eq(serviceIncident.status, "open"),
+            inArray(serviceIncident.kind, ["unhealthy", "crash_loop", "down"]),
+            isNull(project.disabledAt),
+            isNull(project.deletedAt),
+            or(
+              ...scopes.map((scope) =>
+                and(
+                  eq(project.id, scope.id),
+                  eq(project.organizationId, scope.organizationId),
+                  eq(deployment.id, scope.activeDeploymentId),
+                ),
+              ),
+            ),
+            or(
+              and(
+                eq(serviceIncident.serviceKey, service.id),
+                eq(service.enabled, true),
+                sql`coalesce(${service.advanced}->>'monitoringEnabled', 'true') <> 'false'`,
+                ne(serviceDeployment.status, "stopped"),
+                eq(serviceIncident.containerId, serviceDeployment.containerId),
+              ),
+              and(
+                isNull(serviceIncident.serviceId),
+                notExists(
+                  db
+                    .select({ id: service.id })
+                    .from(service)
+                    .where(eq(service.projectId, project.id)),
+                ),
+                or(
+                  and(
+                    eq(serviceIncident.serviceKey, "__app__"),
+                    eq(serviceIncident.containerId, deployment.containerId),
+                  ),
+                  sql`exists (select 1 from jsonb_array_elements(case
+                when jsonb_typeof(${deployment.roleContainers}) = 'array' then ${deployment.roleContainers}
+                else '[]'::jsonb end) as role where
+                role->>'containerId' = ${serviceIncident.containerId}
+                and ${serviceIncident.serviceKey} = '__role__:' || (role->>'role') || ':' || (role->>'replica'))`,
+                ),
+              ),
+            ),
+          ),
+        );
+      return rows.map((row) => row.incident);
     },
 
     /**

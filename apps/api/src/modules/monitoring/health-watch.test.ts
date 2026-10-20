@@ -181,6 +181,11 @@ vi.mock("@repo/db", () => {
         create: vi.fn(async () => ({ id: `audit-${h.incidents.length}` })),
       },
       serviceIncident: {
+        listOpenForActiveProjects: vi.fn(async (scopes: Array<{ id: string; organizationId: string; activeDeploymentId: string }>) =>
+          h.incidents.filter((incident) => incident.status === "open" && scopes.some(scope =>
+            scope.id === incident.projectId && scope.organizationId === incident.organizationId &&
+            h.deployments.some(dep => dep.id === scope.activeDeploymentId && dep.containerId === incident.containerId))),
+        ),
         listOpen: vi.fn(async () =>
           h.incidents.filter((r) => r.status === "open" && r.projectId).map((r) => ({ ...r })),
         ),
@@ -2611,5 +2616,26 @@ describe("filtered run", () => {
     // would keep themselves alive and turning the health-watch job off would never
     // drain the streams.
     expect(h.renew).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("project attention from the existing watcher", () => {
+  it("shows a confirmed fault and clears after recovery without a second sampler or notification", async () => {
+    const { projectId, containerId } = seedApp();
+    const project = h.projects.find(row => row.id === projectId)!;
+    const { loadProjectRuntimeHealth } = await import("@repo/platform/engine/modules/projects/project-runtime-health");
+    setState(containerId, "exited", { exitCode: 1 });
+    await confirm();
+    expect(openFor(projectId)).toHaveLength(1);
+    const notified = h.emit.mock.calls.length;
+    expect((await loadProjectRuntimeHealth([project as never])).get(projectId)).toHaveLength(1);
+    expect((await loadProjectRuntimeHealth([project as never])).get(projectId)).toHaveLength(1);
+    expect(h.emit).toHaveBeenCalledTimes(notified);
+    setState(containerId, "running");
+    await tick();
+    expect(openFor(projectId)).toHaveLength(0);
+    expect((await loadProjectRuntimeHealth([project as never])).size).toBe(0);
+    expect(h.deployments.find(dep => dep.projectId === projectId)?.status).toBe("ready");
   });
 });

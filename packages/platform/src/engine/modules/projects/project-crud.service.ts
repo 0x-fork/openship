@@ -170,12 +170,13 @@ type ParsedComposeServiceInput = NonNullable<EnsureProjectBody["services"]>[numb
 // pending-actions aggregator can share them without importing this file's graph.
 // Imported (this file calls one below) AND re-exported, because the
 // project.service barrel is the established import surface for callers.
-import { deploymentIsBlocked, deploymentRestartLooping, deploymentRoutingUnsynced } from "./deployment-flags";
-export { deploymentIsBlocked, deploymentRestartLooping, deploymentRoutingUnsynced };
+import { deploymentIsBlocked, deploymentRoutingUnsynced } from "./deployment-flags";
+export { deploymentIsBlocked, deploymentRoutingUnsynced };
 
 // Same reason: the run→payload projection is an allowlist that must be readable and
 // testable without this file's graph. See the module doc for what it deliberately drops.
 import { readActiveMigration } from "./active-migration";
+import { loadProjectRuntimeHealth } from "./project-runtime-health";
 
 /**
  * Is a live migration even POSSIBLE for a project on this instance?
@@ -230,7 +231,6 @@ function readActiveDeploymentSummary(dep: Deployment | null | undefined): {
   awaitingDecision: boolean;
   routingUnsynced: boolean;
   routingWarning: string | null;
-  restartLooping: boolean;
 } {
   const meta = (dep?.meta ?? null) as {
     composeDeployment?: { decision?: string };
@@ -255,8 +255,6 @@ function readActiveDeploymentSummary(dep: Deployment | null | undefined): {
      * in this same meta blob.
      */
     routingWarning: (meta?.deployWarning ?? null) || null,
-    /** Reported ready, then the background watch caught a service restart-looping (GH-672). */
-    restartLooping: deploymentRestartLooping(dep),
   };
 }
 
@@ -304,7 +302,9 @@ export async function enrichProject(p: Project) {
   // that renders a project — cards, sidebar, the page header, its own Advanced tab — already
   // reads this payload. Anywhere else would be a second thing to fetch and a second place
   // for the answer to disagree.
-  const activeMigration = await loadActiveMigration(p.id);
+  const [activeMigration, runtimeHealth] = await Promise.all([
+    loadActiveMigration(p.id), loadProjectRuntimeHealth([p]),
+  ]);
 
   return {
     ...p,
@@ -312,6 +312,7 @@ export async function enrichProject(p: Project) {
     serverId,
     serverName,
     activeMigration,
+    runtimeUnhealthy: (runtimeHealth.get(p.id)?.length ?? 0) > 0,
     ...readEnabled(p),
     ...readActiveDeploymentSummary(activeDep),
     resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
@@ -329,7 +330,8 @@ export async function enrichProject(p: Project) {
  *
  * Per-project query count: 0 (data is pre-fetched).
  * Total SQL cost: 1 (deployment.findManyById) + 1 (server.getMany) + 1
- * (dockerMigrationRun.findActiveForProjects, self-hosted only).
+ * (dockerMigrationRun.findActiveForProjects, self-hosted only) + 1
+ * (serviceIncident.listOpenForActiveProjects, self-hosted only).
  */
 export async function enrichProjectsBatch(
   projects: Project[],
@@ -360,7 +362,9 @@ export async function enrichProjectsBatch(
   // ONE statement for every project's live run, so the "Migrating" pill on a list of 50
   // projects costs a query rather than 50. The map is empty on cloud (no migrations there)
   // and on any failure — a lookup for a status pill must never fail a project list.
-  const activeMigrations = await loadActiveMigrations(projects.map((p) => p.id));
+  const [activeMigrations, runtimeHealth] = await Promise.all([
+    loadActiveMigrations(projects.map((p) => p.id)), loadProjectRuntimeHealth(projects),
+  ]);
 
   return projects.map((p) => {
     const production = p.resources as ResourceConfig | null;
@@ -383,6 +387,7 @@ export async function enrichProjectsBatch(
       serverId,
       serverName,
       activeMigration: readActiveMigration(activeMigrations.get(p.id)),
+      runtimeUnhealthy: (runtimeHealth.get(p.id)?.length ?? 0) > 0,
       ...readEnabled(p),
       ...readActiveDeploymentSummary(activeDep),
       resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {

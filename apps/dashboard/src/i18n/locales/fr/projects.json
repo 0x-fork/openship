@@ -565,5 +565,5 @@
     }
   },
   "migrationAwaitingHint": "La migration vous attend — terminez le basculement ou annulez-le dans Paramètres → Avancé du projet",
-  "restartLoopHint": "Un service redémarre en boucle depuis le dernier déploiement — consultez ses journaux, puis redéployez"
+  "runtimeHealthHint": "Un service de la version active nécessite votre attention : consultez son état et ses journaux"
 }

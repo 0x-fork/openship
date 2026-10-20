@@ -147,7 +147,6 @@ import {
 import type { HostPortTargetIdentity } from "../../lib/host-port-target";
 import { reserveResolvedLoopbackRoutes } from "./observed-host-port-claims";
 import { verifyDeployedContainers } from "./stability-audit.service";
-import { scheduleBackgroundStabilityWatch } from "./post-deploy-watch.service";
 import {
   resolveReadinessGate,
   runReadinessGate,
@@ -761,9 +760,6 @@ export async function finalizeComposeDeploy(opts: {
   const settled = await repos.deployment.findById(dep.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/build-pipeline"); return null; });
   if (settled?.status === "ready" || settled?.status === "partial_failure") {
     await archivePreviousDeployment(dep, project, logger);
-    // Non-blocking: keep watching the stack after it reported ready, and flag
-    // the release if a service starts restart-looping (GH-672).
-    scheduleBackgroundStabilityWatch(dep.id);
   }
 }
 
@@ -3065,10 +3061,6 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   });
 
   await archivePreviousDeployment(dep, project, logger);
-
-  // Non-blocking: keep watching the container after the deploy reported ready,
-  // and flag the release if it starts restart-looping (GH-672).
-  scheduleBackgroundStabilityWatch(dep.id);
 }
 
 /** After a successful deploy: managed-edge sync + prune obsolete

@@ -565,5 +565,5 @@
     }
   },
   "migrationAwaitingHint": "Migration wartet auf dich — Umschaltung unter „Einstellungen → Erweitert“ im Projekt abschließen oder zurücknehmen",
-  "restartLoopHint": "Ein Dienst startet seit dem letzten Deployment ständig neu — Logs prüfen und erneut deployen"
+  "runtimeHealthHint": "Ein Dienst der aktiven Version erfordert Aufmerksamkeit — prüfe Status und Protokolle"
 }

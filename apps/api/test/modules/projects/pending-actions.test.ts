@@ -19,6 +19,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const {
+  currentIncidents,
   projectFindById,
   projectListByOrganization,
   findLatestByProject,
@@ -28,6 +29,7 @@ const {
   listByProject,
   listByProjects,
 } = vi.hoisted(() => ({
+  currentIncidents: vi.fn(),
   projectFindById: vi.fn(),
   projectListByOrganization: vi.fn(),
   findLatestByProject: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock("@repo/db", () => ({
       findManyById,
     },
     domain: { listByProject, listByProjects },
+    serviceIncident: { listOpenForActiveProjects: currentIncidents },
   },
 }));
 
@@ -92,6 +95,7 @@ const blockedByPort = (over: Record<string, unknown> = {}) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  currentIncidents.mockResolvedValue([]);
 
   projectFindById.mockResolvedValue({
     id: PROJECT,
@@ -800,61 +804,41 @@ describe("scoping", () => {
   });
 });
 
-/**
- * GH-672: a release that reported ready and THEN started restart-looping. The
- * deploy row still says `ready`, so this item is the only thing that turns the
- * project from a green "Live" into "Action Required".
- */
-describe("restart_loop", () => {
-  const looping = (over: Record<string, unknown> = {}) =>
-    dep({
-      id: "dep-live",
-      meta: {
-        restartLoop: {
-          detectedAt: "2026-10-13T00:00:00.000Z",
-          services: [
-            {
-              serviceId: "svc_1",
-              serviceName: "api",
-              reason: "restarted 4 times in 60s",
-              exitCode: 1,
-              oomKilled: false,
-              detail: '"api" did not stay up: restarted 4 times in 60s',
-            },
-          ],
-        },
-      },
-      ...over,
-    });
+describe("runtime health from the existing incident state", () => {
+  const activeProject = () => ({ id: PROJECT, organizationId: ORG, activeDeploymentId: "dep-live" });
+  const incident = (kind = "crash_loop") => ({ id: "incident", projectId: PROJECT,
+    organizationId: ORG, status: "open", kind, serviceId: "svc_1", serviceName: "api",
+    reason: "service is not healthy", restartCount: 8, exitCode: 1, oomKilled: false });
 
-  it("is surfaced from the ACTIVE release as action required, resolved by redeploy", async () => {
-    projectFindById.mockResolvedValue({ id: PROJECT, organizationId: ORG, activeDeploymentId: "dep-live" });
-    deploymentFindById.mockResolvedValue(looping());
-
+  it.each(["unhealthy", "crash_loop", "down"])("shows current %s without rewriting deployment success", async kind => {
+    projectFindById.mockResolvedValue(activeProject());
+    deploymentFindById.mockResolvedValue(dep({ id: "dep-live" }));
+    currentIncidents.mockResolvedValue([incident(kind)]);
     const actions = await getProjectPendingActions(PROJECT, ORG);
-
-    expect(actions).toHaveLength(1);
-    expect(actions[0]).toMatchObject({
-      id: "restart_loop:dep-live",
-      kind: "restart_loop",
-      severity: "action_required",
-      title: "api is restart-looping",
-    });
-    expect(actions[0].message).toContain("restarted 4 times in 60s");
-    expect(actions[0].resolveWith).toEqual([
-      { label: "Redeploy", method: "POST", path: "/api/deployments/dep-live/redeploy" },
-    ]);
-  });
-
-  it("is listed on the deployment's own view too", async () => {
-    deploymentFindById.mockResolvedValue(looping());
-    const actions = await getDeploymentPendingActions("dep-live", ORG);
-    expect(actions.map((a) => a.kind)).toEqual(["restart_loop"]);
-  });
-
-  it("is silent when the background watch found nothing", async () => {
-    projectFindById.mockResolvedValue({ id: PROJECT, organizationId: ORG, activeDeploymentId: "dep-live" });
-    deploymentFindById.mockResolvedValue(looping({ meta: { restartLoop: null } }));
+    expect(actions).toEqual([expect.objectContaining({ kind: "runtime_health", severity: "action_required",
+      details: expect.objectContaining({ deploymentId: "dep-live", href: `/projects/${PROJECT}/health` }) })]);
+    expect(actions[0]!.resolveWith[0]).toMatchObject({ method: "POST", path: "/api/deployments/dep-live/redeploy" });
+    currentIncidents.mockResolvedValue([]);
     expect(await getProjectPendingActions(PROJECT, ORG)).toEqual([]);
+  });
+
+  it("shows the action only on the active deployment, never a historical release or persisted old flag", async () => {
+    projectFindById.mockResolvedValue(activeProject());
+    deploymentFindById.mockResolvedValue(dep({ id: "dep-live" }));
+    currentIncidents.mockResolvedValue([incident()]);
+    expect((await getDeploymentPendingActions("dep-live", ORG)).map(row => row.kind)).toEqual(["runtime_health"]);
+    currentIncidents.mockClear();
+    projectFindById.mockResolvedValue({ ...activeProject(), activeDeploymentId: "new-release" });
+    deploymentFindById.mockResolvedValue(dep({ id: "dep-live", meta: { restartLoop: { services: [{}] } } }));
+    expect(await getDeploymentPendingActions("dep-live", ORG)).toEqual([]);
+    expect(currentIncidents).not.toHaveBeenCalled();
+  });
+
+  it("does not duplicate workload incidents in the global Issues pending-action source", async () => {
+    projectListByOrganization.mockResolvedValue({ rows: [activeProject()] });
+    findManyById.mockResolvedValue(new Map([["dep-live", dep({ id: "dep-live" })]]));
+    currentIncidents.mockResolvedValue([incident()]);
+    expect(await getOrgPendingActions(ORG)).toEqual(new Map());
+    expect(currentIncidents).not.toHaveBeenCalled();
   });
 });
