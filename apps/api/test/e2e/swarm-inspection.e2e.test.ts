@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import Dockerode from "dockerode";
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { inspectDockerSwarm, type CommandExecutor } from "@repo/adapters";
 import { probeEdge, freeEdgeTargets } from "../../../../packages/adapters/src/system/proxy/detect";
 import { describeDockerE2E, dockerSocketPath, requireDocker } from "../helpers/docker-e2e";
@@ -53,18 +53,10 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
         port: Number(inspect.NetworkSettings.Ports["2375/tcp"][0].HostPort),
         timeout: 5000,
       });
-      await expect
-        .poll(
-          async () => {
-            try {
-              return await node.ping();
-            } catch {
-              return "starting";
-            }
-          },
-          { timeout: 40_000, interval: 500 },
-        )
-        .toBe("OK");
+      await vi.waitFor(async () => expect(await node.ping()).toBe("OK"), {
+        timeout: 40_000,
+        interval: 500,
+      });
       return {
         node,
         container,
@@ -109,13 +101,13 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       "fixture",
       compose,
     ]);
-    await expect
-      .poll(
-        async () =>
+    await vi.waitFor(
+      async () =>
+        expect(
           (await inspectDockerSwarm(manager, true)).inventory?.stacks[0]?.services[0]?.runningTasks,
-        { timeout: 120_000, interval: 1000 },
-      )
-      .toBe(1);
+        ).toBe(1),
+      { timeout: 120_000, interval: 1000 },
+    );
   }, 360_000);
 
   afterAll(async () => {
