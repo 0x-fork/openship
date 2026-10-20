@@ -2,7 +2,7 @@ module github.com/oblien/openship/packages/actions-runner
 
 go 1.25.0
 
-toolchain go1.26.4
+toolchain go1.26.9
 
 require (
 	github.com/containerd/errdefs v1.0.0
