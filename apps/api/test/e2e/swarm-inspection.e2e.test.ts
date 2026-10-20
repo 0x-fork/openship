@@ -53,7 +53,7 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
         port: Number(inspect.NetworkSettings.Ports["2375/tcp"][0].HostPort),
         timeout: 5000,
       });
-      await vi.waitFor(async () => expect(await node.ping()).toBe("OK"), {
+      await vi.waitFor(async () => expect(String(await node.ping())).toBe("OK"), {
         timeout: 40_000,
         interval: 500,
       });
