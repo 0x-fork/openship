@@ -72,6 +72,7 @@ import {
 // gh-CLI (github.local-auth) is imported DYNAMICALLY at its two self-hosted
 // "local"-purpose call sites below, so the gh module never loads in CLOUD_MODE.
 import { canUseGitHubRepo, type GitHubAccessOp } from "./github-access";
+import { isTransientGitHubFailure } from "./github.error";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { mayUseInstanceGitIdentity } from "./github-instance-access";
 
@@ -575,6 +576,12 @@ async function mayUseOperatorCliToken(
  * otherwise be silently downgraded to a broader user PAT / OAuth token with
  * no trace — masking a security-relevant signal. Returns null on failure so
  * the priority chain continues unchanged.
+ *
+ * A transient failure (GitHub 5xx, rate limit, timeout, broken connection) is
+ * rethrown instead: it says nothing about the installation, so it must neither
+ * fall through to a broader credential nor surface as GITHUB_TOKEN_REQUIRED,
+ * which callers such as the Actions runner reconciler treat as a definitive
+ * loss of access and act on by cancelling running jobs.
  */
 async function tryInstallationToken(
   ctx: RequestContext,
@@ -587,6 +594,7 @@ async function tryInstallationToken(
       repositories: repo ? [repo] : undefined,
     });
   } catch (err) {
+    if (isTransientGitHubFailure(err)) throw err;
     errorDiagnostics.warn("platform/engine/modules/github/github.token",
       `[github.token] App installation token mint failed for owner=${owner}` +
         `${installationId ? ` install=${installationId}` : ""}: ` +
