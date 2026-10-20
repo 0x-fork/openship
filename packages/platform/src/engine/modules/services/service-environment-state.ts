@@ -212,12 +212,19 @@ async function inspectServiceEnvironment(saved: SavedEnvironment) {
         "SERVICE_ENVIRONMENT_UNAVAILABLE",
       );
     const imageEnv = await runtime.inspectImageEnv(detail.imageId, { required: true });
+    const current = envEntries(detail.env);
+    const image = envEntries(imageEnv);
     return {
       containerId: detail.id,
-      current: envEntries(detail.env),
-      image: envEntries(imageEnv),
-      // Use migration's provenance rules; image defaults are not recovered as overrides.
-      recoverable: toDiscoveredService(detail, undefined, imageEnv).env,
+      current,
+      image,
+      // A value supplied by the immutable image survives replacement without an
+      // override, even if an older deploy explicitly repeated it in Config.Env.
+      recoverable: Object.fromEntries(
+        Object.entries(toDiscoveredService(detail, undefined, imageEnv).env ?? {}).filter(
+          ([key, value]) => value !== image[key],
+        ),
+      ),
       serverId,
       cloudRuntime: !!saved.project.workspaceId,
     };

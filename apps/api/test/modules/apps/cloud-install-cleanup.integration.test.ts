@@ -14,14 +14,23 @@ vi.mock("@repo/platform/engine/config/env", async (original) => {
     },
   };
 });
-vi.mock("@repo/platform/engine/lib/openship-cloud", () => ({
-  issueNamespaceToken: async (organizationId: string, workspaceId: string) => {
+vi.mock("@repo/platform/engine/lib/openship-cloud", () => {
+  const issueNamespaceToken = async (organizationId: string, workspaceId: string) => {
     const { repos } = await import("@repo/db");
     const owner = await repos.cloudWorkspace.findByIdInOrganization(workspaceId, organizationId);
     if (!owner?.namespace) throw new Error("Managed server owner missing");
     return { namespace: owner.namespace, token: `test-${organizationId}` };
-  },
-}));
+  };
+  return {
+    issueNamespaceToken,
+    getNamespaceClient: async (organizationId: string, workspaceId: string) => {
+      const credentials = await issueNamespaceToken(organizationId, workspaceId);
+      const { Oblien } = await import("@repo/adapters");
+      return { namespace: credentials.namespace,
+        client: new Oblien({ token: credentials.token, baseUrl: "https://provider.openship.test" }) };
+    },
+  };
+});
 vi.mock("@repo/platform/engine/modules/billing/billing-oblien-quota", async (original) => ({
   ...(await original<object>()),
   assertCloudCanSpend: async () => {},
@@ -441,7 +450,10 @@ describe("Supabase Cloud installation failure and deletion", () => {
     const result = await remove(owner, projectId);
     expect(result.status, JSON.stringify(result.body)).toBe(409);
     expect(result.body.code).toBe("PROJECT_TEARDOWN_FAILED");
-    expect(await repos.project.findById(projectId)).toMatchObject({ deletionInProgress: false });
+    expect(await repos.project.findById(projectId)).toMatchObject({
+      deletionInProgress: true,
+      lifecycleOperation: { kind: "delete", status: "failed", error: expect.stringMatching(/\S/) },
+    });
     expect(await repos.project.listEnvVars(projectId)).toEqual(secrets);
     expect(workspaces.size).toBe(1);
     expect(requests.slice(beforeDelete).some(request => request.startsWith("DELETE "))).toBe(false);

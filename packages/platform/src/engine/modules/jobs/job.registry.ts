@@ -71,6 +71,8 @@ const ANALYTICS_ROLLUP_RETENTION_DAYS = 400;
 const RESOURCE_USAGE_RETENTION_DAYS = 30;
 
 export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
+  { key: "github:pr-previews", label: "Pull request preview environments", defaultCron: "*/30 * * * * *",
+    run: async () => { await (await import("../projects/pull-request-previews")).runPullRequestPreviewsSweep(); return { checked: true }; } },
   {
     key: "github:deployment-checks",
     label: "GitHub deployment Checks",
@@ -454,7 +456,6 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     // Build cache is daemon-wide and has no reliable project label. Keep a 5 GiB
     // LRU budget on each Docker host instead of coupling it to image retention.
     defaultCron: "37 4 * * *",
-    available: () => platform().target !== "cloud",
     run: async () => {
       const r = await runBuildCacheGcSweep();
       return {

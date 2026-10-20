@@ -45,6 +45,7 @@ const {
       update: vi.fn(),
     },
     deployment: {
+      listPendingRoleHandovers: vi.fn(async () => []),
       findById: vi.fn(),
       findInProgressByCommit: vi.fn(),
       listInFlightByProject: vi.fn(),
@@ -616,6 +617,41 @@ describe("buildConfigSnapshot — release commands", () => {
   });
 });
 
+/**
+ * Runtime roles (#935) follow the release-commands rule: frozen only when the
+ * project has some, so a project without roles snapshots byte-identical to
+ * before. when/unless are preset gating and never reach a snapshot.
+ */
+describe("buildConfigSnapshot: roles", () => {
+  const worker = { name: "jobs", kind: "worker", command: "bin/jobs", replicas: 2 };
+
+  it("freezes the project's declared roles onto the snapshot", () => {
+    const scheduler = { name: "cron", kind: "scheduler", command: "bin/cron", singleton: true };
+    const snapshot = buildConfigSnapshot(baseProject({ roles: [worker, scheduler] }) as any);
+    expect(snapshot.roles).toEqual([worker, scheduler]);
+  });
+
+  it("omits the key entirely for null, [] and a project that never declared any", () => {
+    for (const roles of [null, [], undefined]) {
+      const snapshot = buildConfigSnapshot(baseProject({ roles }) as any);
+      expect("roles" in snapshot).toBe(false);
+    }
+  });
+
+  it("never carries the preset-only when/unless fields", () => {
+    const snapshot = buildConfigSnapshot(
+      baseProject({
+        roles: [
+          { ...worker, when: { deps: ["solid_queue"] }, unless: { deps: ["sidekiq"] } },
+        ],
+      }) as any,
+    );
+    expect(snapshot.roles).toEqual([worker]);
+    expect(snapshot.roles?.[0]).not.toHaveProperty("when");
+    expect(snapshot.roles?.[0]).not.toHaveProperty("unless");
+  });
+});
+
 describe("triggerDeployment", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -662,6 +698,83 @@ describe("triggerDeployment", () => {
     runPreflightChecks.mockResolvedValue({ ok: true, checks: [] });
     kickoffBuild.mockResolvedValue("session-1");
   });
+
+  it.each(
+    ["manual", "retry", "latest retry"].flatMap((entry) =>
+      ["compose", "single"].map((mode) => ({ entry, mode })),
+    ),
+  )(
+    "keeps $mode source configuration at the selected commit during $entry",
+    async ({ entry, mode }) => {
+      const sha = "a".repeat(40);
+      const project = baseProject({
+        gitProvider: "github",
+        gitOwner: "acme",
+        gitRepo: "app",
+        gitUrl: "https://github.com/acme/app.git",
+        localPath: null,
+        framework: mode === "compose" ? "docker-compose" : "node",
+        composePath: mode === "compose" ? "compose.production.yml" : null,
+      });
+      repos.project.findById.mockResolvedValue(project);
+      const currentEnv = { MANUAL_ENV: encrypt("current-setting") };
+      repos.project.getEnvMap.mockResolvedValue(currentEnv);
+      const state =
+        mode === "compose" ? installStatefulComposeRepo(criticalApiService()) : undefined;
+      resolveProjectInfo.mockImplementation(async ({ branch }) => {
+        // HEAD has since removed the deployment's Compose file. Reading it
+        // must not block rebuilding the selected commit where it still exists.
+        if (branch !== sha)
+          throw new ComposeConfigurationError("Compose file no longer exists at HEAD");
+        return {
+          services: [{ ...criticalApiService(), image: "example/api:selected-commit" }],
+          openshipEnv: { SOURCE_DEFAULT: "selected-commit" },
+        };
+      });
+      resolveProjectSourceEnv.mockImplementation(async ({ branch }) => ({
+        openshipEnv: { SOURCE_DEFAULT: branch === sha ? "selected-commit" : "wrong-head" },
+      }));
+      const actualPipeline = await vi.importActual<
+        typeof import("@repo/platform/engine/modules/deployments/build-pipeline")
+      >("@repo/platform/engine/modules/deployments/build-pipeline");
+      resolveServicePipelineMode.mockImplementation(actualPipeline.resolveServicePipelineMode);
+      if (entry === "manual") {
+        await triggerDeployment(ctx, { projectId: project.id, branch: "main", commitSha: sha });
+      } else {
+        repos.deployment.findById.mockResolvedValue({
+          id: "dep-old",
+          projectId: project.id,
+          organizationId: project.organizationId,
+          branch: "main",
+          environment: "production",
+          commitSha: sha,
+          envVars: { MANUAL_ENV: encrypt("old-release-setting") },
+          meta: {
+            ...baseSnapshot(),
+            localPath: undefined,
+            repoUrl: project.gitUrl,
+            serviceDeploymentMode: mode === "single" ? "single" : "services",
+          },
+        });
+        if (entry === "latest retry")
+          getLatestCommit.mockResolvedValueOnce({ sha, message: "selected commit" });
+        await redeployBuildSession(ctx, "dep-old", { useExistingCommit: entry === "retry" });
+      }
+      const queued = repos.deployment.create.mock.calls.at(-1)![0];
+      expect(queued).toMatchObject({ branch: "main", commitSha: sha });
+      expect(decrypt(queued.envVars.SOURCE_DEFAULT)).toBe("selected-commit");
+      expect(decrypt(queued.envVars.MANUAL_ENV)).toBe("current-setting");
+      if (mode === "compose") {
+        expect(state!.stored().image).toBe("example/api:selected-commit");
+        expect(queued.meta.composeServices).toEqual([
+          expect.objectContaining({ image: "example/api:selected-commit" }),
+        ]);
+      } else {
+        expect(resolveProjectInfo).not.toHaveBeenCalled();
+      }
+      expect(kickoffBuild).toHaveBeenCalledOnce();
+    },
+  );
 
   it("returns a required-check receipt without starting a deployment or reconciling configuration", async () => {
     queueActionDeployment.mockResolvedValue({ id: "receipt-1", status: "waiting" });
@@ -1326,7 +1439,7 @@ describe("triggerDeployment", () => {
         source: "github",
         owner: "acme",
         repo: "app",
-        branch: "main",
+        branch: commitSha,
         composePath: "deploy/stack.yml",
         rootDirectory: "deploy",
       }),

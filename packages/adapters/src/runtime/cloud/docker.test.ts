@@ -1,3 +1,9 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { mkdtemp, mkdir, writeFile, readFile, access, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { commandToArgv } from "@repo/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PassThrough } from "node:stream";
 import type { Oblien } from "oblien";
@@ -77,7 +83,11 @@ beforeEach(async () => {
       NetworkSettings: { Ports: {} },
     }) }),
     getImage: () => ({ inspect: async () => ({ Config: { Volumes: { "/image-data": {} } } }) }),
-    getVolume: () => ({ inspect: async () => ({ Labels: { "openship.project": "project-a" } }) }),
+    getVolume: (name: string) => ({ inspect: async () => {
+      if (!name.startsWith("openship-project-a-"))
+        throw Object.assign(new Error("missing volume"), { statusCode: 404 });
+      return { Labels: { "openship.project": "project-a" } };
+    } }),
   } as never);
   vi.spyOn(DockerRuntime.prototype, "deployServiceWorkload").mockImplementation(async (_group, input) => {
     captures.push(input);
@@ -356,6 +366,103 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(captures[1]!.volumes).toEqual(captures[0]!.volumes);
     expect(ws.delete).not.toHaveBeenCalled();
   });
+  it("isolates a new WordPress installation from a previous project's volumes and keeps backup identities stable", async () => {
+    vi.mocked(DockerRuntime.prototype.deployServiceWorkload).mockRestore();
+    const legacy = "openship-wordpress-wordpress_db_data";
+    const stored = new Map<string, { Labels: Record<string, string> }>([
+      [legacy, { Labels: { "openship.project": "deleted-project" } }],
+    ]);
+    const createVolume = vi.fn(async (input: { Name: string; Labels: Record<string, string> }) => {
+      stored.set(input.Name, { Labels: input.Labels });
+    });
+    const docker = {
+      ...runtime.docker,
+      getContainer: () => ({
+        inspect: async () => {
+          throw Object.assign(new Error("missing container"), { statusCode: 404 });
+        },
+        stop: async () => {
+          throw Object.assign(new Error("missing container"), { statusCode: 404 });
+        },
+        remove: async () => {
+          throw Object.assign(new Error("missing container"), { statusCode: 404 });
+        },
+      }),
+      createContainer: vi.fn(async (_input: { HostConfig: { Binds: string[] } }) => ({
+        id: "wordpress-container",
+        start: async () => {},
+        inspect: async () => ({ NetworkSettings: { Networks: {}, Ports: {} } }),
+      })),
+      getVolume: (name: string) => ({
+        inspect: async () => {
+          const volume = stored.get(name);
+          if (!volume) throw Object.assign(new Error("missing volume"), { statusCode: 404 });
+          return volume;
+        },
+      }),
+      createVolume,
+    };
+    vi.spyOn(runtime, "docker", "get").mockReturnValue(docker as never);
+    const wordpress = {
+      ...config,
+      slug: "wordpress",
+      serviceName: "wordpress-db",
+      volumes: ["wordpress_db_data:/var/lib/mysql"],
+    };
+    await runtime.deployServiceWorkload(group, wordpress);
+    await runtime.deployServiceWorkload(group, { ...wordpress, deploymentId: "d2" });
+    const binds = docker.createContainer.mock.calls.map(([input]) => input.HostConfig.Binds);
+    const source = binds[0]!.find((volume) => volume.endsWith(":/var/lib/mysql"))!.split(":")[0]!;
+    expect(source).toMatch(/^openship-project-[a-f0-9]{32}-wordpress_db_data$/);
+    expect(binds[1]).toEqual(binds[0]);
+    expect(stored.get(legacy)).toEqual({ Labels: { "openship.project": "deleted-project" } });
+    expect(stored.get(source)).toEqual({ Labels: { "openship.project": "project-a" } });
+    const creates = createVolume.mock.calls.length;
+    const backup = new DockerBackupExecutor(runtime);
+    const sources = await backup.listSources({
+      id: "wordpress-db",
+      projectId: "project-a",
+      projectSlug: "wordpress",
+      name: "wordpress-db",
+      image: "test:1",
+      env: {},
+      volumes: wordpress.volumes,
+      containerId: null,
+      namespaceVolumes: true,
+    });
+    expect(sources.map((volume) => volume.source)).toEqual([source]);
+    expect(createVolume).toHaveBeenCalledTimes(creates);
+  });
+  it.each(["project-a", "project-b"])(
+    "preserves explicit backup source identity and checks its owner (%s)",
+    async (owner) => {
+      const source = "openship-project-00000000000000000000000000000000-data";
+      vi.spyOn(runtime, "docker", "get").mockReturnValue({
+        ...runtime.docker,
+        getVolume: (name: string) => ({
+          inspect: async () => {
+            if (name !== source)
+              throw Object.assign(new Error("missing volume"), { statusCode: 404 });
+            return { Labels: { "openship.project": owner } };
+          },
+        }),
+      } as never);
+      const pending = new DockerBackupExecutor(runtime).listSources({
+        id: "db",
+        projectId: "project-a",
+        projectSlug: "project-a",
+        name: "db",
+        image: "test:1",
+        env: {},
+        volumes: [`${source}:/data`],
+        containerId: null,
+        namespaceVolumes: false,
+      });
+      if (owner === "project-a")
+        expect((await pending).map((volume) => volume.source)).toEqual([source]);
+      else await expect(pending).rejects.toMatchObject({ code: "CLOUD_STORAGE_FORBIDDEN" });
+    },
+  );
   it("reserves a stopped sibling's ports and restores them when that service is redeployed", async () => {
     const first = await runtime.deployServiceWorkload(group, config);
     const reservedPort = first.hostPortByContainerPort![8080];
@@ -576,4 +683,47 @@ describe("containers on one Oblien Docker workspace", () => {
     expect(runtime.executor.writeFile).not.toHaveBeenCalled();
     expect(runtime.executor.exec).toHaveBeenCalledTimes(2); // Allocate and remove only the isolated staging directory.
   });
+});
+
+it("removes failed static staging files while preserving application data and neighboring projects", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "openship-delete-static-"));
+  const project = join(directory, "project-a");
+  const staging = join(project, "bare", ".builds");
+  const data = join(project, "database", "keep.txt");
+  const neighbor = join(directory, "project-b", "keep.txt");
+  try {
+    await mkdir(join(staging, "failed-build"), { recursive: true });
+    await mkdir(join(project, "database"), { recursive: true });
+    await mkdir(join(directory, "project-b"), { recursive: true });
+    await writeFile(join(staging, "failed-build", "index.html"), "unused build");
+    await writeFile(data, "application data");
+    await writeFile(neighbor, "neighbor data");
+    Object.defineProperty(runtime, "projectPaths", {
+      get: () => ({
+        mounts: project,
+        bare: join(project, "bare"),
+        routes: join(project, "routes"),
+      }),
+    });
+    // Worker quiescence/cache ownership is covered by the cache teardown suite.
+    // This test executes the actual filesystem cleanup in a private directory.
+    Object.defineProperty(runtime, "clearManagedProjectBuildCache", { value: async () => {} });
+    vi.mocked(runtime.executor.exec).mockImplementation(async (command) => {
+      const args = commandToArgv(command);
+      if (
+        !args ||
+        args.slice(0, 3).join(" ") !== "rm -rf --" ||
+        args.length < 4 ||
+        args.slice(3).some((path) => !resolve(path).startsWith(`${resolve(project)}/`))
+      )
+        throw new Error("Unexpected command outside the private cleanup fixture");
+      return (await promisify(execFile)("/bin/rm", args.slice(1))).stdout;
+    });
+    await runtime.cleanupProject("project-a", { wipeVolumes: false });
+    await expect(access(staging)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(data, "utf8")).toBe("application data");
+    expect(await readFile(neighbor, "utf8")).toBe("neighbor data");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

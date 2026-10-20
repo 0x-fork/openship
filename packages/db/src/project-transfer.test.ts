@@ -22,6 +22,17 @@ function reader(databaseProjectId: string): TransferRowReader {
 }
 
 describe("project transfer runtime ownership", () => {
+  it("rejects exporting a managed preview without its source and cleanup ownership", async () => {
+    const rows: Record<string, Record<string, unknown>[]> = {
+      project: [{ id: "project-a", groupId: "group-a", organizationId: "org-a" }],
+      pull_request_preview: [{ id: "preview", projectId: "project-a", sourceProjectId: "source" }],
+    };
+    const read: TransferRowReader = async (table, column, values) =>
+      (rows[table] ?? []).filter(row => values.includes(row[column]));
+    await expect(selectProjectTransfer(read, selection, ["pull_request_preview"]))
+      .rejects.toMatchObject({ code: "CLUSTER_TRANSFER_UNSUPPORTED" });
+  });
+
   it("follows the server identity without collecting unrelated hosts through composite owner keys", async () => {
     const project = {
       id: "project-a",
@@ -71,5 +82,35 @@ describe("project transfer runtime ownership", () => {
     expect(result.tables.project).toHaveLength(1);
     expect(result.tables.project?.[0]?.id).toBe("project-a");
     expect(result.tables.cluster_database).toBeUndefined();
+  });
+});
+
+describe("project transfer indirect ingress ownership", () => {
+  const read = (ownerProject: string): TransferRowReader => {
+    const tables: Record<string, Record<string, unknown>[]> = {
+      project: [{ id: "project-a", groupId: "group-a", organizationId: "org-a" }],
+      project_app: [{ id: "group-a", organizationId: "org-a" }],
+      domain: [{ id: "domain-a", projectId: ownerProject }],
+      ingress_hostname: [{ id: "host-a", domainId: "domain-a", connectionId: "connection-a" }],
+    };
+    return async (table, column, values) =>
+      (tables[table] ?? []).filter((row) => values.includes(row[column]));
+  };
+  it.each([
+    { excluded: [] },
+    { excluded: ["ingress_hostname"] },
+    { excluded: ["ingress_hostname", "domain"] },
+  ])("preserves cleanup ownership despite excluded tables $excluded", async ({ excluded }) => {
+    await expect(
+      selectProjectTransfer(read("project-a"), selection, excluded),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      message: expect.stringContaining("Disconnect managed Cloudflare hostnames"),
+    });
+  });
+  it("allows a project unrelated to a managed hostname", async () => {
+    const result = await selectProjectTransfer(read("project-b"), selection);
+    expect(result.tables.project?.map((p) => p.id)).toEqual(["project-a"]);
+    expect(result.tables.ingress_hostname).toBeUndefined();
   });
 });

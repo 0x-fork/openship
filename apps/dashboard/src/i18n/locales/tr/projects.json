@@ -107,6 +107,8 @@
     "teardownFailedAt": "Temizleme tamamlanamadı: {reasons}. Proje hâlâ kayıtlı. Sorunu çözdükten sonra silmeyi yeniden deneyin.",
     "teardownFailed": "Kaldırma başarısız oldu",
     "cleanupFailedTitle": "Temizlik başarısız oldu",
+    "retryCleanup": "Silmeyi yeniden dene",
+    "cleanupPending": "Silme işlemi başladı. Temizleme tamamlanana kadar proje kullanılamaz.",
     "alreadyDeleted": "Proje zaten silinmiş",
     "forceModalTitle": "Kaynaktan kaldırılamadı",
     "forceModalBody": "Çalışma zamanına ulaşılamadı (veya hata vermeye devam etti), bu nedenle bu proje kaldırılamadı. Yine de Openship'ten silebilirsiniz — kayıt şimdi kaldırılır ve sunucu erişilebilir olduğunda kalan kaynaklar otomatik olarak temizlenir.",
@@ -133,6 +135,7 @@
       "deployments": "Dağıtımlar",
       "health": "Sağlık",
       "monitoring": "İzleme",
+      "monitoringAndLogs": "İzleme ve günlükler",
       "source": "Kaynak",
       "sourceAndTriggers": "Kaynak ve Tetikleyiciler",
       "webhooks": "Webhook'lar",
@@ -459,9 +462,21 @@
     "authHmacDesc": "Çağıranlar gövdeyi paylaşılan bir gizli anahtarla imzalar (X-Signature-256).",
     "authNone": "Açık",
     "authNoneDesc": "Kimlik doğrulama yok — URL'ye sahip herkes tetikleyebilir. Dikkatli kullanın.",
-    "cancel": "İptal"
+    "cancel": "İptal",
+    "changeReasons": {
+      "unrelated": "Yalnızca ilgisiz çalışma alanları değişti.",
+      "application": "Uygulama dosyaları değişti.",
+      "shared": "Paylaşılan derleme girdileri değişti.",
+      "included": "Yapılandırmada dahil edilen bir yol değişti.",
+      "excluded": "Değişiklikler yapılandırılan yol kurallarıyla eşleşmiyor.",
+      "unknown": "Değişiklikler doğrulanamadı; dağıtım etkin tutuldu.",
+      "initial": "İlk dağıtım.",
+      "forced": "Tam dağıtım istendi."
+    }
   },
   "connections": {
+    "nativeClusterHint": "Bu veritabanının kümesindeki bir projeyi seçin. Yalnızca bağlı projeler özel erişim alır.",
+    "nativeNoTargets": "Henüz başka bir proje bu kümeyi kullanmıyor.",
     "useInProject": "Bir projede kullan",
     "title": "Bir projede kullan",
     "subtitle": "Bu hizmeti bir bağlantıyla başka bir projeyle paylaşın.",

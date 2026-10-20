@@ -5,6 +5,7 @@ import { posix } from "node:path";
 import type { Oblien } from "oblien";
 import { AppError, SYSTEM, safeErrorMessage, isHostPathSource } from "@repo/core";
 import { DockerRuntime } from "../docker";
+import { imageVolumeName } from "../docker-image-volumes";
 import { BareRuntime } from "../bare";
 import { CloudServerConnection } from "./server-connection";
 import { CloudProcessSupervisor } from "./process-supervisor";
@@ -24,6 +25,7 @@ import type {
   MultiServiceDeployConfig,
   MultiServiceDeployResult,
   MultiServiceGroupHandle,
+  RuntimeCapability,
 } from "../types";
 import { CloudWorkspaceExecutor } from "./workspace-executor";
 import { CLOUD_DOCKER_BRIDGE_PORT } from "./docker-bridge-source";
@@ -35,9 +37,8 @@ import {
   waitForCloudDockerWorkspace,
 } from "./workspace-ready";
 import { cloudDockerProjectPaths } from "./docker-paths";
-import { ensureCloudProjectVolume } from "./docker-volume";
+import { ensureCloudProjectVolume, resolveCloudProjectVolumeName } from "./docker-volume";
 import { prepareManagedSource } from "./source";
-import { scopeVolumeBinds } from "../volume-namespace";
 import { pickHostPort } from "../host-port";
 import { scanPorts } from "../../system/port-scan";
 export { CLOUD_SERVER_IMAGE as CLOUD_DOCKER_IMAGE } from "./server-connection";
@@ -54,6 +55,7 @@ export interface CloudDockerOptions {
   /** Explicit opt-in for a desktop/self-hosted source transfer; SaaS denies it. */
   allowHostSource?: boolean;
   provisionLock: ProvisionLock;
+  buildCacheProtection?: import("../docker").DockerConnectionOptions["buildCacheProtection"];
   bridgeLock?: ProvisionLock;
   resolveRegistryAuth: (ref: string) => Promise<DockerRegistryAuth | undefined>;
 }
@@ -68,6 +70,10 @@ function notFound(error: unknown): boolean {
  * stays explicit: container IDs identify containers; workspaceId identifies the
  * shared host. Inherited retention/rollback never stop or delete that host. */
 export class CloudDockerRuntime extends DockerRuntime {
+  // Managed cloud refuses role containers for now; every other Docker capability is kept.
+  override readonly capabilities: ReadonlySet<RuntimeCapability> = new Set(
+    DockerRuntime.CAPABILITIES.filter(cap => cap !== "roles"),
+  );
   readonly workspaceId: string;
   readonly projectId: string;
   readonly executor: CloudWorkspaceExecutor;
@@ -87,6 +93,7 @@ export class CloudDockerRuntime extends DockerRuntime {
         executor,
         cloudConnection: () => connection.connectDocker(),
         resolveRegistryAuth: options.resolveRegistryAuth,
+        buildCacheProtection: options.buildCacheProtection,
       },
       null,
       options.provisionLock,
@@ -188,15 +195,45 @@ export class CloudDockerRuntime extends DockerRuntime {
     return id;
   }
   override async removeNetwork(slug: string) {
-    try {
-      const network = await this.docker.getNetwork(`openship-${slug}`).inspect();
-      if (network.Labels?.["openship.project"] !== this.projectId)
-        throw new AppError("Network belongs to another project", 409, "CLOUD_NETWORK_CONFLICT");
-    } catch (error) {
-      if (notFound(error)) return;
-      throw error;
-    }
-    return super.removeNetwork(slug);
+    return this.removeScopedNetwork(slug, "strict");
+  }
+  /** A slug retained after migration can now name another project's network.
+   * Cleanup leaves a proven foreign owner alone; unknown ownership still fails. */
+  async removeProjectNetwork(slug: string): Promise<void> {
+    return this.removeScopedNetwork(slug, "project-cleanup");
+  }
+  private async removeScopedNetwork(
+    slug: string,
+    mode: "strict" | "project-cleanup",
+  ): Promise<void> {
+    return this.options.provisionLock.run(async () => {
+      try {
+        const network = await this.docker.getNetwork(`openship-${slug}`).inspect();
+        const owner = network.Labels?.["openship.project"];
+        if (owner !== this.projectId) {
+          if (
+            mode === "project-cleanup" &&
+            typeof owner === "string" &&
+            owner.length > 0 &&
+            owner.trim() === owner
+          )
+            return;
+          throw new AppError("Network belongs to another project", 409, "CLOUD_NETWORK_CONFLICT");
+        }
+        if (typeof network.Id !== "string" || !/^[a-f0-9]{64}$/.test(network.Id))
+          throw new AppError(
+            "Could not verify the network identity",
+            409,
+            "CLOUD_NETWORK_CONFLICT",
+          );
+        // Network names are reusable. Removing the inspected ID cannot target a
+        // replacement created with the same name after the ownership read.
+        await this.docker.getNetwork(network.Id).remove();
+      } catch (error) {
+        if (notFound(error)) return;
+        throw error;
+      }
+    });
   }
   override async listProjectContainerIds(id: string) {
     this.assertProject(id);
@@ -304,13 +341,27 @@ export class CloudDockerRuntime extends DockerRuntime {
     return super.removeVolume(name);
   }
   private async ownedVolumeBinds(slug: string, volumes: string[]) {
-    const scoped = scopeVolumeBinds(slug, volumes, true);
-    for (const spec of scoped) {
-      const source = spec.split(":")[0]!;
-      if (isHostPathSource(source)) continue;
-      await ensureCloudProjectVolume(this.docker, source, this.projectId);
+    const scoped: string[] = [];
+    for (const spec of volumes) {
+      const parts = spec.split(":");
+      if (parts.length > 1 && !isHostPathSource(parts[0]!)) {
+        parts[0] = await resolveCloudProjectVolumeName(
+          this.docker,
+          this.projectId,
+          slug,
+          parts[0]!,
+        );
+        await ensureCloudProjectVolume(this.docker, parts[0], this.projectId);
+      }
+      scoped.push(parts.join(":"));
     }
     return scoped;
+  }
+  protected override async serviceVolumeBinds(config: MultiServiceDeployConfig): Promise<string[]> {
+    this.assertProject(config.projectId);
+    // Cloud has already resolved and verified the concrete names. Reapplying a
+    // slug prefix here would mount a different, unclaimed empty volume.
+    return config.volumes;
   }
   private async canSpend(): Promise<void> {
     await this.connection.beforeWork();
@@ -478,6 +529,10 @@ export class CloudDockerRuntime extends DockerRuntime {
     );
     return this.ownedVolumeBinds(config.slug || config.projectId, volumes);
   }
+  // Managed mounts are already resolved and ownership-checked by Cloud
+  // activation. They never relied on Docker's anonymous-volume allocation.
+  override async prepareDeploymentVolumes(_config: DeployConfig): Promise<void> {}
+  override async prepareServiceVolumes(_config: MultiServiceDeployConfig): Promise<void> {}
   override async deploy(config: DeployConfig, onLog?: LogCallback) {
     this.assertProject(config.projectId);
     await this.canSpend();
@@ -703,11 +758,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     for (const target of new Set(imageVolumes)) {
       if (!target.startsWith("/")) throw new Error("Invalid anonymous volume destination");
       if (targets.has(target)) continue;
-      const key = createHash("sha256")
-        .update(`${config.serviceName}:${target}`)
-        .digest("hex")
-        .slice(0, 24);
-      volumes.push(`openship-${config.slug}-data-${key}:${target}`);
+      volumes.push(`${imageVolumeName(config.serviceName, target)}:${target}`);
     }
     return volumes;
   }
@@ -849,6 +900,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     this.assertProject(projectId);
     if ((await this.listProjectContainerIds(projectId)).length)
       throw new Error("Remove the project's containers before cleaning its storage");
+    await this.clearManagedProjectBuildCache(projectId);
     if (options?.wipeVolumes) {
       // Include detached volumes left by interrupted deployments. Inventory is
       // label-scoped; retained data is removed only on the explicit wipe path.
@@ -856,7 +908,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       await this.executor.exec(`rm -rf -- ${sq(this.projectPaths.mounts)}`);
     } else {
       await this.executor.exec(
-        `rm -rf -- ${sq(`${this.projectPaths.mounts}/releases`)} ${sq(`${this.projectPaths.mounts}/config`)}`,
+        `rm -rf -- ${sq(`${this.projectPaths.mounts}/releases`)} ${sq(`${this.projectPaths.mounts}/config`)} ${sq(`${this.projectPaths.bare}/.builds`)}`,
       );
     }
     await this.executor.exec(`rm -rf -- ${sq(this.projectPaths.routes)}`);

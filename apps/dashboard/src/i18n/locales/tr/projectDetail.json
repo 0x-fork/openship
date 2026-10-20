@@ -189,27 +189,29 @@
         "loadFailed": "Kaydedilmiş ortam yüklenemedi. Değişkenleriniz değiştirilmedi.",
         "checkFailed": "Çalışan hizmetle karşılaştırılamadı. Kaydedilmiş değişkenler kullanılabilir durumda.",
         "checking": "Çalışan hizmetle karşılaştırılıyor…",
-        "check": "Çalışan hizmeti kontrol et",
+        "check": "Tekrar kontrol et",
         "reload": "Ortamı yeniden yükle",
         "removeOverride": "Özel değeri kaldır (yerini devralınan bir değer alabilir)",
         "removeAtSource": "Devralınan değişkenleri Compose veya proje ayarlarından kaldırın. Değeri değiştirmek için burada hizmete özel bir değer belirleyin.",
         "status": {
           "unchecked": "Çalışan ortam henüz kontrol edilmedi.",
           "synced": "Çalışan hizmet kaydedilmiş ortamla eşleşiyor.",
-          "pending": "Kaydedilmiş şu ortam değişiklikleri çalışan hizmete henüz uygulanmadı:",
+          "pending": "Değişiklikler kaydedildi. Hizmeti yeni değerlerle yeniden başlatmak için uygulayın.",
           "unavailable": "Çalışan ortam kontrol edilemedi.",
           "not-deployed": "Bu değişkenler hizmet dağıtıldığında kullanılacak.",
           "unsupported": "Kaydedilmiş ortamı uygulamak için bu hizmeti yeniden dağıtın."
         },
-        "recoveryHint": "Çalışan kapsayıcıda Openship üzerinde kaydedilmemiş değişkenler var. Bunları korumak istiyorsanız uygulamadan önce kurtarın:",
-        "recover": "Çalışan hizmetten kurtar",
-        "removeRuntime": "Bu değişkenleri kurtarmadan uygula ve çalışan hizmetten kaldır.",
-        "recovered": "Çalışan hizmetten kurtarıldı — henüz kaydedilmedi",
-        "recoveredHint": "Kurtarılan değerler incelemeye hazır. Openship üzerinde tutmak için kaydedin.",
-        "recoveryFailed": "Değişkenler çalışan hizmetten kurtarılamadı. Kaydedilmiş değişkenler değiştirilmedi."
+        "recoveryHint": "Önce kopyalayıp kaydetmezseniz bu değerler uygulama sırasında kaldırılır.",
+        "recover": "Düzenleyiciye kopyala",
+        "removeRuntime": "Uygularken bu değerleri kaldır.",
+        "recovered": "Kapsayıcıdan kopyalandı — saklamak için kaydedin",
+        "recoveredHint": "Düzenleyiciye kopyalandı. Değerleri kontrol edip kaydedin.",
+        "recoveryFailed": "Değişkenler çalışan hizmetten kurtarılamadı. Kaydedilmiş değişkenler değiştirilmedi.",
+        "changedLabel": "Güncellenecek değerler",
+        "recoveryTitle": "Yalnızca kapsayıcıda bulunan değişkenler"
       },
       "environmentApply": {
-        "title": "Ortam değişikliklerini uygula",
+        "title": "Uygula ve yeniden başlat",
         "applying": "Değişiklikler uygulanıyor…",
         "applied": "Ortam değişiklikleri uygulandı",
         "hint": "Kaydedilen değişkenleri yeniden derlemeden bu hizmete uygulayın. Hizmet yeniden başlatılacak.",
@@ -321,7 +323,20 @@
         "automaticStorage": "Otomatik yönetilir",
         "invalidMount": "Servis içinde / ile başlayan bir yol girin. Yollar ve birim adları : içeremez.",
         "mountTooLong": "Her birim girdisi en fazla 500 karakter olmalıdır.",
-        "saveAndBackup": "Kaydet ve yedekle"
+        "saveAndBackup": "Kaydet ve yedekle",
+        "emptyVolume": {
+          "menu": "Birim işlemleri",
+          "title": "Boş depolamayla başlat",
+          "description": "Bu hizmet yeni bir birimle yeniden dağıtılır. Önceki veriler ve yedekler korunur.",
+          "retained": "Önceki birim — korunur",
+          "newVolume": "Yeni boş birim",
+          "recoveryHint": "Önceki verileri geri almak için bu bağlamayı düzenleyip eski birim adını girin. Eski birimi kullanan diğer hizmetler etkilenmez.",
+          "confirm": "Onaylamak için {name} yazın",
+          "action": "Kaydet ve yeniden dağıt",
+          "retry": "Dağıtımı yeniden dene",
+          "retryHint": "Yeni birim ayarı kaydedildi, ancak dağıtım başlamadı. Devam etmek için yeniden deneyin. Çalışan hizmet hâlâ önceki birimi kullanıyor.",
+          "failed": "Boş depolama hazırlanamadı. Hiçbir veri silinmedi."
+        }
       }
     },
     "settingsForm": {
@@ -419,6 +434,43 @@
         "maxReconnects": "Bağlantı geri yüklenemedi. Yeniden bağlanmayı deneyebilirsiniz.",
         "transport": "Bağlantı kesildi. Servisiniz hâlâ çalışıyor olabilir."
       }
+    }
+  },
+  "runtimeRoles": {
+    "title": "Çalışma zamanı rolleri",
+    "kind": "Rol",
+    "web": "Web",
+    "worker": "İşçi",
+    "scheduler": "Zamanlayıcı",
+    "replicas": "{count} kopya",
+    "replica": "Kopya {replica}",
+    "restarts": "{count} yeniden başlatma",
+    "missing": "Bulunamadı",
+    "logs": "Günlükleri görüntüle",
+    "checking": "Çalışma zamanı rolleri denetleniyor…",
+    "staleTarget": "Bu kopya etkin dağıtımda bulunmuyor. Günlük kaynağını yeniden seçin.",
+    "retry": "Yeniden dene",
+    "replicaOne": "{count} kopya",
+    "configuration": {
+      "configure": "Rolleri yapılandır",
+      "title": "İşçiler ve zamanlayıcılar",
+      "hint": "Etkin imajı kullanarak uygula. Uygulama ve değişmeyen kopyalar çalışmaya devam eder.",
+      "sourceHint": "Bu ayarlar bu sürüme uygulanır. Sonraki kaynak dağıtımında openship.json içindeki açık roles dizisi önceliklidir.",
+      "name": "Ad",
+      "command": "Komut",
+      "kind": "Tür",
+      "replicas": "Kopyalar",
+      "singleton": "Tek örnek",
+      "addWorker": "İşçi ekle",
+      "addScheduler": "Zamanlayıcı ekle",
+      "remove": "Rolü kaldır",
+      "advanced": "Gelişmiş",
+      "healthCommand": "Sağlık komutu (isteğe bağlı)",
+      "stopGrace": "Durdurma süresi",
+      "apply": "Değişiklikleri uygula",
+      "applying": "Uygulanıyor…",
+      "cancel": "İptal",
+      "retry": "Tekrar dene"
     }
   }
 }

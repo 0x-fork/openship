@@ -62,6 +62,9 @@ jobs:
       - name: Typecheck apps/api
         run: bun run --cwd apps/api lint
 
+      - name: Typecheck SDK
+        run: bun run --cwd packages/sdk lint
+
       - name: Audit structured error boundaries
         run: |
           bun test scripts/audit-error-boundaries.test.ts
@@ -91,8 +94,16 @@ jobs:
             command: bun run --cwd apps/api test --shard=1/2
           - suite: API 2/2
             command: bun run --cwd apps/api test --shard=2/2
+          - suite: Deployment automation
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/deployment-automation.e2e.test.ts
           - suite: Database
             command: bun run --cwd packages/db test
+          - suite: Mail database actions
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/mail-fail2ban-db.e2e.test.ts
           # Separate API processes and databases exercise both move directions,
           # recovery, authentication and Desktop relays on every PR. No live
           # server, provider account or outbound email is used.
@@ -114,16 +125,21 @@ jobs:
               test/e2e/migration-takeover.e2e.test.ts
               test/e2e/backup-volume-roundtrip.e2e.test.ts
               test/e2e/docker-exec-watchdog.e2e.test.ts
-          # Inventory image identity and atomic cutover must pass before release.
+          # Inventory identity, atomic cutover and role handover use real Docker.
           - suite: Compose cutover and rollback
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/compose-port-preflight-atomic.e2e.test.ts
               test/e2e/rollback-compose-cycle.e2e.test.ts
-          # Run the rule guard with real CJSON, shared dictionaries and HTTP on
+              test/e2e/runtime-roles.e2e.test.ts
+              test/e2e/image-volume-persistence.e2e.test.ts
+          # Run routing, certificate selection and the rule guard with real HTTP on
           # every PR. A missing daemon must fail, not silently skip this gate.
           - suite: Edge routing
-            command: RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e test/e2e/routing-rules.e2e.test.ts
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/routing-rules.e2e.test.ts
+              test/e2e/edge-not-found-page.e2e.test.ts
           # Both suites rebuild the same native bundle. Keep them sequential on
           # their own runner; the other packages do not share that filesystem.
           - suite: SDK and CLI

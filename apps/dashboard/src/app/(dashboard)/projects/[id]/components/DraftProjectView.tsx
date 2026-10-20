@@ -13,10 +13,11 @@ import { encodeLocalSlug, encodeRepoSlug, encodeProjectSlug } from "@/utils/repo
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import type { Dictionary } from "@/i18n";
 import { DeleteConfirmationDialog } from "./DeleteConfirmationDialog";
+import { DeletionModal } from "./DeletionModal";
 
 interface DraftProjectViewProps {
   /** Deletes this environment using the page's normal cleanup policy. */
-  onDeleteProject: () => void | Promise<void>;
+  onDeleteProject: (wipeVolumes?: boolean, recordOnly?: boolean) => void | Promise<void>;
 }
 
 function relativeTime(iso: string | undefined, t: Dictionary): string {
@@ -39,7 +40,8 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
   const [deleting, setDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const status = getProjectStatus(projectData);
-  const busy = deleting || status === "deleting";
+  const deletingNow = deleting || status === "deleting";
+  const busy = deletingNow || !!projectData.deletionInProgress;
 
   const hasRepoSource = Boolean(projectData?.gitOwner && projectData?.gitRepo);
   const hasLocalSource = Boolean(projectData?.localPath);
@@ -113,11 +115,11 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
             : t.projects.draft.targetPending
   );
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (...options: [wipeVolumes?: boolean, recordOnly?: boolean]) => {
     setShowDeleteDialog(false);
     setDeleting(true);
     try {
-      await onDeleteProject();
+      await onDeleteProject(...options);
     } finally {
       setDeleting(false);
     }
@@ -142,7 +144,7 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
           className="shrink-0 text-danger hover:bg-danger-bg hover:text-danger"
           onClick={() => setShowDeleteDialog(true)}
         >
-          <UiIcon name={busy ? "spinner" : "trash"} className={`size-4 ${busy ? "animate-spin" : ""}`} />
+          <UiIcon name={deletingNow ? "spinner" : "trash"} className={`size-4 ${deletingNow ? "animate-spin" : ""}`} />
           {t.projects.draft.delete}
         </Button>
       </header>
@@ -219,12 +221,23 @@ export function DraftProjectView({ onDeleteProject }: DraftProjectViewProps) {
           </section>
         </aside>
       </div>
-      <DeleteConfirmationDialog
-        isOpen={showDeleteDialog}
-        onClose={() => setShowDeleteDialog(false)}
-        onConfirm={handleConfirmDelete}
-        projectName={projectData.name || ""}
-      />
+      {hasAttempts ? (
+        <DeletionModal
+          isOpen={showDeleteDialog}
+          onClose={() => setShowDeleteDialog(false)}
+          onConfirm={handleConfirmDelete}
+          projectName={projectData.name || ""}
+          projectId={projectData.id}
+          selfHosted={projectData.deployTarget !== "cloud"}
+        />
+      ) : (
+        <DeleteConfirmationDialog
+          isOpen={showDeleteDialog}
+          onClose={() => setShowDeleteDialog(false)}
+          onConfirm={() => handleConfirmDelete()}
+          projectName={projectData.name || ""}
+        />
+      )}
     </>
   );
 }

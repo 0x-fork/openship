@@ -3,6 +3,316 @@
 All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 
+## 0.9.3
+
+This release improves Cloud monitoring and build-cache reliability, adds deployment
+automation and isolated pull-request previews, and makes workers and schedulers
+easier to configure, observe and recover. These notes cover all merged changes
+since 0.9.2.
+
+### Deployment automation and previews
+
+- **Move command variables into Environment** — review literal environment
+  assignments in install, build and start commands, then migrate them into
+  encrypted project or service settings. Conflicts and concurrent edits stop the
+  migration before partial changes are saved. Import and saved settings share the
+  same parser and guidance.
+- **Prepare framework output automatically** — Next.js standalone monorepos and
+  Nuxt builds retain their required workspace dependencies, public/static assets
+  and selected Node or Bun runtime. Managed direct-server defaults start from the
+  configured app directory; explicit custom commands retain their working directory.
+- **Review older manual cache mounts** — detect duplicate package/framework cache
+  mounts and offer configuration migration only after a successful build proves
+  managed cache support for those paths. Existing volume data is retained. Build
+  logs report observed cache reuse and build-time comparisons.
+- **Catch setup problems earlier** — pre-install checks identify missing app roots
+  and environment examples; command-variable, standalone startup and duplicate-mount
+  guidance explains what needs attention without exposing variable values.
+- **Opt into GitHub pull-request previews** — same-repository, non-draft pull
+  requests can deploy their exact commit into a separate preview environment with
+  preview-only variables, isolated volumes and per-service URLs. Production
+  variables are not copied. Forks and unsafe shared-storage configurations are
+  excluded.
+- **Recover preview lifecycle operations** — durable coordination handles repeated
+  webhooks, controller restarts and retryable close/merge cleanup. Optional GitHub
+  comments update one existing comment, alongside the existing deployment Checks.
+  Whole-instance transfers preserve preview ownership; individual project imports
+  clear preview automation that cannot safely transfer.
+- **Use automation from the SDK** — configure and list previews, inspect or migrate
+  manual cache mounts, and move command variables through the shared validated
+  project operations.
+
+### Workers, schedulers and rollback
+
+- **Configure roles without rebuilding the web app** — Apps & Services → Configure
+  roles can add or change workers and singleton schedulers on active single-app
+  self-hosted Docker deployments. The normal deployment engine reuses the verified
+  image and frozen environment while preserving the web container and unchanged
+  replicas. The API, SDK and CLI expose the same operation. Cloud, bare, static,
+  cluster and multi-service targets are outside this editor's scope.
+- **See and inspect background processes** — runtime roles appear in project
+  service views and topology, with role/replica log selection and retry states.
+  Health monitoring includes worker and scheduler failures instead of observing
+  only the foreground container.
+- **Keep independent role suggestions** — framework scans expose matching presets
+  at the selected app root. Only presets competing for the same declared slot
+  exclude one another; explicit roles, including an empty list, retain precedence.
+  Suggestions do not automatically enable background processes.
+- **Recover interrupted role handovers** — persist exact container identities and
+  ownership before replacement, predecessor shutdown and publication. Startup and
+  deployment reconciliation either finish a published handover or safely restore
+  its predecessor; uncertain cleanup remains pending before conflicting work.
+- **Protect active and rollback images** — retained role replicas keep their
+  required image artifacts protected during configuration changes and release cleanup.
+- **Restore frozen Compose environment accurately** — rollback preserves encrypted
+  deployment snapshots without confusing literal redaction-like values with missing
+  secrets. Incomplete legacy snapshots fail clearly rather than borrowing mutable
+  current service settings.
+
+### Cloud monitoring, caches and storage
+
+- **Avoid expensive monitoring scans** — Cloud hosts using fuse-overlayfs skip
+  Docker's full storage inventory, which can exhaust daemon memory. Host totals
+  remain measured; unavailable detailed project storage stays unknown.
+- **Show guest RAM usage** — use verified guest counters instead of hypervisor
+  process memory and overhead. Older guests receive a bounded, read-only memory
+  sample; stream teardown releases the executor.
+- **Keep partial metrics useful** — missing disk or memory fields in a live frame
+  retain the latest measured value for that metric, with its measurement time.
+  Purchased capacity is never substituted for measured consumption.
+- **Keep Cloud cache cleanup scoped** — collect only owned, idle project-worker
+  caches and stop before Docker Engine's global builder prune. Cache reuse, worker
+  GC, existing build concurrency and user-configured resource limits are unchanged.
+  Cloud builds require their isolated BuildKit executor instead of silently falling
+  back to the embedded builder. Existing legacy daemon state and autonomous Docker
+  GC remain separate host-maintenance concerns.
+- **Accept filesystems without fixed inode totals** — unsupported or zero inode
+  totals mean unknown availability rather than confirmed exhaustion. Real free-space
+  and supported inode-exhaustion checks still protect deployment admission.
+
+### Domains and ingress
+
+- **Route verified custom domains on first deployment** — single-app domains
+  without a saved destination use the verified serving port through the shared
+  route planner. Explicit endpoints and service-group destinations retain their
+  ownership instead of selecting a sibling service.
+- **Avoid ephemeral secondary host ports** — secondary loopback publications use
+  the existing allocator and the target host's ephemeral-range checks.
+- **Handle varied Cloudflare Access applications** — accounts containing launcher
+  or other domain-less applications no longer crash managed ingress setup.
+  Inventory and write receipts are validated while overlap and foreign-resource
+  ownership protection remain enforced.
+- **Clarify edge availability** — documentation explains edge failure behavior and
+  recovery responsibilities for deployed applications.
+
+### Webmail
+
+- **Resolve exact Message-IDs for actions** — thread reads, deletion, labels and
+  flags validate exact IMAP envelope identities instead of trusting substring
+  search matches. Literal percent sequences remain unchanged, stale UID hints are
+  rejected, and missing or refused operations no longer report success.
+- **Cache application assets correctly** — fingerprinted assets receive immutable
+  caching while application HTML is revalidated.
+- **Serve precompressed assets** — negotiate available Brotli or gzip files with
+  appropriate content types, encoding and cache headers.
+
+## 0.9.2
+
+This patch adds worker and scheduler execution, personal appearance customization,
+and managed Cloudflare Tunnel setup for self-hosted servers. Cloud spaces, reusable
+build caches, more catalog apps and safer storage cleanup improve everyday
+operations. These notes cover all merged changes since 0.9.1.
+
+### Workers and schedulers
+
+- **Run roles beside your web app** — declare workers and schedulers in
+  `openship.json` or the project API. Single-app Docker deployments start separate
+  containers from the app image, with shared environment, volumes and connected
+  networks, their own commands and shutdown settings, and no published ports.
+  Roles follow pause, resume, restart, rollback and project deletion.
+- **Hand over singletons safely** — scheduler renames, command changes, name swaps
+  and conversions into workers stop and retain outgoing singletons before starting
+  potentially conflicting replacements. Failed deployments restore them only after
+  those replacements are confirmed removed. Failed retirement of an old role is
+  surfaced in the deployment warning with its container identity.
+- **Require a verified startup** — every replica needs exactly one stable result
+  for its container ID before optional exec health checks run. Missing inspections,
+  duplicate results and processes that already exited successfully fail startup.
+  Both project-defined and image-inherited `PORT` values are removed from roles.
+- **Make role configuration explicit** — move and copy refuse active, unfinished
+  or preserved-cancelled role workloads even after saved roles are cleared.
+  Preset-only `when` and `unless` keys in declared roles produce warnings rather
+  than silently appearing to control execution. Automatic framework role selection
+  and cross-server role migration are not included.
+- **Improve framework shutdown defaults** — Rails presets have measured stop
+  settings, and Laravel's scheduler preset uses SIGTERM with a 10-second grace
+  period while queue and Horizon workers retain 90 seconds. Customize these bounds
+  for long-running tasks; they do not guarantee task completion or exactly-once
+  scheduling. Laravel web-role cache warming is available as an opt-in setting.
+
+### Appearance and dashboard
+
+- **Customize your own appearance** — Settings → General → Customize previews
+  color tokens and typography live, with explicit Save, Discard and Reset.
+  Import themes from JSON, a file or an HTTPS URL; export themes and libraries,
+  including supported WOFF2 fonts. Preferences belong to the signed-in user and
+  stay isolated across accounts and instances. API, SDK, CLI and MCP operations
+  use the same theme format.
+- **Keep operational tools together** — project monitoring and logs share one
+  navigation entry with their own views. Backups moves under Infrastructure.
+  Project sidebars show assigned domains, migration retries retain destination
+  choices, and migrated service deployments use the correct icons.
+- **Reduce false outage alerts** — the health watcher confirms repeated bounded
+  Docker probe failures before announcing a server outage. Late probe replies
+  cannot falsely announce recovery. Self-hosted administrators can clear resolved
+  monitoring history with confirmation while retaining open incidents.
+- **Improve navigation and terminal reliability** — GitHub discovery no longer
+  blocks dashboard pages, selection controls use consistent states, and leaving a
+  server terminal during WebGL loading cancels setup and disposes the terminal.
+  Instance connection and move actions have clearer setup and recovery guidance.
+
+### Cloudflare Tunnel and domains
+
+- **Manage self-hosted ingress from Openship** — Server → Security can connect or
+  create a remotely managed named Cloudflare Tunnel using saved credentials,
+  configure proxied DNS and optionally apply an existing reusable Access policy.
+  Install a pinned connector on a supported Linux server or use its existing
+  connector. Managed Openship Cloud routing retains its existing path.
+- **Enroll domains with recoverable setup** — explicitly enable automatic tunnel
+  enrollment for new custom domains or connect existing domains individually.
+  Setup records Access, tunnel and DNS progress, supports retry after interrupted
+  requests, and removes only owned resources. External edits remain visible for
+  review instead of being overwritten. Exact hostnames and `www` companions are
+  supported; wildcard auto-enrollment is not.
+- **Choose primary and www behavior** — the deployment wizard defaults a newly
+  included companion hostname to a 301 redirect to the entered primary. Choose
+  bare primary, www primary or Serve both on Cloud and self-hosted destinations.
+  Redirect rows show their target instead of duplicate runtime inputs.
+- **Keep domain operations consistent** — service aliases on the same port are
+  preserved, domains added through the CLI receive routing, and Cloud routing
+  retries recover missing Pages through the owning Cloud connection.
+- **Honor trusted proxies on containerized edges** — operator-declared proxy IPs
+  reach the edge without rebuilding its image. Invalid addresses and CIDR prefixes
+  are discarded. Failed configuration updates restore the previous shared trust
+  include, and an incomplete rollback cannot activate a partial configuration.
+
+### Cloud spaces, billing and connections
+
+- **See managed capacity as Cloud spaces** — a shared picker, Overview and
+  Activity views show projects, purchased capacity and measured usage, with clear
+  retry states for unavailable readings. Existing allocations and subscriptions
+  keep their identity; connected self-hosted server tools remain available.
+- **Use the owning Cloud account consistently** — connected Desktop and
+  self-hosted installations create Cloud projects through Cloud's API. Server,
+  project and deployment operations enforce their organization and provider
+  namespace. Cloud consent shows the actual account and organization and lets you
+  switch either before explicitly authorizing the connection.
+- **Continue purchases without repeating plan selection** — pricing links carry
+  the chosen plan into the signed-in app's checkout flow. Pending unpaid payments
+  can be cancelled when supported by the provider so another plan can be selected;
+  retries retain the original payment identity. Server cancellation is easier to
+  find and repeated requests cannot create duplicate operations.
+- **Configure Actions on existing spaces** — Cloud's Add runner flow opens the
+  capability form directly with the space picker. Local Actions lists remain
+  available when Cloud discovery fails, and official runner containers support
+  non-root SSH supervisors. Temporary runner profiles retain their separate
+  funding flow.
+- **Keep instance handoff with its source** — control-plane provisioning on a
+  linked managed destination stays owned by the source controller until the move
+  transfers the instance, including resumed API-only and dashboard installations.
+
+### Build performance and resource control
+
+- **Keep unconfigured resources uncapped** — omitted build and service CPU/RAM
+  limits no longer become sampled capacity caps or catalog sizing recommendations.
+  Containers share the selected server's capacity unless limits are explicitly
+  configured. Cloud plans and VM capacity still apply. Existing saved limits are
+  preserved; select Full capacity to remove an older unwanted limit.
+- **Allow concurrent Cloud submissions** — different projects can submit builds
+  while a sibling build is active. Unspecified resource dimensions remain shared;
+  explicit limits, saved plan concurrency and exclusive maintenance protection
+  remain enforced.
+- **Reuse bounded project build caches** — compatible builds retain project-owned
+  BuildKit state and supported package/compiler caches while temporary workers
+  are removed. Idle cache collection uses retention targets and storage-pressure
+  checks, preserving active workers, release images and application data.
+- **Optionally warm new Cloud spaces** — operators can select a provider software
+  disk with public build-image layers for new spaces. Matching images are pinned
+  against their current upstream digest; unavailable or outdated packs fall back
+  to registry resolution. Existing spaces are not reattached by an API redeploy.
+- **Show what image preparation is doing** — registry pulls stream progress,
+  preparation heartbeats and elapsed time into deployment logs. Build cleanup
+  waits for tracked Docker commands to acknowledge completion, and static export
+  publication normalizes public file permissions.
+
+### Catalog, GPUs and shared databases
+
+- **Add document, dashboard and media apps** — install Paperless-ngx, Wiki.js,
+  Homepage, Immich and Jellyfin using pinned published images, persistent storage
+  and protected initial setup. Homepage does not require a Docker socket.
+- **Run self-hosted AI apps** — Ollama offers CPU or one NVIDIA GPU, and Open WebUI
+  connects to an existing backend with protected chat access. These templates use
+  connected self-hosted destinations, not managed Cloud capacity. vLLM remains a
+  disabled preview pending hardware verification.
+- **Deploy NVIDIA GPU services** — Compose import, SDK/CLI sync and adoption share
+  validated GPU selection and Docker device requests. Server detection and picker
+  hints help choose a compatible destination. Unsupported or conflicting requests
+  fail before image acquisition or service replacement.
+- **Skip unnecessary WordPress and Odoo builds** — new catalog installs pull the
+  official images and mount setup helpers through the normal deployment engine.
+  Existing installations retain their saved recipes; reviewed catalog repair can
+  update the application service while preserving database siblings, credentials
+  and data.
+- **Share native databases explicitly** — Use in a project can connect ready
+  native PostgreSQL or Redis databases to authorized projects in the same cluster.
+  Saved grants and private network rules are checked together; ownership, backups
+  and database management stay with the source project.
+
+### Storage, deletion and migration safety
+
+- **Separate fresh Cloud app data** — new logical volume names use immutable
+  project IDs so reinstalling a deleted slug cannot adopt another project's data.
+  Owned legacy mounts and explicitly imported volume identities remain intact.
+- **Recover failed deletion clearly** — failed first installs offer the existing
+  explicit data-removal option, including owned volumes with no container. Data
+  retention stays the default. Cleanup failures remain retryable operations
+  instead of making a partly deleted project appear Live again.
+- **Preserve resources belonging to other projects** — teardown can retain stale
+  Cloud route and network references whose foreign ownership is confirmed.
+  Unreadable or ambiguous ownership still blocks cleanup, and owned networks are
+  removed by immutable identity rather than a potentially reused name.
+- **Avoid ephemeral host-port collisions** — Docker allocation checks the target
+  kernel's ephemeral range for both saved preferred ports and fresh candidates.
+  Unsafe legacy allocations move to a safe port during deployment; if no safe
+  candidate exists, allocation fails before reserving a replacement.
+
+### Mail, security and localization
+
+- **Persist webmail backend connectivity** — webmail deployed on its mail server
+  saves the host-gateway mapping through normal service settings and deployment
+  snapshots while retaining the certificate hostname for TLS. Sign-in connection
+  attempts have bounded timeouts rather than hanging indefinitely.
+- **Connect existing mailboxes from Cloud** — the Emails screen installs the
+  standard webmail client for existing IMAP/SMTP servers. It does not provision or
+  administer a self-hosted mail server in Cloud; managed email remains Coming soon.
+- **Repair containerized mail operations** — boot restores maildir ownership,
+  backups and restores use the actual host-mounted mail path, and fail2ban uses
+  valid nftables syntax and explicit private PostgreSQL sidecar credentials.
+  Database and unban failures no longer report success.
+- **Resize your inbox and reading pane** — drag the divider or use its keyboard
+  controls. Desktop widths are remembered separately from the mobile layout.
+- **Prevent dashboard clickjacking** — dashboard pages, authentication routes and
+  redirects deny framing through CSP and X-Frame-Options. Customer application
+  routing and headers are unchanged.
+- **Expand translated guidance and documentation** — supported dashboard locales
+  include preferences, transfer, jobs, issues, pricing, diagnostics and audit
+  descriptions. The website adds a blog and broader feature discovery, alongside
+  updated catalog, runtime-role, Cloud, API, SDK, CLI and MCP documentation.
+
+Update the API as well as Desktop/dashboard clients before using the new settings,
+managed tunnel operations or catalog recipes that require 0.9.2. The included
+database migrations run through normal API startup.
+
 ## 0.9.1
 
 This patch adds a public app catalog, Russian dashboard support and runtime image

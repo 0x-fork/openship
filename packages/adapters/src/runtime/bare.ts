@@ -56,7 +56,8 @@ import {
 } from "./build-pipeline";
 import { runLocalBuild } from "./local-build";
 import { transferLocalDirectory } from "./transfer";
-import { prepareStackOutput, resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
+import { resolveProjectDir, resolveStaticOutputPath } from "./stack-output";
+import { nodeOutputOptions, prepareNodeOutput, prepareNodeOutputCommand, AUTOMATIC_START } from "./node-output";
 import { isExcludedDocRootEntry } from "./docker-build-plan";
 import { isArtifactPathRef, removeManagedArtifact } from "./managed-artifact";
 import type { ProcessSupervisor, SupervisorFactory } from "./supervisor/types";
@@ -320,15 +321,14 @@ export class BareRuntime implements RuntimeAdapter {
    * `framework/cache`, `framework/sessions`, …) and an app handed an empty
    * directory instead would fail on write.
    *
-   * Best-effort per path: a box without the shared dir writable is a storage
-   * problem to report, not a reason to fail an otherwise good release.
+   * Declared persistence must be ready before application or release commands
+   * run. Continuing without it would put new data in a replaceable release.
    */
   private async linkPersistentPaths(
     releaseDir: string,
     projectId: string,
     volumes: string[] | undefined,
     log?: LogCallback,
-    strict = false,
     signal?: AbortSignal,
   ): Promise<void> {
     const targets = this.persistentPaths(projectId, volumes ?? []);
@@ -339,7 +339,7 @@ export class BareRuntime implements RuntimeAdapter {
       const releasePath = `${releaseDir}/${relative}`;
       try {
         if (!(await this.executor.exists(sharedPath))) {
-          await this.executor.mkdir(parentPath(sharedPath));
+          await ensureOwnedDir(this.executor, parentPath(sharedPath));
           if (await this.executor.exists(releasePath)) {
             await this.executor.exec(`cp -a ${sq(releasePath)} ${sq(sharedPath)}`);
           } else {
@@ -360,12 +360,7 @@ export class BareRuntime implements RuntimeAdapter {
       } catch (err) {
         observeCaughtError(err, "adapters/runtime/bare");
         signal?.throwIfAborted();
-        if (strict || this.options.projectId) throw new Error(`Could not persist ${relative}: ${safeErrorMessage(err)}`);
-        log?.({
-          timestamp: new Date().toISOString(),
-          message: `Could not persist ${relative}: ${safeErrorMessage(err)}\n`,
-          level: "warn",
-        });
+        throw new Error(`Could not persist ${relative}: ${safeErrorMessage(err)}`);
       }
     }
   }
@@ -557,6 +552,7 @@ export class BareRuntime implements RuntimeAdapter {
           }
         },
         transferOutput: async (buildDir) => {
+          await ensureOwnedDir(this.executor, parentPath(remoteDir));
           await this.executor.rm(remoteDir);
           await this.executor.mkdir(remoteDir);
 
@@ -564,10 +560,8 @@ export class BareRuntime implements RuntimeAdapter {
           // emitted a wholesale-shippable bundle (e.g. Next's `output:'standalone'`),
           // ship it as-is — traced node_modules included — and skip the on-target
           // install. Absent → falls through to host mode.
-          const selfContained = await prepareStackOutput(
-            config.stack,
-            resolveProjectDir(buildDir, config.rootDirectory),
-          );
+          const outputOptions = nodeOutputOptions(config, resolveProjectDir(buildDir, config.rootDirectory));
+          const selfContained = outputOptions ? await prepareNodeOutput(outputOptions) : null;
           if (selfContained) {
             log.log("Detected self-contained build output — shipping the bundle (no install on target).\n");
             await transferLocalDirectory(
@@ -658,6 +652,9 @@ export class BareRuntime implements RuntimeAdapter {
   ): Promise<BuildResult> {
     log.log("Build strategy: server (build on target)\n");
     const dir = this.buildDir(config.sessionId);
+    // Provision the staging parent before cleanup or source writes. Handing
+    // over only the session leaf would still prevent promotion's later rename.
+    await ensureOwnedDir(this.executor, parentPath(dir));
     await this.executor.rm(dir);
     await this.executor.mkdir(dir);
 
@@ -692,13 +689,38 @@ export class BareRuntime implements RuntimeAdapter {
       writeSecretFile: (p, content) => this.executor.writeFile(p, content),
     };
 
-    const result = await runBuildPipeline(buildEnv, sourceStaged ? { ...config, sourceStaged: true } : config, log);
+    const result = await runBuildPipeline(
+      buildEnv,
+      sourceStaged ? { ...config, sourceStaged: true } : config,
+      log,
+    );
+    const prepareOutput = result.status === "deploying"
+      ? prepareNodeOutputCommand(config, resolveProjectDir(dir, config.rootDirectory))
+      : undefined;
+    if (prepareOutput) await buildEnv.exec(prepareOutput, log.callback);
+    const root = config.rootDirectory?.trim().replace(/^\/+|\/+$/g, "");
+    const defaultStart = STACKS[config.stack as StackId]?.defaultStartCommand;
+    const usesDefaultStart =
+      !config.startCommand?.trim() || config.startCommand.trim() === defaultStart;
+    const automaticStart = prepareOutput && usesDefaultStart;
+    const start = automaticStart
+      ? AUTOMATIC_START
+      : config.startCommand || defaultStart || "npm start";
+    // Managed defaults run in the app directory used by the build. Explicit
+    // commands keep the existing repository cwd, including their own `cd` steps.
+    const appPath = root
+      ? nodeBinPathExport(config.packageManager, [".", root.split("/").map(() => "..").join("/")])
+      : "";
+    const startCommand = usesDefaultStart && root
+      ? `cd ${sq(root)} && ${appPath ? `${appPath} && ` : ""}${start}`
+      : automaticStart ? start : undefined;
     return {
       sessionId: config.sessionId,
       status: result.status,
       imageRef: dir,
       durationMs: result.durationMs,
       errorMessage: result.errorMessage,
+      ...(startCommand ? { startCommand } : {}),
     };
   }
 
@@ -930,12 +952,13 @@ export class BareRuntime implements RuntimeAdapter {
       // await preparation to settle before acknowledging cancellation.
       const prepare = async () => {
         if (temporaryCopy) {
+          await ensureOwnedDir(this.executor, parentPath(workDir));
           await this.executor.mkdir(workDir);
           const copy = await execute(`cd ${sq(workDir)} && cp -a ${sq(artifactPath)}/. .`);
           if (copy.code !== 0) throw new Error(`Could not stage retained release: ${copy.output.trim().slice(-1000)}`);
         }
         await this.linkPersistentPaths(
-          workDir, config.projectId, config.volumes, onLog, true, deadline.signal,
+          workDir, config.projectId, config.volumes, onLog, deadline.signal,
         );
       };
       if (this.executor.runWithAbortSignal) await this.executor.runWithAbortSignal(deadline.signal, prepare);

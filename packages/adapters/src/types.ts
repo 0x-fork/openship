@@ -125,6 +125,9 @@ export interface BuildConfig {
   runtimeImageOverride?: boolean;
   /** Package manager (npm | yarn | pnpm | bun) */
   packageManager: string;
+  /** Internal: cache mounts are enabled only after the runtime confirms a
+   * compatible BuildKit path. False preserves legacy/capped Engine builds. */
+  buildCache?: boolean;
   /** Shell command to install dependencies */
   installCommand: string;
   /**
@@ -397,6 +400,8 @@ export interface DeployConfig {
    * O(full_size + small_delta × N). Docker/Cloud ignore the field.
    */
   previousDeploymentId?: string;
+  /** Exact outgoing container on this target, for retaining image-declared data. */
+  previousContainerId?: string;
   /**
    * Adopt an ALREADY-RUNNING process instead of starting one. When true, a
    * runtime that supports adoption (currently Bare) skips build promotion and
@@ -423,6 +428,8 @@ export interface BuildResult {
    * Cloud workspace created from that image returns `true`.
    */
   artifactOwned?: boolean;
+  /** Cache mounts proven by the successfully built generated image. */
+  managedCacheTargets?: string[];
   durationMs?: number;
   /** Human-readable error description when status is "failed" */
   errorMessage?: string;

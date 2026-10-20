@@ -32,6 +32,7 @@ export * from "./domain-retry";
 export * from "./utils";
 export * from "./runtime-version";
 export * from "./errors";
+export * from "./operation-state";
 export * from "./service-routing";
 export * from "./volume-spec";
 export * from "./source-access";
@@ -93,6 +94,7 @@ export * from "./data-transfer";
 export * from "./instance-address";
 export * from "./analytics-domain";
 export * from "./deployment-events";
+export * from "./deployment-resource-issue";
 export * from "./operation-limits";
 export type { ExecutionAuthority } from "./execution-authority";
 export * from "./sse";
@@ -118,3 +120,14 @@ export * from "./github-installation-scope";
 
 export * from "./pricing/actions";
 export * from "./deployment-checks";
+export * from "./compose-gpu";
+export * from "./compose-shared-memory";
+export * from "./apps/gpu";
+
+export * from "./appearance";
+export * from "./command-environment";
+
+export * from "./build-caches";
+
+export * from "./compose-interpolation";
+export * from "./service-env-layers";

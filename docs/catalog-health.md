@@ -20,7 +20,8 @@ Run it locally with `bun scripts/smoke-catalog-minio.ts` against your test Docke
 daemon. `CATALOG_TEST_PLATFORM` can select either architecture.
 
 WordPress, Odoo Community, PostgreSQL + pgAdmin, MariaDB + Adminer, RabbitMQ,
-Authentik, and Nextcloud have native AMD64 and ARM64 smoke jobs as well. They
+Authentik, Nextcloud, Paperless-ngx, Wiki.js, Homepage, Immich, and Jellyfin have
+native AMD64 and ARM64 smoke jobs as well. They
 materialize the canonical images, inline builds, environment, volumes, mounted
 files with the engine's read-only binding semantics, and required setup hooks. Tests exercise application access and generated
 credentials, write data, replace all containers, and verify persistence. Authentik
@@ -32,9 +33,12 @@ the public login page; it does not drive a browser SSO integration.
 DOCKER_CONTEXT=your-test-context bun scripts/smoke-catalog-apps.ts
 # Or select individual stacks:
 DOCKER_CONTEXT=your-test-context bun scripts/smoke-catalog-apps.ts wordpress odoo
+# Test the actual retired images followed by an application-only replacement:
+DOCKER_CONTEXT=your-test-context CATALOG_TEST_FROM_RETIRED_BUILD=1 bun scripts/smoke-catalog-apps.ts wordpress odoo
 ```
 
-The stacks use their catalog CPU/RAM limits and loopback-only test UI ports.
+The test stacks use disposable CPU/RAM caps based on catalog recommendations and
+loopback-only test UI ports. Installed apps do not inherit these test caps.
 Database and broker ports are not published. Networks, containers, named volumes,
 and generated test images are removed afterward; pulled upstream images stay
 cached. These tests validate stack recipes, not provider TLS issuance, billing,
@@ -70,3 +74,59 @@ storage compatibility and backup checks. A pinned digest fixes reproducibility,
 not upstream availability: keep the scheduled check enabled and review replacement
 images when the registry stops serving a digest. An Openship-maintained mirror
 can be introduced separately after its publishing and maintenance are established.
+
+## Existing WordPress and Odoo build recipes
+
+New installs pull the official application image and mount the catalog's startup
+helper as a read-only file. WordPress initializes its owner through its bundled PHP
+installation API before starting Apache; Odoo uses its existing Python helper.
+Neither needs BuildKit. PocketBase still builds because its recipe installs the
+application binary.
+
+Existing installed recipes are not rewritten by catalog updates. The same repair
+command previews conversion of an exact retired recipe declared in `replacesBuilds`.
+Add `--apply` after reviewing the target image, startup command and file paths.
+The tool requires the same official base image, refuses customized recipes,
+commands, build arguments and existing mounted files, and refuses an in-progress
+deployment. It supports running, multi-service installs for these exact recipe
+conversions; distribution replacements retain the stricter failed-install rules
+above.
+
+Conversion removes the saved inline build, adds the declared startup files and
+command, and deploys only the application service through the normal engine.
+Database siblings, credentials, environment, volumes, routing and unrelated
+advanced settings are preserved. It does not upgrade the base application version
+or reset an existing owner password. Review backups and test on a clone before
+changing a stateful production installation. A failed deploy leaves the converted
+recipe saved for normal inspection and retry.
+
+## New document, dashboard, and media apps
+
+All five added templates pull published versioned images. Paperless uses native
+owner environment settings; Wiki.js, Immich, and Jellyfin initialize against a
+loopback-only listener before publishing. Tests sign in with generated credentials,
+change the password, recreate containers, and verify that the new password and
+application data remain. Paperless consumes and searches a real PDF; Immich uploads
+and downloads a photo; Wiki.js creates a page; Jellyfin creates a media library.
+The Immich test starts the CPU machine-learning worker but does not benchmark
+model inference or download the full model library.
+
+Homepage has no built-in authentication. The catalog adds Caddy HTTP Basic
+authentication, with a generated encrypted password; only that proxy is public.
+The smoke test checks unauthenticated rejection, authenticated access, and saved
+configuration after replacement. Docker socket and host filesystem integrations
+are not enabled. Use HTTPS for public access, through the normal Openship routing.
+
+Jellyfin requires Openship 0.9.2 for `entrypointArgv`, which maps to the existing
+Compose entrypoint support. Its version gate prevents older installers from
+ignoring the helper and exposing an unclaimed owner wizard. Immich requires at
+least 6 GiB RAM, 2 CPU cores, and x86-64-v2 for the current AMD64 ML image. Keep
+media and database backups separate from the running installation.
+
+Brand assets are bundled for offline use, without modifying the artwork:
+
+- Paperless: [leaf mark](https://github.com/paperless-ngx/paperless-ngx/blob/v3.3.1/docs/assets/logo_leaf.svg), upstream GPL-3.0 project.
+- Wiki.js: [brand mark](https://github.com/requarks/wiki/blob/v2.5.315/client/static/favicons/apple-touch-icon.png), upstream AGPL-3.0 project.
+- Homepage: [app icon](https://github.com/gethomepage/homepage/blob/v2.5.0/public/apple-touch-icon.png), upstream Apache-2.0 project.
+- Immich: [brand mark](https://github.com/immich-app/immich/blob/v3.3.1/design/immich-logo.svg), upstream AGPL-3.0 project.
+- Jellyfin: [brand mark](https://github.com/jellyfin/jellyfin-ux/blob/master/logos/SVG/jellyfin-icon--color-on-light.svg), upstream [branding guidance](https://jellyfin.org/docs/general/contributing/branding/).

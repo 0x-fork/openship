@@ -36,6 +36,8 @@ import {
   isWildcardHostname,
   withTimeout,
   type ComposeAdvanced,
+  validateComposeGpuConfig,
+  parseComposeShmSize,
   type ProxySettings,
 } from "@repo/core";
 import { getTemplateForOrg } from "../../apps/catalog-source";
@@ -156,7 +158,11 @@ import {
   resolveRouteStrategy,
   usesHostLoopbackUpstream,
 } from "../../../lib/upstream-url";
-import { withLoopbackPublishAll, upstreamHostPortFor } from "../../../lib/loopback-publish";
+import {
+  portOnlyTcpContainerPorts,
+  upstreamHostPortFor,
+  withLoopbackPublishAll,
+} from "../../../lib/loopback-publish";
 import { findForeignComposeCollisions } from "./foreign-compose-collision";
 import {
   deploymentCancellationKeepsProvisioned,
@@ -1011,6 +1017,8 @@ async function deployComposeServicesUnlocked(
   for (const service of enabled) {
     if (!opts?.strictScope || !opts.targetServiceIds || opts.targetServiceIds.has(service.id)) {
       parseContainerHosts(service.advanced?.extraHosts);
+      validateComposeGpuConfig(service.advanced);
+      parseComposeShmSize(service.advanced?.shmSize);
     }
   }
   await assertCloudDeploymentLimits(project.organizationId, {
@@ -1418,11 +1426,19 @@ async function deployComposeServicesUnlocked(
       let prepared = byRef.get(key);
       if (!prepared) {
         logger.log(`Preparing image ${image} before service cutover...\n`);
+        const started = Date.now();
+        const heartbeat = setInterval(() => logger.log(`Still preparing ${image} (${Math.floor((Date.now() - started) / 1000)}s)...\n`), 15_000);
+        heartbeat.unref?.();
         const policy = refresh ? deploymentImagePullPolicy(dep, opts?.forcePullImages, image)
           : { force: false, refreshMutableTag: false };
-        prepared = await runtime.prepareDeploymentImage(image, {
-          ...policy, requirePresent: retained, signal: opts?.signal,
-        });
+        try {
+          prepared = await runtime.prepareDeploymentImage(image, {
+            ...policy, requirePresent: retained, signal: opts?.signal, logger,
+          });
+          logger.log(`Image ${image} is ready (${Math.floor((Date.now() - started) / 1000)}s).\n`);
+        } finally {
+          clearInterval(heartbeat);
+        }
         byRef.set(key, prepared);
       }
       preparedImages.set(service.id, { ...prepared, requestedRef });
@@ -2123,14 +2139,22 @@ async function deployComposeServicesUnlocked(
     const pinnedByContainerPort = new Map<number, number>();
     const allocations: Array<Pick<AllocatedPinnedHostPort, "claim" | "claimWasCreated">> = [];
     const primaryRoutedPort = routedContainerPorts[0];
+    // Port-only publishes are pinned too: left to Docker, each start would draw a
+    // new host port from the ephemeral range.
+    const pinnedContainerPorts = [
+      ...routedContainerPorts,
+      ...portOnlyTcpContainerPorts((service.ports as string[] | null) ?? []).filter(
+        (containerPort) => !routedContainerPorts.includes(containerPort),
+      ),
+    ];
     try {
       if (
         usesHostLoopback &&
-        primaryRoutedPort !== undefined &&
+        pinnedContainerPorts.length > 0 &&
         !hasNoRoutableAddress &&
         opts?.executor
       ) {
-        for (const containerPort of routedContainerPorts) {
+        for (const containerPort of pinnedContainerPorts) {
           const previousRow = previousByServiceId.get(service.id);
           const owner = {
             projectId: project.id,
@@ -3119,8 +3143,10 @@ async function deployComposeServicesUnlocked(
       // reaches each on loopback and none is network-exposed. We OWN the pinned
       // ports (reuse the carried one for the primary, else allocate avoiding this
       // deploy's picks), so each route resolves deterministically — no reading it
-      // back from the daemon's ambiguous first-binding. Port-only bindings the user
-      // declared for direct access are preserved. Cloud handles exposure itself;
+      // back from the daemon's ambiguous first-binding. Port-only TCP bindings the
+      // user declared for direct access get their own pinned loopback port too, so
+      // Docker never draws them from the ephemeral range; other declared bindings
+      // are preserved. Cloud handles exposure itself;
       // bare/no-executor can't publish → skip (route falls back to container-IP).
       //
       // ONE HOST PORT PER ROUTED PORT, not one per service: a service can carry
@@ -3169,9 +3195,13 @@ async function deployComposeServicesUnlocked(
         // service only once its own failure handler is active.
         pendingPreparedHostPortServiceIds.delete(svc.id);
         const previous = previousByServiceId.get(svc.id);
+        serviceRuntimeConfig.previousContainerId = previous?.containerId ?? undefined;
         const serviceLogger = createServicePipelineLogger(logger, svc.name, svc.id);
         const routeDomains = toRoutedDomainInputs(proxyRoutes);
         const deployEnv: DeployEnvironment = {
+          ...(runtime instanceof DockerRuntime ? {
+            preflight: () => runtime.prepareServiceVolumes(serviceRuntimeConfig),
+          } : {}),
           activate: async (_cfg, onLog) => {
             opts?.onArtifactActivationStart?.(svc.id);
             const result = await runtime.deployServiceWorkload(

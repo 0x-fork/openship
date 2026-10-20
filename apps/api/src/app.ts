@@ -429,6 +429,16 @@ async function startControllerBackground(): Promise<void> {
         if (deployments > 0) {
           console.log(`[boot] cancelled ${deployments} stale in-flight deployment(s)`);
         }
+        // The sweep proves old in-process workers are gone. Journals still fence
+        // admission while exact role identities are recovered under the project
+        // lock. Unreachable servers retry through deployment reconciliation.
+        void trackBackgroundWork(
+          import("@repo/platform/engine/modules/deployments/role-handover")
+            .then(({ runRoleHandoverRecovery }) => runRoleHandoverRecovery())
+            .catch((error) =>
+              errorDiagnostics.warn("api/app", "Role handover recovery deferred", error),
+            ),
+        );
 
         // Stale project deletion flags are reclaimed under the project advisory
         // lock by the next teardown attempt. A blanket boot sweep can overlap work
@@ -453,6 +463,7 @@ async function startControllerBackground(): Promise<void> {
       });
       console.log(`[boot] backup runner: ${runner.describe()}`);
       (await import("@repo/platform/engine/modules/actions/lifecycle")).startActionController();
+      (await import("@repo/platform/engine/modules/ingress/lifecycle")).startIngressController();
 
       // Generic job schedule: seed built-in system jobs (SSL renewal, orphan GC,
       // prunes, deployment reconcile) into the `job` table and register every

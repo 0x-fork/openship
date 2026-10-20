@@ -192,6 +192,14 @@ export interface TableSpec {
 }
 
 const TABLES: ReadonlyArray<TableSpec> = [
+  {
+    sqlName: "ingress_connection", table: schema.ingressConnection,
+    scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true,
+  },
+  {
+    sqlName: "ingress_hostname", table: schema.ingressHostname,
+    scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false,
+  },
   ...[
     ["action_runner", schema.actionRunner],
     ["action_workflow", schema.actionWorkflow],
@@ -503,6 +511,14 @@ const TABLES: ReadonlyArray<TableSpec> = [
       { in: "organization", via: "organizationId" },
       { in: "project", via: "root-project-id" },
     ],
+    hasOrganizationId: true,
+  },
+  {
+    // The source and child projects, GitHub comment ownership and pending cleanup
+    // must move together. Portable project exports cannot carry this authority.
+    sqlName: "pull_request_preview",
+    table: schema.pullRequestPreview,
+    scopes: [{ in: "instance", via: "all-rows" }],
     hasOrganizationId: true,
   },
   {
@@ -1320,6 +1336,9 @@ export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
   // handles and source paths that are meaningful only on the original instance.
   for (const row of tables.project ?? []) {
     row.activeDeploymentId = null;
+    row.previewSettings = null;
+    row.previewScannedAt = null;
+    row.buildCacheReceipts = null;
     row.hostPort = null;
     row.localPath = null;
   }

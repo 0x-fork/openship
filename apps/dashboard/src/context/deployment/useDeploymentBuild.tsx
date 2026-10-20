@@ -14,7 +14,9 @@ import { useModal } from "@/context/ModalContext";
 import { useGitHub } from "@/context/GitHubContext";
 import type { BuildLog } from "@/utils/deploymentPhaseDetector";
 import { useBuildStream } from "@/hooks/useSSEConnection";
-import { deployApi, projectsApi } from "@/lib/api";
+import { deployApi, projectsApi, servicesApi } from "@/lib/api";
+import { serializeComposeService } from "./compose-service-payload";
+import { serviceEnvironmentChanges } from "@/lib/service-environment-editor";
 import { randomUUID } from "@/lib/random-uuid";
 import { redirectPayloadFields } from "@/lib/public-endpoint-payload";
 import { invalidateProjectCaches } from "@/hooks/useProjectEndpoints";
@@ -228,6 +230,17 @@ const STEPS: { label: string; icon: IconName }[] = [
  * Receives `config` (read-only) and `setConfig` (for loadBuildSession which
  * restores config from the API).
  */
+async function persistServiceEnvironmentDrafts(projectId: string, services: DeploymentConfig["services"]) {
+  for (const service of services) {
+    const draft = service.environmentDraft;
+    if (!draft || !service.serviceId) continue;
+    const changes = serviceEnvironmentChanges(draft.baseline, draft.rows);
+    if (!changes.upserts.length && !changes.deletes.length) continue;
+    const result = await servicesApi.mergeEnv(projectId, service.serviceId, { environment: draft.environment, ...changes });
+    if (!result.success) throw new Error("Failed to save service environment");
+  }
+}
+
 export function useDeploymentBuild(
   config: DeploymentConfig,
   setConfig: React.Dispatch<React.SetStateAction<DeploymentConfig>>,
@@ -354,6 +367,8 @@ export function useDeploymentBuild(
         queue: null,
         failureMessage: "",
         warningMessage,
+        errorCode: data?.errorCode || "",
+        errorDetails: data?.errorDetails ?? null,
         // THE SERVER'S FLAG ONLY. Never inferred from the presence of a warning.
         //
         // This used to read `?? !!warningMessage`, on the premise that "a warning on success means
@@ -772,6 +787,7 @@ export function useDeploymentBuild(
             buildCommand: config.options.buildCommand,
             startCommand: config.options.startCommand,
             releaseCommands: config.releaseCommands,
+            roles: config.roles,
             githubChecks: config.githubChecks,
             outputDirectory: config.options.outputDirectory,
             productionPaths: config.options.productionPaths,
@@ -791,6 +807,11 @@ export function useDeploymentBuild(
               : {}),
           });
           await persistProjectEnvDiff(projectId, envPlan.merge);
+          if (usesServiceDeployment(config)) {
+            const synced = await servicesApi.sync(projectId, config.services.map(serializeComposeService));
+            if (!synced.success) throw new Error("Failed to save service configuration");
+            await persistServiceEnvironmentDrafts(projectId, config.services);
+          }
           if (config.actions) await actionsApi.updateProjectPolicy({ ...config.actions, projectId });
           showToast("Configuration saved", "success", "Saved");
           return projectId;
@@ -888,6 +909,7 @@ export function useDeploymentBuild(
         readiness: config.readiness ?? undefined,
         githubChecks: config.githubChecks,
         releaseCommands: config.releaseCommands,
+        roles: config.roles,
       });
 
       if (!projectData.success || !projectData.project_id) {
@@ -927,6 +949,7 @@ export function useDeploymentBuild(
       // the endpoint's legacy full-replace behavior. A genuinely new project
       // still sends its initial values through build/access to create the store.
       await persistProjectEnvDiff(projectData.project_id, resolvedEnvPlan.merge);
+      if (usesServiceDeployment(config) && config.projectId === projectData.project_id) await persistServiceEnvironmentDrafts(projectData.project_id, config.services);
 
       // Step 2: Create deployment with config snapshot + env vars
       const data = await deployApi.buildAccess({
@@ -988,33 +1011,7 @@ export function useDeploymentBuild(
             ? config.cloudResourceCustom
             : undefined,
         services: isServiceDeployment
-          ? config.services.map((service) => ({
-              name: service.name,
-              image: service.image,
-              build: service.build,
-              dockerfile: service.dockerfile,
-              buildArgs: service.buildArgs,
-              advanced: service.advanced,
-              ports: service.ports,
-              dependsOn: service.dependsOn,
-              environment: service.environment,
-              volumes: service.volumes,
-              command: service.command,
-              restart: service.restart,
-              exposed: service.exposed,
-              exposedPort: service.exposedPort,
-              domain: service.domain,
-              customDomain: service.customDomain,
-              domainType: service.domainType,
-              // Multi-route: one entry per public port. Drop the UI-only id/
-              // targetPath; the backend mirrors entry[0] → the scalar fields.
-              publicEndpoints: service.publicEndpoints?.map((endpoint) => ({
-                port: endpoint.port,
-                domain: endpoint.domainType === "custom" ? undefined : endpoint.domain,
-                customDomain: endpoint.domainType === "custom" ? endpoint.customDomain : undefined,
-                domainType: endpoint.domainType,
-              })),
-            }))
+          ? config.services.map(serializeComposeService)
           : undefined,
       });
 
@@ -1170,6 +1167,7 @@ export function useDeploymentBuild(
                   portCheck: data.portCheck ?? prev.portCheck,
                   portCheckSkipped: data.portCheckSkipped ?? prev.portCheckSkipped,
                   errorCode: data.errorCode || prev.errorCode,
+                  errorDetails: data.errorDetails ?? null,
                 }
               : {}),
           };
@@ -1403,7 +1401,7 @@ export function useDeploymentBuild(
           portCheck: !isActive ? (data.portCheck ?? []) : [],
           portCheckSkipped: !isActive ? (data.portCheckSkipped ?? []) : [],
           errorCode: !isActive ? (data.errorCode || "") : "",
-          errorDetails: null,
+          errorDetails: !isActive ? (data.errorDetails ?? null) : null,
           buildLogs,
           // Authoritative per-phase durations computed server-side from the
           // step events (live tracking is best-effort until this lands).

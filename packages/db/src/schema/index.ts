@@ -118,3 +118,8 @@ export { actionOidcKey } from "./action-oidc";
 export { actionBudget, actionCreditPurchase } from "./action-billing";
 
 export { cloudBuildActivity, type CloudBuildActivity } from "./cloud-build-activity";
+
+export * from "./ingress-connection";
+export * from "./ingress-hostname";
+
+export * from "./pull-request-preview";

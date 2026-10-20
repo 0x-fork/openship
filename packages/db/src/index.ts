@@ -144,7 +144,7 @@ export {
   type NewDeployment,
   type BuildSession,
   type NewBuildSession,
-  type DeploymentResourceChanges,
+  type DeploymentResourceChanges, type DeploymentRoleChanges,
   type Domain,
   type NewDomain,
   type DnsCredential,
@@ -287,3 +287,7 @@ export {
 export type { CloudBuildActivity } from "./schema/cloud-build-activity";
 export { createCloudBuildActivityRepo, reserveCloudBuildActivity, type CloudBuildActivityIdentity, type CloudBuildResources } from "./repos/cloud-build-activity.repo";
 export { createDeploymentCheckRepo, type DeploymentCheck } from "./repos/deployment-check.repo";
+
+export type { IngressConnection, IngressHostname } from "./repos/ingress.repo";
+
+export { createPullRequestPreviewRepo, type PullRequestPreview } from "./repos/pull-request-preview.repo";

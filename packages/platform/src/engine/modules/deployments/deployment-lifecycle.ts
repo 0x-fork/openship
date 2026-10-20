@@ -32,11 +32,16 @@ import { audit } from "../../lib/audit-emitter";
 import * as sessionManager from "./session-manager";
 import type { BuildSessionState } from "./session-manager";
 import { failureStatusFor } from "./blocking-errors";
-import { sanitizeStorableStrings, sliceWithoutSplittingPair } from "./build-log-sanitize";
+import {
+  sanitizeDeploymentMeta,
+  sanitizeStorableStrings,
+  sliceWithoutSplittingPair,
+} from "./build-log-sanitize";
 import { detectAndStoreFavicon } from "../../lib/favicon-detector";
 import { trackBackgroundWork } from "../../lib/background-work";
 import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
 import { computeCleanupKeepSet } from "../projects/cleanup-keep-set";
+import { deploymentResourceFailure, type DeploymentFailureMeta } from "./resource-failure";
 
 /**
  * Shared routing/TLS advisory for a deploy whose workloads succeeded. Connection
@@ -81,6 +86,8 @@ export interface LifecycleContext {
   /** The deployment's single logger. Optional for startup/recovery callers that
    * have no live log stream; normal build pipelines always provide it. */
   logger?: Pick<BuildLogger, "log">;
+  /** Trusted runtime facts kept independently of bounded/collapsed build logs. */
+  resourceEvidence?: readonly LogEntry[];
   /** Provisioned resources - set by the orchestrator as phases progress. */
   provisioned: { imageRef?: string };
   /**
@@ -95,7 +102,7 @@ export interface LifecycleContext {
 
 /** Build the persistable log array. Collapsing/sanitizing it is observability
  *  work, so a crash in it degrades to a one-line explanation, never a failure. */
-function collectLogs(ctx: LifecycleContext): LogEntry[] {
+export function collectLogs(ctx: LifecycleContext): LogEntry[] {
   try {
     return ctx.persistLogs();
   } catch (err) {
@@ -197,6 +204,29 @@ async function finishSession(
  * Lives here rather than inline in build-pipeline so the decision is exercisable
  * without standing up the whole build platform.
  */
+/** Commit intent follows publication and may already have retired predecessors.
+ * A later exception/cancellation must never tear the published candidate down.
+ * The journal reconciler owns completion; this only closes the current stream. */
+export async function protectRoleHandoverOutcome(ctx: LifecycleContext): Promise<void> {
+  if (ctx.settled || ctx.dep.roleHandover?.phase !== "committing") return;
+  // Set before any read: loss of the DB connection is not permission to unwind.
+  ctx.settled = "reconciling";
+  try {
+    const current = await repos.deployment.findById(ctx.dep.id);
+    if (current?.status === "ready") {
+      ctx.settled = "ready";
+      await finishSession(ctx.buildSessionId, "ready", current.buildDurationMs ?? 0, collectLogs(ctx));
+      sessionManager.updateStatus(ctx.dep.id, "ready");
+    } else {
+      await onReconciling(ctx, {
+        warningMessage: "Role handover completion is pending. Openship will retry when the server is reachable.",
+      });
+    }
+  } catch (error) {
+    observeCaughtError(error, "platform/engine/modules/deployments/deployment-lifecycle");
+  }
+}
+
 export async function reportPipelineError(
   ctx: LifecycleContext,
   message: string,
@@ -449,7 +479,7 @@ export async function onNoChanges(
   // refresh path reads a persisted deploy note from. Sanitized like onSuccess's
   // meta — a NUL in the reason must not fail the write.
   const previousMeta = (dep.meta as DeploymentMeta | null) ?? {};
-  const mergedMeta = sanitizeStorableStrings({
+  const mergedMeta = sanitizeDeploymentMeta({
     ...previousMeta,
     composeDeployment: { ...(previousMeta.composeDeployment ?? {}), warningMessage: reason },
   });
@@ -504,6 +534,19 @@ export async function onFailure(
   errorMeta?: { errorCode?: string; errorDetails?: Record<string, unknown>; errorMessage?: string },
 ): Promise<void> {
   const { runtime, project, dep, buildSessionId, provisioned } = ctx;
+  if (dep.roleHandover?.phase === "committing") {
+    await protectRoleHandoverOutcome(ctx);
+    return;
+  }
+  if (project.workspaceId) {
+    errorMeta = {
+      ...errorMeta,
+      ...deploymentResourceFailure({
+        project, message: error ?? "", meta: errorMeta,
+        logs: ctx.resourceEvidence ?? collectLogs(ctx),
+      }),
+    };
+  }
   reportError(error ?? "Deployment failed", { kind: "deployment", component: "deployment-lifecycle",
     operation: "deployment.failed", organizationId: dep.organizationId, projectId: project.id,
     deploymentId: dep.id, serverId: project.serverId ?? undefined, durationMs, code: errorMeta?.errorCode, handled: true });
@@ -645,6 +688,10 @@ export async function onCancelled(
   opts: { keepProvisioned?: boolean } = {},
 ): Promise<void> {
   const { runtime, dep, buildSessionId, provisioned } = ctx;
+  if (dep.roleHandover?.phase === "committing") {
+    await protectRoleHandoverOutcome(ctx);
+    return;
+  }
 
   if (!opts.keepProvisioned && runtime && provisioned.imageRef) {
     try {
@@ -700,7 +747,7 @@ export async function onCancelled(
 }
 
 /** Release numbering is cosmetic — see the call site's ordering invariant. */
-async function readReleaseVersion(
+export async function readReleaseVersion(
   projectId: string,
   commitSha: string | null | undefined,
 ): Promise<number | undefined> {
@@ -726,6 +773,8 @@ export async function onSuccess(
     warningMessage?: string;
     decisionPending?: boolean;
     metaPatch?: Record<string, unknown>;
+    /** Evidence for failed services in an otherwise published partial rollout. */
+    failureMeta?: DeploymentFailureMeta;
   },
 ): Promise<void> {
   const { project, dep, buildSessionId } = ctx;
@@ -747,7 +796,11 @@ export async function onSuccess(
   // Sanitized: metaPatch carries service/routing warnings built from raw process
   // output, and `meta` is jsonb written BEFORE the outcome — one NUL in a warning
   // string would fail the "ready" write and take the whole deploy down with it.
-  const mergedMeta = sanitizeStorableStrings(
+  // `sanitizeDeploymentMeta`, not the plain scrubber: meta carries
+  // `composeServices` (the frozen env a rollback replays), which is an encrypted
+  // operational record, not log text. Redacting it wrote `***` into a DSN and
+  // broke the restore — see `sanitizeDeploymentMeta`.
+  const mergedMeta = sanitizeDeploymentMeta(
     result.metaPatch
       ? { ...((dep.meta as DeploymentMeta | null) ?? {}), ...result.metaPatch }
       : ((dep.meta as DeploymentMeta | null) ?? null),
@@ -767,8 +820,14 @@ export async function onSuccess(
   const outcome = await recordOutcome(
     dep.id,
     "ready",
-    { errorMessage: null, meta: mergedMeta, version, buildDurationMs: result.durationMs },
-    ["meta"],
+    {
+      errorMessage: null, meta: mergedMeta, version, buildDurationMs: result.durationMs,
+      ...(result.failureMeta ? {
+        errorCode: result.failureMeta.errorCode,
+        errorDetails: sanitizeStorableStrings(result.failureMeta.errorDetails),
+      } : {}),
+    },
+    ["meta", "errorDetails"],
   );
   const outcomeError = outcome.error;
 
@@ -847,6 +906,7 @@ export async function onSuccess(
   }
   await finishSession(buildSessionId, "ready", result.durationMs, collectLogs(ctx));
   sessionManager.updateStatus(dep.id, "ready", {
+    ...result.failureMeta,
     // The deploy WORKED whether or not the row took the write, and the terminal
     // event has to go out either way — but say so, because the row the dashboard
     // re-reads on refresh may still say "deploying".

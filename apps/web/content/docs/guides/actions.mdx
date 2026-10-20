@@ -503,6 +503,13 @@ Cancel stops the remote execution and then cleans its resources. A runner remain
 busy until cleanup succeeds. Cloud workers also have a provider TTL as a fallback;
 an unreachable controller does not leave a VM running indefinitely.
 
+Temporary provider outages, network failures and GitHub rate limits keep the
+existing runner and capacity reservation intact while Openship retries observation.
+They do not cancel or restart the job. Confirmed worker loss still requires an
+explicit rerun, so workflow side effects are never replayed automatically. A terminal
+runner error remains attached to its assigned job even when GitHub has no log archive;
+delayed runner deregistration does not replace the original failure reason.
+
 Independent workflows support up to 256 concrete jobs after matrix expansion. A job defaults
 to a 60-minute timeout and can request up to 360 minutes. Logs are bounded at
 8 MiB per job. Settled run history is retained for 30 days, with runs referenced
@@ -514,7 +521,9 @@ independent mode rejects those features before dispatch. Openship-managed destin
 currently support Linux and macOS; Windows and GitHub Enterprise Server are not
 available. Official runner registrations execute one job and expire after six hours;
 idle registrations are removed after ten minutes. Choose a runner image with the
-official runner's dependencies, or use the Ubuntu preset.
+official runner's dependencies, or use the Ubuntu preset. The official runner's
+container runs as the connected server user's UID and GID; steps that need root
+require a server connected as root.
 
 GitHub dispatch and rerun POSTs have durable command receipts. If GitHub accepts a
 request but its response is lost, Openship does not send the POST twice. Refresh

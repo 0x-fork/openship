@@ -6,6 +6,7 @@ import type {
   RouteRuleSpec,
   ProxySettings,
   OpenshipReadiness,
+  StackRole,
   WorkloadType,
   DeploymentHistoryQuery,
 } from "@repo/core";
@@ -76,6 +77,7 @@ export interface ProjectOptionsBody {
   buildCommand?: string;
   startCommand?: string;
   releaseCommands?: string[] | null;
+  roles?: StackRole[] | null;
   outputDirectory?: string;
   productionPaths?: string;
   /** Persistent mounts. `null` clears the override and restores the framework's
@@ -156,6 +158,8 @@ export interface ScanProjectResponse {
   buildCommand: PrepareProjectResponse["buildCommand"];
   startCommand: PrepareProjectResponse["startCommand"];
   releaseCommands?: PrepareProjectResponse["releaseCommands"];
+  roles?: PrepareProjectResponse["roles"];
+  rolePresets?: PrepareProjectResponse["rolePresets"];
   buildImage: PrepareProjectResponse["buildImage"];
   runtimeVersion?: string | null;
   runtimeImage?: string | null;
@@ -329,6 +333,7 @@ export const projectsApi = {
     readiness?: OpenshipReadiness | null;
     /** Ordered commands required before activating a single-app release. */
     releaseCommands?: string[] | null;
+    roles?: StackRole[] | null;
   }) => api.post<any>(endpoints.projects.ensure, body),
 
   /** List local projects only */

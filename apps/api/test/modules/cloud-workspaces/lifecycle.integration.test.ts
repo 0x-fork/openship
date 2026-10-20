@@ -328,6 +328,47 @@ afterEach(async () => {
 });
 
 describe("subscription-owned Cloud workspace lifecycle", () => {
+  it("presents historical Cloud space progress without rewriting provider diagnostics or stored logs", async () => {
+    await provision();
+    const row = (await repos.cloudWorkspace.findById(workspace.id))!;
+    const providerDiagnostic = "Oblien server diagnostic: Server is ready for projects. (HTTP 503)";
+    const logs = [
+      "Waiting for the server to finish its current operation…",
+      "Checking the server and its current subscription…",
+      "Preparing the subscribed Docker host…",
+      "Resizing the server; running projects will briefly restart…",
+      "Confirming provider cleanup before removing this empty server…",
+      "Server capacity applied; previously running services restored.",
+      "Server is ready for projects.",
+      "Your Cloud space is ready for projects.",
+      providerDiagnostic,
+    ];
+    await repos.cloudWorkspace.updateOperation(
+      workspace.id,
+      { ...row.operation!, logs },
+      row.operation!.id,
+    );
+
+    const result = await request("GET", `/${workspace.id}`);
+    expect(result.status).toBe(200);
+    expect(result.body.managed.operation).toMatchObject({
+      id: row.operation!.id,
+      status: "succeeded",
+      logs: [
+        "Waiting for the Cloud space to finish its current operation…",
+        "Checking the Cloud space and its current subscription…",
+        "Preparing your Cloud space…",
+        "Applying Cloud space capacity; running projects will briefly restart…",
+        "Confirming cleanup before removing this unused Cloud space…",
+        "Cloud space capacity applied; previously running services restored.",
+        "Your Cloud space is ready for projects.",
+        "Your Cloud space is ready for projects.",
+        providerDiagnostic,
+      ],
+    });
+    expect((await repos.cloudWorkspace.findById(workspace.id))?.operation?.logs).toEqual(logs);
+  });
+
   it("keeps a first app's server identity through the plan refusal, payment and draft retry", async () => {
     owner = await seedOwner();
     const install = async () => {
@@ -879,7 +920,22 @@ describe("workspace payment and deletion races", () => {
     const selected = async () => (await remote().listCheckouts({ workspaceId: workspace.id })).items[0]!;
     const action = async () => ({ workspaceId: workspace.id, id: (await selected()).id });
     beforeEach(() => {
-      payments.clear(); accepted.clear(); reservations.clear();
+      payments.clear();
+      accepted.clear();
+      reservations.clear();
+      h.billing.getCatalog = vi.fn(async () => ({ reseller: { checkoutCancellation: false } }));
+      h.billing.cancelCheckout = vi.fn(
+        async (namespace: string, id: string, input: { idempotencyKey: string }) => {
+          const saved = (await repos.cloudWorkspace.findByNamespace(namespace))!;
+          expect(
+            saved.pendingCheckouts.find((item) => item.checkoutId === id)?.cancellation,
+          ).toEqual({ checkoutId: id, ...input });
+          expect(payments.get(id)!.namespace).toBe(namespace);
+          payments.get(id)!.status = "expired";
+          reservations.delete(namespace);
+          return { checkout: { ...payments.get(id) } };
+        },
+      );
       subscriptions.delete(workspace.namespace!);
       h.billing.createCheckout = vi.fn(async (input: ReturnType<typeof checkout>) => {
         let id = accepted.get(input.idempotencyKey);
@@ -909,6 +965,78 @@ describe("workspace payment and deletion races", () => {
         reservations.delete(namespace);
         return { success: true, namespace, pendingCheckout: null };
       });
+    });
+    it("cancels a legacy retail payment without a capacity quote when the provider supports checkout cancellation", async () => {
+      await purchase();
+      h.billing.getCatalog.mockResolvedValue({ reseller: { checkoutCancellation: true } });
+      h.billing.getPendingCapacityCheckout.mockRejectedValue(
+        new Error("must not depend on a capacity quote"),
+      );
+      const item = await selected();
+      expect(item).toMatchObject({ canCancel: true, state: "open" });
+      expect(item).not.toHaveProperty("cancelUnavailableReason");
+      expect(
+        await remote().cancelCheckout({ workspaceId: workspace.id, id: item.id }),
+      ).toMatchObject({ status: "expired" });
+      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts).toEqual([]);
+      expect(h.billing.getPendingCapacityCheckout).not.toHaveBeenCalled();
+      expect(h.billing.cancelCapacityCheckout).not.toHaveBeenCalled();
+      await expect(purchase()).resolves.toHaveProperty("checkoutId");
+    });
+    it("retries an uncertain generic cancellation from its saved checkout identity even after capability discovery fails", async () => {
+      await purchase();
+      h.billing.getCatalog.mockResolvedValue({ reseller: { checkoutCancellation: true } });
+      const input = await action();
+      h.billing.cancelCheckout.mockRejectedValueOnce(new Error("timeout"));
+      await expect(remote().cancelCheckout(input)).rejects.toThrow();
+      const saved = (await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts[0]!
+        .cancellation!;
+      expect(saved).toHaveProperty("checkoutId");
+      h.billing.getCatalog.mockRejectedValue(new Error("catalog offline"));
+      expect(await selected()).toMatchObject({
+        state: "canceling",
+        canResume: false,
+        canCancel: true,
+      });
+      await expect(remote().resumeCheckout(input)).rejects.toMatchObject({
+        code: "CLOUD_WORKSPACE_CHECKOUT_PENDING",
+      });
+      await expect(purchase()).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" });
+      expect(await remote().cancelCheckout(input)).toMatchObject({ status: "expired" });
+      expect(h.billing.cancelCheckout.mock.calls[0]).toEqual(
+        h.billing.cancelCheckout.mock.calls[1],
+      );
+    });
+    it("resolves lost generic cancellation responses from the original checkout, including payment races", async () => {
+      await purchase();
+      h.billing.getCatalog.mockResolvedValue({ reseller: { checkoutCancellation: true } });
+      const cancel = h.billing.cancelCheckout.getMockImplementation()!;
+      h.billing.cancelCheckout.mockImplementationOnce(async (...args: any[]) => {
+        await cancel(...args);
+        throw new Error("lost response");
+      });
+      expect(await remote().cancelCheckout(await action())).toMatchObject({ status: "expired" });
+      const next = await purchase();
+      h.billing.cancelCheckout.mockImplementationOnce(async () => {
+        Object.assign(payments.get(next.checkoutId)!, {
+          status: "complete",
+          paymentStatus: "paid",
+        });
+        throw new Error("checkout already paid");
+      });
+      expect(await remote().cancelCheckout(await action())).toMatchObject({ status: "processing" });
+      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts).toHaveLength(1);
+      await expect(purchase()).rejects.toMatchObject({ code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" });
+    });
+    it("reports failed capability discovery as unavailable rather than unsupported", async () => {
+      await purchase();
+      h.billing.getCatalog.mockRejectedValue(new Error("catalog offline"));
+      h.billing.getPendingCapacityCheckout.mockResolvedValue({ pendingCheckout: null });
+      expect(await selected()).toMatchObject({
+        canCancel: false,
+        cancelUnavailableReason: "provider_unavailable",
+      });
+      expect(h.billing.cancelCheckout).not.toHaveBeenCalled();
     });
     it("lists lost responses without replaying a payment, then recovers the exact saved offer and identity", async () => {
       const original = checkout();
@@ -1002,15 +1130,51 @@ describe("workspace payment and deletion races", () => {
       expect((await request("DELETE", `/${workspace.id}`, { confirmDelete: true, idempotencyKey: randomUUID() })).body.code)
         .toBe("CLOUD_WORKSPACE_CHECKOUT_PENDING");
     });
-    it.each(["other-checkout", null])("never cancels an unrelated or missing capacity payment (%s)", async checkoutId => {
+    it.each(["other-checkout", null])(
+      "never cancels an unrelated or missing capacity payment (%s)",
+      async (checkoutId) => {
+        await purchase();
+        h.billing.getPendingCapacityCheckout.mockResolvedValue({
+          pendingCheckout: checkoutId
+            ? {
+                checkoutId,
+                quote: { id: "other-quote", paymentSource: "stripe" },
+              }
+            : null,
+        });
+        expect(await selected()).toMatchObject({
+          canResume: true,
+          canCancel: false,
+          cancelUnavailableReason: "unsupported",
+        });
+        await expect(remote().cancelCheckout(await action())).rejects.toMatchObject({
+          code: "BILLING_CHECKOUT_CANCEL_UNAVAILABLE",
+        });
+        expect(h.billing.cancelCapacityCheckout).not.toHaveBeenCalled();
+        expect(
+          (await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts[0],
+        ).not.toHaveProperty("cancellation");
+      },
+    );
+    it("distinguishes a failed cancellation read from unsupported cancellation, then restores Cancel after refresh", async () => {
       await purchase();
-      h.billing.getPendingCapacityCheckout.mockResolvedValue({ pendingCheckout: checkoutId ? {
-        checkoutId, quote: { id: "other-quote", paymentSource: "stripe" },
-      } : null });
-      expect(await selected()).toMatchObject({ canResume: true, canCancel: false });
-      await expect(remote().cancelCheckout(await action())).rejects.toMatchObject({ code: "BILLING_CHECKOUT_CANCEL_UNAVAILABLE" });
+      h.billing.getPendingCapacityCheckout.mockRejectedValueOnce(new Error("provider timeout"));
+      const item = await selected();
+      expect(item).toMatchObject({
+        state: "open",
+        canResume: true,
+        canCancel: false,
+        cancelUnavailableReason: "provider_unavailable",
+      });
       expect(h.billing.cancelCapacityCheckout).not.toHaveBeenCalled();
-      expect((await repos.cloudWorkspace.findById(workspace.id))!.pendingCheckouts[0]).not.toHaveProperty("cancellation");
+      expect(h.billing.createCheckout).toHaveBeenCalledOnce();
+      const refreshed = await selected();
+      expect(refreshed).toMatchObject({ state: "open", canCancel: true });
+      expect(refreshed).not.toHaveProperty("cancelUnavailableReason");
+      expect(
+        await remote().cancelCheckout({ workspaceId: workspace.id, id: item.id }),
+      ).toMatchObject({ status: "expired" });
+      await expect(purchase()).resolves.toHaveProperty("checkoutId");
     });
     it("keeps unknown provider state pending and does not replay, clear or cancel it", async () => {
       await purchase();

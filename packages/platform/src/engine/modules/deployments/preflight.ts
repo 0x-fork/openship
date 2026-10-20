@@ -28,6 +28,10 @@ import {
   describeResourceFit,
   fitsCapacity,
   hasMinResources,
+  commandEnvironmentWarning,
+  manualBuildCaches,
+  normalizeAppVolume,
+  parseVolumeMount,
 } from "@repo/core";
 import { cloudClient } from "../../lib/cloud/client";
 import { isCloudConnectedForOrg } from "../../lib/cloud/session";
@@ -64,6 +68,7 @@ import { parseRepoUrl } from "../github/github.service";
 import { resolveRecords, lookupAddresses } from "../../lib/dns-resolver";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { getTrustedHostCapacity } from "../../lib/host-capacity";
+import { gpuTargetCheck, servicesRequestingGpu } from "../../lib/gpu-target";
 import { getTemplateForOrg } from "../apps/catalog-source";
 import { repos } from "@repo/db";
 import { requireLinkedCloudServer, remoteCloudRequest } from "../../lib/cloud/server-link";
@@ -1432,6 +1437,29 @@ async function checkHostCapacity(
   };
 }
 
+async function checkGpuTarget(
+  organizationId: string,
+  serverId: string | undefined,
+  isLocalTarget: boolean,
+  services: readonly DeployableService[] | undefined,
+): Promise<PreflightCheck | null> {
+  const gpuServices = servicesRequestingGpu(services);
+  if (gpuServices.length === 0) return null;
+  const server = serverId
+    ? await repos.server.getInOrganization(serverId, organizationId).catch((diagnosticFailure) => {
+        // A server row we cannot read only drops the manual GPU mark; detection still decides.
+        observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/preflight");
+        return null;
+      })
+    : null;
+  const capacity = await getTrustedHostCapacity(serverId, organizationId, { isLocalTarget });
+  return gpuTargetCheck({
+    gpuServices,
+    override: (server?.gpuOverride as "yes" | "no" | null | undefined) ?? null,
+    capacity: capacity.source === "docker" ? capacity : null,
+  });
+}
+
 export async function runPreflightChecks(
   snapshot: DeploymentConfigSnapshot,
   opts?: PreflightOptions,
@@ -1484,6 +1512,24 @@ export async function runPreflightChecks(
       ? { id: "stack", label: "Service stack", status: "pass" }
       : checkStack(snapshot),
   ];
+  const commandOwners = [{ name: "Project", ...snapshot }, ...(opts?.composeServices ?? []).map(s => ({ ...s, name: `Service ${s.name}` }))];
+  for (const [index, owner] of commandOwners.entries()) {
+    for (const field of ["installCommand", "buildCommand", "startCommand"] as const) {
+      const message = commandEnvironmentWarning(owner[field] ?? "", `${owner.name} ${field}`);
+      if (message) checks.push({ id: `command-env-${index}-${field}`, label: "Command environment", status: "warn", message });
+    }
+    if (owner.framework === "nextjs" && owner.rootDirectory && /(?:^|\s)node\s+\.next\/standalone\/server\.js(?:$|\s)/.test(owner.startCommand ?? "")) {
+      checks.push({ id: `standalone-start-${index}`, label: "Application output", status: "warn", message: `${owner.name} hardcodes a standalone server path. Monorepo output can nest the server under the app directory. Clear the Start override to let Openship locate the server and copy its static/public assets.` });
+    }
+    const caches = manualBuildCaches(owner);
+    if (caches.length) checks.push({ id: `manual-cache-${index}`, label: "Build caches", status: "warn", message: `${owner.name} has manual mounts for managed build-cache paths: ${caches.map(cache => cache.target).join(", ")}. Use the managed-cache migration after a successful deployment.` });
+    const mounts = (owner.volumes ?? []).flatMap(spec => {
+      const normalized = normalizeAppVolume(spec);
+      return normalized ? [parseVolumeMount(normalized).target.replace(/\/+$/, "") || "/"] : [];
+    });
+    const duplicate = [...new Set(mounts.filter((target, index) => mounts.indexOf(target) !== index))];
+    if (duplicate.length) checks.push({ id: `duplicate-mount-${index}`, label: "Duplicate mounts", status: "warn", message: `${owner.name} mounts these paths more than once: ${duplicate.join(", ")}. Keep one mount per path.` });
+  }
 
   // Does this machine meet what the app says it needs? Cloud is sized from the
   // tier table, not from host hardware, so there is nothing to match there (and
@@ -1496,6 +1542,18 @@ export async function runPreflightChecks(
       effectiveTarget === "local",
     );
     if (hostCapacity) checks.push(hostCapacity);
+  }
+
+  // A service that asks for a GPU should land on a server that has one. Warn-only (see
+  // gpuTargetCheck). Same gate as host capacity: cloud/cluster size from tiers, never probe a box.
+  if (snapshot.organizationId && effectiveTarget !== "cloud" && effectiveTarget !== "cluster") {
+    const gpuCheck = await checkGpuTarget(
+      snapshot.organizationId,
+      snapshot.serverId,
+      effectiveTarget === "local",
+      opts?.composeServices,
+    );
+    if (gpuCheck) checks.push(gpuCheck);
   }
 
   if (!hasEndpointRouting && opts?.slug && !opts?.customDomain) {

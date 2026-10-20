@@ -8,6 +8,7 @@ import { STACKS, type StackRole } from "./stacks";
 const jobs: StackRole = {
   name: "jobs",
   kind: "worker",
+  slot: "queue",
   command: "exec bin/jobs",
   stopGracePeriod: "10s",
   when: { deps: ["solid_queue"], files: ["bin/jobs"] },
@@ -15,6 +16,7 @@ const jobs: StackRole = {
 const sidekiq: StackRole = {
   name: "sidekiq",
   kind: "worker",
+  slot: "queue",
   command: "exec bundle exec sidekiq",
   stopGracePeriod: "45s",
   when: { deps: ["sidekiq"] },
@@ -113,6 +115,33 @@ describe("resolveStackRoles", () => {
       }),
     ).toEqual([]);
   });
+
+  it("drops only conflicting slot alternatives while keeping independent roles", () => {
+    const independent: StackRole = { name: "reports", kind: "worker", command: "exec reports" };
+    expect(
+      resolveStackRoles({
+        defaultRoles: [...defaultRoles, independent],
+        deps: ["solid_queue", "sidekiq"],
+        files: ["bin/jobs"],
+      }),
+    ).toEqual([independent]);
+  });
+
+  it("strips preset-only slots from explicit configuration and warns without calling it a gate", () => {
+    const result = parseOpenshipConfig({
+      roles: [
+        { name: "one", kind: "worker", command: "exec one", slot: "queue" },
+        { name: "two", kind: "worker", command: "exec two", slot: "queue" },
+      ],
+    });
+    expect(result.errors).toEqual([]);
+    expect(result.config?.roles?.map((role) => role.name)).toEqual(["one", "two"]);
+    expect(result.config?.roles?.every((role) => !("slot" in role))).toBe(true);
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings.every((warning) => warning.includes("resolves alternatives"))).toBe(
+      true,
+    );
+  });
 });
 
 describe("STACKS.rails.defaultRoles (issue #935)", () => {
@@ -166,21 +195,24 @@ describe("STACKS.laravel.defaultRoles", () => {
     expect(scheduler?.singleton).toBe(true);
   });
 
-  it("every preset sets a 90s stop grace period the openship.json parser accepts", () => {
+  it("preserves worker and scheduler shutdown settings through the openship.json parser", () => {
     const roles: readonly StackRole[] = STACKS.laravel.defaultRoles ?? [];
-    expect(roles.map((r) => r.stopGracePeriod)).toEqual(["90s", "90s", "90s"]);
+    expect(roles.map((r) => r.stopGracePeriod)).toEqual(["90s", "90s", "10s"]);
+    expect(roles.find((r) => r.name === "scheduler")?.stopSignal).toBe("SIGTERM");
     // Presets bypass the parser, so run each value through it here.
     const { config, errors } = parseOpenshipConfig({
-      roles: roles.map(({ name, kind, command, singleton, stopGracePeriod }) => ({
+      roles: roles.map(({ name, kind, command, singleton, stopSignal, stopGracePeriod }) => ({
         name,
         kind,
         command,
         singleton,
+        stopSignal,
         stopGracePeriod,
       })),
     });
     expect(errors).toEqual([]);
-    expect(config?.roles?.map((r) => r.stopGracePeriod)).toEqual(["90s", "90s", "90s"]);
+    expect(config?.roles?.map((r) => r.stopGracePeriod)).toEqual(["90s", "90s", "10s"]);
+    expect(config?.roles?.find((r) => r.name === "scheduler")?.stopSignal).toBe("SIGTERM");
   });
 
   // "web" is never part of defaultRoles - it is derived from
@@ -270,7 +302,7 @@ describe("STACKS.laravel.defaultRoles", () => {
     ).toEqual([]);
   });
 
-  it("multiple explicit workers are allowed - configRoles bypasses the ambiguous-kind dedup that applies to defaultRoles", () => {
+  it("multiple explicit workers bypass preset exclusivity", () => {
     const horizonWorker: StackRole = {
       name: "horizon",
       kind: "worker",
@@ -289,6 +321,48 @@ describe("STACKS.laravel.defaultRoles", () => {
         configRoles: [horizonWorker, queueWorker],
       }),
     ).toEqual([horizonWorker, queueWorker]);
+  });
+
+  // Independent workers must not compete with the queue backend's slot (#935).
+  describe("with a second, independent worker preset (hypothetical Pulse)", () => {
+    const pulse: StackRole = {
+      name: "pulse",
+      kind: "worker",
+      command: "exec php artisan pulse:work",
+      when: { deps: ["laravel/pulse"] },
+    };
+    const defaultRoles = [...(STACKS.laravel.defaultRoles ?? []), pulse];
+    const files = ["artisan", "composer.json"];
+
+    it("keeps the selected queue role alongside the independent worker", () => {
+      expect(
+        resolveStackRoles({
+          defaultRoles,
+          deps: ["laravel/framework", "laravel/pulse"],
+          files,
+        }).map((r) => r.name),
+      ).toEqual(["queue", "scheduler", "pulse"]);
+    });
+
+    it("keeps horizon alongside the independent worker", () => {
+      expect(
+        resolveStackRoles({
+          defaultRoles,
+          deps: ["laravel/framework", "laravel/horizon", "laravel/pulse"],
+          files,
+        }).map((r) => r.name),
+      ).toEqual(["horizon", "scheduler", "pulse"]);
+    });
+
+    it("leaves queue + scheduler alone while the extra preset does not match", () => {
+      expect(
+        resolveStackRoles({
+          defaultRoles,
+          deps: ["laravel/framework"],
+          files,
+        }).map((r) => r.name),
+      ).toEqual(["queue", "scheduler"]);
+    });
   });
 });
 

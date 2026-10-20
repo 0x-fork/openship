@@ -492,10 +492,16 @@
       "description": "Repair routing with live logs and a terminal success or failure event.",
       "route": "POST /api/projects/:id/routing/retry/stream"
     },
+    "projects.getRuntimeRoles": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Read active runtime roles, replica status, and restart counts.",
+      "route": "GET /api/projects/:id/roles"
+    },
     "projects.runtimeLogs": {
       "page": "projects",
       "section": "Routing and monitoring",
-      "description": "Read recent runtime log entries.",
+      "description": "Read recent runtime logs; optionally select a role, replica, and active deployment.",
       "route": "GET /api/projects/:id/logs"
     },
     "projects.getCloneToken": {
@@ -561,7 +567,7 @@
     "projects.listConnectionCandidates": {
       "page": "projects",
       "section": "Connections, storage, and apps",
-      "description": "List accessible projects and apps for a service connection.",
+      "description": "List writable projects and apps for a connection, including cluster IDs for native database placement.",
       "route": "GET /api/projects/:id/connections/candidates"
     },
     "projects.listConnectionConsumers": {
@@ -573,13 +579,13 @@
     "projects.createConnection": {
       "page": "projects",
       "section": "Connections, storage, and apps",
-      "description": "Connect an output to a target environment variable.",
+      "description": "Connect an output to a target secret environment variable. Native database outputs require source and target write access and the same organization and cluster; ownership stays with the source.",
       "route": "POST /api/projects/:id/connections"
     },
     "projects.connectBundle": {
       "page": "projects",
       "section": "Connections, storage, and apps",
-      "description": "Apply a group of compatible resource connections.",
+      "description": "Save a group of compatible resource connections and encrypted environment values in one transaction. Native database links reconcile private namespace access before reporting success; a failed reconciliation can be retried with the same inputs.",
       "route": "POST /api/projects/:id/connections/bundle"
     },
     "projects.removeConnection": {
@@ -3607,6 +3613,102 @@
       "description": "Permanently clear resolved incident history in the current organization; preserves active incidents and later recoveries. Owner/admin only.",
       "route": "DELETE /api/issues/history",
       "section": "Operations"
+    },
+    "settings.getAppearance": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Read the authenticated user’s saved appearance and portable theme library.",
+      "route": "GET /api/settings/appearance"
+    },
+    "settings.setAppearance": {
+      "page": "settings",
+      "section": "Operations",
+      "description": "Save or reset personal appearance, validated tokens and embedded WOFF2 fonts.",
+      "route": "PUT /api/settings/appearance"
+    },
+    "dns.listIngressConnections": {
+      "page": "dns",
+      "section": "Cloudflare Tunnel ingress",
+      "description": "Read persisted tunnel connections, optionally filtered by deployment server.",
+      "route": "GET /api/dns/ingress"
+    },
+    "dns.discoverIngress": {
+      "page": "dns",
+      "section": "Cloudflare Tunnel ingress",
+      "description": "Discover accounts, named tunnels and optional reusable Access policies using a saved Cloudflare credential. Requires an organization administrator.",
+      "route": "POST /api/dns/ingress/discover"
+    },
+    "dns.connectIngress": {
+      "page": "dns",
+      "section": "Cloudflare Tunnel ingress",
+      "description": "Connect or create a named Cloudflare Tunnel on a self-hosted deployment server. Setup continues asynchronously.",
+      "route": "POST /api/dns/ingress"
+    },
+    "dns.updateIngress": {
+      "page": "dns",
+      "section": "Cloudflare Tunnel ingress",
+      "description": "Set automatic enrollment and Access policy defaults for future custom domains. Existing hostnames keep their settings.",
+      "route": "PUT /api/dns/ingress/:id"
+    },
+    "dns.retryIngress": {
+      "page": "dns",
+      "section": "Cloudflare Tunnel ingress",
+      "description": "Retry persisted tunnel setup or cleanup without creating another connection.",
+      "route": "POST /api/dns/ingress/:id/retry"
+    },
+    "dns.removeIngress": {
+      "page": "dns",
+      "section": "Cloudflare Tunnel ingress",
+      "description": "Disconnect a server tunnel and queue ownership-checked cleanup. Existing tunnels and reusable policies are retained.",
+      "route": "DELETE /api/dns/ingress/:id"
+    },
+    "dns.getDomainIngress": {
+      "page": "dns",
+      "section": "Cloudflare Tunnel ingress",
+      "description": "Read persisted tunnel, DNS and Access status for a project domain.",
+      "route": "GET /api/dns/ingress/domains/:id"
+    },
+    "dns.setDomainIngress": {
+      "page": "dns",
+      "section": "Cloudflare Tunnel ingress",
+      "description": "Connect a custom domain to its deployment server tunnel, change its Access policy or request disconnection.",
+      "route": "PUT /api/dns/ingress/domains/:id"
+    },
+    "projects.getRuntimeRoleConfiguration": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Read active role definitions and the revision required to configure them.",
+      "route": "GET /api/projects/:id/roles/configuration"
+    },
+    "projects.configureRuntimeRoles": {
+      "page": "projects",
+      "section": "Routing and monitoring",
+      "description": "Apply a role configuration revision from the active image while preserving web and unchanged replicas.",
+      "route": "POST /api/projects/:id/roles/configuration"
+    },
+    "projects.buildCacheMigration": {
+      "page": "projects",
+      "section": "Operations",
+      "description": "Inspect manual cache mounts or remove selected mounts after a successful managed-cache deployment.",
+      "route": "POST /api/projects/:id/build-cache/migration"
+    },
+    "projects.configurePreviews": {
+      "page": "projects",
+      "section": "Operations",
+      "description": "Enable or disable automatic same-repository pull request environments.",
+      "route": "POST /api/projects/:id/previews"
+    },
+    "projects.listPreviews": {
+      "page": "projects",
+      "section": "Operations",
+      "description": "Read preview configuration, deployment URLs and reconciliation errors.",
+      "route": "GET /api/projects/:id/previews"
+    },
+    "projects.migrateCommandEnvironment": {
+      "page": "projects",
+      "section": "Operations",
+      "description": "Atomically move literal command variables into the selected environment without overwriting conflicting values.",
+      "route": "POST /api/projects/:id/env/migrate-commands"
     }
   },
   "http": {

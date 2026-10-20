@@ -185,27 +185,29 @@
         "loadFailed": "Não foi possível carregar o ambiente guardado. As suas variáveis não foram alteradas.",
         "checkFailed": "Não foi possível comparar com o serviço em execução. As variáveis guardadas continuam disponíveis.",
         "checking": "A comparar com o serviço em execução…",
-        "check": "Verificar serviço em execução",
+        "check": "Verificar novamente",
         "reload": "Recarregar ambiente",
         "removeOverride": "Remover substituição (um valor herdado pode substituí-la)",
         "removeAtSource": "Remova as variáveis herdadas no Compose ou nas definições do projeto. Defina aqui uma substituição do serviço para alterar o valor.",
         "status": {
           "unchecked": "O ambiente em execução ainda não foi verificado.",
           "synced": "O serviço em execução corresponde ao ambiente guardado.",
-          "pending": "Estas alterações guardadas ainda não foram aplicadas ao serviço em execução:",
+          "pending": "As alterações estão salvas. Aplique para reiniciar o serviço com os novos valores.",
           "unavailable": "Não foi possível verificar o ambiente em execução.",
           "not-deployed": "Estas variáveis serão usadas quando este serviço for implementado.",
           "unsupported": "Volte a implementar este serviço para aplicar o ambiente guardado."
         },
-        "recoveryHint": "O contentor em execução tem variáveis que não estão guardadas no Openship. Recupere-as antes de aplicar se quiser mantê-las:",
-        "recover": "Recuperar do serviço em execução",
-        "removeRuntime": "Aplicar sem recuperar estas variáveis; removê-las do serviço em execução.",
-        "recovered": "Recuperadas do serviço em execução — ainda não guardadas",
-        "recoveredHint": "Os valores recuperados estão prontos para revisão. Guarde para os manter no Openship.",
-        "recoveryFailed": "Não foi possível recuperar as variáveis do serviço em execução. As variáveis guardadas não foram alteradas."
+        "recoveryHint": "Estes valores serão removidos ao aplicar, a menos que você os copie e salve antes.",
+        "recover": "Copiar para o editor",
+        "removeRuntime": "Remover estes valores ao aplicar.",
+        "recovered": "Copiado do contêiner — salve para manter",
+        "recoveredHint": "Copiado para o editor. Revise os valores e salve.",
+        "recoveryFailed": "Não foi possível recuperar as variáveis do serviço em execução. As variáveis guardadas não foram alteradas.",
+        "changedLabel": "Valores que mudarão",
+        "recoveryTitle": "Variáveis presentes apenas no contêiner"
       },
       "environmentApply": {
-        "title": "Aplicar alterações de ambiente",
+        "title": "Aplicar e reiniciar",
         "applying": "Aplicando alterações…",
         "applied": "Alterações de ambiente aplicadas",
         "hint": "Aplique as variáveis salvas a este serviço sem recompilar. O serviço será reiniciado.",
@@ -317,7 +319,20 @@
         "automaticStorage": "Gerenciado automaticamente",
         "invalidMount": "Informe um caminho que comece com / dentro do serviço. Caminhos e nomes de volumes não podem conter :.",
         "mountTooLong": "Cada entrada de volume deve ter no máximo 500 caracteres.",
-        "saveAndBackup": "Salvar e fazer backup"
+        "saveAndBackup": "Salvar e fazer backup",
+        "emptyVolume": {
+          "menu": "Ações do volume",
+          "title": "Iniciar com armazenamento vazio",
+          "description": "O serviço será reimplantado com um volume novo. Os dados anteriores e backups serão mantidos.",
+          "retained": "Volume anterior — mantido",
+          "newVolume": "Novo volume vazio",
+          "recoveryHint": "Para recuperar os dados anteriores, edite esta montagem e restaure o nome do volume anterior. Outros serviços que usam o volume antigo não serão afetados.",
+          "confirm": "Digite {name} para confirmar",
+          "action": "Salvar e reimplantar",
+          "retry": "Tentar implantação novamente",
+          "retryHint": "A configuração do novo volume foi salva, mas a implantação não começou. Tente novamente para continuar. O serviço em execução ainda usa o volume anterior.",
+          "failed": "Não foi possível preparar o armazenamento vazio. Nenhum dado foi apagado."
+        }
       },
       "internalAddress": "Endereço interno",
       "internalAddressHint": "Os contêineres deste projeto acessam este serviço aqui",
@@ -419,6 +434,43 @@
         "maxReconnects": "Não foi possível restabelecer a ligação. Pode tentar ligar novamente.",
         "transport": "A ligação foi interrompida. O seu serviço pode continuar em execução."
       }
+    }
+  },
+  "runtimeRoles": {
+    "title": "Papéis de execução",
+    "kind": "Papel",
+    "web": "Web",
+    "worker": "Worker",
+    "scheduler": "Agendador",
+    "replicas": "{count} réplicas",
+    "replica": "Réplica {replica}",
+    "restarts": "{count} reinicializações",
+    "missing": "Não encontrada",
+    "logs": "Ver logs",
+    "checking": "Verificando papéis de execução…",
+    "staleTarget": "Esta réplica não pertence à implantação ativa. Selecione novamente a origem dos logs.",
+    "retry": "Tentar novamente",
+    "replicaOne": "{count} réplica",
+    "configuration": {
+      "configure": "Configurar funções",
+      "title": "Workers e agendadores",
+      "hint": "Aplicar com a imagem ativa. O app e as réplicas sem alterações continuam funcionando.",
+      "sourceHint": "Estas configurações se aplicam a esta versão. Uma lista roles explícita em openship.json tem prioridade no próximo deploy do código.",
+      "name": "Nome",
+      "command": "Comando",
+      "kind": "Tipo",
+      "replicas": "Réplicas",
+      "singleton": "Instância única",
+      "addWorker": "Adicionar worker",
+      "addScheduler": "Adicionar agendador",
+      "remove": "Remover função",
+      "advanced": "Avançado",
+      "healthCommand": "Comando de integridade (opcional)",
+      "stopGrace": "Prazo para parar",
+      "apply": "Aplicar alterações",
+      "applying": "Aplicando…",
+      "cancel": "Cancelar",
+      "retry": "Tentar novamente"
     }
   }
 }

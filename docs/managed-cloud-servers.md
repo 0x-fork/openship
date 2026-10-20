@@ -149,14 +149,30 @@ after restarting the server. SDK type checking and simulated responses do not
 prove these live provider guarantees.
 
 
-## Managed server controls
+## Cloud space presentation
 
-The shared server detail adds **Settings**, **SSH access**, **Runtime API**, and
-**Workloads** tabs. **Networking** includes the outbound hostname allowlist and
-read-only ingress/private/outbound diagnostics. The API and native/HTTP SDK use
-`ManagedServerResourceSchemas`, the existing server authorization layer, and the
-same namespace-bound provider connection as deployments. No generic provider
-proxy or new provisioning/billing path is introduced.
+Cloud navigation presents managed capacity as **Cloud spaces**. One existing Cloud
+workspace remains one independent resource pool, with the same subscription,
+allocation, projects, provisioning and execution adapters. Overview shows the
+existing usage sample and assigned projects; Activity shows lifecycle progress
+and explicit retry. Independent pools are not summed into a fictitious allocation.
+Capacity changes use the existing billing review flow.
+
+The managed UI omits host terminals, SSH, networking, Runtime API credentials and
+manual process controls, including when opened through Desktop or an old
+`/servers/:id` link. Connected self-hosted servers keep their host tools. Project
+logs, service consoles, deployments and routing remain available in their project.
+
+This is a presentation change. It does not restrict or remove existing HTTP/SDK
+operations, change authorization, migrate projects, revoke credentials or alter
+runtime limits. Legacy Desktop execution connections continue to work. Hiding a
+control in the UI is not a new security boundary.
+
+## Existing host APIs
+
+The host API and native/HTTP SDK continue to use `ManagedServerResourceSchemas`,
+the existing authorization layer, and the same namespace-bound provider connection
+as deployments. Their behavior is unchanged by the Cloud spaces UI:
 
 - Settings reports the actual managed image and allocation, and offers bounded
   boot logs. Application image changes stay in project deployment settings;
@@ -204,3 +220,52 @@ response shapes are unchanged. Detailed network reads opt in with
 `getNetworkSettings(id, { details: true })` / `?details=true`; writes return
 diagnostics only when the caller supplies `expectedRevision`, preserving the
 original internet-only contract for older clients.
+
+## Live resource usage
+
+The Cloud spaces page calls each independently purchased allocation a **Cloud space**.
+A compact picker in the right column shows the plan, project count and state. Usage and plan capacity stay
+scoped to the selected space; projects cannot combine several allocations.
+
+`GET /api/system/monitor/stream?serverId=…&format=usage` and
+`ship.servers.monitor(id, { format: "usage", signal })` opt into `usage` events.
+The default host `stats` events and existing host operations remain unchanged.
+Each event contains `ResourceUsageSample`: a measurement timestamp, quota-relative
+CPU percentage, memory used/available in MB and disk used/available/total in MB.
+Unknown fields stay null. Actual guest bytes are converted to MB; allocation,
+credits, CPU time and memory reservation are not treated as live consumption.
+See the [provider metrics contract](https://oblien.com/docs/api/metrics).
+
+Guest byte counters and guest KiB counters are accepted. Zero-total placeholders
+are unavailable measurements. Hypervisor process memory includes VM overhead and
+is never substituted for guest RAM. When a guest does not publish memory metrics,
+the stream uses the existing read-only guest sampler, at most once per ten seconds
+per subscription; it closes that connection on cancellation or failure.
+
+Openship verifies server-read access and the existing organization/workspace binding,
+then opens the stream with that workspace's namespace credentials. It never exposes
+provider credentials to the browser or provisions/resumes a machine to observe usage.
+The operation rechecks authorization before each delivered event. Provider streams
+reject credential redirects, bound idle reads/incomplete frames and close on abort.
+Desktop's saved managed links use the same verified Cloud connection as existing reads.
+
+The dashboard subscribes only while the selected usage view is visible, cancels on
+space/account changes and keeps up to 60 recent samples. Failed or stalled reads show
+Retry and a last-reading label. Project membership and disk breakdown keep their existing
+permission-filtered snapshot request; the live stream does not repeat Docker storage scans.
+Deploy the API and dashboard together for live usage; older APIs retain snapshot usage
+with an explicit unavailable-live-updates notice.
+
+On `fuse-overlayfs`, the snapshot request skips Docker's full disk-usage inventory.
+Its writable-layer sizing walks directory trees in daemon memory, and a caller
+timeout does not reliably stop that scan. Host CPU, memory, total disk usage and
+project membership remain available; detailed project/shared disk attribution is
+null rather than zero on these hosts. Other storage drivers keep their existing
+disk breakdown. This read never prunes caches or changes application resources.
+
+Cloud spaces owns instant resource readings and project storage; Billing shows the
+subscription, payments, usage over the billing period and entitlement counters.
+Both reuse the shared destination picker, catalog names and existing billing scope.
+Billing does not fetch a second host snapshot. View links carry the selected execution
+identity; Manage plan links carry its subscription identity. Setup links retain Activity.
+The existing `/resources` URLs and saved `/servers/:id` links remain compatible.

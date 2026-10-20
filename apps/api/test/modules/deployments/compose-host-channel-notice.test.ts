@@ -165,10 +165,11 @@ function imageRefreshFixture() {
     containerId: `old-${service.name}`, imageRef: service.image, status: "success", ip: "172.18.0.2",
   }));
   h.previousDeployment.createdAt = new Date(1_000);
+  const { logger } = recordingLogger();
   const run = (options: Parameters<typeof deployComposeServices>[4] = {}, trigger = "manual") =>
     deployComposeServices({ ...project, activeDeploymentId: "d-old", routeStrategy: "container-ip" } as Project,
-      { ...dep, trigger }, runtime, recordingLogger().logger, options);
-  return { runtime, run, images, inspect, pull, activate, metadata, dbRef, apiRef, dbId, apiId, nextId };
+      { ...dep, trigger }, runtime, logger, options);
+  return { runtime, run, logger, images, inspect, pull, activate, metadata, dbRef, apiRef, dbId, apiId, nextId };
 }
 
 /** Stops the deploy at the first thing after the notice, so the test exercises the
@@ -272,8 +273,8 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
   expect(api.cloudProxyPorts).toEqual([8080]);
   expect(api.volumes.some((volume: string) => volume.endsWith(":/etc/app.yml:ro"))).toBe(true);
   expect(executor.writeFile).toHaveBeenCalledWith(expect.any(String), "enabled: true", expect.any(Object));
-  expect(pullImage).toHaveBeenCalledWith("web:v1", { force: true });
-  expect(pullImage).toHaveBeenCalledWith("api:v1", { force: true });
+  expect(pullImage).toHaveBeenCalledWith("web:v1", { force: true, logger });
+  expect(pullImage).toHaveBeenCalledWith("api:v1", { force: true, logger });
   expect(h.upsertServiceDeployment).toHaveBeenCalledWith(expect.objectContaining({
     serviceId: "svc-web", containerId: "web-container", hostPorts: { 8080: 30001, 9090: 30002 },
     allocatedResources: { containerId: "web-container", cpuCores: 1, memoryMb: 1024 },
@@ -308,6 +309,9 @@ async function demotedExecutor(): Promise<CommandExecutor> {
 beforeEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  // These fixtures stub daemon I/O/activation and intentionally skip constructors.
+  // Real volume preparation/cutover is covered by image-volume-persistence.e2e.
+  vi.spyOn(DockerRuntime.prototype, "prepareServiceVolumes").mockResolvedValue(undefined);
   h.localImageRefs.clear();
   const inspectImage = async (ref: string) => {
     if (ref.startsWith("/")) throw new Error("invalid image reference");
@@ -480,7 +484,7 @@ describe("compose deploy — host channel unavailable", () => {
       f.images.set(ref, f.metadata(ref, f.nextId));
     });
     await expect(f.run()).rejects.toThrow("pinned image unavailable");
-    expect(f.pull).toHaveBeenCalledWith(pinned, { force: false });
+    expect(f.pull).toHaveBeenCalledWith(pinned, { force: false, logger: f.logger });
     expect(f.activate).not.toHaveBeenCalled();
     expect(f.runtime.destroy).not.toHaveBeenCalled();
   });
@@ -500,7 +504,7 @@ describe("compose deploy — host channel unavailable", () => {
     h.services[0]!.image = f.apiRef;
     f.pull.mockImplementation(async ref => { f.images.set(ref, f.metadata(ref, f.nextId)); });
     await f.run({ targetServiceIds: new Set(["svc-db", "svc-api"]) });
-    expect(f.pull).toHaveBeenCalledExactlyOnceWith(f.apiRef, { force: true });
+    expect(f.pull).toHaveBeenCalledExactlyOnceWith(f.apiRef, { force: true, logger: f.logger });
     expect(f.activate).toHaveBeenCalledTimes(2);
     expect(f.activate.mock.calls.every(call => call[1].image === `ghcr.io/acme/api@${f.nextId}`)).toBe(true);
   });
@@ -524,7 +528,7 @@ describe("compose deploy — host channel unavailable", () => {
     const result = await f.run({ targetServiceIds: new Set(["svc-db"]) });
     expect(result.status).toBe("ready");
     expect(f.inspect).toHaveBeenCalledWith(f.apiId);
-    expect(f.pull).toHaveBeenCalledExactlyOnceWith(f.dbRef, { force: true });
+    expect(f.pull).toHaveBeenCalledExactlyOnceWith(f.dbRef, { force: true, logger: f.logger });
     expect(f.activate.mock.calls.map(call => call[1].image)).toEqual([`postgres@${f.dbId}`, f.apiId]);
     expect(f.inspect.mock.invocationCallOrder[0]).toBeLessThan(f.activate.mock.invocationCallOrder[0]!);
   });
@@ -583,7 +587,7 @@ describe("compose deploy — host channel unavailable", () => {
       { targetServiceIds: new Set(["svc-api"]) },
     );
     expect(result.status).toBe("ready");
-    expect(pullImage).not.toHaveBeenCalledWith(image, { force: true });
+    expect(pullImage).not.toHaveBeenCalledWith(image, { force: true, logger });
     expect(deployServiceWorkload).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       image: IMAGE_ID, forcePull: false,
     }), expect.anything());
@@ -816,7 +820,7 @@ describe("compose deploy — host channel unavailable", () => {
         hostPorts: { 3000: 20_008 },
       },
     ];
-    h.allocateAndReservePinnedHostPort.mockResolvedValueOnce({
+    const apiReplacement = {
       port: 20_001,
       preferred: 20_008,
       scanned: true,
@@ -837,7 +841,12 @@ describe("compose deploy — host channel unavailable", () => {
         createdAt: new Date(0),
         updatedAt: new Date(0),
       },
-    });
+    };
+    // postgres and redis publish port-only specs, so they are pinned as well.
+    const allocateOthers = h.allocateAndReservePinnedHostPort.getMockImplementation()!;
+    h.allocateAndReservePinnedHostPort.mockImplementation(async (input) =>
+      input.owner.serviceId === "svc-api" ? apiReplacement : allocateOthers(input),
+    );
 
     const { logger } = recordingLogger();
     const result = await deployComposeServices(
@@ -866,12 +875,97 @@ describe("compose deploy — host channel unavailable", () => {
     expect(h.allocateAndReservePinnedHostPort.mock.invocationCallOrder[0]).toBeLessThan(
       deployServiceWorkload.mock.invocationCallOrder[0]!,
     );
-    const occupancyPolicy = h.allocateAndReservePinnedHostPort.mock.calls[0]![0]
-      .reuseOccupiedPreferred as (port: number) => boolean;
+    const apiAllocation = h.allocateAndReservePinnedHostPort.mock.calls.find(
+      ([input]) => input.owner.serviceId === "svc-api",
+    )![0];
+    const occupancyPolicy = apiAllocation.reuseOccupiedPreferred as (port: number) => boolean;
     expect(occupancyPolicy(20_008)).toBe(false);
     expect(deployServiceWorkload).toHaveBeenCalledTimes(3);
     expect(destroy).toHaveBeenCalled();
     expect(h.upsertServiceDeployment).toHaveBeenCalled();
+  });
+
+  it("pins port-only publishes outside the ephemeral range instead of letting Docker pick", async () => {
+    // Regression: an unrouted service publishing "8800" got `HostPort: ""`, so
+    // Docker drew a fresh host port from the kernel's ephemeral range on every
+    // deploy (56787 → 56792 → 56796) and the saved-port move never applied.
+    const runtime = startingRuntime();
+    const deployServiceWorkload = vi.mocked(runtime.deployServiceWorkload);
+    h.services = [
+      {
+        id: "svc-hub",
+        projectId: "p1",
+        name: "hub",
+        enabled: true,
+        dependsOn: [],
+        advanced: null,
+        ports: ["8800", "8801/tcp", "5353/udp"],
+        image: "ghcr.io/acme/hub:next",
+        exposed: false,
+        publicEndpoints: [],
+      },
+    ];
+    h.previousServiceRows = [
+      {
+        id: "sd-hub",
+        deploymentId: "d-old",
+        serviceId: "svc-hub",
+        serviceName: "hub",
+        containerId: "container-hub",
+        status: "success",
+        imageRef: "ghcr.io/acme/hub:old",
+        hostPorts: { 8800: 56_792, 8801: 56_793 },
+      },
+    ];
+    const safePorts = new Map([
+      [8800, 20_010],
+      [8801, 20_011],
+    ]);
+    h.allocateAndReservePinnedHostPort.mockImplementation(async (input) => {
+      const port = safePorts.get(input.owner.containerPort)!;
+      return {
+        port,
+        preferred: input.cachedPreferred,
+        scanned: true,
+        claimWasCreated: true,
+        claim: {
+          id: `hpc-${input.owner.containerPort}`,
+          targetKey: "local",
+          ...input.owner,
+          port,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        },
+      };
+    });
+
+    const { logger } = recordingLogger();
+    const result = await deployComposeServices(
+      { ...project, activeDeploymentId: "d-old", routeStrategy: "loopback-port" } as never,
+      dep,
+      runtime,
+      logger,
+      { executor: {} as CommandExecutor, hostPortTarget: localHostPortTarget },
+    );
+
+    expect(result.status).toBe("ready");
+    const owners = h.allocateAndReservePinnedHostPort.mock.calls.map(([input]) => ({
+      containerPort: input.owner.containerPort,
+      cachedPreferred: input.cachedPreferred,
+    }));
+    expect(owners).toEqual([
+      { containerPort: 8800, cachedPreferred: 56_792 },
+      { containerPort: 8801, cachedPreferred: 56_793 },
+    ]);
+    const [, config] = deployServiceWorkload.mock.calls[0]!;
+    expect((config as { ports: string[] }).ports).toEqual([
+      "5353/udp",
+      "127.0.0.1:20010:8800",
+      "127.0.0.1:20011:8801",
+    ]);
+    expect(h.upsertServiceDeployment).toHaveBeenCalledWith(
+      expect.objectContaining({ serviceId: "svc-hub", hostPorts: { 8800: 20_010, 8801: 20_011 } }),
+    );
   });
 
   it("recovers a stale active container id from one live Docker inventory before port reconciliation", async () => {
@@ -1489,8 +1583,8 @@ describe("compose deploy — host channel unavailable", () => {
       ),
     ).rejects.toThrow("registry unavailable");
 
-    expect(pullImage).toHaveBeenNthCalledWith(1, "ghcr.io/acme/api:staging", { force: true });
-    expect(pullImage).toHaveBeenNthCalledWith(2, "ghcr.io/acme/worker:staging", { force: true });
+    expect(pullImage).toHaveBeenNthCalledWith(1, "ghcr.io/acme/api:staging", { force: true, logger });
+    expect(pullImage).toHaveBeenNthCalledWith(2, "ghcr.io/acme/worker:staging", { force: true, logger });
     expect(pullImage).toHaveBeenCalledTimes(2);
     expect(pullImage).not.toHaveBeenCalledWith("postgres:17", expect.anything());
     expect(pullImage).not.toHaveBeenCalledWith("my-private-app:local", expect.anything());
@@ -1533,7 +1627,7 @@ describe("compose deploy — host channel unavailable", () => {
       { targetServiceIds: new Set(["svc-api"]), strictScope: true },
     );
     expect(result.status).toBe("ready");
-    expect(pullImage).toHaveBeenCalledExactlyOnceWith("ghcr.io/acme/api:stable", { force: true });
+    expect(pullImage).toHaveBeenCalledExactlyOnceWith("ghcr.io/acme/api:stable", { force: true, logger });
     expect(deployServiceWorkload).toHaveBeenCalledOnce();
     expect(deployServiceWorkload).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       serviceName: "api", forcePull: false,
@@ -1607,7 +1701,7 @@ describe("compose deploy — host channel unavailable", () => {
     ).rejects.toThrow("stop after cohort classification");
 
     expect(pullImage).toHaveBeenCalledTimes(1);
-    expect(pullImage).toHaveBeenCalledWith("ghcr.io/acme/api:staging", { force: true });
+    expect(pullImage).toHaveBeenCalledWith("ghcr.io/acme/api:staging", { force: true, logger });
     expect(deployServiceWorkload).not.toHaveBeenCalled();
   });
 
@@ -2207,3 +2301,13 @@ describe("compose deploy — host channel unavailable", () => {
 });
 
 vi.mock("@repo/platform/engine/lib/platform-config", () => ({ platform: () => ({ target: "selfhosted" }) }));
+
+it("rejects an invalid GPU request before pulling images or replacing any sibling", async () => {
+  const fixture = imageRefreshFixture();
+  h.services[0]!.updatedAt = new Date(2000);
+  h.services[1]!.advanced = { gpus: { driver: "amd", count: 1 } };
+  await expect(fixture.run()).rejects.toThrow(/only.*NVIDIA/);
+  expect(fixture.pull).not.toHaveBeenCalled();
+  expect(fixture.activate).not.toHaveBeenCalled();
+  expect(fixture.runtime.destroy).not.toHaveBeenCalled();
+});

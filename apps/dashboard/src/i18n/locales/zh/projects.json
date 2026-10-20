@@ -107,6 +107,8 @@
     "teardownFailedAt": "无法完成清理：{reasons}。项目仍然保留。请解决此问题后重试删除。",
     "teardownFailed": "拆除失败",
     "cleanupFailedTitle": "清理失败",
+    "retryCleanup": "重试删除",
+    "cleanupPending": "删除已开始。清理完成前，项目将保持不可用。",
     "alreadyDeleted": "项目已删除",
     "forceModalTitle": "无法从源端移除",
     "forceModalBody": "无法连接到运行时（或持续失败），因此该项目未被拆除。你仍然可以将它从 Openship 中删除——记录会立即移除，服务器恢复可访问后会自动回收残留资源。",
@@ -135,6 +137,7 @@
       "deployments": "部署",
       "health": "健康",
       "monitoring": "监控",
+      "monitoringAndLogs": "监控与日志",
       "source": "源",
       "sourceAndTriggers": "源与触发器",
       "webhooks": "Webhook",
@@ -411,6 +414,8 @@
     "fixStep3": "验证域名并部署。"
   },
   "connections": {
+    "nativeClusterHint": "选择与此数据库位于同一集群的项目。只有关联的项目才能获得私有访问权限。",
+    "nativeNoTargets": "目前没有其他项目使用此集群。",
     "useInProject": "在项目中使用",
     "title": "在项目中使用",
     "subtitle": "通过连接与其他项目共享此服务。",
@@ -516,7 +521,17 @@
     "authHmacDesc": "调用方使用共享密钥对请求体签名（X-Signature-256）。",
     "authNone": "开放",
     "authNoneDesc": "无认证 — 任何拥有该 URL 的人都能触发。请谨慎使用。",
-    "cancel": "取消"
+    "cancel": "取消",
+    "changeReasons": {
+      "unrelated": "仅无关的工作区发生了更改。",
+      "application": "应用文件发生了更改。",
+      "shared": "共享构建输入发生了更改。",
+      "included": "配置中包含的路径发生了更改。",
+      "excluded": "更改不符合配置的路径规则。",
+      "unknown": "无法验证更改，将继续部署。",
+      "initial": "首次部署。",
+      "forced": "已请求完整部署。"
+    }
   },
   "health": {
     "title": "健康状况",

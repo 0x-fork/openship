@@ -126,8 +126,10 @@ export function ServiceDetailPanel({
   const [deleting, setDeleting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
+  const [resettingStorage, setResettingStorage] = useState(false);
+  const storageResetPending = useRef(false);
   const applyingEnvironment = environmentApply.applyingServiceId !== null;
-  const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment;
+  const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment || resettingStorage;
   const status = getServiceStatus(service, container, containerChecking);
 
   // Backup only applies to compose services (stateful containers) — never
@@ -427,11 +429,11 @@ export function ServiceDetailPanel({
   const handleRedeployService = async () => {
     if (!activeDeploymentId) {
       showToast(t.projectDetail.services.detail.toast.deployFirstRedeploy, "error", service.name);
-      return;
+      return false;
     }
     if (!service.enabled) {
       showToast(t.projectDetail.services.detail.toast.enableBeforeRedeploy, "error", service.name);
-      return;
+      return false;
     }
     setRedeploying(true);
     try {
@@ -443,18 +445,20 @@ export function ServiceDetailPanel({
           "error",
           service.name,
         );
-        return;
+        return false;
       }
       const newId = res?.data?.deployment?.id;
       router.push(newId ? `/build/${newId}` : `/projects/${projectId}/deployments`);
+      return true;
     } catch (err) {
       setRedeploying(false);
-      if (showCloudPricing(err)) return;
+      if (showCloudPricing(err)) return false;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.redeployFailed),
         "error",
         service.name,
       );
+      return false;
     }
   };
 
@@ -694,6 +698,19 @@ export function ServiceDetailPanel({
           projectId={projectId}
           deployTarget={deployTarget}
           onSave={(volumes) => handleUpdateService({ volumes })}
+          operationBusy={serviceOperationBusy}
+          onResetVolumes={activeDeploymentId && service.enabled ? async (volumes, configured) => {
+            if (storageResetPending.current) return { configured, started: false };
+            storageResetPending.current = true;
+            setResettingStorage(true);
+            try {
+              if (!configured) await handleUpdateService({ volumes });
+              return { configured: true, started: await handleRedeployService() };
+            } finally {
+              storageResetPending.current = false;
+              setResettingStorage(false);
+            }
+          } : undefined}
           onBackup={supportsBackup ? handleVolumeBackup : undefined}
           backupBusy={backupLoading || backupRunning || !!backupError}
           backupFeedback={supportsBackup ? backupFeedback : undefined}
@@ -741,6 +758,12 @@ export function ServiceDetailPanel({
             operationBusy={serviceOperationBusy}
             onDirtyChange={setEnvDirty}
             onApply={() => environmentApply.apply(service)}
+            onDeploy={usesDeployPipeline ? (activeDeploymentId ? handleRedeployService : undefined) : handleDeployStart}
+            deployLabel={
+              usesDeployPipeline
+                ? t.projectDetail.services.detail.redeploy
+                : t.projectDetail.services.detail.start
+            }
           />
         </div>
       )}
@@ -861,6 +884,7 @@ export function ServiceDetailPanel({
           <ServiceSettingsForm
             service={service}
             includeVolumes={false}
+            enableAutomationActions
             siblingServiceNames={switchableServices
               .filter((s) => s.id !== service.id)
               .map((s) => s.name)

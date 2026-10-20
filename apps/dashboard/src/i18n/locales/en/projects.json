@@ -107,6 +107,8 @@
     "teardownFailedAt": "Cleanup could not finish: {reasons}. The project is still saved. Retry deletion after resolving this issue.",
     "teardownFailed": "Teardown failed",
     "cleanupFailedTitle": "Cleanup failed",
+    "retryCleanup": "Retry deletion",
+    "cleanupPending": "Deletion has started. The project stays unavailable until cleanup finishes.",
     "alreadyDeleted": "Project already deleted",
     "forceModalTitle": "Couldn't remove it from the source",
     "forceModalBody": "The runtime couldn't be reached (or kept failing), so this project wasn't torn down. You can delete it from Openship anyway — the record is removed now and any leftover resources are reclaimed automatically once the server is reachable.",
@@ -116,6 +118,8 @@
     "unlinkedTitle": "Connected projects updated"
   },
   "connections": {
+    "nativeClusterHint": "Choose a project on this database’s cluster. Only linked projects receive private access.",
+    "nativeNoTargets": "No other project uses this cluster yet.",
     "useInProject": "Use in a project",
     "title": "Use in a project",
     "subtitle": "Share this service with another project using a connection.",
@@ -192,6 +196,7 @@
       "deployments": "Deployments",
       "health": "Health",
       "monitoring": "Monitoring",
+      "monitoringAndLogs": "Monitoring & Logs",
       "source": "Source",
       "sourceAndTriggers": "Source & Triggers",
       "webhooks": "Webhooks",
@@ -516,7 +521,17 @@
     "authHmacDesc": "Callers sign the body with a shared secret (X-Signature-256).",
     "authNone": "Open",
     "authNoneDesc": "No auth — anyone with the URL can trigger it. Use with care.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "changeReasons": {
+      "unrelated": "Only unrelated workspaces changed.",
+      "application": "Application files changed.",
+      "shared": "Shared build inputs changed.",
+      "included": "A configured include path changed.",
+      "excluded": "Changes do not match the configured path rules.",
+      "unknown": "Changes could not be verified; deployment kept enabled.",
+      "initial": "Initial deployment.",
+      "forced": "A full deployment was requested."
+    }
   },
   "health": {
     "title": "Health",
