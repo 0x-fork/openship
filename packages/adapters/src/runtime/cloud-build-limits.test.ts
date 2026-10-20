@@ -14,6 +14,8 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
   const executor = {
     exec: vi.fn(async (command: string): Promise<string> =>
       command.includes("buildx version") ? (buildKit ? "OPENSHIP_BUILDKIT_OK\n" : "") :
+      command.startsWith("docker info --format") ? JSON.stringify({ OSType: "linux", SecurityOptions: [] }) :
+      command.startsWith("docker image inspect") ? JSON.stringify([{ Config: { Labels: { "org.openship.build-metadata-policy": "1" }, Entrypoint: ["/usr/local/bin/openship-buildkitd"] } }]) :
       command.includes("df -Pk") ? "104857600 52428800\n200000 100000\n" : "",
     ),
     writeFile: vi.fn(async () => {}),
@@ -33,6 +35,7 @@ function fixture(transport = "cloud", buildKit = true, resources = config.resour
         Labels: { "openship.build-cache": "1", "openship.build-cache.project": config.projectId } }) }),
     },
   });
+  vi.spyOn(runtime, "prepareDeploymentImage").mockResolvedValue({} as never);
   return {
     executor,
     runtime,
@@ -109,7 +112,6 @@ describe("Cloud Docker build execution limits", () => {
   it.each([
     ["cloud", true],
     ["ssh", true],
-    ["ssh", false],
   ] as const)(
     "builds with unsupported inode statistics on %s (BuildKit: %s)",
     async (transport, buildKit) => {
@@ -160,7 +162,7 @@ describe("Cloud Docker build execution limits", () => {
     const h = fixture(transport, true, { cpuCores: 0, memoryMb: 0, diskMb: 0 });
     await h.run();
     const command = h.commands();
-    expect(command).not.toContain("--driver-opt"); expect(command).not.toContain("--memory"); expect(command).not.toContain("--cpu-quota");
+    expect(command).not.toContain("memory="); expect(command).not.toContain("--memory"); expect(command).not.toContain("cpu-quota=");
     if (transport === "cloud") {
       expect(command).toContain("--driver docker-container");
       expect(h.commands()).toContain("buildx rm --force");
@@ -213,7 +215,7 @@ describe("Cloud Docker build execution limits", () => {
   });
   it("refuses a Cloud build without BuildKit instead of using the daemon's native builder", async () => {
     const h = fixture("cloud", false);
-    await expect(h.run()).rejects.toMatchObject({ code: "CLOUD_BUILDKIT_UNAVAILABLE" });
+    await expect(h.run()).rejects.toMatchObject({ code: "BUILD_METADATA_PROTECTION_UNAVAILABLE" });
     expect(h.executor.streamExec).not.toHaveBeenCalled();
     expect(h.commands()).not.toContain("buildx create");
     expect(h.runtime._docker.listVolumes).not.toHaveBeenCalled();
@@ -226,15 +228,34 @@ describe("Cloud Docker build execution limits", () => {
     ).rejects.toMatchObject({ code: "CLOUD_BUILD_EXECUTOR_UNAVAILABLE" });
     expect(h.executor.exec).not.toHaveBeenCalled();
   });
-  it.each([true, false])(
-    "keeps the self-hosted SSH build path unchanged (BuildKit: %s)",
-    async (buildKit) => {
-      const h = fixture("ssh", buildKit);
-      await h.run();
-      const command = h.commands();
-      expect(command).not.toContain("--memory");
-      expect(command).not.toContain("--cpu-quota");
-      expect(command).not.toContain("buildx create");
-    },
-  );
+  it("uses the same protected project worker for self-hosted SSH, with only explicit caps", async () => {
+    const h = fixture("ssh");
+    await h.run();
+    expect(h.commands()).toContain("buildx create");
+    expect(h.commands()).toContain("image=ghcr.io/oblien/openship-buildkit:");
+    expect(h.commands()).toContain("network=bridge");
+    expect(h.commands()).toContain("memory=536870912");
+    expect(h.commands()).not.toContain("--allow=");
+  });
+  it("refuses unsupported SSH builds instead of falling back to an unprotected native builder", async () => {
+    const h = fixture("ssh", false);
+    await expect(h.run()).rejects.toMatchObject({ code: "BUILD_METADATA_PROTECTION_UNAVAILABLE" });
+    expect(h.executor.streamExec).not.toHaveBeenCalled();
+  });
+  it.each(["cloud", "ssh"])("blocks %s before any worker/source command when host or image verification fails", async transport => {
+    const h = fixture(transport);
+    const original = h.executor.exec.getMockImplementation()!;
+    h.executor.exec.mockImplementation(command => command.startsWith("docker info --format")
+      ? Promise.resolve(JSON.stringify({ OSType: "linux", SecurityOptions: ["name=rootless"] })) : original(command));
+    await expect(h.run()).rejects.toMatchObject({ code: "BUILD_METADATA_PROTECTION_UNAVAILABLE" });
+    expect(h.executor.streamExec).not.toHaveBeenCalled();
+    expect(h.commands()).not.toContain("buildx create");
+  });
+  it("does not run a repository build when the guarded image cannot be acquired", async () => {
+    const h = fixture();
+    h.runtime.prepareDeploymentImage.mockRejectedValue(new Error("manifest missing"));
+    await expect(h.run()).rejects.toMatchObject({ code: "BUILD_METADATA_PROTECTION_UNAVAILABLE" });
+    expect(h.executor.streamExec).not.toHaveBeenCalled();
+    expect(h.commands()).not.toContain("buildx create");
+  });
 });

@@ -2,8 +2,8 @@ name: Docker images
 
 # Publishes the official pull-based images to GHCR: the control plane
 # (openship-api + openship-dashboard + openship-edge) and the two products that
-# ship as images of their own (openship-mail, the iRedMail engine; and
-# openship-webmail, the Zero client that the app catalog installs). Deliberately
+# ship as images of their own (mail, webmail, cluster tasks and the protected
+# BuildKit worker). Deliberately
 # SEPARATE from release.yml (the bun binary / npm CLI / desktop installers /
 # GitHub release) so image publishing can be iterated + tested on its own.
 #
@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, dashboard, edge, mail, webmail, cluster-tasks]
+        image: [api, dashboard, edge, mail, webmail, cluster-tasks, buildkit]
         platform: [amd64, arm64]
         # Two independent axes of `include`, both merged into every matching
         # combination: platform → runner (native builds, no QEMU), and image →
@@ -73,6 +73,8 @@ jobs:
             dockerfile: apps/email/Dockerfile.webmail
           - image: cluster-tasks
             dockerfile: packages/adapters/Dockerfile.cluster-tasks
+          - image: buildkit
+            dockerfile: packages/adapters/Dockerfile.buildkit
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -291,7 +293,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, dashboard, edge, mail, webmail, cluster-tasks]
+        image: [api, dashboard, edge, mail, webmail, cluster-tasks, buildkit]
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8

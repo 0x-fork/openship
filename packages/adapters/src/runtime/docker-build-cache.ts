@@ -302,5 +302,5 @@ export async function touchProjectBuildCache(
 }
 
 export function buildKitCacheConfig(storage: BuildStorage): string {
-  return `[worker.oci]\ngc = true\nreservedSpace = 0\nmaxUsedSpace = ${buildCacheKeepBytes(storage)}\nminFreeSpace = "${BUILD_STORAGE_GC_FREE_FRACTION * 100}%"\n`;
+  return `insecure-entitlements = []\n[worker.oci]\nnetworkMode = "bridge"\ngc = true\nreservedSpace = 0\nmaxUsedSpace = ${buildCacheKeepBytes(storage)}\nminFreeSpace = "${BUILD_STORAGE_GC_FREE_FRACTION * 100}%"\n`;
 }

@@ -43,7 +43,7 @@ the OpenShip API/worker, or in a project's build environment, to disable automat
 mounts. This also accommodates custom clean scripts that remove entire mounted
 cache directories. Docker layer caching remains available.
 
-## Cloud worker lifecycle
+## Remote worker lifecycle
 
 Each project has its own BuildKit state volume, labeled as build cache rather
 than application data. Temporary workers stop after successful, failed and
@@ -51,11 +51,40 @@ cancelled builds. Their CPU/RAM limits are still applied on each recreation.
 Recovery verifies both legacy and current workers have stopped before releasing
 build capacity. Older unlabeled state is never adopted as a managed cache.
 
-Cloud builds require the managed host executor and BuildKit plugin. If either is
-unavailable, the build fails before starting a replacement worker instead of
-falling back to Docker Engine's embedded builder. Self-hosted hosts retain their
-existing builder selection. Disabling automatic package cache mounts does not
-change this isolation boundary.
+Cloud and SSH server Docker builds require the managed host executor, rootful
+Linux Docker, Buildx, and the versioned `openship-buildkit` image. Missing support
+fails before repository build commands run. These paths never fall back to an
+unprotected embedded or legacy builder. Desktop uses the same policy when it
+controls a remote server. Disabling automatic package cache mounts does not
+change this boundary. Local socket/TCP Engine-API builds retain their existing
+builder selection and are outside this remote-build protection scope.
+
+The trusted worker entrypoint installs and verifies IPv4 and IPv6 rules before
+starting BuildKit, including after a worker restart. Rules live only inside that
+worker's network namespace. They block known provider metadata/credential-agent
+addresses for both nested build containers and BuildKit itself, including DNS
+aliases and host-mode build networking. DNS on port 53 remains available because
+some providers share their metadata address with their resolver; ordinary package
+internet access is unchanged. Untrusted build steps do not receive the worker's
+network-administration capabilities, Docker socket, or insecure entitlement.
+This is metadata egress protection, not a general sandbox or defense against a
+BuildKit/kernel vulnerability. Bare and Kubernetes builds are outside its scope.
+
+### Worker image delivery
+
+`openship-buildkit` is built for amd64 and arm64 by the existing Docker-images
+release workflow. It wraps a digest-pinned official BuildKit image with the
+shared metadata policy. Release operations must publish its matching version
+before deploying an API/binary/desktop release that requires it. If the artifact
+is missing or fails policy-label/entrypoint checks, builds fail with
+`BUILD_METADATA_PROTECTION_UNAVAILABLE`; they do not use an upstream fallback.
+An API source checkout builds and transfers this trusted image using the same
+managed-image delivery as edge/mail, with a development tag derived only from
+its Dockerfile, renderer and policy. `OPENSHIP_BUILDKIT_IMAGE`,
+`OPENSHIP_BUILDKIT_TAG` and `OPENSHIP_BUILDKIT_BUILD_CONTEXT` are trusted
+administrator overrides, never repository/workflow inputs. Custom image authors
+must preserve the guard entrypoint and policy. No host firewall rules or Docker
+daemon configuration are changed.
 
 Cache collection and worker attachment share the physical host provisioning lock
 across API/worker processes. The worker's attached Docker volume then pins the

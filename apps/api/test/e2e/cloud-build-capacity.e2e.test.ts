@@ -8,6 +8,8 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { BuildLogger, DockerRuntime, LocalExecutor, sq, type BuildConfig } from "@repo/adapters";
 import { generateDockerfile } from "../../../../packages/adapters/src/runtime/docker-build-plan";
 import { describeDockerE2E, dockerSocketPath, requireDocker } from "../helpers/docker-e2e";
+import { protectedBuildKitImage } from "../helpers/buildkit-image";
+import { BUILD_METADATA_FIXTURE } from "../helpers/build-metadata-fixture";
 
 const execFileAsync = promisify(execFile);
 const resources = { cpuCores: 0.25, memoryMb: 512, diskMb: 8192 };
@@ -18,6 +20,8 @@ const resources = { cpuCores: 0.25, memoryMb: 512, diskMb: 8192 };
 describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
   let runtime: DockerRuntime;
   let root: string;
+  let executor: LocalExecutor;
+  let protectedImage: Awaited<ReturnType<typeof protectedBuildKitImage>>;
   const projectId = `cloud-capacity-e2e-${randomUUID()}`;
   const builder = `openship-cache-${createHash("sha256").update(projectId).digest("hex").slice(0, 24)}`;
   const worker = `buildx_buildkit_${builder}0`;
@@ -27,8 +31,8 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
   const privileged = (command: string) => useSudo
     ? `sudo -n env ${sq(`DOCKER_HOST=unix://${dockerSocketPath}`)} sh -c ${sq(command)}` : command;
   const docker = (...args: string[]) => useSudo
-    ? execFileAsync("sudo", ["-n", "env", `DOCKER_HOST=unix://${dockerSocketPath}`, "docker", ...args], { timeout: 120_000 })
-    : execFileAsync("docker", args, { timeout: 120_000 });
+    ? execFileAsync("sudo", ["-n", "env", `DOCKER_HOST=unix://${dockerSocketPath}`, "docker", ...args], { timeout: 300_000 })
+    : execFileAsync("docker", args, { timeout: 300_000 });
   const inspect = async (name: string) => JSON.parse((await docker("inspect", name)).stdout)[0];
 
   beforeAll(async () => {
@@ -37,8 +41,9 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     vi.stubEnv("DOCKER_CONTEXT", undefined);
     // Fail rather than skip: the new driver must actually run in CI/release tests.
     await docker("buildx", "version");
+    protectedImage = await protectedBuildKitImage(projectId, docker);
     root = await mkdtemp(join(tmpdir(), "openship-cloud-build-capacity-"));
-    const executor = new LocalExecutor();
+    executor = new LocalExecutor();
     // Reap the test's local shell as the Cloud executor reaps its remote task.
     const hostExec = executor.exec.bind(executor);
     executor.exec = (command, options) => hostExec(privileged(command), options);
@@ -59,6 +64,7 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       for (const image of images) await docker("rmi", "-f", image).catch(() => {});
       await runtime.dispose();
     }
+    if (protectedImage) await protectedImage.dispose();
     if (root) await rm(root, { recursive: true, force: true });
     vi.unstubAllEnvs();
   });
@@ -146,6 +152,118 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     "keeps the real Cloud build worker uncapped and removes it after %s",
     outcome => build(outcome, { cpuCores: 0, memoryMb: 0, diskMb: 0 }),
   );
+
+  /** Only this disposable worker receives the mock link-local addresses. A
+   * request is never attempted until their loopback ownership is verified. */
+  async function metadataBuild(command: string, options: {
+    guard?: boolean; allow?: "network.host" | "security.insecure";
+    alias?: boolean; restart?: boolean;
+  } = {}) {
+    const tag = `openship/metadata-e2e:${randomUUID()}`;
+    images.add(tag);
+    await writeFile(join(root, "Dockerfile"), `FROM busybox:1.37.0\nARG OPENSHIP_METADATA_ATTEMPT\nRUN ${command}\n`);
+    const logs: string[] = [];
+    const original = executor.streamExec.bind(executor);
+    executor.streamExec = async (buildCommand, logger, execOptions) => {
+      const active = await inspect(worker);
+      expect(active.HostConfig.NetworkMode).toBe("bridge");
+      expect(active.Config.Entrypoint).toEqual(["/usr/local/bin/openship-buildkitd"]);
+      if (options.restart) {
+        // A post-bootstrap-only guard would be lost here. The shipped image
+        // must reapply it before buildkitd accepts the next request.
+        await docker("exec", "--user", "0", active.Id, "sh", "-ec",
+          "iptables -w 5 -t raw -F OPENSHIP_METADATA_V1; ip6tables -w 5 -t raw -F OPENSHIP_METADATA_V1");
+        await docker("restart", active.Id);
+        await vi.waitFor(async () => {
+          expect((await docker("exec", active.Id, "buildctl", "debug", "workers")).stdout).toContain("linux");
+        }, { timeout: 60_000, interval: 200 });
+      }
+      await docker("exec", "--user", "0", active.Id, "sh", "-ec", [
+        "ip addr add 169.254.169.254/32 dev lo",
+        "ip addr add 198.18.0.1/32 dev lo",
+        "sysctl -w net.ipv6.conf.all.disable_ipv6=0 >/dev/null",
+        "sysctl -w net.ipv6.conf.lo.disable_ipv6=0 >/dev/null",
+        "ip -6 addr add fd00:ec2::254/128 dev lo",
+        "ip -o addr show dev lo | grep -F '169.254.169.254/32'",
+        "ip -o -6 addr show dev lo | grep -F 'fd00:ec2::254/128'",
+      ].join("\n"));
+      const helper = `${projectId}-metadata-${randomUUID()}`;
+      try {
+        await docker("run", "-d", "--name", helper, "--network", `container:${active.Id}`,
+          "--read-only", "--cap-drop=ALL", "--cap-add=NET_BIND_SERVICE",
+          "--entrypoint", "python3", "python:3.14-alpine", "-u", "-c", BUILD_METADATA_FIXTURE);
+        await vi.waitFor(async () => {
+          expect((await docker("logs", helper)).stdout).toContain("OPENSHIP_METADATA_FIXTURE_READY");
+        }, { timeout: 30_000, interval: 100 });
+        if (options.guard === false) {
+          // Negative control is intentionally unprotected, and can reach only
+          // the verified worker-loopback mock. It proves the test is meaningful.
+          await docker("exec", "--user", "0", active.Id, "sh", "-ec",
+            "iptables -w 5 -t raw -F OPENSHIP_METADATA_V1; ip6tables -w 5 -t raw -F OPENSHIP_METADATA_V1");
+        }
+        const flags = [options.allow ? `--allow=${options.allow}` : "",
+          options.alias ? "--add-host=metadata.test:169.254.169.254" : ""].filter(Boolean).join(" ");
+        // Product builds never grant host/insecure entitlements. This test-only
+        // client grant exercises the OUTPUT/IPv6 guard too, beyond that default.
+        return await original(buildCommand.replace("docker buildx build ", `docker buildx build ${flags} `), logger, execOptions);
+      } finally {
+        // Release the shared namespace before production worker cleanup.
+        await docker("rm", "-f", helper).catch(() => {});
+      }
+    };
+    try {
+      const remote = runtime as unknown as {
+        buildImageOnRemote(config: BuildConfig, directory: string, dockerfile: string,
+          tag: string, logger: BuildLogger): Promise<void>;
+      };
+      let error: unknown = null;
+      try {
+        await remote.buildImageOnRemote({ projectId, sessionId: randomUUID(), resources,
+          buildArgs: { OPENSHIP_METADATA_ATTEMPT: randomUUID() } } as BuildConfig,
+          root, "Dockerfile", tag, new BuildLogger(entry => logs.push(entry.message)));
+      } catch (cause) { error = cause; }
+      return { error, logs: logs.join("\n") };
+    } finally { executor.streamExec = original; }
+  }
+
+  it("blocks actual mock metadata over OCI forwarding, DNS aliases, host mode and IPv6", async () => {
+    for (const [command, options] of [
+      ["wget -T 2 -qO- http://169.254.169.254/latest/meta-data", {}],
+      ["wget -T 2 -qO- http://metadata.test/latest/meta-data", { alias: true }],
+      ["--network=host wget -T 2 -qO- http://169.254.169.254/latest/meta-data", { allow: "network.host" }],
+      ["--network=host wget -T 2 -qO- 'http://[fd00:ec2::254]/latest/meta-data'", { allow: "network.host" }],
+    ] as const) {
+      const control = await metadataBuild(command, { ...options, guard: false });
+      expect(control.error, control.logs).toBeNull();
+      expect(control.logs).toContain("OPENSHIP_MOCK_METADATA");
+      const guarded = await metadataBuild(command, options);
+      expect(guarded.error, guarded.logs).toBeInstanceOf(Error);
+      expect(guarded.logs).not.toContain("OPENSHIP_MOCK_METADATA");
+      expect(guarded.logs).toMatch(/wget:.*(?:timed out|refused|failed)|exit code: 1/);
+    }
+  });
+
+  it("reapplies the guard after a worker restart before any build executes", async () => {
+    const guarded = await metadataBuild("wget -T 2 -qO- http://169.254.169.254/latest/meta-data", { restart: true });
+    expect(guarded.error, guarded.logs).toBeInstanceOf(Error);
+    expect(guarded.logs).not.toContain("OPENSHIP_MOCK_METADATA");
+  });
+
+  it("preserves package-style HTTP and provider DNS while refusing untrusted NET_ADMIN", async () => {
+    const result = await metadataBuild("nslookup packages.test 169.254.169.254 && wget -T 5 -qO- http://198.18.0.1/ && if ip link add openship-bypass type dummy 2>/tmp/denied; then exit 91; else grep -i permitted /tmp/denied; fi");
+    expect(result.error, result.logs).toBeNull();
+    expect(result.logs).toContain("OPENSHIP_PACKAGE_OK");
+    expect(result.logs).toContain("198.18.0.1");
+  });
+
+  it("keeps host networking opt-in and refuses insecure execution at the daemon", async () => {
+    const host = await metadataBuild("--network=host wget -T 2 -qO- http://169.254.169.254/latest/meta-data");
+    expect(host.error, host.logs).toBeInstanceOf(Error);
+    expect(host.logs).toMatch(/network.host.*not allowed|not allowed.*network.host/);
+    const insecure = await metadataBuild("echo UNTRUSTED_STEP", { allow: "security.insecure" });
+    expect(insecure.error, insecure.logs).toBeInstanceOf(Error);
+    expect(insecure.logs).toMatch(/security.insecure.*not allowed|not allowed.*security.insecure/);
+  });
 
   it("reuses tool cache after worker recreation and keeps the prior image usable after failure", async () => {
     await writeFile(join(root, "Dockerfile"), [
