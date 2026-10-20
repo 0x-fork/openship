@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
 import { withKeyedMutex } from "@repo/core";
 import { MemoryCacheStore } from "@repo/platform/engine/lib/cache-store/memory";
 
@@ -120,6 +121,42 @@ it("evicts rejected credentials without replaying a mutation", async () => {
   expect(new Headers(fetcher.mock.calls[1]![1].headers).get("authorization")).toBe(
     "Bearer token-2",
   );
+});
+
+it("replaces a shared token rejected by a real metrics stream on explicit reconnect", async () => {
+  const authorizations: Array<string | undefined> = [];
+  const server = createServer((request, response) => {
+    authorizations.push(request.headers.authorization);
+    if (authorizations.length === 1) {
+      response.writeHead(401);
+      response.end();
+    } else {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.end('data: {"cpuUsage":7}\n\n');
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("Missing test address");
+    h.provider = `http://127.0.0.1:${address.port}`;
+    const first = await getNamespaceClient("org", "space");
+    await expect(
+      first.client.streamWorkspaceMetrics("owned")[Symbol.asyncIterator]().next(),
+    ).rejects.toThrow("Live resource usage is unavailable");
+    expect(authorizations).toEqual(["Bearer token-1"]);
+    expect(h.mint).toHaveBeenCalledTimes(1);
+    const next = await getNamespaceClient("org", "space");
+    for await (const sample of next.client.streamWorkspaceMetrics("owned")) {
+      expect(sample).toEqual({ cpuUsage: 7 });
+      break;
+    }
+    expect(authorizations).toEqual(["Bearer token-1", "Bearer token-2"]);
+    expect(h.mint).toHaveBeenCalledTimes(2);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
 });
 
 it("does not evict a renewed token when an older request returns a late 401", async () => {

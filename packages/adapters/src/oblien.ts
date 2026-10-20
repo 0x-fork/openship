@@ -245,6 +245,15 @@ export class Oblien extends OblienSdk {
       setToken(token);
     };
     this._http.restoreAuth = () => { auth = new Headers(original); restoreAuth(); expiresAt = 0; };
+    const invalidateRejectedToken = async (rejectedAuthorization: string | null) => {
+      if (!options.tokenRefresh) return;
+      // Invalidate for the next explicit operation; never replay a mutation or
+      // subscription. A late rejection must not expire a newer generation.
+      if (rejectedAuthorization === auth.get("Authorization")) expiresAt = 0;
+      await options.tokenRefresh.invalidate?.(rejectedAuthorization?.replace(/^Bearer /, "") ?? "").catch(error => {
+        observeCaughtError(error, "adapters/oblien");
+      });
+    };
     this.streamWorkspaceMetrics = (workspaceId, signal) => workspaceMetricsStream(async (subscriptionSignal) => {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(workspaceId)) throw new Error("Invalid Cloud workspace identity");
       const renewal = ensureAuth();
@@ -253,7 +262,9 @@ export class Oblien extends OblienSdk {
       const url = new URL(`/workspace/${encodeURIComponent(workspaceId)}/stats/stream`, base);
       const headers = new Headers(auth);
       headers.set("Accept", "text/event-stream");
-      return fetch(url, { headers, redirect: "error", signal: subscriptionSignal });
+      const response = await fetch(url, { headers, redirect: "error", signal: subscriptionSignal });
+      if (response.status === 401) await invalidateRejectedToken(headers.get("Authorization"));
+      return response;
     }, signal);
     this._http.request = async <T>(request: RequestOptions): Promise<T> => {
       request.signal?.throwIfAborted();
@@ -286,14 +297,7 @@ export class Oblien extends OblienSdk {
       }
       request.signal?.throwIfAborted();
       if (!response.ok) {
-        if (response.status === 401 && options.tokenRefresh) {
-          // Invalidate for the next explicit operation; never replay a mutation.
-          const rejectedAuthorization = headers.get("Authorization");
-          if (rejectedAuthorization === auth.get("Authorization")) expiresAt = 0;
-          await options.tokenRefresh.invalidate?.(rejectedAuthorization?.replace(/^Bearer /, "") ?? "").catch(error => {
-            observeCaughtError(error, "adapters/oblien");
-          });
-        }
+        if (response.status === 401) await invalidateRejectedToken(headers.get("Authorization"));
         throw providerError(response.status, body, response.headers.get("Retry-After"));
       }
       if (!body || typeof body !== "object") throw providerError(502, body);
