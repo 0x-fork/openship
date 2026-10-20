@@ -1,3 +1,4 @@
+import { registerProtectedProjectRoute, protectedProjectRouting } from "@repo/platform/engine/lib/route-protection";
 /**
  * Compose deploy service - deploys multi-service projects.
  *
@@ -2830,7 +2831,7 @@ async function deployComposeServicesUnlocked(
             if (seenRouteDomains.has(routeKey)) continue;
             seenRouteDomains.add(routeKey);
             try {
-              await routeContext.routing.registerRoute({
+              await registerProtectedProjectRoute(project, routeContext.routing, {
                 domain: route.hostname,
                 staticRoot,
                 tls: true,
@@ -3269,7 +3270,7 @@ async function deployComposeServicesUnlocked(
             config: serviceDeployConfig,
             previousContainerId: previous?.containerId ?? undefined,
             domains: routeDomains,
-            routing: routeDomains.length ? routeContext?.routing : undefined,
+            routing: routeDomains.length ? protectedProjectRouting(project, routeContext?.routing) : undefined,
             ssl: routeDomains.length ? routeContext?.trackedSsl : undefined,
             routeOptions: routeDomains.length ? routeContext?.routeOptions : undefined,
             signal: opts?.signal,
@@ -4165,7 +4166,7 @@ async function deployComposeServicesUnlocked(
               },
             ],
           });
-          await routeContext.routing.registerRoute({
+          await registerProtectedProjectRoute(project, routeContext.routing, {
             domain: route.hostname,
             targetUrl: resolved.url,
             tls: route.tls,
@@ -4311,7 +4312,7 @@ async function deployComposeServicesUnlocked(
       });
       if (composite) {
         const r = composite.register;
-        await routeContext.routing.registerRoute({
+        await registerProtectedProjectRoute(project, routeContext.routing, {
           domain: r.hostname,
           tls: true,
           terminatesTlsLocally: hostTerminatesTlsLocally(
@@ -4357,7 +4358,7 @@ async function deployComposeServicesUnlocked(
           ...(reg.proxyLocations ?? []),
           ...(routingFields.proxyLocations ?? []),
         ];
-        await routeContext.routing.registerRoute({
+        await registerProtectedProjectRoute(project, routeContext.routing, {
           domain: reg.hostname,
           tls: true,
           terminatesTlsLocally: hostTerminatesTlsLocally(

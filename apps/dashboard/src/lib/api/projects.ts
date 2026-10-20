@@ -564,6 +564,10 @@ export const projectsApi = {
     api.get<EdgeConfigReport>(endpoints.projects.edgeConfig(id)),
 
   /* ── Route rules (self-hosted edge: rate-limit / ban / allow-deny) ── */
+  listRouteProtection: (id: string | number) =>
+    api.get<{ data: import("@repo/contracts").RouteProtectionStatus[] }>(`/projects/${id}/route-protection`),
+  changeRouteProtection: (id: string | number, body: import("@repo/contracts").RouteProtectionInput) =>
+    api.put<{ data: import("@repo/contracts").RouteProtectionStatus }>(`/projects/${id}/route-protection`, body),
   listRouteRules: (id: string | number) =>
     api.get<{ rules: RouteRuleRow[] }>(endpoints.projects.routeRules(id)),
   createRouteRule: (id: string | number, body: RouteRuleInput) =>

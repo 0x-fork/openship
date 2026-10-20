@@ -584,6 +584,8 @@ export interface RouteHostRedirect {
 }
 
 interface BaseRouteConfig {
+  /** Private edge material. null explicitly unlocks; omission preserves an existing lock. */
+  protection?: import("./infra/route-protection").RouteProtection | null;
   /** External domain (e.g. "my-app.example.com") */
   domain: string;
   /** Whether TLS is enabled */

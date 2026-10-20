@@ -21,6 +21,8 @@ import type { OutputProbeResult, StaticProbeOptions } from "../system/output-exi
 export type ProjectRouteCleanupResult = "removed" | "absent" | "foreign";
 
 export interface RoutingProvider {
+  /** Validated atomic update of an already-published hostname; false means no route yet. */
+  setRouteProtection?(domain: string, policy: import("./route-protection").RouteProtection | null): Promise<boolean>;
   /** Register a reverse-proxy route (domain → container/process) */
   registerRoute(route: RouteConfig): Promise<void>;
 

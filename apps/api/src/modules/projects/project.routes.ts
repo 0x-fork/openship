@@ -22,6 +22,7 @@ import {
   ImportLocalProjectBody,
   ProjectControlSchemas,
   RouteRuleInputSchema,
+  RouteProtectionInputSchema,
   ConnectProjectDomainInputSchema,
   SourceScanOptionsSchema,
   UpdateCloneTokenSchema,
@@ -128,6 +129,15 @@ r.get(
   },
   edgeConfig.getEdgeConfig,
 );
+
+r.get("/:id/route-protection", {
+  tag: "project:read", localOnly: true,
+  mcp: { description: "List saved hostname password protection and whether the self-hosted edge acknowledged it. Never returns passwords or signing keys." },
+}, routeRules.listRouteProtection);
+r.put("/:id/route-protection", {
+  tag: "project:write", localOnly: true, body: RouteProtectionInputSchema, auditHandledByOperation: true,
+  mcp: { description: "Protect a self-hosted HTTPS hostname with a shared password, unlock it, revoke browser sessions, or retry a pending edge update. Cloud is unsupported. Public routes and direct origin ports are separate." },
+}, routeRules.changeRouteProtection);
 
 /* ─── Route rules (self-hosted OpenResty edge: rate-limit · ban · allow/deny) ── */
 r.get(

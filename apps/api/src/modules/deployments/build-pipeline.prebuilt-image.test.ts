@@ -60,6 +60,7 @@ vi.mock("@repo/db", () => ({
   runOutsideAdvisoryLock: <T>(work: () => T) => work(),
   schema: {},
   repos: {
+    routeProtection: { readPrivate: vi.fn(async () => null) },
     cloudBuildActivity: { cancelReservation: mocks.cancelReservation },
     cloudDockerWorkspace: { find: (...args: unknown[]) => mocks.findCloudDockerBinding(...args) },
     deployment: {

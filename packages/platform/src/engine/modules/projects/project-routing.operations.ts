@@ -1,3 +1,4 @@
+import { listRouteProtection, changeRouteProtection } from "../../lib/route-protection";
 import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { AppError, NotFoundError, isWildcardHostname, normalizeCustomHostname, safeErrorMessage } from "@repo/core";
@@ -39,6 +40,12 @@ function record(ctx: ExecutionContext, projectId: string, operation: string, rul
 }
 
 export const projectRoutingOperations: ResourceServices<typeof ProjectRoutingSchemas> = {
+  listRouteProtection,
+  async changeRouteProtection(ctx, id, input) {
+    const result = await changeRouteProtection(ctx, id, input);
+    record(ctx, id, `routeProtection.${input.action}`, input.hostname);
+    return result;
+  },
   async listRouteRules(ctx, id) {
     await localProject(ctx, id);
     return repos.routeRule.listByProject(id);

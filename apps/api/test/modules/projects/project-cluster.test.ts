@@ -15,9 +15,11 @@ const h = vi.hoisted(() => ({
   builds: vi.fn(),
   audit: vi.fn(),
   available: vi.fn(),
+  protection: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
   repos: {
+    routeProtection: { list: h.protection },
     project: { findById: h.find },
     clusterRuntime: { bindProject: h.bind },
     clusterDatabase: { list: vi.fn(async () => []) },
@@ -63,6 +65,7 @@ const operations = createProjectClusterOperations(h.audit);
 beforeEach(() => {
   vi.resetAllMocks();
   h.find.mockResolvedValue(project());
+  h.protection.mockResolvedValue([]);
   h.lock.mockImplementation(async (_id, work) => work(await h.find()));
   h.active.mockResolvedValue({ id: "release", meta: { clusterId: "cluster" } });
   h.ready.mockResolvedValue({
@@ -72,6 +75,21 @@ beforeEach(() => {
 });
 
 describe("project cluster lifecycle admission", () => {
+  it("refuses an unsupported target before changing a private site's destination", async () => {
+    h.find.mockResolvedValue({ ...project(), clusterId: null });
+    h.protection.mockResolvedValue([{ enabled: true }]);
+    await expect(
+      operations.setClusterTarget(ctx, "project", {
+        clusterId: "cluster",
+        config: { replicas: 2, imageRepository: "ghcr.io/team/api" },
+        expectedUpdatedAt: now.toISOString(),
+        stateless: true,
+      }),
+    ).rejects.toMatchObject({ code: "ROUTE_PROTECTION_UNSUPPORTED" });
+    expect(h.bind).not.toHaveBeenCalled();
+    expect(h.ready).not.toHaveBeenCalled();
+  });
+
   it.each([
     [undefined, true],
     [{ mode: "url", artifactKind: "archive" }, true],

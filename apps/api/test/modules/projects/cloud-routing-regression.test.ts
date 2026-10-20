@@ -20,6 +20,7 @@ vi.mock("@repo/db", async (original) => ({
   ...(await original<typeof import("@repo/db")>()),
   withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
+    routeProtection: { readPrivate: vi.fn(async () => null) },
     project: { findById: vi.fn(async () => h.project) },
     deployment: {
       findById: vi.fn(async () => h.deployment),
