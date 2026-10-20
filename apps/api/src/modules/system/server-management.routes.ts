@@ -25,6 +25,7 @@ import {
   UpdateComputeClusterInputSchema,
   ComputeClusterCollectionSchemas,
   ClusterStorageCollectionSchemas,
+  SwarmInspectionInputSchema,
 } from "@repo/contracts";
 import { Type } from "@sinclair/typebox";
 import * as serverCheck from "./server-check.controller";
@@ -704,6 +705,18 @@ r.get(
     },
   },
   serversCtrl.getInfrastructure,
+);
+r.get(
+  "/servers/:id/swarm",
+  {
+    query: SwarmInspectionInputSchema,
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    mcp: {
+      description: "Inspect Docker Swarm membership on a self-hosted server. Set details=true to read stacks, service replica counts, ports, mounts and nodes from a manager. Requires server administration because inventory spans the cluster. Read-only: does not join nodes, adopt stacks or change services. Workers require a manager connection for inventory. No environment values, join tokens or credentials are returned.",
+    },
+  },
+  serversCtrl.inspectSwarm,
 );
 // Read-only blast-radius snapshot for the removal confirm: which projects and apps
 // this box currently runs, and which server-scoped records go with it.

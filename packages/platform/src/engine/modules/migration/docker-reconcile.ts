@@ -21,7 +21,7 @@ import type {
 } from "@repo/adapters";
 import { classifyProxy, isBuildHelperMarkers, OPENSHIP_LABEL } from "@repo/adapters";
 import type { ComposeHealthcheck, ProxySettings, ComposeGpuConfig } from "@repo/core";
-import { isLoopbackHost } from "@repo/core";
+import { assertStandaloneContainer, isLoopbackHost } from "@repo/core";
 import type { ComposeService } from "../../lib/compose-parser";
 import type { ManifestProjectEntry } from "../../lib/openship-manifest";
 import type { ExistingRoute, ProxyRouteScan } from "./proxy-route-scan";
@@ -495,6 +495,7 @@ export function toDiscoveredService(
   imageCmd?: string[],
   proxyRoutesByPort?: Map<number, ExistingRoute[]>,
 ): DiscoveredService {
+  assertStandaloneContainer(detail.labels);
   const mounts = toDiscoveredMounts(detail.mounts);
   const warnings: string[] = [];
   if (detail.gpuImportError) warnings.push(detail.gpuImportError);

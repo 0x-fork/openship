@@ -654,3 +654,4 @@ export {
   probeDockerExecutionPlatforms,
   DOCKER_BINFMT_IMAGE,
 } from "./runtime/docker-platforms";
+export { inspectDockerSwarm } from "./runtime/swarm/inspect";
