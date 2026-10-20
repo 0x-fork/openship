@@ -400,6 +400,8 @@ export interface DeployConfig {
    * O(full_size + small_delta × N). Docker/Cloud ignore the field.
    */
   previousDeploymentId?: string;
+  /** Exact outgoing container on this target, for retaining image-declared data. */
+  previousContainerId?: string;
   /**
    * Adopt an ALREADY-RUNNING process instead of starting one. When true, a
    * runtime that supports adoption (currently Bare) skips build promotion and

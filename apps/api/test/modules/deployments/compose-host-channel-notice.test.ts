@@ -309,6 +309,9 @@ async function demotedExecutor(): Promise<CommandExecutor> {
 beforeEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
+  // These fixtures stub daemon I/O/activation and intentionally skip constructors.
+  // Real volume preparation/cutover is covered by image-volume-persistence.e2e.
+  vi.spyOn(DockerRuntime.prototype, "prepareServiceVolumes").mockResolvedValue(undefined);
   h.localImageRefs.clear();
   const inspectImage = async (ref: string) => {
     if (ref.startsWith("/")) throw new Error("invalid image reference");
