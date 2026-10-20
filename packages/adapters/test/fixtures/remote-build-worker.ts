@@ -14,6 +14,7 @@ export function stubProtectedBuildWorker(runtime: DockerRuntime, probe = true): 
       ? Promise.resolve(JSON.stringify({ OSType: "linux", SecurityOptions: ["name=seccomp"] }))
       : exec(command, options),
   );
+  host.buildCacheHostExecutor = vi.fn(async () => executor);
   host.startProtectedBuildWorker = vi.fn(async () => {});
   host.cleanupProtectedBuildWorker = vi.fn(async () => {});
   if (probe) host.remoteBuildKitAvailable = vi.fn(async () => true);

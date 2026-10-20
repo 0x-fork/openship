@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
+import { protectedBuildCacheHostExecutor } from "./docker-build-cache-executor";
+import { AppError } from "@repo/core";
 import { DockerRuntime } from "./docker";
 import { BuildLogger } from "./build-pipeline";
 import { projectBuildCacheVolume } from "./docker-build-cache";
 import { currentManagedCommandTracking, withManagedCommandTracking } from "./cloud/command-tracking";
 import type { BuildConfig, LogCallback, LogEntry } from "../types";
+
+vi.mock("./docker-build-cache-executor", () => ({
+  protectedBuildCacheHostExecutor: vi.fn(async (executor) => executor),
+}));
 
 const config = {
   projectId: "project",
@@ -258,4 +264,16 @@ describe("Cloud Docker build execution limits", () => {
     expect(h.executor.streamExec).not.toHaveBeenCalled();
     expect(h.commands()).not.toContain("buildx create");
   });
+  it("refuses an SSH login without sudo before worker or repository commands", async () => {
+    const h = fixture("ssh");
+    vi.mocked(protectedBuildCacheHostExecutor).mockRejectedValueOnce(
+      new AppError("Remote build cache requires root or passwordless sudo", 503, "BUILD_METADATA_PROTECTION_UNAVAILABLE"),
+    );
+    await expect(h.run()).rejects.toMatchObject({ code: "BUILD_METADATA_PROTECTION_UNAVAILABLE" });
+    expect(h.executor.streamExec).not.toHaveBeenCalled();
+    expect(h.executor.writeFile).not.toHaveBeenCalled();
+    expect(h.commands()).not.toContain("buildx create");
+    expect(h.commands()).not.toContain("buildx rm");
+  });
+
 });

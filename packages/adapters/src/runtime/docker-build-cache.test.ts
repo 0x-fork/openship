@@ -117,6 +117,7 @@ describe("managed project cache cleanup", () => {
       Labels: { "openship.build-cache": "1", "openship.build-cache.project": "p1" },
     };
     Object.assign(runtime, {
+      buildCacheHostExecutor: vi.fn(async () => ({ exec })),
       connectionOptions: {
         transport,
         executor: { exec },

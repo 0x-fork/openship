@@ -52,7 +52,10 @@ Recovery verifies both legacy and current workers have stopped before releasing
 build capacity. Older unlabeled state is never adopted as a managed cache.
 
 Cloud and SSH server Docker builds require the managed host executor, rootful
-Linux Docker, Buildx, and the versioned `openship-buildkit` image. Missing support
+Linux Docker, Buildx, and the versioned `openship-buildkit` image. SSH logins
+must be root or have passwordless sudo for the trusted host cache files.
+Only cache filesystem I/O is elevated; repository commands, the build context,
+and the Docker client continue to use the login user's executor and context. Missing support
 fails before repository build commands run. These paths never fall back to an
 unprotected embedded or legacy builder. Desktop uses the same policy when it
 controls a remote server. Disabling automatic package cache mounts does not

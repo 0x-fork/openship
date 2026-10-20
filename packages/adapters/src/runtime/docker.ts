@@ -34,7 +34,6 @@ import { currentManagedCommandTracking } from "./cloud/command-tracking";
 import Dockerode from "dockerode";
 import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
-import { prepareProtectedBuildKitImage, requireProtectedBuildHost, PROTECTED_BUILDKIT_DRIVER_OPTIONS } from "./docker-buildkit-image";
 import { randomUUID } from "node:crypto";
 import { projectBuildKitWorker, removeProjectBuildKitWorker } from "./docker-buildkit-worker";
 import { readSoftwareCache } from "./docker-software-cache";
@@ -46,6 +45,8 @@ import {
 import { AppError, withKeyedMutex } from "@repo/core";
 import { generatedBuildIgnore } from "./docker-recipes/cache";
 import { createGzip } from "node:zlib";
+import { prepareProtectedBuildKitImage, requireProtectedBuildHost, PROTECTED_BUILDKIT_DRIVER_OPTIONS } from "./docker-buildkit-image";
+import { protectedBuildCacheHostExecutor } from "./docker-build-cache-executor";
 import { StringDecoder } from "node:string_decoder";
 
 import type {
@@ -1685,6 +1686,11 @@ export class DockerRuntime implements RuntimeAdapter {
     return executor;
   }
 
+  private buildCacheHostExecutor(executor: CommandExecutor): Promise<CommandExecutor> {
+    return this.connectionOptions?.transport === "ssh" || this.transport?.kind === "ssh"
+      ? protectedBuildCacheHostExecutor(executor) : Promise.resolve(executor);
+  }
+
   /** Project teardown already owns admission and has removed its workloads.
    * Build state is disposable independently of application-volume retention. */
   async cleanupProject(projectId: string, _options?: { wipeVolumes?: boolean }): Promise<void> {
@@ -1694,6 +1700,7 @@ export class DockerRuntime implements RuntimeAdapter {
   protected async clearManagedProjectBuildCache(projectId: string): Promise<void> {
     const executor = this.managedBuildCacheExecutor();
     if (!executor) return;
+    await this.buildCacheHostExecutor(executor);
     await this.withBuildCacheLock(async () => {
       // An idle BuildKit container still pins its state volume. Teardown owns
       // project admission; stop its worker only after durable commands drain,
@@ -1710,7 +1717,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // for a live build, even when no cache volume exists.
     await currentManagedCommandTracking()?.flush();
     const protection = await this.connectionOptions?.buildCacheProtection?.();
-    return pruneManagedBuildCaches(this.docker, executor, { ...options,
+    return pruneManagedBuildCaches(this.docker, await this.buildCacheHostExecutor(executor), { ...options,
       protectedProjectIds: new Set(protection?.projectIds), protectAll: protection?.all });
   }
 
@@ -1757,6 +1764,7 @@ export class DockerRuntime implements RuntimeAdapter {
 
   private async startProtectedBuildWorker(config: BuildConfig, log: BuildLogger, signal?: AbortSignal): Promise<void> {
     const executor = this.connectionOptions!.executor!;
+    const cacheHost = await this.buildCacheHostExecutor(executor);
     const buildWorker = projectBuildKitWorker(config.projectId);
     const builderName = buildWorker.builderName;
     const limits = dockerBuildResourceLimits(config.resources);
@@ -1771,7 +1779,7 @@ export class DockerRuntime implements RuntimeAdapter {
       await this.assertBuildCacheCommandsStopped(config.projectId);
       const cleaned = await this.pruneManagedBuildState(executor);
       if (cleaned.spaceReclaimed) log.log(`Build cache cleanup reclaimed ${cleaned.spaceReclaimed} bytes.\n`);
-      const storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
+      const storage = parseBuildStorage(await cacheHost.exec(DOCKER_BUILD_STORAGE_COMMAND));
       assertBuildStorage(storage);
       const reused = await ensureProjectBuildCache(this.docker, config.projectId);
       const configPath = `/tmp/openship-buildkit-${randomUUID()}.toml`;
@@ -1785,7 +1793,7 @@ export class DockerRuntime implements RuntimeAdapter {
           throw Object.assign(new AppError("The protected build worker could not start. Check rootful Linux Docker and IPv4/IPv6 packet-filter support; no repository build commands ran.",
             503, "BUILD_METADATA_PROTECTION_UNAVAILABLE"), { cause });
         }
-        await touchProjectBuildCache(executor, config.projectId);
+        await touchProjectBuildCache(cacheHost, config.projectId);
         log.log("Build metadata protection is active inside the project worker.\n");
         log.log(reused ? "Persistent build cache restored.\n" : "Starting a new persistent build cache.\n");
       } finally {
@@ -1802,7 +1810,7 @@ export class DockerRuntime implements RuntimeAdapter {
     await this.assertBuildCacheCommandsStopped(projectId);
     await this.withBuildCacheLock(async () => {
       await this.pruneManagedBuildState(executor);
-      assertBuildStorage(parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND)));
+      assertBuildStorage(parseBuildStorage(await (await this.buildCacheHostExecutor(executor)).exec(DOCKER_BUILD_STORAGE_COMMAND)));
     });
   }
 
@@ -1846,6 +1854,7 @@ export class DockerRuntime implements RuntimeAdapter {
         "BUILD_METADATA_PROTECTION_UNAVAILABLE",
       );
     await requireProtectedBuildHost(executor);
+    await this.buildCacheHostExecutor(executor);
     const limits = dockerBuildResourceLimits(config.resources);
     const worker = projectBuildKitWorker(config.projectId);
     const removeBuilder = `docker buildx rm --force --keep-state ${sq(worker.builderName)}`;
@@ -4479,13 +4488,14 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   /**
-   * Reclaim owned remote worker state OR local Docker Engine builder cache.
+   * Reclaim owned Cloud worker state OR native Docker Engine builder cache.
    *
    * Cloud never prunes the daemon's embedded builder. On fuse-overlayfs that
    * scan can exhaust dockerd memory, disrupting unrelated application management.
-   * Remote builds use isolated project workers; their collector checks ownership,
+   * Cloud builds use isolated project workers; their collector checks ownership,
    * attachments and pending commands under the same lock as worker bootstrap.
    *
+   * SSH uses the same managed collector; its legacy daemon state stays separate.
    * Native build cache belongs to the DAEMON, not to a project: intermediate records
    * do not reliably retain OpenShip's final-image labels. Callers therefore own
    * the host-wide policy (bounded automatic retention vs an explicit full

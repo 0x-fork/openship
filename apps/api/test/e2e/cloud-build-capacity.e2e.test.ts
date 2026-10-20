@@ -386,4 +386,45 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     }
   });
 
+  it.skipIf(process.platform !== "linux")("keeps the non-root SSH Docker client and elevates only cache filesystem I/O", async () => {
+    expect(process.getuid?.(), "This fixture must exercise the actual non-root CI login").not.toBe(0);
+    const project = `${projectId}-ssh`;
+    const sshBuilder = `openship-cache-${createHash("sha256").update(project).digest("hex").slice(0, 24)}`;
+    const sshWorker = `buildx_buildkit_${sshBuilder}0`;
+    const commands: string[] = [];
+    const login = new LocalExecutor();
+    const exec = login.exec.bind(login);
+    const stream = login.streamExec.bind(login);
+    login.exec = (command, options) => { commands.push(command); return exec(command, options); };
+    login.streamExec = (command, logger, options) => { commands.push(command); return stream(command, logger, options); };
+    const ssh = await DockerRuntime.create({ transport: "socket", executor: login });
+    Object.assign(ssh, { connectionOptions: { transport: "ssh", executor: login } });
+    const tag = `openship/ssh-cache-e2e:${randomUUID()}`;
+    images.add(tag);
+    await writeFile(join(root, "Dockerfile"), 'FROM busybox:1.37.0\nRUN echo SSH_NONROOT_BUILD\nCMD ["true"]\n');
+    try {
+      const remote = ssh as unknown as {
+        buildImageOnRemote(config: BuildConfig, directory: string, dockerfile: string,
+          tag: string, logger: BuildLogger): Promise<void>;
+      };
+      await remote.buildImageOnRemote({ projectId: project, sessionId: randomUUID(), resources } as BuildConfig,
+        root, "Dockerfile", tag, new BuildLogger());
+      expect(commands).toContain("docker info --format '{{.DockerRootDir}}'");
+      expect(commands.some(command => command.startsWith("docker buildx create"))).toBe(true);
+      expect(commands.some(command => command.startsWith("sudo -n") && command.includes("docker buildx"))).toBe(false);
+      expect(commands.some(command => command.startsWith("sudo -n") && command.includes("df -Pk"))).toBe(true);
+      expect(commands.some(command => command.startsWith("sudo -n") && command.includes("mkdir -p") && command.includes("/var/lib/openship/build-cache"))).toBe(true);
+      await ssh.cleanupProject(project, { wipeVolumes: false });
+      expect(commands.some(command => command.startsWith("sudo -n") && command.includes("du -sk"))).toBe(true);
+      expect(commands.some(command => command.startsWith("sudo -n") && command.includes("rm -f") && command.includes("/var/lib/openship/build-cache"))).toBe(true);
+      await expect(docker("volume", "inspect", `${sshWorker}_state`)).rejects.toThrow();
+      await docker("run", "--rm", tag);
+    } finally {
+      await login.exec(`docker buildx rm --force ${sq(sshBuilder)}`).catch(() => {});
+      await docker("rm", "-f", sshWorker).catch(() => {});
+      await docker("volume", "rm", `${sshWorker}_state`).catch(() => {});
+      await ssh.dispose();
+    }
+  });
+
 });
