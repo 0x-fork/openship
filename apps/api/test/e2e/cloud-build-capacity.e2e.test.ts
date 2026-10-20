@@ -178,11 +178,11 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
    * request is never attempted until their loopback ownership is verified. */
   async function metadataBuild(command: string, options: {
     guard?: boolean; allow?: "network.host" | "security.insecure";
-    alias?: boolean; restart?: boolean;
+    alias?: boolean; restart?: boolean; image?: string;
   } = {}) {
     const tag = `openship/metadata-e2e:${randomUUID()}`;
     images.add(tag);
-    await writeFile(join(root, "Dockerfile"), `FROM busybox:1.37.0\nARG OPENSHIP_METADATA_ATTEMPT\nRUN ${command}\n`);
+    await writeFile(join(root, "Dockerfile"), `FROM ${options.image ?? "busybox:1.37.0"}\nARG OPENSHIP_METADATA_ATTEMPT\nRUN ${command}\n`);
     const logs: string[] = [];
     const original = executor.streamExec.bind(executor);
     executor.streamExec = async (buildCommand, logger, execOptions) => {
@@ -206,11 +206,6 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
         "sysctl -w net.ipv6.conf.lo.disable_ipv6=0 >/dev/null",
         "ip -6 addr add fd00:ec2::254/128 dev lo",
         "ip -6 addr add fd20:ce::254/128 dev lo",
-        // The fake resolver also lives on loopback. Give DNS requests a
-        // different local source, like a real VM querying a remote resolver,
-        // so replies do not target the metadata IP's blocked ephemeral ports.
-        "ip -6 route replace local fd20:ce::254/128 dev lo src ::1 table local",
-        "ip -6 route get fd20:ce::254 | grep -F 'src ::1'",
         "ip -o addr show dev lo | grep -F '169.254.169.254/32'",
         "ip -o -6 addr show dev lo | grep -F 'fd00:ec2::254/128'",
         "ip -o -6 addr show dev lo | grep -F 'fd20:ce::254/128'",
@@ -283,7 +278,25 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     expect(result.error, result.logs).toBeNull();
     expect(result.logs).toContain("OPENSHIP_PACKAGE_OK");
     expect(result.logs).toContain("198.18.0.1");
-    const ipv6 = await metadataBuild("--network=host nslookup packages.test fd20:ce::254", { allow: "network.host" });
+    // Bind a distinct loopback client address. A real VM querying a remote
+    // resolver also receives replies at its client IP, not at the metadata IP.
+    const query = [
+      "import socket, struct",
+      "client = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)",
+      "client.bind(('::1', 0))",
+      "assert client.getsockname()[0] == '::1'",
+      "client.settimeout(3)",
+      "name = b''.join(bytes([len(label)]) + label for label in [b'packages', b'test']) + bytes([0])",
+      "packet = struct.pack('!6H', 1234, 256, 1, 0, 0, 0) + name + struct.pack('!2H', 1, 1)",
+      "client.sendto(packet, ('fd20:ce::254', 53))",
+      "response, peer = client.recvfrom(1024)",
+      "assert peer[0] == 'fd20:ce::254' and response[:2] == packet[:2]",
+      "assert response[-4:] == socket.inet_aton('198.18.0.1')",
+      "print('198.18.0.1')",
+    ].join("; ");
+    const ipv6 = await metadataBuild(`--network=host python3 -c ${sq(query)}`, {
+      allow: "network.host", image: "python:3.14-alpine",
+    });
     expect(ipv6.error, ipv6.logs).toBeNull();
     expect(ipv6.logs).toContain("198.18.0.1");
   });

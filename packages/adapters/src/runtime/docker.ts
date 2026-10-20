@@ -32,9 +32,9 @@
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { currentManagedCommandTracking } from "./cloud/command-tracking";
 import Dockerode from "dockerode";
-import { prepareProtectedBuildKitImage, requireProtectedBuildHost, PROTECTED_BUILDKIT_DRIVER_OPTIONS } from "./docker-buildkit-image";
 import { prepareDockerImage, type DockerImagePreparationOptions } from "./docker-image-preparation";
 import * as tarFs from "tar-fs";
+import { prepareProtectedBuildKitImage, requireProtectedBuildHost, PROTECTED_BUILDKIT_DRIVER_OPTIONS } from "./docker-buildkit-image";
 import { randomUUID } from "node:crypto";
 import { projectBuildKitWorker, removeProjectBuildKitWorker } from "./docker-buildkit-worker";
 import { readSoftwareCache } from "./docker-software-cache";
@@ -1645,20 +1645,11 @@ export class DockerRuntime implements RuntimeAdapter {
   private engineCacheProbe: Promise<boolean> | null = null;
 
   private async cachedBuildConfig(config: BuildConfig): Promise<BuildConfig> {
-    if (this.transport.kind === "cloud" && !this.connectionOptions?.executor)
-      throw new AppError(
-        "The managed Cloud build executor is unavailable. Recover the Cloud space before retrying.",
-        503,
-        "CLOUD_BUILD_EXECUTOR_UNAVAILABLE",
-      );
-    if (this.transport.kind === "ssh" && !this.connectionOptions?.executor)
-      throw new AppError("Remote build protection requires the server's command connection. Reconnect this server before retrying; no repository build commands ran.",
-        503, "BUILD_METADATA_PROTECTION_UNAVAILABLE");
+    const executor = this.managedBuildCacheExecutor();
     if (config.buildCache === false || process.env.OPENSHIP_BUILD_CACHE_MOUNTS === "false" ||
         config.envVars?.OPENSHIP_BUILD_CACHE_MOUNTS === "false")
       return { ...config, buildCache: false };
-    if (this.connectionOptions?.executor && (this.transport.kind === "ssh" || this.transport.kind === "cloud"))
-      return { ...config, buildCache: await this.remoteBuildKitAvailable() };
+    if (executor) return { ...config, buildCache: await this.remoteBuildKitAvailable() };
     // Do not trade away explicit Engine-API CPU/RAM limits to gain cache mounts.
     if (Object.keys(dockerBuildResourceLimits(config.resources)).length || !this._docker?.version)
       return { ...config, buildCache: false };
@@ -1679,8 +1670,29 @@ export class DockerRuntime implements RuntimeAdapter {
       withKeyedMutex(`docker-build-cache:${this.transport.description}`, work);
   }
 
-  protected async clearManagedProjectBuildCache(projectId: string): Promise<void> {
+  private managedBuildCacheExecutor(): CommandExecutor | undefined {
+    const target = this.connectionOptions?.transport;
+    if (target !== "cloud" && target !== "ssh" && this.transport?.kind !== "cloud" && this.transport?.kind !== "ssh")
+      return undefined;
     const executor = this.connectionOptions?.executor;
+    if (!executor) {
+      if (target === "cloud" || this.transport?.kind === "cloud")
+        throw new AppError("The managed Cloud build executor is unavailable. Recover the Cloud space before retrying.",
+          503, "CLOUD_BUILD_EXECUTOR_UNAVAILABLE");
+      throw new AppError("Remote build protection requires the server's command connection. Reconnect this server before retrying.",
+        503, "BUILD_METADATA_PROTECTION_UNAVAILABLE");
+    }
+    return executor;
+  }
+
+  /** Project teardown already owns admission and has removed its workloads.
+   * Build state is disposable independently of application-volume retention. */
+  async cleanupProject(projectId: string, _options?: { wipeVolumes?: boolean }): Promise<void> {
+    await this.clearManagedProjectBuildCache(projectId);
+  }
+
+  protected async clearManagedProjectBuildCache(projectId: string): Promise<void> {
+    const executor = this.managedBuildCacheExecutor();
     if (!executor) return;
     await this.withBuildCacheLock(async () => {
       // An idle BuildKit container still pins its state volume. Teardown owns
@@ -4467,11 +4479,11 @@ export class DockerRuntime implements RuntimeAdapter {
   }
 
   /**
-   * Reclaim owned Cloud worker state OR native Docker Engine builder cache.
+   * Reclaim owned remote worker state OR local Docker Engine builder cache.
    *
    * Cloud never prunes the daemon's embedded builder. On fuse-overlayfs that
    * scan can exhaust dockerd memory, disrupting unrelated application management.
-   * Cloud builds use isolated project workers; their collector checks ownership,
+   * Remote builds use isolated project workers; their collector checks ownership,
    * attachments and pending commands under the same lock as worker bootstrap.
    *
    * Native build cache belongs to the DAEMON, not to a project: intermediate records
@@ -4492,19 +4504,14 @@ export class DockerRuntime implements RuntimeAdapter {
       throw new RangeError("keepStorageBytes must be a non-negative safe integer");
     }
 
-    if (this.connectionOptions?.transport === "cloud") {
-      const executor = this.connectionOptions.executor;
-      if (!executor)
-        throw new AppError(
-          "The managed Cloud build executor is unavailable. Recover the Cloud space before retrying.",
-          503,
-          "CLOUD_BUILD_EXECUTOR_UNAVAILABLE",
-        );
+    const executor = this.managedBuildCacheExecutor();
+    if (executor) {
       if (Object.keys(options.filters ?? {}).length)
         throw new AppError(
-          "Docker Engine cache filters cannot be applied to managed Cloud project caches.",
+          "Docker Engine cache filters cannot be applied to managed project caches.",
           400,
-          "CLOUD_BUILD_CACHE_FILTER_UNSUPPORTED",
+          this.connectionOptions?.transport === "cloud" || this.transport?.kind === "cloud"
+            ? "CLOUD_BUILD_CACHE_FILTER_UNSUPPORTED" : "BUILD_CACHE_FILTER_UNSUPPORTED",
         );
       return this.withBuildCacheLock(() => {
         options.abortSignal?.throwIfAborted();

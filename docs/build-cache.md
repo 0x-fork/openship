@@ -104,14 +104,15 @@ deployment gates before cutover.
 
 ## Storage policy
 
-Managed Cloud idle caches retain at most 10% of Docker’s filesystem, capped at
+Managed remote-worker idle caches retain at most 10% of Docker’s filesystem, capped at
 5 GiB, with a seven-day idle expiry. Collection removes the least recently used idle state first. BuildKit
 workers also receive that cache ceiling and a native BuildKit GC target of
 20% free space. Attached state and active build records remain protected. Collection runs
-before and after builds and in the daily cache sweep. Project deletion handles
+before and after builds and in the daily cache sweep. Explicit cache clearing and project deletion use
+the same protected collector for both Cloud and SSH destinations. Project deletion handles
 deleted-project state; the daily Cloud sweep also discovers ready owned hosts
 whose last project was moved or deleted.
-Cloud collection returns after processing owned project-worker caches. It never
+Remote-worker collection returns after processing owned project-worker caches. It never
 calls Docker Engine's native `/build/prune` endpoint, including when all managed
 caches are attached or protected. Engine-only cache filters are rejected rather
 than silently pruning a different cache. On fuse-overlayfs, embedded BuildKit
