@@ -1317,7 +1317,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
      * write. `logs` undefined means "don't touch the column": that caller has
      * no payload to shed, so its error propagates untouched.
      */
-    async finishBuildSession(id: string, status: string, durationMs: number, logs?: unknown[]) {
+    async finishBuildSession(id: string, status: string, durationMs: number | null, logs?: unknown[]) {
       const OMIT = Symbol("omit");
       // `logs` is spread in only when there is a payload — the column is left
       // untouched by ABSENCE from the SET clause, not by an undefined value.

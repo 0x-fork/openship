@@ -42,6 +42,9 @@ vi.mock("@repo/platform/engine/modules/deployments/compose/deploy.service", () =
   composeDeployMadeNoChanges: () => false,
 }));
 vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
+  beginBuildTiming: vi.fn(),
+  completeBuildTiming: vi.fn(),
+  finishServiceDeploymentTimings: vi.fn(async () => {}),
   cleanupBuildArtifact: mocks.cleanupBuildArtifact,
   onCancelled: vi.fn(async () => {}),
   onFailure: mocks.onFailure,

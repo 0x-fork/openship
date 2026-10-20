@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BuildLogger, CommandExecutor, MultiServiceRuntimeAdapter } from "@repo/adapters";
 import type { Deployment, Project } from "@repo/db";
 
@@ -35,6 +35,8 @@ const h = vi.hoisted(() => ({
   reserveResolvedLoopbackRoutes: vi.fn(),
   upsertServiceDeployment: vi.fn(),
   updateServiceDeployment: vi.fn(),
+  startServiceDeploymentTiming: vi.fn(),
+  finishStartedServiceDeploymentTimings: vi.fn(),
   services: [] as Array<Record<string, unknown>>,
   previousServiceRows: [] as Array<Record<string, unknown>>,
   previousDeployment: { id: "d-old", projectId: "p1", organizationId: "org1", containerId: "compose", createdAt: null } as Record<
@@ -55,6 +57,8 @@ vi.mock("@repo/db", () => ({
       listByDeployment: async () => h.previousServiceRows,
       upsertServiceDeployment: (...args: unknown[]) => h.upsertServiceDeployment(...args),
       updateServiceDeployment: (...args: unknown[]) => h.updateServiceDeployment(...args),
+      startServiceDeploymentTiming: (...args: unknown[]) => h.startServiceDeploymentTiming(...args),
+      finishStartedServiceDeploymentTimings: (...args: unknown[]) => h.finishStartedServiceDeploymentTimings(...args),
       markServiceDeploymentFailed: async () => undefined,
     },
     deployment: {
@@ -380,7 +384,11 @@ beforeEach(() => {
   h.convergeTargetHostPortClaimsUnlocked.mockResolvedValue({ released: 0, retained: [] });
   h.upsertServiceDeployment.mockResolvedValue(undefined);
   h.updateServiceDeployment.mockResolvedValue(undefined);
+  h.startServiceDeploymentTiming.mockResolvedValue(undefined);
+  h.finishStartedServiceDeploymentTimings.mockResolvedValue(undefined);
 });
+
+afterEach(() => vi.useRealTimers());
 
 function addDisabledPreviousService() {
   h.services.push({
@@ -418,6 +426,82 @@ describe("compose deploy — host channel unavailable", () => {
     expect(f.runtime.destroy).not.toHaveBeenCalled();
     expect(result.summary.deployed).toBe(0);
     expect(result.services.every(service => service.carried)).toBe(true);
+    expect(h.startServiceDeploymentTiming).not.toHaveBeenCalled();
+    expect(h.finishStartedServiceDeploymentTimings).not.toHaveBeenCalled();
+  });
+
+  it("includes image preparation in a changed service's clock without timing the unchanged sibling", async () => {
+    const f = imageRefreshFixture();
+    const start = new Date("2026-10-20T10:00:00Z");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(start);
+    f.pull.mockImplementation(async ref => {
+      vi.setSystemTime(Date.now() + 10_000);
+      if (ref === f.apiRef) f.images.set(ref, f.metadata(ref, f.nextId));
+    });
+    await f.run();
+    expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
+      deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
+      startedAt: new Date(start.getTime() + 10_000),
+    });
+    expect(h.finishStartedServiceDeploymentTimings).not.toHaveBeenCalled();
+    expect(f.activate).toHaveBeenCalledOnce();
+    expect(f.pull).toHaveBeenCalledTimes(2);
+  });
+
+  it("settles only the failed image preparation attempt before returning its original refusal", async () => {
+    const f = imageRefreshFixture();
+    const start = new Date("2026-10-20T11:00:00Z");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(start);
+    f.pull.mockImplementation(async ref => {
+      vi.setSystemTime(Date.now() + 10_000);
+      if (ref === f.apiRef) throw new Error("registry unavailable");
+    });
+    await expect(f.run()).rejects.toThrow("registry unavailable");
+    expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith({
+      deploymentId: dep.id, serviceId: "svc-api", serviceName: "api",
+      startedAt: new Date(start.getTime() + 10_000),
+    });
+    expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(
+      dep.id, new Date(start.getTime() + 20_000),
+    );
+    expect(h.upsertServiceDeployment).not.toHaveBeenCalled();
+    expect(f.activate).not.toHaveBeenCalled();
+    expect(f.runtime.destroy).not.toHaveBeenCalled();
+  });
+
+  it("includes a shared image's single preparation in each selected service that activates", async () => {
+    const f = imageRefreshFixture();
+    const start = new Date("2026-10-20T12:00:00Z");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(start);
+    h.services[0]!.image = f.apiRef;
+    f.pull.mockImplementation(async ref => {
+      vi.setSystemTime(Date.now() + 10_000);
+      f.images.set(ref, f.metadata(ref, f.nextId));
+    });
+    await f.run({ targetServiceIds: new Set(["svc-db", "svc-api"]) });
+    expect(f.pull).toHaveBeenCalledOnce();
+    expect(h.startServiceDeploymentTiming).toHaveBeenCalledTimes(2);
+    for (const [input] of h.startServiceDeploymentTiming.mock.calls)
+      expect(input.startedAt).toEqual(start);
+    expect(f.activate).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps strictly untargeted siblings outside preparation and activation clocks", async () => {
+    const f = imageRefreshFixture();
+    f.pull.mockImplementation(async ref => {
+      f.images.set(ref, f.metadata(ref, f.nextId));
+    });
+    const result = await f.run({ targetServiceIds: new Set(["svc-api"]), strictScope: true });
+    expect(f.pull).toHaveBeenCalledExactlyOnceWith(f.apiRef, { force: true, logger: f.logger });
+    expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ serviceId: "svc-api", startedAt: expect.any(Date) }),
+    );
+    expect(result.services).toContainEqual(
+      expect.objectContaining({ serviceId: "svc-db", carried: true, containerId: "old-db" }),
+    );
   });
 
   it("recreates only changed image content and deploys the immutable image acquired", async () => {
@@ -497,6 +581,10 @@ describe("compose deploy — host channel unavailable", () => {
     expect(f.pull).toHaveBeenCalledTimes(1);
     expect(f.activate).not.toHaveBeenCalled();
     expect(f.runtime.destroy).not.toHaveBeenCalled();
+    expect(h.startServiceDeploymentTiming).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ serviceId: "svc-db", startedAt: expect.any(Date) }),
+    );
+    expect(h.finishStartedServiceDeploymentTimings).toHaveBeenCalledExactlyOnceWith(dep.id, expect.any(Date));
   });
 
   it("prepares a shared registry tag once and freezes every selected service to it", async () => {
