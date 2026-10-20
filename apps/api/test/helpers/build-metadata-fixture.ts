@@ -17,6 +17,7 @@ class IPv6HTTP(http.server.HTTPServer): address_family = socket.AF_INET6
 for address, metadata, server_type in [
     ("169.254.169.254", True, http.server.HTTPServer),
     ("fd00:ec2::254", True, IPv6HTTP),
+    ("fd20:ce::254", True, IPv6HTTP),
     ("198.18.0.1", False, http.server.HTTPServer),
 ]:
     server = server_type((address, 80), Handler)
@@ -38,7 +39,10 @@ class DNS(socketserver.BaseRequestHandler):
         response = data[:2] + struct.pack("!5H", 0x8180, 1, bool(answer), 0, 0) + question + answer
         sock.sendto(response, self.client_address)
 
-server = socketserver.UDPServer(("169.254.169.254", 53), DNS)
+class IPv6UDP(socketserver.UDPServer): address_family = socket.AF_INET6
+for address, server_type in [("169.254.169.254", socketserver.UDPServer), ("fd20:ce::254", IPv6UDP)]:
+    server = server_type((address, 53), DNS)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
 print("OPENSHIP_METADATA_FIXTURE_READY", flush=True)
-server.serve_forever()
+threading.Event().wait()
 `;

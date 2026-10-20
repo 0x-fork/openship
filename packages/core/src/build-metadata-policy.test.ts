@@ -24,10 +24,17 @@ it("renders a valid fail-closed shell entrypoint before the BuildKit daemon", ()
 it("denies provider metadata/credential agents without denying their DNS networks", () => {
   expect(BUILD_METADATA_IPV4).toContain("169.254.169.254/32");
   expect(BUILD_METADATA_IPV6).toContain("fd00:ec2::254/128");
+  expect(BUILD_METADATA_IPV6).toContain("fd20:ce::254/128");
   expect(BUILD_METADATA_IPV4).not.toContain("169.254.0.0/16");
   expect(BUILD_METADATA_IPV4).not.toContain("169.254.169.253/32");
   expect(BUILD_METADATA_IPV6).not.toContain("fd00:ec2::253/128");
   const script = buildKitGuardEntrypoint();
+  const dnsExceptions = script.split("\n").filter((line) => line.includes("-j RETURN"));
+  expect(dnsExceptions).toHaveLength(4);
+  for (const line of dnsExceptions)
+    expect(line).toMatch(
+      /-d (169\.254\.169\.254\/32|fd20:ce::254\/128) -p (udp|tcp) --dport 53 -j RETURN$/,
+    );
   expect(script.indexOf("--dport 53 -j RETURN")).toBeLessThan(
     script.indexOf("169.254.169.254/32 -j DROP"),
   );

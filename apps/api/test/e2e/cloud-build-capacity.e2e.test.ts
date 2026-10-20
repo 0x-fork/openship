@@ -111,10 +111,15 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
         (error: unknown) => ({ error }),
       );
     try {
-      await vi.waitFor(() => expect(logs.join("\n")).toContain(marker), {
-        timeout: 120_000,
-        interval: 200,
-      });
+      let completed: Awaited<typeof result> | undefined;
+      void result.then(value => { completed = value; });
+      const deadline = Date.now() + 120_000;
+      while (!logs.join("\n").includes(marker)) {
+        if (completed?.error) throw completed.error;
+        if (completed || Date.now() >= deadline)
+          throw new Error(`Build did not reach its RUN marker.\n${logs.join("\n")}`);
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
       const active = await inspect(worker);
       expect(active.State.Running).toBe(true);
       // Host GC must leave the attached cache alone while this RUN is active.
@@ -184,8 +189,10 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
         "sysctl -w net.ipv6.conf.all.disable_ipv6=0 >/dev/null",
         "sysctl -w net.ipv6.conf.lo.disable_ipv6=0 >/dev/null",
         "ip -6 addr add fd00:ec2::254/128 dev lo",
+        "ip -6 addr add fd20:ce::254/128 dev lo",
         "ip -o addr show dev lo | grep -F '169.254.169.254/32'",
         "ip -o -6 addr show dev lo | grep -F 'fd00:ec2::254/128'",
+        "ip -o -6 addr show dev lo | grep -F 'fd20:ce::254/128'",
       ].join("\n"));
       const helper = `${projectId}-metadata-${randomUUID()}`;
       try {
@@ -232,6 +239,7 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
       ["wget -T 2 -qO- http://metadata.test/latest/meta-data", { alias: true }],
       ["--network=host wget -T 2 -qO- http://169.254.169.254/latest/meta-data", { allow: "network.host" }],
       ["--network=host wget -T 2 -qO- 'http://[fd00:ec2::254]/latest/meta-data'", { allow: "network.host" }],
+      ["--network=host wget -T 2 -qO- 'http://[fd20:ce::254]/computeMetadata/v1'", { allow: "network.host" }],
     ] as const) {
       const control = await metadataBuild(command, { ...options, guard: false });
       expect(control.error, control.logs).toBeNull();
@@ -254,6 +262,9 @@ describeDockerE2E("Cloud builds use a bounded, temporary Docker worker", () => {
     expect(result.error, result.logs).toBeNull();
     expect(result.logs).toContain("OPENSHIP_PACKAGE_OK");
     expect(result.logs).toContain("198.18.0.1");
+    const ipv6 = await metadataBuild("--network=host nslookup packages.test fd20:ce::254", { allow: "network.host" });
+    expect(ipv6.error, ipv6.logs).toBeNull();
+    expect(ipv6.logs).toContain("198.18.0.1");
   });
 
   it("keeps host networking opt-in and refuses insecure execution at the daemon", async () => {

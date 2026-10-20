@@ -11,6 +11,7 @@ export const BUILD_METADATA_IPV4 = [
 export const BUILD_METADATA_IPV6 = [
   "fd00:ec2::254/128", // EC2 IMDS
   "fd00:ec2::23/128", // EKS Pod Identity credentials
+  "fd20:ce::254/128", // GCE IPv6-only metadata and DNS
 ] as const;
 
 /** This runs INSIDE the trusted, privileged BuildKit worker, before buildkitd.
@@ -33,8 +34,8 @@ export function buildMetadataFirewallScript(): string {
         `${tool} -w 5 -t raw -F ${chain}`,
         // GCE uses its metadata address as a DNS resolver. Allow only DNS here;
         // AWS's separate .253 resolver and all other addresses remain untouched.
-        `${tool} -w 5 -t raw -A ${chain} -p udp --dport 53 -j RETURN`,
-        `${tool} -w 5 -t raw -A ${chain} -p tcp --dport 53 -j RETURN`,
+        `${tool} -w 5 -t raw -A ${chain} -d ${tool === "iptables" ? "169.254.169.254/32" : "fd20:ce::254/128"} -p udp --dport 53 -j RETURN`,
+        `${tool} -w 5 -t raw -A ${chain} -d ${tool === "iptables" ? "169.254.169.254/32" : "fd20:ce::254/128"} -p tcp --dport 53 -j RETURN`,
         ...destinations.map(
           (destination) => `${tool} -w 5 -t raw -A ${chain} -d ${destination} -j DROP`,
         ),

@@ -63,9 +63,11 @@ The trusted worker entrypoint installs and verifies IPv4 and IPv6 rules before
 starting BuildKit, including after a worker restart. Rules live only inside that
 worker's network namespace. They block known provider metadata/credential-agent
 addresses for both nested build containers and BuildKit itself, including DNS
-aliases and host-mode build networking. DNS on port 53 remains available because
-some providers share their metadata address with their resolver; ordinary package
-internet access is unchanged. Untrusted build steps do not receive the worker's
+aliases and host-mode build networking. DNS on port 53 remains available only
+at GCE's documented metadata/resolver addresses (`169.254.169.254` and
+`fd20:ce::254`); ordinary package internet access is unchanged.
+An operator-provided proxy or host service that fetches metadata on a build's
+behalf remains outside this direct-destination policy. Untrusted build steps do not receive the worker's
 network-administration capabilities, Docker socket, or insecure entitlement.
 This is metadata egress protection, not a general sandbox or defense against a
 BuildKit/kernel vulnerability. Bare and Kubernetes builds are outside its scope.
