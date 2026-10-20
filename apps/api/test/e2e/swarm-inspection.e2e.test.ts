@@ -160,7 +160,11 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
     const executor = { exec: inside } as unknown as CommandExecutor;
     expect(await probeEdge(executor)).toMatchObject({
       canProceedClean: false,
-      occupants: [expect.objectContaining({ port: 80, swarmService: "sample_web" })],
+      // DinD may lack host listener tools for unrelated ports. The Swarm port
+      // must still be identified from the manager, without a local service task.
+      occupants: expect.arrayContaining([
+        expect.objectContaining({ port: 80, swarmService: "sample_web" }),
+      ]),
     });
     await expect(
       freeEdgeTargets(executor, [{ unit: "nginx.service", port: 80 }], () => {}),
