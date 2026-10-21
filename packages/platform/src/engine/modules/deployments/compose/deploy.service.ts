@@ -42,6 +42,7 @@ import {
 } from "@repo/core";
 import { getTemplateForOrg } from "../../apps/catalog-source";
 import { runAppPrepareCommand } from "./app-prepare";
+import { ServiceCutoverRecoveryError } from "./cutover-recovery";
 import { attachLinkedNetworks } from "../attach-linked-networks";
 import {
   auditStaticOutput,
@@ -177,6 +178,12 @@ export interface ComposeDeployResult {
    *  connection dropped after its container started — the deploy can't be
    *  finalized until reconciliation reads the true remote state. */
   status: "ready" | "failed" | "reconciling";
+  /** Internal lifecycle hooks; never part of the HTTP/SDK deployment contract. */
+  cutover?: {
+    containerId: string;
+    commit(): Promise<void>;
+    rollback(): Promise<boolean>;
+  };
   summary: {
     total: number;
     /** Services that came up — INCLUDING the ones merely carried forward. */
@@ -957,9 +964,7 @@ export async function deployComposeServices(
   const needsHostPortLock =
     !(opts?.routing instanceof CloudInfraProvider) &&
     usesHostLoopbackUpstream(resolveRouteStrategy(project.routeStrategy), runtime);
-  if (!needsHostPortLock) {
-    return runUnlocked();
-  }
+  if (!needsHostPortLock) return runUnlocked();
   if (!opts?.executor) {
     throw new Error("Cannot deploy loopback-routed services without a physical target executor");
   }
@@ -970,12 +975,116 @@ export async function deployComposeServices(
   return withHostPortTargetLock(target, runUnlocked, opts?.signal);
 }
 
+type ServiceCutoverPlan = NonNullable<Awaited<ReturnType<DockerRuntime["prepareServiceCutover"]>>>;
+interface PendingServiceCutover {
+  plan: ServiceCutoverPlan;
+  serviceId: string;
+  serviceName: string;
+  containerId: string;
+  published: boolean;
+  preserveCandidate: boolean;
+  cleaned?: boolean;
+  recovered?: boolean;
+  recover(): Promise<boolean>;
+}
+
+/** Keep the incumbent until every Compose route and final verification settles. */
 async function deployComposeServicesUnlocked(
   project: Project,
   dep: Deployment,
   runtime: MultiServiceRuntimeAdapter,
   logger: BuildLogger,
   opts?: ComposeDeployOptions,
+): Promise<ComposeDeployResult> {
+  const cutover: { pending?: PendingServiceCutover } = {};
+  try {
+    const cutoverTargetLock = runtime instanceof DockerRuntime && !(opts?.routing instanceof CloudInfraProvider) &&
+      !usesHostLoopbackUpstream(resolveRouteStrategy(project.routeStrategy), runtime) &&
+      Boolean(opts?.hostPortTarget && opts.executor);
+    const runCore = () => deployComposeServicesCore(project, dep, runtime, logger, opts, cutover, cutoverTargetLock);
+    // Live-route recovery uses this same target lock. Release it before recovery
+    // rather than nesting the lock while restoring a partially written table.
+    const result = cutoverTargetLock
+      ? await withHostPortTargetLock(opts!.hostPortTarget!, runCore, opts?.signal)
+      : await runCore();
+    const pending = cutover.pending;
+    if (pending) {
+      throwIfDeploymentCancelled(opts?.signal);
+      const service = result.services.find(row => row.serviceId === pending.serviceId);
+      if (service?.status !== "failed" && result.status === "ready" && !result.routeWarnings?.length) {
+        // The caller first commits the deployment outcome and active pointer.
+        // Retirement before that CAS would let a late cancellation remove BOTH
+        // containers, even if all runtime work had already succeeded.
+        result.cutover = {
+          containerId: pending.containerId,
+          rollback: () => pending.recover(),
+          commit: async () => {
+            try {
+              const retire = () => pending.plan.retire(pending.containerId);
+              const cleanupSignal = new AbortController().signal;
+              await withTimeout(opts?.executor?.runWithAbortSignal
+                ? opts.executor.runWithAbortSignal(cleanupSignal, retire) : retire(),
+              30_000, "Previous service cleanup timed out");
+            } catch (error) {
+              observeCaughtError(error, "platform/engine/modules/deployments/compose/deploy.service");
+              logger.log(`The replacement is live, but previous service cleanup needs attention: ${safeErrorMessage(error)}\n`, "warn");
+            }
+          },
+        };
+      } else {
+        // Optional route errors retain their old semantics for ordinary deploys.
+        // An overlap must roll back instead of archiving the only container a
+        // failed route might still reference.
+        if (!await pending.recover()) throw new ServiceCutoverRecoveryError(pending.containerId);
+        if (!pending.cleaned) {
+          await withTimeout(runtime.destroy(pending.containerId), 30_000,
+            "Failed replacement cleanup timed out").catch(error => {
+              observeCaughtError(error, "platform/engine/modules/deployments/compose/deploy.service");
+              logger.log(`Could not clean up the failed replacement: ${safeErrorMessage(error)}\n`, "warn");
+            });
+          pending.cleaned = true;
+        }
+        if (service) service.status = "failed";
+        result.status = "failed";
+        result.error = result.error ?? result.routeWarnings?.join("; ") ?? "The replacement did not pass verification.";
+        result.summary.failed = Math.max(1, result.summary.failed);
+        result.summary.failedServices = [...new Set([...result.summary.failedServices, pending.serviceName])];
+        result.summary.successful = result.services.filter(row => row.status !== "failed").length;
+        result.summary.deployed = result.services.filter(row => row.status !== "failed" && !row.carried).length;
+        logger.log(`The previous container for "${pending.serviceName}" was preserved.\n`, "warn");
+      }
+    }
+    return result;
+  } catch (error) {
+    // Covers failures after the per-service pipeline, including composite
+    // routing and bookkeeping. A partial route write must not point at a reaped
+    // candidate, and recovery must not inherit the cancelled SSH scope.
+    const pending = cutover.pending;
+    if (pending && !deploymentCancellationKeepsProvisioned(opts?.signal)) {
+      if (!await pending.recover()) throw new ServiceCutoverRecoveryError(pending.containerId, error);
+      if (!pending.cleaned) {
+        const cleanup = () => runtime.destroy(pending.containerId);
+        const cleanupSignal = new AbortController().signal;
+        await withTimeout(opts?.executor?.runWithAbortSignal
+          ? opts.executor.runWithAbortSignal(cleanupSignal, cleanup) : cleanup(),
+        30_000, "Cancelled replacement cleanup timed out").catch(cleanupError => {
+          observeCaughtError(cleanupError, "platform/engine/modules/deployments/compose/deploy.service");
+        });
+        pending.cleaned = true;
+      }
+    }
+    throw error;
+  }
+}
+
+async function deployComposeServicesCore(
+  project: Project,
+  dep: Deployment,
+  runtime: MultiServiceRuntimeAdapter,
+  logger: BuildLogger,
+  opts: ComposeDeployOptions | undefined,
+  cutover: { pending?: PendingServiceCutover },
+  cutoverTargetLock: boolean,
 ): Promise<ComposeDeployResult> {
   // Generated app secrets, BEFORE any env is read below. A catalog app whose install died
   // part-way keeps a service row with the generated values missing, and the installer only
@@ -3186,6 +3295,23 @@ async function deployComposeServicesUnlocked(
         pendingPreparedHostPortServiceIds.delete(svc.id);
         const previous = previousByServiceId.get(svc.id);
         serviceRuntimeConfig.previousContainerId = previous?.containerId ?? undefined;
+        // The first overlap scope is one independently replaceable service.
+        // Larger cohorts retain their established stop/start and stack-readiness
+        // ordering instead of assuming dependent services are already available.
+        const singleTarget = ordered.length === 1 || (opts?.targetServiceIds?.size === 1 &&
+          opts.targetServiceIds.has(svc.id) && ordered.every(other => other.id === svc.id ||
+            (carriedContainerInfoById.get(previousByServiceId.get(other.id)?.containerId ?? "")?.status === "running" &&
+              !composeNamespaceDependencies(other.advanced as ComposeAdvanced | null).includes(svc.name))));
+        const canStage = runtime instanceof DockerRuntime && !cloudHosted && !usesHostLoopback &&
+          !opts?.strictScope && singleTarget && previous?.containerId && !cutover.pending &&
+          opts?.hostPortTarget && opts.executor;
+        const plan = canStage ? await runtime.prepareServiceCutover(group, serviceRuntimeConfig, {
+          executor: opts?.executor,
+          onLog: entry => logger.callback({ ...entry, serviceName: svc.name }),
+        }) : null;
+        if (!plan && previous?.containerId && runtime instanceof DockerRuntime && !cloudHosted && !usesHostLoopback && !singleTarget) {
+          logger.log(`Keeping normal service replacement for "${svc.name}": overlap requires one independent target.\n`, "info");
+        }
         const serviceLogger = createServicePipelineLogger(logger, svc.name, svc.id);
         const routeDomains = toRoutedDomainInputs(proxyRoutes);
         const deployEnv: DeployEnvironment = {
@@ -3196,7 +3322,7 @@ async function deployComposeServicesUnlocked(
             opts?.onArtifactActivationStart?.(svc.id);
             const result = await runtime.deployServiceWorkload(
               group,
-              serviceRuntimeConfig,
+              plan?.config ?? serviceRuntimeConfig,
               (entry: LogEntry) =>
                 onLog({
                   ...entry,
@@ -3205,10 +3331,75 @@ async function deployComposeServicesUnlocked(
             );
             deployedContainerId = result.containerId;
             serviceResult = result;
+            if (plan) {
+              const pending: PendingServiceCutover = {
+                plan, serviceId: svc.id, serviceName: svc.name, containerId: result.containerId,
+                published: false, preserveCandidate: false,
+                recover: async () => {
+                  if (pending.recovered !== undefined) return pending.recovered;
+                  if (!pending.published) return (pending.recovered = true);
+                  const warnings: string[] = [];
+                  const restore = async () => {
+                    const [{ reapplyProjectLiveRoutes }, { applyProjectRouting }] = await Promise.all([
+                      import("../../domains/project-route.service"), import("../../domains/routing-apply.service"),
+                    ]);
+                    const options = { onWarning: (message: string) => warnings.push(message),
+                      managedEdgeSyncedByCaller: true };
+                    await reapplyProjectLiveRoutes(project, [], options);
+                    await applyProjectRouting(project.id, options);
+                    if (warnings.length) throw new Error(warnings.join("; "));
+                  };
+                  try {
+                    const recoverySignal = new AbortController().signal;
+                    await withTimeout(opts?.executor?.runWithAbortSignal
+                      ? opts.executor.runWithAbortSignal(recoverySignal, restore) : restore(),
+                    30_000, "Previous service routing recovery timed out");
+                    pending.recovered = true;
+                    pending.preserveCandidate = false;
+                  } catch (error) {
+                    observeCaughtError(error, "platform/engine/modules/deployments/compose/deploy.service");
+                    pending.preserveCandidate = true;
+                    pending.recovered = false;
+                    logger.log(`Could not fully restore routing for "${svc.name}"; both containers were preserved: ${safeErrorMessage(error)}\n`, "warn");
+                    await repos.service.upsertServiceDeployment({ deploymentId: dep.id, serviceId: svc.id,
+                      serviceName: svc.name, containerId: result.containerId, status: "failed", imageRef: image,
+                      ip: serviceResult?.ip ?? result.ip ?? null,
+                      errorMessage: `Routing recovery incomplete: ${safeErrorMessage(error)}` }).catch(recordError => {
+                        observeCaughtError(recordError, "platform/engine/modules/deployments/compose/deploy.service");
+                        logger.log(`Could not record the preserved candidate: ${safeErrorMessage(recordError)}\n`, "warn");
+                      });
+                  }
+                  return pending.recovered;
+                },
+              };
+              cutover.pending = pending;
+            }
             if (result.routeWarnings?.length) composeRouteWarnings.push(...result.routeWarnings);
             return { containerId: result.containerId };
           },
-          deactivate: (containerId) => runtime.destroy(containerId),
+          canOverlap: Boolean(plan),
+          // Retirement is deferred until project-level/composite routes and
+          // stack verification have also finished, beyond this service pipeline.
+          deactivate: containerId => plan ? Promise.resolve() : runtime.destroy(containerId),
+          healthCheck: plan ? async (containerId) => {
+            const probe = resolveReadinessGate((svc.advanced as ComposeAdvanced | null)?.readiness ?? project.readiness).probe;
+            const verdict = await probeDeployedReadiness({ runtime, containerId,
+              primaryPort: serviceRuntimeConfig.publicPort!, probe,
+              targetExecutor: opts?.executor ?? null,
+              log: (message, level) => logger.log(message, level, { serviceName: svc.name }),
+              subject: `"${svc.name}"`,
+            });
+            if (verdict.failure || verdict.skipped) throw new Error(verdict.failure ?? verdict.skipped);
+            const sample = await runtime.sampleStability?.(containerId);
+            if (!sample || sample.state !== "running" || sample.restartCount !== 0 || sample.oomKilled ||
+              sample.health === "starting" || sample.health === "unhealthy") {
+              throw new Error(`The replacement for "${svc.name}" did not pass startup verification.`);
+            }
+            throwIfDeploymentCancelled(opts?.signal);
+            const published = await plan.publish(containerId);
+            if (serviceResult) serviceResult.ip = published.ip;
+            cutover.pending!.published = true;
+          } : undefined,
           resolveTargetUrl:
             proxyRoutes.length > 0
               ? async (containerId, port) => {
@@ -3292,16 +3483,20 @@ async function deployComposeServicesUnlocked(
         }
 
         if (deployResult.status === "failed") {
+          if (cutover.pending && cutover.pending.containerId === deployedContainerId && cutover.pending.published) {
+            cutover.pending.preserveCandidate = true;
+          }
           // A CONNECTION-LOSS failure means the container STARTED but a post-start
           // step (health / route) couldn't reach the host (e.g. a stale-connection
           // "Channel open failure" during route registration). Keep it running —
           // the catch below marks it `indeterminate` so the deploy RECONCILES
           // instead of hard-failing and destroying a healthy container. Only a
           // genuine failure destroys the container here.
-          if (deployedContainerId && !isConnectionLoss(deployResult.error)) {
+          if (deployedContainerId && !isConnectionLoss(deployResult.error) && !cutover.pending?.preserveCandidate) {
             try {
               await runtime.destroy(deployedContainerId);
               deployedContainerCleaned = true;
+              if (cutover.pending && cutover.pending.containerId === deployedContainerId) cutover.pending.cleaned = true;
             } catch (destroyErr) {
               observeCaughtError(destroyErr, "platform/engine/modules/deployments/compose/deploy.service");
               const destroyMessage =
@@ -3469,6 +3664,9 @@ async function deployComposeServicesUnlocked(
             : undefined;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
+        if (cutover.pending && cutover.pending.containerId === deployedContainerId && cutover.pending.published) {
+          cutover.pending.preserveCandidate = true;
+        }
 
         // Cancellation belongs to the parent lifecycle. Stop processing this
         // service immediately instead of converting it into a failed service (or
@@ -3477,12 +3675,13 @@ async function deployComposeServicesUnlocked(
           if (
             !deploymentCancellationKeepsProvisioned(opts.signal) &&
             deployedContainerId &&
-            !deployedContainerCleaned
+            !deployedContainerCleaned && !cutover.pending?.preserveCandidate
           ) {
             await runtime.destroy(deployedContainerId).catch((diagnosticFailure) => {
               observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/compose/deploy.service");
             });
             deployedContainerCleaned = true;
+            if (cutover.pending && cutover.pending.containerId === deployedContainerId) cutover.pending.cleaned = true;
           }
           if (hostPortTarget && serviceHostPortAllocations.length > 0) {
             if (!deployedContainerId) {
@@ -3564,10 +3763,11 @@ async function deployComposeServicesUnlocked(
           });
           indeterminateServiceNames.add(svc.name);
         } else {
-          if (deployedContainerId && !deployedContainerCleaned) {
+          if (deployedContainerId && !deployedContainerCleaned && !cutover.pending?.preserveCandidate) {
             try {
               await runtime.destroy(deployedContainerId);
               deployedContainerCleaned = true;
+              if (cutover.pending && cutover.pending.containerId === deployedContainerId) cutover.pending.cleaned = true;
             } catch (destroyErr) {
               observeCaughtError(destroyErr, "platform/engine/modules/deployments/compose/deploy.service");
               hostPortClaimReapSafe = false;
@@ -4482,7 +4682,7 @@ async function deployComposeServicesUnlocked(
         // The public wrapper took the target lock for the current loopback
         // topology. A container-IP/static transition did not, and must acquire
         // it here while converging to an intentionally empty desired set.
-        const converged = usesHostLoopback
+        const converged = usesHostLoopback || cutoverTargetLock
           ? await convergeTargetHostPortClaimsUnlocked(convergence)
           : await convergeTargetHostPortClaims(convergence);
         if (converged.released > 0) {

@@ -49,6 +49,7 @@ import type { DeployableService } from "../../../lib/deployable-service";
 import { webhookProxyTarget } from "../../../config/index";
 
 import { buildComposeImages } from "./build.service";
+import { ServiceCutoverRecoveryError } from "./cutover-recovery";
 import { composeDeployMadeNoChanges, deployComposeServices } from "./deploy.service";
 import { COMPOSE_SENTINEL } from "../../../lib/container-ref";
 import { safeErrorMessage } from "@repo/core";
@@ -412,6 +413,14 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
       signal: opts.signal,
     });
   } catch (err) {
+    if (err instanceof ServiceCutoverRecoveryError) {
+      if (opts.signal?.aborted) {
+        await onCancelled(ctx, composeBuild.durationMs, { keepProvisioned: true });
+      } else {
+        await onReconciling(ctx, { containerId: err.containerId, warningMessage: err.message });
+      }
+      return;
+    }
     if (opts.signal?.aborted) {
       // The cancel endpoint may have raced this service call. The parent owns
       // the terminal transition and cleanup; do it here once and return so the
@@ -456,16 +465,17 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     throw err;
   }
 
+  const cancelAfterCutover = async () => {
+    const preserved = keepProvisionedOnCancel() || Boolean(composeResult.cutover && !await composeResult.cutover.rollback());
+    if (!preserved) await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
+    await onCancelled(ctx, composeBuild.durationMs, { keepProvisioned: preserved });
+  };
   if (opts.signal?.aborted) {
-    if (!keepProvisionedOnCancel()) {
-      await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
-    }
-    await onCancelled(ctx, composeBuild.durationMs, {
-      keepProvisioned: keepProvisionedOnCancel(),
-    });
+    await cancelAfterCutover();
     return;
   }
 
+  try {
   // RECONCILING: the connection dropped after some containers started, so the
   // outcome is unknown. Must be handled BEFORE the `failed` branch and must NOT
   // go through onFailure (which destroys containers) — the containers may be
@@ -561,6 +571,10 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     logger.log(`Deployment completed with warnings: ${warningMessage}\n`, "warn");
   }
 
+  if (composeResult.cutover && opts.signal?.aborted) {
+    await cancelAfterCutover();
+    return;
+  }
   throwIfDeploymentCancelled(opts.signal);
   await onSuccess(ctx, {
     containerId: composeResult.primaryContainerId ?? COMPOSE_SENTINEL,
@@ -600,4 +614,29 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
         : {}),
     },
   });
+  if (composeResult.cutover) {
+    if (ctx.settled === "cancelled") {
+      await cancelAfterCutover();
+    } else if (ctx.settled === "ready") {
+      // onSuccess treats this pointer write as best effort. Never retire the
+      // serving predecessor unless the new release is durably authoritative.
+      const active = await repos.project.findById(project.id).catch(error => {
+        observeCaughtError(error, "platform/engine/modules/deployments/compose/pipeline");
+        return null;
+      });
+      if (active?.activeDeploymentId === dep.id) await composeResult.cutover.commit();
+      else logger.log("The new service is live; keeping its predecessor until the active deployment is confirmed.\n", "warn");
+    }
+  }
+  } catch (error) {
+    if (composeResult.cutover && ctx.settled !== "ready") {
+      if (!await composeResult.cutover.rollback()) {
+        if (opts.signal?.aborted) await onCancelled(ctx, composeBuild.durationMs, { keepProvisioned: true });
+        else await onReconciling(ctx, { containerId: composeResult.cutover.containerId,
+          warningMessage: "Service routing recovery is incomplete; both containers were preserved." });
+        return;
+      }
+    }
+    throw error;
+  }
 }
