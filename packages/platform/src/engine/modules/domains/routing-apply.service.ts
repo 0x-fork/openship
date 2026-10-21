@@ -1,4 +1,3 @@
-import { registerProtectedProjectRoute } from "@repo/platform/engine/lib/route-protection";
 /**
  * Apply a project's vercel.json-derived routing to its LIVE deployment WITHOUT a
  * rebuild — the counterpart to the deploy-time composite registration, used when
@@ -14,6 +13,7 @@ import { registerProtectedProjectRoute } from "@repo/platform/engine/lib/route-p
  * by the caller, so a live-apply failure logs and defers to the next deploy.
  */
 
+import { registerProjectRoute } from "@repo/platform/engine/lib/project-route-registration";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos } from "@repo/db";
@@ -467,7 +467,7 @@ export async function applyCloudRouting(opts: {
         await ensureRouteDomainRecord({ projectId: project.id, route, domainByHostname });
         const redirectHost = resolveRouteRedirect(route, domains.map(item => item.hostname));
         if (staticRoot) {
-          await registerProtectedProjectRoute(project, routing, {
+          await registerProjectRoute(project, routing, {
             ...routingFields, domain: route.hostname, tls: true, redirectHost: redirectHost ?? undefined,
             staticRoot: resolveServedStaticPath(staticRoot, route.targetPath ?? "/"),
           });
@@ -475,7 +475,7 @@ export async function applyCloudRouting(opts: {
           if (!deployment.containerId || !route.targetPort)
             throw new Error("This route has no deployed process or target port");
           const target = await routing.resolveRoutingTarget(deployment.containerId, route.targetPort);
-          await registerProtectedProjectRoute(project, routing, {
+          await registerProjectRoute(project, routing, {
             ...routingFields, domain: route.hostname, tls: true, redirectHost: redirectHost ?? undefined,
             targetUrl: `http://127.0.0.1:${target.port}`,
           });

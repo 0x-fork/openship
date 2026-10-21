@@ -78,11 +78,14 @@ vi.mock("@repo/platform/engine/modules/domains/domain-execution", () => ({
 
 import {
   changeRouteProtection,
-  registerProtectedProjectRoute,
   assertRouteProtectionTarget,
   listRouteProtection,
   readPreviewRouteProtection,
 } from "@repo/platform/engine/lib/route-protection";
+import {
+  createProjectRouteRegistrar,
+  registerProjectRoute,
+} from "@repo/platform/engine/lib/project-route-registration";
 const ctx = { organizationId: "org" } as ExecutionContext;
 const route = { domain: "private.test", targetUrl: "http://127.0.0.1:3000", tls: true };
 const policy = {
@@ -115,6 +118,7 @@ beforeEach(() => {
     appliedRevision: null,
   };
   state.setProtection.mockResolvedValue(true);
+  state.register.mockResolvedValue(undefined);
   state.hostAdmission.mockResolvedValue(undefined);
 });
 
@@ -137,7 +141,7 @@ describe("native preview password inheritance", () => {
 
   it("persists a separate child session key before first publication and reuses it on retries", async () => {
     preview();
-    await registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
     const saved = JSON.parse(state.row!.secret as string);
     expect(saved.verifier).toBe(policy.verifier);
     expect(saved.salt).toBe(policy.salt);
@@ -145,37 +149,37 @@ describe("native preview password inheritance", () => {
     expect(saved.version).not.toBe(policy.version);
     expect(state.save.mock.invocationCallOrder[0]).toBeLessThan(state.register.mock.invocationCallOrder[0]!);
     expect(state.register).toHaveBeenCalledWith(expect.objectContaining({ protection: saved }));
-    await registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
     expect(state.save).toHaveBeenCalledTimes(1);
     expect(state.register.mock.calls[1]![0].protection).toEqual(saved);
-    await registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, { ...route, domain: "second.preview.test" });
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, { ...route, domain: "second.preview.test" });
     expect(state.register.mock.calls[2]![0].protection.signingKey).not.toBe(saved.signingKey);
   });
 
   it("denies publication when a secret is missing, ownership is foreign, or the target is unsupported", async () => {
     preview();
     state.sourceRow!.secret = null;
-    await expect(registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route))
+    await expect(registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route))
       .rejects.toMatchObject({ code: "ROUTE_PROTECTION_SECRET_MISSING" });
     expect(state.register).not.toHaveBeenCalled();
     state.source!.organizationId = "another-org";
-    await expect(registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route))
+    await expect(registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route))
       .rejects.toMatchObject({ code: "PREVIEW_ROUTE_PROTECTION_REQUIRED" });
     expect(state.save).not.toHaveBeenCalled();
     state.source!.organizationId = "org";
     state.sourceRow!.secret = JSON.stringify(policy);
     state.target = "cloud";
-    await expect(registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route))
+    await expect(registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route))
       .rejects.toMatchObject({ code: "ROUTE_PROTECTION_UNSUPPORTED" });
     expect(state.register).not.toHaveBeenCalled();
   });
 
   it("rotates inherited sessions when the source revision changes and prevents a child unlock", async () => {
     preview();
-    await registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
     const oldKey = JSON.parse(state.row!.secret as string).signingKey;
     state.sourceRow!.revision = "source-v2";
-    await registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
     expect(JSON.parse(state.row!.secret as string).signingKey).not.toBe(oldKey);
     await expect(changeRouteProtection(ctx, "proj", { hostname: route.domain, action: "unlock" }))
       .rejects.toMatchObject({ code: "PREVIEW_ROUTE_PROTECTION_MANAGED" });
@@ -241,7 +245,7 @@ describe("route protection admission and publication", () => {
   });
 
   it("publishes the saved policy on deployment, and never turns missing credentials into an unlock", async () => {
-    await registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
     expect(state.register).toHaveBeenLastCalledWith({
       ...route,
       protection: policy,
@@ -250,7 +254,7 @@ describe("route protection admission and publication", () => {
     state.row!.secret = null;
     state.register.mockClear();
     await expect(
-      registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
+      registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
     ).rejects.toMatchObject({ code: "ROUTE_PROTECTION_SECRET_MISSING" });
     await expect(assertRouteProtectionTarget({ id: "proj" }, "cloud")).rejects.toMatchObject({
       code: "ROUTE_PROTECTION_UNSUPPORTED",
@@ -259,7 +263,7 @@ describe("route protection admission and publication", () => {
     state.row!.secret = JSON.stringify(policy);
     state.domain.projectId = "another";
     await expect(
-      registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
+      registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
     ).rejects.toMatchObject({ code: "ROUTE_OWNER_CHANGED" });
     expect(state.register).not.toHaveBeenCalled();
   });
@@ -281,7 +285,71 @@ describe("route protection admission and publication", () => {
 
   it("does not inherit a former project's edge password when the current project has no policy", async () => {
     state.row = null;
-    await registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    await registerProjectRoute(
+      { id: "proj" },
+      { registerRoute: state.register },
+      { ...route, protection: policy },
+    );
     expect(state.register).toHaveBeenCalledWith({ ...route, protection: null });
+    expect(state.markApplied).not.toHaveBeenCalled();
+  });
+
+  it("publishes a saved unlock without requiring credentials and acknowledges its revision", async () => {
+    state.row!.enabled = false;
+    state.row!.secret = null;
+    await registerProjectRoute(
+      { id: "proj" },
+      { registerRoute: state.register },
+      { ...route, protection: policy },
+    );
+    expect(state.register).toHaveBeenCalledWith({ ...route, protection: null });
+    expect(state.markApplied).toHaveBeenCalledWith("proj", "private.test", "v1");
+  });
+
+  it("acknowledges the published revision only after the provider succeeds", async () => {
+    let publish!: () => void;
+    const published = new Promise<void>((resolve) => {
+      publish = resolve;
+    });
+    state.register.mockReturnValueOnce(published);
+    const registration = registerProjectRoute(
+      { id: "proj" },
+      { registerRoute: state.register },
+      route,
+    );
+    await vi.waitFor(() => expect(state.register).toHaveBeenCalledOnce());
+    expect(state.markApplied).not.toHaveBeenCalled();
+    // A newer saved edit must remain pending while this older publication finishes.
+    state.row!.revision = "v2";
+    publish();
+    await registration;
+    expect(state.markApplied).toHaveBeenCalledWith("proj", "private.test", "v1");
+  });
+
+  it("keeps a failed publication pending", async () => {
+    state.register.mockRejectedValueOnce(new Error("edge reload failed"));
+    await expect(
+      registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
+    ).rejects.toThrow("edge reload failed");
+    expect(state.markApplied).not.toHaveBeenCalled();
+  });
+
+  it("uses the same saved policy and ownership guard through the project registrar", async () => {
+    const routing = createProjectRouteRegistrar({ id: "proj" }, { registerRoute: state.register });
+    expect(createProjectRouteRegistrar({ id: "proj" })).toBeUndefined();
+    await routing!.registerRoute(route);
+    expect(state.register).toHaveBeenCalledWith({
+      ...route,
+      protection: policy,
+      terminatesTlsLocally: true,
+    });
+    state.register.mockClear();
+    state.markApplied.mockClear();
+    state.domain.projectId = "another";
+    await expect(routing!.registerRoute(route)).rejects.toMatchObject({
+      code: "ROUTE_OWNER_CHANGED",
+    });
+    expect(state.register).not.toHaveBeenCalled();
+    expect(state.markApplied).not.toHaveBeenCalled();
   });
 });

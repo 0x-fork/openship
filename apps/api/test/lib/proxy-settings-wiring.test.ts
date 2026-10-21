@@ -184,10 +184,10 @@ function source(rel: string): string {
   return readFileSync(new URL(rel, import.meta.url), "utf8");
 }
 
-/** Route payloads from both the provider and the project protection wrapper. */
+/** Route payloads from both the provider and the project registration boundary. */
 function registerRoutePayloads(src: string): string[] {
   const out: string[] = [];
-  const calls = /\.registerRoute\(|\bregisterProtectedProjectRoute\(/g;
+  const calls = /\.registerRoute\(|\bregisterProjectRoute\(/g;
   for (const match of src.matchAll(calls)) {
     const at = match.index!;
     const open = src.indexOf("{", at);

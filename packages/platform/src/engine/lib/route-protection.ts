@@ -5,7 +5,6 @@ import {
   assertRouteProtection,
   type RouteProtection,
   type RouteConfig,
-  type RoutingProvider,
 } from "@repo/adapters";
 import { repos, type Project } from "@repo/db";
 import { createHash, createHmac, randomBytes } from "node:crypto";
@@ -197,19 +196,20 @@ export async function syncPreviewRouteProtection(ctx: ExecutionContext, projectI
   }
 }
 
-/** The same registration entry point serves deploy, retry, and live route edits. */
-export async function registerProtectedProjectRoute(
-  project: Pick<Project, "id">,
-  routing: Pick<RoutingProvider, "registerRoute">,
-  route: RouteConfig,
-): Promise<void> {
-  const projectId = project.id;
-  await inheritPreviewRouteProtection(projectId, route.domain);
-  const row = await repos.routeProtection.readPrivate(projectId, route.domain.toLowerCase());
+/** Resolve the saved policy once; acknowledge that revision only after publication. */
+export async function resolveProjectRouteProtection(
+  projectId: string,
+  hostname: string,
+): Promise<{
+  routeOptions: Pick<RouteConfig, "protection" | "terminatesTlsLocally">;
+  onApplied?: () => Promise<void>;
+}> {
+  await inheritPreviewRouteProtection(projectId, hostname);
+  const row = await repos.routeProtection.readPrivate(projectId, hostname.toLowerCase());
   // The database owns the policy for managed project routes. Do not inherit a
   // sidecar password left by a previous project that used this hostname.
-  if (!row) return routing.registerRoute({ ...route, protection: null });
-  const owner = await repos.domain.findByHostname(route.domain);
+  if (!row) return { routeOptions: { protection: null } };
+  const owner = await repos.domain.findByHostname(hostname);
   if (owner?.projectId !== projectId)
     throw new AppError(
       "Route protection requires this project to own the hostname.",
@@ -217,24 +217,19 @@ export async function registerProtectedProjectRoute(
       "ROUTE_OWNER_CHANGED",
     );
   const protection = privatePolicy(row);
-  await routing.registerRoute({
-    ...route,
-    protection,
-    ...(protection
-      ? { terminatesTlsLocally: !owner.externalIngress && owner.domainType !== "free" }
-      : {}),
-  });
-  if (row.appliedRevision !== row.revision)
-    await repos.routeProtection.markApplied(projectId, row.hostname, row.revision);
-}
-
-export function protectedProjectRouting(
-  project: Pick<Project, "id">,
-  routing: Pick<RoutingProvider, "registerRoute"> | undefined,
-): Pick<RoutingProvider, "registerRoute"> | undefined {
-  return routing
-    ? { registerRoute: (route) => registerProtectedProjectRoute(project, routing, route) }
-    : undefined;
+  const { hostname: savedHostname, revision, appliedRevision } = row;
+  return {
+    routeOptions: {
+      protection,
+      ...(protection
+        ? { terminatesTlsLocally: !owner.externalIngress && owner.domainType !== "free" }
+        : {}),
+    },
+    onApplied:
+      appliedRevision !== revision
+        ? () => repos.routeProtection.markApplied(projectId, savedHostname, revision)
+        : undefined,
+  };
 }
 
 /** A durable intent precedes edge publication. Only an acknowledged, validated

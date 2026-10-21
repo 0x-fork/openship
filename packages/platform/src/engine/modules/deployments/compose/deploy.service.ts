@@ -1,4 +1,3 @@
-import { registerProtectedProjectRoute, protectedProjectRouting } from "@repo/platform/engine/lib/route-protection";
 /**
  * Compose deploy service - deploys multi-service projects.
  *
@@ -10,6 +9,7 @@ import { registerProtectedProjectRoute, protectedProjectRouting } from "@repo/pl
  *   4. Services discover each other by name (hostname = service name)
  */
 
+import { registerProjectRoute, createProjectRouteRegistrar } from "@repo/platform/engine/lib/project-route-registration";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
@@ -2831,7 +2831,7 @@ async function deployComposeServicesUnlocked(
             if (seenRouteDomains.has(routeKey)) continue;
             seenRouteDomains.add(routeKey);
             try {
-              await registerProtectedProjectRoute(project, routeContext.routing, {
+              await registerProjectRoute(project, routeContext.routing, {
                 domain: route.hostname,
                 staticRoot,
                 tls: true,
@@ -3270,7 +3270,7 @@ async function deployComposeServicesUnlocked(
             config: serviceDeployConfig,
             previousContainerId: previous?.containerId ?? undefined,
             domains: routeDomains,
-            routing: routeDomains.length ? protectedProjectRouting(project, routeContext?.routing) : undefined,
+            routing: routeDomains.length ? createProjectRouteRegistrar(project, routeContext?.routing) : undefined,
             ssl: routeDomains.length ? routeContext?.trackedSsl : undefined,
             routeOptions: routeDomains.length ? routeContext?.routeOptions : undefined,
             signal: opts?.signal,
@@ -4166,7 +4166,7 @@ async function deployComposeServicesUnlocked(
               },
             ],
           });
-          await registerProtectedProjectRoute(project, routeContext.routing, {
+          await registerProjectRoute(project, routeContext.routing, {
             domain: route.hostname,
             targetUrl: resolved.url,
             tls: route.tls,
@@ -4312,7 +4312,7 @@ async function deployComposeServicesUnlocked(
       });
       if (composite) {
         const r = composite.register;
-        await registerProtectedProjectRoute(project, routeContext.routing, {
+        await registerProjectRoute(project, routeContext.routing, {
           domain: r.hostname,
           tls: true,
           terminatesTlsLocally: hostTerminatesTlsLocally(
@@ -4358,7 +4358,7 @@ async function deployComposeServicesUnlocked(
           ...(reg.proxyLocations ?? []),
           ...(routingFields.proxyLocations ?? []),
         ];
-        await registerProtectedProjectRoute(project, routeContext.routing, {
+        await registerProjectRoute(project, routeContext.routing, {
           domain: reg.hostname,
           tls: true,
           terminatesTlsLocally: hostTerminatesTlsLocally(

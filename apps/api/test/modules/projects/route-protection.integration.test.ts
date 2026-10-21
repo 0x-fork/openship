@@ -4,7 +4,7 @@ import { repos, seedOwner } from "../jobs/_harness";
 import { db, schema } from "@repo/db";
 import { eq } from "drizzle-orm";
 import { createRouteProtection } from "@repo/adapters";
-import { registerProtectedProjectRoute } from "@repo/platform/engine/lib/route-protection";
+import { registerProjectRoute } from "@repo/platform/engine/lib/project-route-registration";
 import { previewEnvironmentInput } from "@repo/platform/engine/modules/projects/pull-request-previews";
 import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
@@ -144,7 +144,7 @@ it("protects two native preview identities before first publication and cascades
         publications++;
       },
     };
-    await registerProtectedProjectRoute(child, routing, {
+    await registerProjectRoute(child, routing, {
       domain: hostname,
       tls: true,
       targetUrl: "http://127.0.0.1:3000",

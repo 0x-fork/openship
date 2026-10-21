@@ -1,6 +1,6 @@
-import { protectedProjectRouting } from "../../lib/route-protection";
 /** Build → deploy execution engine. Extracted from build.service.ts — private pipeline: kickoffBuild fires executeBuildAndDeploy, which runs the build, deploy phases, and post-deploy sync. */
 
+import { createProjectRouteRegistrar } from "../../lib/project-route-registration";
 import { withErrorContext } from "@repo/core/diagnostics/node";
 import { reportError, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
@@ -2642,7 +2642,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
       config: deployConfig,
       previousContainerId: prevDep?.containerId ?? undefined,
       domains: toRoutedDomainInputs(routableDomains),
-      routing: protectedProjectRouting(project, routing),
+      routing: createProjectRouteRegistrar(project, routing),
       ssl: deploySsl,
       routeOptions: {
         ...(project.webhookDomain
