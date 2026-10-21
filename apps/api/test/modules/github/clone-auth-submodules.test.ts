@@ -20,6 +20,7 @@ const {
   getLocalGhToken,
   probeServerGitAccess,
   resolveGitHubApiBaseUrl,
+  observeCaughtError,
 } = vi.hoisted(() => ({
   tokenFor: vi.fn(),
   requireTokenFor: vi.fn(),
@@ -30,6 +31,12 @@ const {
   getLocalGhToken: vi.fn(),
   probeServerGitAccess: vi.fn(),
   resolveGitHubApiBaseUrl: vi.fn(),
+  observeCaughtError: vi.fn(),
+}));
+
+vi.mock("@repo/core/diagnostics", async (original) => ({
+  ...await original<typeof import("@repo/core/diagnostics")>(),
+  reportCaughtError: observeCaughtError,
 }));
 
 vi.mock("@repo/platform/engine/modules/github/github.token", () => ({ tokenFor, requireTokenFor, canResolveTokenFor }));
@@ -151,6 +158,33 @@ describe("submodule token expansion", () => {
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "local", onLog });
     expect(res).toEqual({ token: PARENT_TOKEN });
     expect(logs.join("\n")).toMatch(/HTTP 500/);
+  });
+
+  it("keeps the parent credential when source lookup fails and reports only safe context", async () => {
+    resolveGitHubApiBaseUrl.mockRejectedValue(new Error(`${PARENT_TOKEN} private-provider-payload`));
+    fetchMock.mockResolvedValue(new Response("{}", { status: 404 }));
+    await expect(resolveBuildGitToken({ ...base, buildStrategy: "server", onLog })).resolves.toEqual({ token: PARENT_TOKEN });
+    expect(observeCaughtError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Could not resolve the GitHub source for submodule discovery" }),
+      "platform/engine/modules/github/clone-auth",
+    );
+    const reported = observeCaughtError.mock.calls.map(([error]) => error.message).join("\n");
+    expect(reported).not.toContain(PARENT_TOKEN);
+    expect(reported).not.toContain("private-provider-payload");
+  });
+
+  it("keeps credential resolution working when the build log sink throws", async () => {
+    fetchMock.mockResolvedValue(new Response("{}", { status: 404 }));
+    await expect(resolveBuildGitToken({ ...base, buildStrategy: "server", onLog: () => {
+      throw new Error(`${PARENT_TOKEN} private-log-payload`);
+    } })).resolves.toEqual({ token: PARENT_TOKEN });
+    expect(observeCaughtError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "The build log sink rejected a clone authentication diagnostic" }),
+      "platform/engine/modules/github/clone-auth",
+    );
+    const reported = observeCaughtError.mock.calls.map(([error]) => error.message).join("\n");
+    expect(reported).not.toContain(PARENT_TOKEN);
+    expect(reported).not.toContain("private-log-payload");
   });
 
   it("caps the expansion and warns", async () => {

@@ -150,7 +150,11 @@ function traceLog(extras: ResolveExtras, message: string, level: "info" | "warn"
   try {
     extras.onLog?.(message);
   } catch {
-    // build-log sink failures must never break credential resolution
+    // The sink may include credentials or private payloads in its exception.
+    observeCaughtError(
+      new Error("The build log sink rejected a clone authentication diagnostic"),
+      "platform/engine/modules/github/clone-auth",
+    );
   }
 }
 
@@ -259,7 +263,13 @@ async function fetchSameOwnerSubmoduleRepos(
   try {
     apiBase =
       (await resolveGitHubApiBaseUrl(ctx.organizationId, owner, tokenCtx.installationId).catch(
-        () => null,
+        () => {
+          observeCaughtError(
+            new Error("Could not resolve the GitHub source for submodule discovery"),
+            "platform/engine/modules/github/clone-auth",
+          );
+          return null;
+        },
       )) ?? apiBase;
     const ref = extras.gitRef ? `?ref=${encodeURIComponent(extras.gitRef)}` : "";
     // JSON contents + base64 decode: `Accept: application/vnd.github.raw` 404s
@@ -288,6 +298,8 @@ async function fetchSameOwnerSubmoduleRepos(
     const host = new URL(apiBase).hostname.replace(/^api\./, "");
     return parseSameOwnerSubmoduleRepos(gitmodulesTextFromContentsBody(body), owner, repo, host);
   } catch (err) {
+    // diagnostics-ignore: traceLog(warn) reports this safe summary once through
+    // the central diagnostics.warn; forwarding the exception would expose payloads.
     traceLog(
       extras,
       `reading .gitmodules for ${owner}/${repo} failed (${err instanceof Error ? err.name : "error"}); ` +

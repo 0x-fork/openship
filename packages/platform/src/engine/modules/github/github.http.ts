@@ -254,7 +254,13 @@ export async function probeAnonymousRepoVisibility(
     );
     if (res.status === 404) return "not-found";
     if (res.ok) {
-      const data = (await res.json().catch(() => null)) as { private?: boolean } | null;
+      const data = (await res.json().catch(() => {
+        observeCaughtError(
+          new SyntaxError("GitHub anonymous repository visibility returned invalid JSON"),
+          "platform/engine/modules/github/github.http",
+        );
+        return null;
+      })) as { private?: boolean } | null;
       if (data?.private === false) return "public";
       if (data?.private === true) return "not-found";
     }
