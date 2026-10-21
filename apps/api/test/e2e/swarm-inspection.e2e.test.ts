@@ -291,14 +291,25 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       canOverlap: false,
       preflight: () => runtime.prepareServiceWorkload(definition),
       activate: async (_config, log) => runtime.deployServiceWorkload(group, definition, log),
+      healthCheck: async (id) => {
+        await read(id);
+      },
       deactivate: (id) => runtime.destroy(id),
       deactivateRetaining: (id) => runtime.stop(id),
       reactivatePrevious: (id) => runtime.start(id),
       retireRetainedPrevious: (id) => runtime.destroy(id),
       stopActivated: (id) => runtime.stop(id),
     });
-    const read = async (ref: string) =>
-      inside(`wget -qO- http://${await runtime.getContainerIp(ref)}:8080`);
+    const read = async (ref: string) => {
+      // Scheduler task readiness and overlay/IPVS convergence are asynchronous.
+      // Probe actual HTTP with a deadline, just as an application readiness gate
+      // would, rather than assuming a single immediate request must succeed.
+      console.info(`[swarm-e2e] Checking HTTP for ${ref}`);
+      return vi.waitFor(
+        async () => inside(`wget -T 3 -qO- http://${await runtime.getContainerIp(ref)}:8080`),
+        { timeout: 20_000, interval: 500 },
+      );
+    };
     try {
       await writeFile(
         join(temp, "Dockerfile"),
