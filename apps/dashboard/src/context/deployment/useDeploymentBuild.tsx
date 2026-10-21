@@ -1148,6 +1148,7 @@ export function useDeploymentBuild(
             deploymentFailed: !isLive && status === "failed",
             deploymentCanceled: !isLive && status === "cancelled",
             cancellationPending: !!data.cancellationPending,
+            canRetryDeployment: !!data.canRetryDeployment,
             pendingPrompt: isLive
               ? data.pendingPrompt?.promptId === prev.pendingPrompt?.promptId
                 ? prev.pendingPrompt
@@ -1383,6 +1384,7 @@ export function useDeploymentBuild(
           deploymentFailed: !isActive && status === "failed",
           deploymentCanceled: !isActive && status === "cancelled",
           cancellationPending: !!data.cancellationPending,
+          canRetryDeployment: !!data.canRetryDeployment,
           pendingPrompt: isActive ? (data.pendingPrompt ?? null) : null,
           isDeploying: isLive,
           queue: status === "queued" ? (data.queue ?? null) : null,
@@ -1526,7 +1528,7 @@ export function useDeploymentBuild(
   ]);
 
   const redeploy = useCallback(
-    async (deploymentId: string): Promise<string | null> => {
+    async (deploymentId: string, options?: { reuseBuild?: boolean }): Promise<string | null> => {
       if (!deploymentId) {
         showToast("Deployment ID not provided", "error", "Error");
         return null;
@@ -1537,7 +1539,7 @@ export function useDeploymentBuild(
 
       try {
         const localBuildStartedAt = new Date().toISOString();
-        const response = await deployApi.buildRedeploy(deploymentId);
+        const response = await deployApi.buildRedeploy(deploymentId, options);
         if (generation !== buildViewGenerationRef.current) return null;
         if (!response.success || !response.deployment_id) {
           showToast(response.error || "Failed to redeploy", "error", "Error");
@@ -1582,7 +1584,7 @@ export function useDeploymentBuild(
         // wizard (never a bare toast) — one shared handler, one source of truth.
         const openedModal =
           showCloudPricing(error, async () => {
-            const id = await redeploy(deploymentId);
+            const id = await redeploy(deploymentId, options);
             if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
           }) || maybeOpenCredentialModal(extractErrorCode(error) ?? undefined);
         if (!openedModal) showToast(msg, "error", "Error");

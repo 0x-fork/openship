@@ -42,6 +42,7 @@ import { trackBackgroundWork } from "../../lib/background-work";
 import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
 import { computeCleanupKeepSet } from "../projects/cleanup-keep-set";
 import { deploymentResourceFailure, type DeploymentFailureMeta } from "./resource-failure";
+import { deploymentArtifacts } from "./deployment-artifacts";
 
 /**
  * Shared routing/TLS advisory for a deploy whose workloads succeeded. Connection
@@ -556,9 +557,9 @@ export async function onFailure(
   // failure reason even for direct compose-pipeline failures (#751).
   ensureTerminalFailureLog(ctx, error);
 
-  // Always delete the workspace/container on failure so the user doesn't
-  // have to manually clean up.
-  if (runtime && provisioned.imageRef) {
+  // Delete incomplete artifacts on failure. A verified completed Docker image
+  // survives for the bounded deployment-only retry; containers are still reaped.
+  if (runtime && provisioned.imageRef && !deploymentArtifacts(dep.meta)) {
     try {
       await cleanupBuildArtifact(runtime, provisioned.imageRef);
     } catch (destroyErr) {

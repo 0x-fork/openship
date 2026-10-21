@@ -148,6 +148,7 @@ import { compileProjectRoutingFields } from "../../../lib/project-routing-fields
 import { buildCompositeRegistration, buildDomainFanoutRegistrations } from "./composite-route";
 import { collectComposeRoutePortDemands } from "./route-port-demands";
 import { newerThanRestoredRelease, serviceKind } from "./project-services";
+import { replaysFrozenDeployment } from "../deployment-artifacts";
 import {
   OUT_OF_SCOPE_SKIP_REASON,
   isUntargetedAndUndeployable,
@@ -1210,10 +1211,10 @@ async function deployComposeServicesUnlocked(
   // rows (see `mergeServiceDeployEnv`). Derived here from the trigger so no
   // caller and no option has to opt in. The rollback confirm dialog shows which
   // keys this shadows, by key and direction, before the operator commits.
-  const frozenEnvWins = dep.trigger === "rollback" && Object.keys(depEnv).length > 0;
+  const frozenEnvWins = replaysFrozenDeployment(dep) && Object.keys(depEnv).length > 0;
   if (frozenEnvWins) {
     logger.log(
-      `Rollback: replaying the ${Object.keys(depEnv).length} environment variable(s) frozen with this release; they override current project/service values.\n`,
+      `Replaying the ${Object.keys(depEnv).length} environment variable(s) saved with this deployment; they override current project/service values.\n`,
       "info",
     );
   }
@@ -1511,7 +1512,7 @@ async function deployComposeServicesUnlocked(
     // external forward instead applies neither, so the restore reports success
     // having changed nothing — the same silent-no-op `newerThanRestoredRelease`
     // guards against from the other direction.
-    if (dep.trigger === "rollback") return false;
+    if (replaysFrozenDeployment(dep)) return false;
     if (opts?.targetServiceIds) return false; // smart subset already carries non-targets forward
     if (!carryAnchor) return false; // never deployed → deploy it
     if (svc.build || !svc.image) return false; // must be image-only (external); buildables always rebuild

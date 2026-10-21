@@ -37,6 +37,10 @@ the existing compact recommendation notice and direct redeploy action; unknown b
 reported current. Record image identities in deployment metadata without executing interpreter
 probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
 environment refresh do not imply an image update or automatic security coverage.
+The failed deployment page offers **Retry deployment** only when the server reports a retained
+completed image. It replays that attempt's saved configuration with no build or replacement image
+pull. Keep ordinary **Redeploy** available for a new build. Routing-only warnings use the existing
+Domains retry action; do not turn those into image rebuilds.
 Borderless cards do not remove those functional indicators. Menus should use the shared dropdown
 component's existing positioning, keyboard behavior, and menu surface.
 
