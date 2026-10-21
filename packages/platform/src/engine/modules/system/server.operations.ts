@@ -39,7 +39,7 @@ import { boxOwningOrgId } from "../../lib/box-org";
 import { ensureLocalServer, localServerHostChannel } from "../../lib/startup/self-server";
 import { encryptSecretField } from "../../lib/credential-encryption";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
-import { assertSelfHosted, assertServerExecution, assertNativeSshSettings } from "./server-access";
+import { assertServerExecution, assertNativeSshSettings } from "./server-access";
 import {
   serverContainerCollection,
   serverContainerResources,

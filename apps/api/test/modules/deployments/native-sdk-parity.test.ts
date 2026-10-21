@@ -109,6 +109,7 @@ vi.mock("@repo/db", () => ({
     },
     member: { find: async (org: string, user: string) => h.members.get(`${org}:${user}`) },
     project: { findById: async (id: string) => h.projects.get(id),
+      findByIdInOrganization: async (id: string, org: string) => h.projects.get(id)?.organizationId === org ? h.projects.get(id) : undefined,
       findDraftByAppTemplate: h.appDraft,
       listEnvVars: async (id: string, environment: string, service?: string) => service
         ? h.appEnv.get(`${id}:${environment}:${service}`) ?? []
@@ -1757,7 +1758,7 @@ describe("domain and DNS HTTP/native parity", () => {
       expect(await contextFor("domain-b", "provision")).toBeNull();
     }
   });
-  it("keeps certificate contents out of audit and preserves the cloud upload refusal", async () => {
+  it("keeps certificate contents out of audit and refuses uploads to provider-managed Cloud domains", async () => {
     h.domainUpload.mockResolvedValue({ domain: "app.example.com", sslStatus: "active", issuer: "manual" });
     const local = await native();
     const input = { certPem: "private-certificate-content", keyPem: "private-key-content" };
@@ -1766,6 +1767,7 @@ describe("domain and DNS HTTP/native parity", () => {
     expect(JSON.stringify(h.audit.mock.calls)).not.toContain("private-key-content");
     expect(JSON.stringify(h.audit.mock.calls)).not.toContain("private-certificate-content");
     h.env.CLOUD_MODE = true;
+    h.projects.set("project-a", { organizationId: "org-a", serverId: "cloud-server", workspaceId: "cloud-space" });
     await expect(local.domains.uploadCert("domain-a", input)).rejects.toMatchObject({ statusCode: 404 });
     await expect(remote().domains.uploadCert("domain-a", input)).rejects.toMatchObject({ status: 404 });
     expect(h.domainUpload).toHaveBeenCalledTimes(2);

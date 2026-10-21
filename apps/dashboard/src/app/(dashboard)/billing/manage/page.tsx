@@ -33,8 +33,9 @@ function ManagePlan() {
   // Reuse the original key after uncertain responses; changed selections are
   // refused by the server until the saved checkout has been recovered/canceled.
   const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
-  const run = async (work: () => Promise<unknown>) => {
-    await action.execute(work);
+  const run = async <T,>(work: () => Promise<T>, onSuccess?: (result: Awaited<T>) => void) => {
+    const result = await action.execute(work);
+    if (result !== null) onSuccess?.(result);
     refresh();
   };
   if (loading)
@@ -61,14 +62,14 @@ function ManagePlan() {
     data.subscription.status !== "canceled" &&
     count === data.subscription.servers &&
     monthly === data.subscription.priceCents;
-  const purchase = async () => {
-    const result = await action.execute(() =>
-      managementApi.purchase({ servers: count, idempotencyKey: requestKey }),
+  const purchase = () =>
+    run(
+      () => managementApi.purchase({ servers: count, idempotencyKey: requestKey }),
+      (result) => {
+        if (result.url) window.location.assign(result.url);
+        else setQuote(result);
+      },
     );
-    if (result?.url) window.location.assign(result.url);
-    else if (result) setQuote(result);
-    refresh();
-  };
   return (
     <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="space-y-5">
@@ -140,12 +141,14 @@ function ManagePlan() {
                 <Button
                   disabled={action.busy}
                   onClick={() =>
-                    void run(async () => {
-                      const result = await managementApi.confirm(quote.quoteId!);
-                      setQuote(null);
-                      if (result.change?.paymentUrl)
-                        window.location.assign(result.change.paymentUrl);
-                    })
+                    void run(
+                      () => managementApi.confirm(quote.quoteId!),
+                      (result) => {
+                        setQuote(null);
+                        if (result.change?.paymentUrl)
+                          window.location.assign(result.change.paymentUrl);
+                      },
+                    )
                   }
                 >
                   Confirm change
@@ -207,8 +210,7 @@ function ManagePlan() {
               <Button
                 disabled={action.busy}
                 onClick={() =>
-                  void run(async () => {
-                    const result = await managementApi.resumeCheckout();
+                  void run(managementApi.resumeCheckout, (result) => {
                     if (result.url) window.location.assign(result.url);
                   })
                 }
@@ -219,8 +221,7 @@ function ManagePlan() {
                 variant="secondary"
                 disabled={action.busy}
                 onClick={() =>
-                  void run(async () => {
-                    await managementApi.cancelCheckout();
+                  void run(managementApi.cancelCheckout, () => {
                     setRequestKey(crypto.randomUUID());
                   })
                 }
@@ -249,8 +250,7 @@ function ManagePlan() {
                 variant="secondary"
                 disabled={action.busy}
                 onClick={() =>
-                  void run(async () => {
-                    await managementApi.cancelChange();
+                  void run(managementApi.cancelChange, () => {
                     setRequestKey(crypto.randomUUID());
                   })
                 }
@@ -327,8 +327,7 @@ function ManagePlan() {
               variant="secondary"
               disabled={action.busy}
               onClick={() =>
-                void run(async () => {
-                  const result = await managementApi.portal();
+                void run(managementApi.portal, (result) => {
                   window.location.assign(result.portalUrl);
                 })
               }
@@ -358,8 +357,7 @@ function ManagePlan() {
                 <Button
                   disabled={action.busy}
                   onClick={() =>
-                    void run(async () => {
-                      await managementApi.cancel();
+                    void run(managementApi.cancel, () => {
                       setCancel(false);
                     })
                   }

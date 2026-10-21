@@ -107,7 +107,7 @@ r.patch(
 );
 
 // ── Native-module versioning + migration (OpenResty, …). The `:id` server is
-//    the permission resource; handlers hard-guard cloud + org-scope. ──
+//    the permission resource; shared operations check host type and org scope. ──
 r.get(
   "/servers/:id/modules",
   {

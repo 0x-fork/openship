@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
   purchase: vi.fn(),
   confirm: vi.fn(),
   cancel: vi.fn(),
+  resumeCheckout: vi.fn(),
+  portal: vi.fn(),
 }));
 vi.mock("@/lib/auth-client", () => ({
   useSession: () => ({ data: { user: { id: "owner" }, session: { activeOrganizationId: h.org } } }),
@@ -135,3 +137,40 @@ it("discards a previous organization's late checkout response", async () => {
   expect(redirect).not.toHaveBeenCalled();
   expect(button("Continue to checkout").disabled).toBe(false);
 });
+
+it.each(["resumeCheckout", "portal"] as const)(
+  "does not follow a stale %s link after switching organizations",
+  async (method) => {
+    state.pendingCheckout = method === "resumeCheckout";
+    state.subscription = {
+      servers: 2,
+      baseIncluded: false,
+      priceCents: 500,
+      periodEnd: new Date(Date.now() + 86400000).toISOString(),
+      cancelAtPeriodEnd: false,
+      status: "active",
+    };
+    let finish!: (value: unknown) => void;
+    h[method].mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const redirect = vi.spyOn(window.location, "assign").mockImplementation(() => {});
+    await render();
+    await click(method === "resumeCheckout" ? "Resume checkout" : "Payment details & invoices");
+    h.org = "org-two";
+    state.pendingCheckout = false;
+    state.subscription = null;
+    await render();
+    await act(async () =>
+      finish({
+        url: "https://checkout.stripe.com/old-account",
+        portalUrl: "https://billing.stripe.com/old-account",
+      }),
+    );
+    expect(redirect).not.toHaveBeenCalled();
+    expect(button("Continue to checkout").disabled).toBe(false);
+  },
+);

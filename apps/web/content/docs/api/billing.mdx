@@ -497,3 +497,22 @@ closure and resource cleanup.
 | Retired Stripe webhook; returns 410 without changing billing. | HTTP only | `POST /api/billing/webhook/stripe`<br />`Handler authentication` |
 
 {/* api-operations:end */}
+
+## Manage from the CLI
+
+These commands use the active organization in your selected Openship context.
+They use the same paid allowance and authorization checks as the dashboard.
+
+```bash
+openship billing manage get
+openship billing manage purchase --servers 3 --idempotency-key manage-purchase-0001
+openship billing manage apply QUOTE_ID --yes
+openship billing manage checkout resume
+openship billing manage checkout cancel --yes
+openship billing manage cancel --yes
+```
+
+`purchase` returns a payment URL for a new subscription or a quote for an existing
+one. Review its amount due before `apply`. `cancel` ends renewal; workloads and
+data remain on your servers. Use `resume` to resume renewal at its saved terms,
+`cancel-change` to cancel a pending change, or `portal` for payment details.

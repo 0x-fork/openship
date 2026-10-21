@@ -17,7 +17,7 @@ import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import { sshManager } from "../../lib/ssh-manager";
 import { withPinnedEdgeImage } from "../../lib/edge-image";
 import { resolveEdgeProviderOptions } from "../../lib/edge-provider-options";
-import { assertSelfHosted, assertServerExecution, requireSelfHostedServer } from "./server-access";
+import { assertServerExecution, requireSelfHostedServer } from "./server-access";
 import { ALLOWED_COMPONENTS, deliverEdgeBeforeInstall, installPrerequisites, dependencyFailureMessage, failSystem } from "./server-check.operations";
 import { refreshServerContainer } from "./server-containers.service";
 import {
