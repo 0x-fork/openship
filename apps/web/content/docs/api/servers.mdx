@@ -737,6 +737,12 @@ shared storage before removing the cluster runtime.
 | Remove an empty storage installation using its latest sequence. Persistent or retained volumes block removal; external archives are preserved. | `servers.removeClusterStorage(input)` | `DELETE /api/system/compute-clusters/:id/storage`<br />`server:admin` · Self-hosted |
 | Subscribe to saved storage setup and removal progress through replayable SSE. | `servers.clusterStorageEvents(id, options?)` | `GET /api/system/compute-clusters/:id/storage/stream`<br />`server:read` · Self-hosted |
 
+### Docker Swarm inspection
+
+| Operation | SDK | REST API |
+| --- | --- | --- |
+| Inspect membership on a connected self-hosted Docker server. Set details=true for a manager's stacks, services and nodes. Requires server administration; does not adopt or change workloads. | `servers.inspectSwarm(id, input?)` | `GET /api/system/servers/:id/swarm`<br />`server:admin` · Self-hosted |
+
 ### Legacy network methods
 
 | Operation | SDK | REST API |
