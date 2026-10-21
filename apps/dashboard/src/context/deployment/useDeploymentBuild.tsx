@@ -734,6 +734,8 @@ export function useDeploymentBuild(
         deploymentFailed: false,
         deploymentCanceled: false,
         cancellationPending: false,
+        completionPending: false,
+        canRetryDeployment: false,
         failureMessage: "",
         warningMessage: "",
         decisionPending: false,
@@ -1095,9 +1097,11 @@ export function useDeploymentBuild(
       !state.deploymentCanceled;
     const waitingCancellation = state.deploymentCanceled && state.cancellationPending;
     const terminal = state.deploymentSuccess || state.deploymentFailed || state.deploymentCanceled;
+    const waitingCompletion = terminal && state.completionPending;
     const needsTerminalStatus = terminal && settledBuildStatusRef.current !== deploymentId;
     const needsStatus =
       waitingCancellation ||
+      waitingCompletion ||
       needsTerminalStatus ||
       (active && (!buildStream.isConnected || !!state.queue || !state.buildStartedAt || !!state.pendingPrompt));
     if (!deploymentId || !needsStatus) return;
@@ -1148,6 +1152,7 @@ export function useDeploymentBuild(
             deploymentFailed: !isLive && status === "failed",
             deploymentCanceled: !isLive && status === "cancelled",
             cancellationPending: !!data.cancellationPending,
+            completionPending: !!data.completionPending,
             canRetryDeployment: !!data.canRetryDeployment,
             pendingPrompt: isLive
               ? data.pendingPrompt?.promptId === prev.pendingPrompt?.promptId
@@ -1176,7 +1181,7 @@ export function useDeploymentBuild(
         // Deploy settled while the stream was detached — stop reconnect churn.
         if (!isLive) {
           buildStream.disconnect();
-          if (!data.cancellationPending) clearInterval(interval);
+          if (!data.cancellationPending && !data.completionPending) clearInterval(interval);
         }
       } catch (diagnosticFailure) {
         observeCaughtError(diagnosticFailure, "dashboard/context/deployment/useDeploymentBuild");
@@ -1205,6 +1210,7 @@ export function useDeploymentBuild(
     state.deploymentFailed,
     state.deploymentCanceled,
     state.cancellationPending,
+    state.completionPending,
     state.pendingPrompt,
     state.buildStartedAt,
     state.queue,
@@ -1384,6 +1390,7 @@ export function useDeploymentBuild(
           deploymentFailed: !isActive && status === "failed",
           deploymentCanceled: !isActive && status === "cancelled",
           cancellationPending: !!data.cancellationPending,
+          completionPending: !!data.completionPending,
           canRetryDeployment: !!data.canRetryDeployment,
           pendingPrompt: isActive ? (data.pendingPrompt ?? null) : null,
           isDeploying: isLive,

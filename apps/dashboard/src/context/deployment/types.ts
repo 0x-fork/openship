@@ -806,6 +806,8 @@ export interface DeploymentState {
   deploymentCanceled: boolean;
   /** A cancelled row whose worker lease has not acknowledged completion yet. */
   cancellationPending: boolean;
+  /** A terminal outcome whose worker is still completing cleanup. */
+  completionPending: boolean;
   canRetryDeployment: boolean;
   failureMessage: string;
   warningMessage: string;
@@ -877,6 +879,7 @@ export const INITIAL_STATE: DeploymentState = {
   deploymentFailed: false,
   deploymentCanceled: false,
   cancellationPending: false,
+  completionPending: false,
   canRetryDeployment: false,
   failureMessage: "",
   warningMessage: "",
