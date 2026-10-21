@@ -557,11 +557,13 @@ export async function onFailure(
   // failure reason even for direct compose-pipeline failures (#751).
   ensureTerminalFailureLog(ctx, error);
 
-  // Delete incomplete artifacts on failure. A verified completed Docker image
-  // survives for the bounded deployment-only retry; containers are still reaped.
-  if (runtime && provisioned.imageRef && !deploymentArtifacts(dep.meta)) {
+  // Always delete the workspace/container on failure so the user doesn't
+  // have to manually clean up.
+  if (runtime && provisioned.imageRef) {
     try {
-      await cleanupBuildArtifact(runtime, provisioned.imageRef);
+      // A verified completed Docker image survives for bounded deployment-only
+      // retry; incomplete artifacts and failed containers retain normal cleanup.
+      if (!deploymentArtifacts(dep.meta)) await cleanupBuildArtifact(runtime, provisioned.imageRef);
     } catch (destroyErr) {
       errorDiagnostics.error("platform/engine/modules/deployments/deployment-lifecycle", `[DEPLOY] Failed to destroy ${provisioned.imageRef} on failure:`, destroyErr);
       // Retry once after a short delay
