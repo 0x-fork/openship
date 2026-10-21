@@ -526,6 +526,47 @@ describe("compose deploy — host channel unavailable", () => {
     expect(f.retire.mock.invocationCallOrder[0]).toBeGreaterThan(f.registerRoute.mock.invocationCallOrder.at(-1)!);
   });
 
+  it("restores the incumbent before cleanup when a composite route fails after a service route succeeded", async () => {
+    const f = stagedFixture();
+    f.registerRoute.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("composite edge reload failed"));
+    h.applyProjectRouting.mockImplementation(async () => {
+      expect(h.targetLockHeld).toBe(false);
+      expect(f.runtime.destroy).not.toHaveBeenCalledWith("new-api");
+      expect(f.retire).not.toHaveBeenCalled();
+    });
+    const result = await f.run(f.routingOptions, "manual", { compositeRoutes: [{
+      hostname: "api.example.com", isCustomDomain: true, rootServiceId: "svc-api", locations: [],
+    }] });
+    expect(f.registerRoute).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe("failed");
+    expect(result.routeWarnings?.join(" ")).toContain("composite edge reload failed");
+    expect(result.cutover).toBeUndefined();
+    expect(f.retire).not.toHaveBeenCalled();
+    expect(f.runtime.destroy).not.toHaveBeenCalledWith("old-api");
+    expect(f.runtime.destroy).toHaveBeenCalledWith("new-api");
+    expect(h.applyProjectRouting.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(f.runtime.destroy).mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("keeps the incumbent when an existing composite shape cannot resolve its frontend hostname", async () => {
+    const f = stagedFixture();
+    Object.assign(h.services[0]!, { kind: "monorepo", framework: "nextjs", startCommand: "node server.js" });
+    h.services.push({ id: "svc-front", projectId: "p1", name: "front", image: f.apiRef, enabled: true,
+      kind: "monorepo", framework: "vite", startCommand: null, updatedAt: new Date(0), dependsOn: [],
+      advanced: null, ports: [], exposed: false });
+    h.previousServiceRows.push({ id: "sd-front", deploymentId: "d-old", serviceId: "svc-front", serviceName: "front",
+      containerId: "old-front", imageRef: f.apiRef, status: "success", ip: "172.18.0.2" });
+    const result = await f.run({ ...f.routingOptions, targetServiceIds: new Set(["svc-api"]) });
+    expect(f.prepared).toHaveBeenCalledOnce();
+    expect(result.status).toBe("failed");
+    expect(result.routeWarnings?.join(" ")).toContain("could not resolve every upstream and hostname");
+    expect(f.retire).not.toHaveBeenCalled();
+    expect(f.runtime.destroy).not.toHaveBeenCalledWith("old-api");
+    expect(h.applyProjectRouting).toHaveBeenCalled();
+    expect(f.runtime.destroy).toHaveBeenCalledWith("new-api");
+  });
+
   it.each([{ failure: "candidate is not ready" }, { failure: null, skipped: "host probe unavailable" }])(
     "keeps the old container and never publishes a failed or unverifiable candidate (%j)", async verdict => {
       const f = stagedFixture();

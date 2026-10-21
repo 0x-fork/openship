@@ -104,7 +104,7 @@ describeDockerE2E("capacity-admitted Compose cutover", () => {
       {
         config: { port: 8080 } as DeployConfig,
         previousContainerId: original.containerId,
-        domains: [{ hostname: "cutover.invalid", tls: false }],
+        domains: [{ hostname: "cutover.invalid", tls: false, targetPort: 8080 }],
         routing: {
           registerRoute: async (route) => {
             order.push("routed");
@@ -118,6 +118,7 @@ describeDockerE2E("capacity-admitted Compose cutover", () => {
       new BuildLogger(),
     );
     expect(result.status, result.error).toBe("ready");
+    expect(result.routeWarnings ?? []).toEqual([]);
     expect(order).toEqual(["healthy", "routed", "retired"]);
     await expect(runtime.docker.getContainer(original.containerId).inspect()).rejects.toMatchObject(
       { statusCode: 404 },

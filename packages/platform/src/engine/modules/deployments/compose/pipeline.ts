@@ -417,7 +417,8 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
       if (opts.signal?.aborted) {
         await onCancelled(ctx, composeBuild.durationMs, { keepProvisioned: true });
       } else {
-        await onReconciling(ctx, { containerId: err.containerId, warningMessage: err.message });
+        await onFailure(ctx, err.message, composeBuild.durationMs,
+          { errorCode: "SERVICE_CUTOVER_RECOVERY_REQUIRED" }, { keepProvisioned: true });
       }
       return;
     }
@@ -620,20 +621,22 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     } else if (ctx.settled === "ready") {
       // onSuccess treats this pointer write as best effort. Never retire the
       // serving predecessor unless the new release is durably authoritative.
-      const active = await repos.project.findById(project.id).catch(error => {
+      const [active, recorded] = await Promise.all([
+        repos.project.findById(project.id), repos.deployment.findById(dep.id),
+      ]).catch(error => {
         observeCaughtError(error, "platform/engine/modules/deployments/compose/pipeline");
-        return null;
+        return [null, null] as const;
       });
-      if (active?.activeDeploymentId === dep.id) await composeResult.cutover.commit();
-      else logger.log("The new service is live; keeping its predecessor until the active deployment is confirmed.\n", "warn");
+      if (active?.activeDeploymentId === dep.id && recorded?.status === "ready") await composeResult.cutover.commit();
+      else logger.log("The new service is live; keeping its predecessor until the ready outcome and active deployment are confirmed.\n", "warn");
     }
   }
   } catch (error) {
     if (composeResult.cutover && ctx.settled !== "ready") {
       if (!await composeResult.cutover.rollback()) {
         if (opts.signal?.aborted) await onCancelled(ctx, composeBuild.durationMs, { keepProvisioned: true });
-        else await onReconciling(ctx, { containerId: composeResult.cutover.containerId,
-          warningMessage: "Service routing recovery is incomplete; both containers were preserved." });
+        else await onFailure(ctx, "Service routing recovery is incomplete; both containers were preserved.",
+          composeBuild.durationMs, { errorCode: "SERVICE_CUTOVER_RECOVERY_REQUIRED" }, { keepProvisioned: true });
         return;
       }
     }

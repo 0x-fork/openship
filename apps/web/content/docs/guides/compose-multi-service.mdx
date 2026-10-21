@@ -347,8 +347,9 @@ directory into concurrent access.
 
 If startup or routing fails, Openship keeps the previous container and restores
 its routing before cleaning up the replacement. If it cannot verify recovery,
-it preserves both containers and reports the unresolved routing outcome instead
-of deleting a container that may still receive traffic.
+it preserves both containers and records the attempt as failed (or cancelled),
+with the routing recovery error in its logs. Review and repair routing before
+removing either container; Openship does not automatically promote that attempt.
 
 ## Ports & volumes: cloud vs self-hosted
 

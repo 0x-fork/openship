@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@repo/db", () => ({
   repos: {
     project: { findById: vi.fn(async () => ({ id: "p1", activeDeploymentId: "d1" })) },
-    deployment: { findById: async () => ({ id: "dep-live", projectId: "p1", organizationId: "org1" }) },
+    deployment: { findById: vi.fn(async () => ({ id: "dep-live", projectId: "p1", organizationId: "org1", status: "ready" })) },
     service: {
       listByProject: vi.fn(async () => [
         { id: "svc-api", name: "api", enabled: true, advanced: null },
@@ -142,6 +142,7 @@ describe("executeComposePipeline — cancellation", () => {
     mocks.keepProvisioned = false;
     mocks.onSuccess.mockReset().mockResolvedValue(undefined);
     vi.mocked(repos.project.findById).mockResolvedValue({ id: "p1", activeDeploymentId: "d1" } as never);
+    vi.mocked(repos.deployment.findById).mockResolvedValue({ id: "dep-live", projectId: "p1", organizationId: "org1", status: "ready" } as never);
     vi.mocked(repos.service.listByDeployment).mockResolvedValue([]);
     mocks.cleanupBuildArtifact.mockResolvedValue(undefined);
   });
@@ -209,12 +210,26 @@ describe("executeComposePipeline — cancellation", () => {
     expect(f.rollback).not.toHaveBeenCalled();
   });
 
-  it("uses reconciliation instead of destructive failure cleanup when route recovery is uncertain", async () => {
+  it("does not retire the predecessor when onSuccess could not record the ready outcome", async () => {
+    const f = completedCutover();
+    mocks.onSuccess.mockImplementation(async (...args: unknown[]) => {
+      (args[0] as { settled?: string }).settled = "ready";
+    });
+    vi.mocked(repos.deployment.findById).mockResolvedValue({
+      id: "d1", projectId: "p1", organizationId: "org1", status: "deploying",
+    } as never);
+    await run(f.built);
+    expect(f.commit).not.toHaveBeenCalled();
+    expect(f.rollback).not.toHaveBeenCalled();
+  });
+
+  it("records a terminal failure and preserves both workloads when route recovery is uncertain", async () => {
     const f = completedCutover();
     mocks.deployComposeServices.mockReset().mockRejectedValueOnce(new ServiceCutoverRecoveryError("new-api"));
     await run(f.built);
-    expect(mocks.onReconciling).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ containerId: "new-api" }));
-    expect(mocks.onFailure).not.toHaveBeenCalled();
+    expect(mocks.onFailure).toHaveBeenCalledWith(expect.anything(), expect.stringContaining("Both containers were preserved"), 5,
+      { errorCode: "SERVICE_CUTOVER_RECOVERY_REQUIRED" }, { keepProvisioned: true });
+    expect(mocks.onReconciling).not.toHaveBeenCalled();
     expect(mocks.cleanupBuildArtifact).not.toHaveBeenCalled();
   });
 

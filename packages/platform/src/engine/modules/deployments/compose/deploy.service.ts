@@ -146,7 +146,7 @@ import { isRealContainerRef } from "../../../lib/container-ref";
 import { resolveServicePort } from "./domain-helpers";
 import { loadServiceDeployEnvironment } from "./required-env-preflight";
 import { compileProjectRoutingFields } from "../../../lib/project-routing-fields";
-import { buildCompositeRegistration, buildDomainFanoutRegistrations } from "./composite-route";
+import { buildCompositeRegistration, buildDomainFanoutRegistrations, planCompositeRoute } from "./composite-route";
 import { collectComposeRoutePortDemands } from "./route-port-demands";
 import { newerThanRestoredRelease, serviceKind } from "./project-services";
 import {
@@ -4413,6 +4413,9 @@ async function deployComposeServicesCore(
       }
     } catch (err) {
       observeCaughtError(err, "platform/engine/modules/deployments/compose/deploy.service");
+      // Staged replacement must preserve an incumbent that any failed route
+      // could still reference. Ordinary deployments keep their best-effort policy.
+      if (cutover.pending) composeRouteWarnings.push(`Project domain routing: ${safeErrorMessage(err)}`);
       // Best-effort like every routing step: the project's own domains are optional and
       // a failure here never fails a deploy (see domains-never-fail-deploy).
       logger.log(
@@ -4483,12 +4486,18 @@ async function deployComposeServicesCore(
             : null;
         },
       });
+      if (cutover.pending && !composite && planCompositeRoute(enabled, { rewrites: project.routingConfig?.rewrites })) {
+        throw new Error("The existing single-domain topology could not resolve every upstream and hostname.");
+      }
       const fanoutRegistrations = buildDomainFanoutRegistrations({
         routes: project.compositeRoutes,
         resolveTargetUrl,
         services: enabled,
         domainByHostname: routeContext.domainByHostname,
-        onWarning: (message) => logger.log(`${message}\n`, "warn"),
+        onWarning: (message) => {
+          logger.log(`${message}\n`, "warn");
+          if (cutover.pending) composeRouteWarnings.push(message);
+        },
       });
       // Resolve every topology-aware target first, then validate the complete
       // set before the first vhost is mutated. A conflict cannot leave half of a
@@ -4565,6 +4574,7 @@ async function deployComposeServicesCore(
       }
     } catch (err) {
       observeCaughtError(err, "platform/engine/modules/deployments/compose/deploy.service");
+      if (cutover.pending) composeRouteWarnings.push(`Single-domain composition: ${safeErrorMessage(err)}`);
       logger.log(
         `Single-domain composition skipped: ${err instanceof Error ? err.message : "error"} (services remain on their own routes).\n`,
         "warn",
