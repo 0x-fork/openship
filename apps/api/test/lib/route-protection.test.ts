@@ -62,10 +62,13 @@ vi.mock("@repo/platform/engine/modules/domains/domain-execution", () => ({
 
 import {
   changeRouteProtection,
-  registerProtectedProjectRoute,
   assertRouteProtectionTarget,
   listRouteProtection,
 } from "@repo/platform/engine/lib/route-protection";
+import {
+  createProjectRouteRegistrar,
+  registerProjectRoute,
+} from "@repo/platform/engine/lib/project-route-registration";
 const ctx = { organizationId: "org" } as ExecutionContext;
 const route = { domain: "private.test", targetUrl: "http://127.0.0.1:3000", tls: true };
 const policy = {
@@ -92,6 +95,7 @@ beforeEach(() => {
     appliedRevision: null,
   };
   state.setProtection.mockResolvedValue(true);
+  state.register.mockResolvedValue(undefined);
   state.hostAdmission.mockResolvedValue(undefined);
 });
 
@@ -140,7 +144,7 @@ describe("route protection admission and publication", () => {
   });
 
   it("publishes the saved policy on deployment, and never turns missing credentials into an unlock", async () => {
-    await registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
     expect(state.register).toHaveBeenLastCalledWith({
       ...route,
       protection: policy,
@@ -149,7 +153,7 @@ describe("route protection admission and publication", () => {
     state.row!.secret = null;
     state.register.mockClear();
     await expect(
-      registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
+      registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
     ).rejects.toMatchObject({ code: "ROUTE_PROTECTION_SECRET_MISSING" });
     await expect(assertRouteProtectionTarget({ id: "proj" }, "cloud")).rejects.toMatchObject({
       code: "ROUTE_PROTECTION_UNSUPPORTED",
@@ -158,7 +162,7 @@ describe("route protection admission and publication", () => {
     state.row!.secret = JSON.stringify(policy);
     state.domain.projectId = "another";
     await expect(
-      registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
+      registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
     ).rejects.toMatchObject({ code: "ROUTE_OWNER_CHANGED" });
     expect(state.register).not.toHaveBeenCalled();
   });
@@ -180,7 +184,71 @@ describe("route protection admission and publication", () => {
 
   it("does not inherit a former project's edge password when the current project has no policy", async () => {
     state.row = null;
-    await registerProtectedProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    await registerProjectRoute(
+      { id: "proj" },
+      { registerRoute: state.register },
+      { ...route, protection: policy },
+    );
     expect(state.register).toHaveBeenCalledWith({ ...route, protection: null });
+    expect(state.markApplied).not.toHaveBeenCalled();
+  });
+
+  it("publishes a saved unlock without requiring credentials and acknowledges its revision", async () => {
+    state.row!.enabled = false;
+    state.row!.secret = null;
+    await registerProjectRoute(
+      { id: "proj" },
+      { registerRoute: state.register },
+      { ...route, protection: policy },
+    );
+    expect(state.register).toHaveBeenCalledWith({ ...route, protection: null });
+    expect(state.markApplied).toHaveBeenCalledWith("proj", "private.test", "v1");
+  });
+
+  it("acknowledges the published revision only after the provider succeeds", async () => {
+    let publish!: () => void;
+    const published = new Promise<void>((resolve) => {
+      publish = resolve;
+    });
+    state.register.mockReturnValueOnce(published);
+    const registration = registerProjectRoute(
+      { id: "proj" },
+      { registerRoute: state.register },
+      route,
+    );
+    await vi.waitFor(() => expect(state.register).toHaveBeenCalledOnce());
+    expect(state.markApplied).not.toHaveBeenCalled();
+    // A newer saved edit must remain pending while this older publication finishes.
+    state.row!.revision = "v2";
+    publish();
+    await registration;
+    expect(state.markApplied).toHaveBeenCalledWith("proj", "private.test", "v1");
+  });
+
+  it("keeps a failed publication pending", async () => {
+    state.register.mockRejectedValueOnce(new Error("edge reload failed"));
+    await expect(
+      registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route),
+    ).rejects.toThrow("edge reload failed");
+    expect(state.markApplied).not.toHaveBeenCalled();
+  });
+
+  it("uses the same saved policy and ownership guard through the project registrar", async () => {
+    const routing = createProjectRouteRegistrar({ id: "proj" }, { registerRoute: state.register });
+    expect(createProjectRouteRegistrar({ id: "proj" })).toBeUndefined();
+    await routing!.registerRoute(route);
+    expect(state.register).toHaveBeenCalledWith({
+      ...route,
+      protection: policy,
+      terminatesTlsLocally: true,
+    });
+    state.register.mockClear();
+    state.markApplied.mockClear();
+    state.domain.projectId = "another";
+    await expect(routing!.registerRoute(route)).rejects.toMatchObject({
+      code: "ROUTE_OWNER_CHANGED",
+    });
+    expect(state.register).not.toHaveBeenCalled();
+    expect(state.markApplied).not.toHaveBeenCalled();
   });
 });

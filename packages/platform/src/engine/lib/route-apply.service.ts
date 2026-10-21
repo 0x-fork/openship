@@ -1,4 +1,3 @@
-import { registerProtectedProjectRoute } from "@repo/platform/engine/lib/route-protection";
 /**
  * Single entry point for (re)applying a project's LIVE routes on a mutation
  * (service edit/delete, single-app publicEndpoints edit, webhook-domain set).
@@ -23,6 +22,7 @@ import { registerProtectedProjectRoute } from "@repo/platform/engine/lib/route-p
  * failure logs and defers to the next deploy rather than failing the request.
  */
 
+import { registerProjectRoute } from "@repo/platform/engine/lib/project-route-registration";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { repos, type Deployment } from "@repo/db";
 import type {
@@ -355,7 +355,7 @@ export async function reconcileProjectRoutes(
         }
         const isWebhook = r.webhook ?? (!!webhookHost && r.hostname.toLowerCase() === webhookHost);
         try {
-          await registerProtectedProjectRoute(project, routing, {
+          await registerProjectRoute(project, routing, {
             domain: r.hostname,
             tls: !externalHosts.has(r.hostname),
             // A custom domain's TLS is ours to terminate, so the edge must keep a :443
