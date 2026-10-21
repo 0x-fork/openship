@@ -62,6 +62,7 @@ import { assertExactServiceTargets } from "../exact-service-targets";
 import { strictRefreshImages } from "../pinned-artifacts";
 import { cloudCapacityFailure } from "../../../lib/cloud-capacity";
 import { retirePreviousRoleContainers } from "../role-runtime";
+import { assertRequiredServiceEnvironment } from "./required-env-preflight";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -284,6 +285,13 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   if (strictScope && targetServiceIds) {
     assertExactServiceTargets(await getCurrentServices(), [...targetServiceIds]);
   }
+  await assertRequiredServiceEnvironment({
+    projectId: project.id,
+    dep,
+    targetServiceIds,
+    logger,
+  });
+  throwIfDeploymentCancelled(opts.signal);
   const keepProvisionedOnCancel = () => deploymentCancellationKeepsProvisioned(opts.signal);
 
   const composeBuild = await buildComposeImages({
