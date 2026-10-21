@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 import Dockerode from "dockerode";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
+import { stubProtectedBuildWorker } from "../../test/fixtures/remote-build-worker";
 import { statusResponse } from "../../test/fixtures/docker-buildkit";
 import type { BuildConfig, CommandExecutor } from "../types";
 
@@ -118,6 +119,7 @@ function runtimeFor(
     estimateContextSize: vi.fn(async () => 1024),
     ...extra,
   });
+  stubProtectedBuildWorker(runtime, extra.probe !== false);
   return runtime;
 }
 
@@ -137,7 +139,7 @@ describe("remote docker build — declared build context (#634)", () => {
     const executor: CommandExecutor = {
       exec: vi.fn(async (command: string) => {
         commands.push(command);
-        // No buildx on this fake host, so the legacy builder stays selected.
+        // Worker startup is covered separately; record context preparation commands.
         return "";
       }),
       streamExec: vi.fn(async (command: string) => {
@@ -165,11 +167,11 @@ describe("remote docker build — declared build context (#634)", () => {
 
     expect(results[0]!.result.status).toBe("deploying");
 
-    const buildCmd = commands.find((c) => /docker build\b/.test(c) && c.includes(" -t "))!;
+    const buildCmd = commands.find((c) => /docker buildx build\b/.test(c) && c.includes(" -t "))!;
     expect(buildCmd).toBeDefined();
     // The context is the SERVICE dir, so `.` means `svc` and the Dockerfile path is
     // relative to it. A tree-root `cd` plus `-f svc/Dockerfile.api` is the bug.
-    expect(buildCmd).toMatch(/cd '\/tmp\/openship-build-sess-svc\/svc' &&/);
+    expect(buildCmd).toMatch(/cd '\/tmp\/openship-build-sess-svc\/svc'\n/);
     expect(buildCmd).toContain("-f 'Dockerfile.api'");
     expect(buildCmd).not.toContain("svc/Dockerfile.api");
     expect(buildCmd.trimEnd().endsWith(" .")).toBe(true);
@@ -214,64 +216,44 @@ describe("remote docker build — declared build context (#634)", () => {
       new BuildLogger(() => {}),
     );
 
-    const buildCmd = commands.find((c) => /docker build\b/.test(c) && c.includes(" -t "))!;
-    expect(buildCmd).toMatch(/cd '\/tmp\/openship-build-sess-svc' &&/);
+    const buildCmd = commands.find((c) => /docker buildx build\b/.test(c) && c.includes(" -t "))!;
+    expect(buildCmd).toMatch(/cd '\/tmp\/openship-build-sess-svc'\n/);
   });
 
-  async function buildCommandWithProbeOutput(probeOutput: string): Promise<string> {
+  async function buildCommandWithProbeOutput(probeOutput: string) {
     const commands: string[] = [];
-    const executor: CommandExecutor = {
-      exec: vi.fn(async (command: string) =>
-        command.includes("buildx version") ? probeOutput : "",
-      ),
+    const executor = {
+      exec: vi.fn(async (command: string) => command.includes("buildx version") ? probeOutput : ""),
       streamExec: vi.fn(async (command: string) => {
         commands.push(command);
         return { code: 0, output: "" };
       }),
       writeFile: vi.fn(async () => {}),
     } as unknown as CommandExecutor;
-
     const runtime = runtimeFor(
       { kind: "ssh", description: "test ssh" },
-      { connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}) },
+      { connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}), probe: false },
     );
-    await runtime.buildImages([spec(serviceConfig(await makeRepo()))], new BuildLogger(() => {}));
-
-    return commands.find((c) => /docker build\b/.test(c) && c.includes(" -t "))!;
+    const results = await runtime.buildImages([spec(serviceConfig(await makeRepo()))], new BuildLogger(() => {}));
+    return { command: commands.find(c => /docker buildx build\b/.test(c)), result: results[0]!.result };
   }
 
-  it("opts into BuildKit when the host answers the probe", async () => {
-    const buildCmd = await buildCommandWithProbeOutput("OPENSHIP_BUILDKIT_OK\n");
-
-    expect(buildCmd).toContain("DOCKER_BUILDKIT=1 docker build");
-    // `--progress` is a buildx flag; `--force-rm` is a legacy one. Each belongs to
-    // exactly one builder.
-    expect(buildCmd).toContain("--progress=plain");
-    expect(buildCmd).not.toContain("--force-rm");
-    expect(buildCmd).not.toContain("--add-host");
+  it("uses the protected project worker when the host answers the Buildx probe", async () => {
+    const { command } = await buildCommandWithProbeOutput("OPENSHIP_BUILDKIT_OK\n");
+    expect(command).toContain("docker buildx build --builder");
+    expect(command).toContain("--progress=plain");
+    expect(command).not.toContain("--force-rm");
+    expect(command).not.toContain("--add-host");
   });
 
-  it("keeps the legacy builder — and drops --progress — when the probe is unanswered", async () => {
-    // The flag matters more than the builder here: a docker CLI without buildx
-    // REJECTS `--progress` outright (`unknown flag`, exit 125) before it reads the
-    // context, so passing it would fail every build on such a host.
-    const buildCmd = await buildCommandWithProbeOutput("");
-
-    expect(buildCmd).not.toContain("DOCKER_BUILDKIT=1");
-    expect(buildCmd).not.toContain("--progress");
-    expect(buildCmd).toContain("--force-rm");
-    expect(buildCmd).toMatch(/--add-host 'openship-build-[0-9a-f-]+\.invalid:127\.0\.0\.1'/);
-  });
-
-  it("does not read a version banner as buildx", async () => {
-    // A false positive is FATAL (BuildKit without buildx hard-errors), so only the
-    // sentinel counts — not a login banner, a wrapper's help text, or a plain
-    // `docker buildx version` string that a shell rc-file happened to echo.
-    const buildCmd = await buildCommandWithProbeOutput("github.com/docker/buildx v0.17.1 abc123\n");
-
-    expect(buildCmd).not.toContain("DOCKER_BUILDKIT=1");
-    expect(buildCmd).toContain("--force-rm");
-  });
+  it.each(["", "github.com/docker/buildx v0.17.1 abc123\n"])(
+    "refuses remote execution without a successful Buildx sentinel: %j", async (probe) => {
+      const { command, result } = await buildCommandWithProbeOutput(probe);
+      expect(command).toBeUndefined();
+      expect(result.status).toBe("failed");
+      expect(result.errorMessage).toContain("Remote builds require Docker Buildx");
+    },
+  );
 });
 
 describe("mixed batch — one tree, different contexts (#634)", () => {
@@ -425,10 +407,8 @@ describe("dockerode docker build — declared build context (#634)", () => {
 describe.each([
   { mode: "single", transport: "socket" },
   { mode: "single", transport: "tcp" },
-  { mode: "single", transport: "ssh" },
   { mode: "batch", transport: "socket" },
   { mode: "batch", transport: "tcp" },
-  { mode: "batch", transport: "ssh" },
 ] as const)("$transport Engine API $mode build results", ({ mode, transport }) => {
   describe.each(["classic", "buildkit"])("%s builder", (builder) => {
     it.each([false, true])(

@@ -39,12 +39,14 @@ import { projectBuildKitWorker, removeProjectBuildKitWorker } from "./docker-bui
 import { readSoftwareCache } from "./docker-software-cache";
 import {
   DEFAULT_BUILD_CACHE_KEEP_BYTES, DOCKER_BUILD_STORAGE_COMMAND, parseBuildStorage,
-  assertBuildStorage, buildStorageReserve, buildKitCacheConfig,
+  assertBuildStorage, buildKitCacheConfig,
   ensureProjectBuildCache, pruneManagedBuildCaches, touchProjectBuildCache,
 } from "./docker-build-cache";
 import { AppError, withKeyedMutex } from "@repo/core";
 import { generatedBuildIgnore } from "./docker-recipes/cache";
 import { createGzip } from "node:zlib";
+import { prepareProtectedBuildKitImage, requireProtectedBuildHost, PROTECTED_BUILDKIT_DRIVER_OPTIONS } from "./docker-buildkit-image";
+import { protectedBuildCacheHostExecutor } from "./docker-build-cache-executor";
 import { StringDecoder } from "node:string_decoder";
 
 import type {
@@ -230,7 +232,6 @@ import {
 } from "./docker-build-diagnostics";
 import {
   LegacyBuildContainerTracker,
-  type LegacyBuildContainerInspect,
   type LegacyBuildContainerTermination,
 } from "./docker-build-container-tracker";
 
@@ -1645,17 +1646,11 @@ export class DockerRuntime implements RuntimeAdapter {
   private engineCacheProbe: Promise<boolean> | null = null;
 
   private async cachedBuildConfig(config: BuildConfig): Promise<BuildConfig> {
-    if (this.transport.kind === "cloud" && !this.connectionOptions?.executor)
-      throw new AppError(
-        "The managed Cloud build executor is unavailable. Recover the Cloud space before retrying.",
-        503,
-        "CLOUD_BUILD_EXECUTOR_UNAVAILABLE",
-      );
+    const executor = this.managedBuildCacheExecutor();
     if (config.buildCache === false || process.env.OPENSHIP_BUILD_CACHE_MOUNTS === "false" ||
         config.envVars?.OPENSHIP_BUILD_CACHE_MOUNTS === "false")
       return { ...config, buildCache: false };
-    if (this.connectionOptions?.executor && (this.transport.kind === "ssh" || this.transport.kind === "cloud"))
-      return { ...config, buildCache: await this.remoteBuildKitAvailable() };
+    if (executor) return { ...config, buildCache: await this.remoteBuildKitAvailable() };
     // Do not trade away explicit Engine-API CPU/RAM limits to gain cache mounts.
     if (Object.keys(dockerBuildResourceLimits(config.resources)).length || !this._docker?.version)
       return { ...config, buildCache: false };
@@ -1676,9 +1671,36 @@ export class DockerRuntime implements RuntimeAdapter {
       withKeyedMutex(`docker-build-cache:${this.transport.description}`, work);
   }
 
-  protected async clearManagedProjectBuildCache(projectId: string): Promise<void> {
+  private managedBuildCacheExecutor(): CommandExecutor | undefined {
+    const target = this.connectionOptions?.transport;
+    if (target !== "cloud" && target !== "ssh" && this.transport?.kind !== "cloud" && this.transport?.kind !== "ssh")
+      return undefined;
     const executor = this.connectionOptions?.executor;
+    if (!executor) {
+      if (target === "cloud" || this.transport?.kind === "cloud")
+        throw new AppError("The managed Cloud build executor is unavailable. Recover the Cloud space before retrying.",
+          503, "CLOUD_BUILD_EXECUTOR_UNAVAILABLE");
+      throw new AppError("Remote build protection requires the server's command connection. Reconnect this server before retrying.",
+        503, "BUILD_METADATA_PROTECTION_UNAVAILABLE");
+    }
+    return executor;
+  }
+
+  private buildCacheHostExecutor(executor: CommandExecutor): Promise<CommandExecutor> {
+    return this.connectionOptions?.transport === "ssh" || this.transport?.kind === "ssh"
+      ? protectedBuildCacheHostExecutor(executor) : Promise.resolve(executor);
+  }
+
+  /** Project teardown already owns admission and has removed its workloads.
+   * Build state is disposable independently of application-volume retention. */
+  async cleanupProject(projectId: string, _options?: { wipeVolumes?: boolean }): Promise<void> {
+    await this.clearManagedProjectBuildCache(projectId);
+  }
+
+  protected async clearManagedProjectBuildCache(projectId: string): Promise<void> {
+    const executor = this.managedBuildCacheExecutor();
     if (!executor) return;
+    await this.buildCacheHostExecutor(executor);
     await this.withBuildCacheLock(async () => {
       // An idle BuildKit container still pins its state volume. Teardown owns
       // project admission; stop its worker only after durable commands drain,
@@ -1695,7 +1717,7 @@ export class DockerRuntime implements RuntimeAdapter {
     // for a live build, even when no cache volume exists.
     await currentManagedCommandTracking()?.flush();
     const protection = await this.connectionOptions?.buildCacheProtection?.();
-    return pruneManagedBuildCaches(this.docker, executor, { ...options,
+    return pruneManagedBuildCaches(this.docker, await this.buildCacheHostExecutor(executor), { ...options,
       protectedProjectIds: new Set(protection?.projectIds), protectAll: protection?.all });
   }
 
@@ -1734,14 +1756,66 @@ export class DockerRuntime implements RuntimeAdapter {
 
     const available = await probe;
     // Only a POSITIVE answer is memoized. A transient SSH failure that answered
-    // "false" must not pin every later build on this adapter to the legacy builder —
+    // "false" must not permanently reject every later build on this adapter —
     // that is the probe-memo-poison shape this repo has been bitten by before.
     if (!available) this.buildKitProbe = null;
     return available;
   }
 
+  private async startProtectedBuildWorker(config: BuildConfig, log: BuildLogger, signal?: AbortSignal): Promise<void> {
+    const executor = this.connectionOptions!.executor!;
+    const cacheHost = await this.buildCacheHostExecutor(executor);
+    const buildWorker = projectBuildKitWorker(config.projectId);
+    const builderName = buildWorker.builderName;
+    const limits = dockerBuildResourceLimits(config.resources);
+    const driverOptions = [
+      ...PROTECTED_BUILDKIT_DRIVER_OPTIONS,
+      ...(limits.memory ? [`memory=${limits.memory}`, `memory-swap=${limits.memory}`] : []),
+      ...(limits.cpuquota ? [`cpu-quota=${limits.cpuquota}`, `cpu-period=${limits.cpuperiod}`] : []),
+    ].map(option => `--driver-opt ${sq(option)}`).join(" ");
+    await this.withBuildCacheLock(async () => {
+      signal?.throwIfAborted();
+      await removeProjectBuildKitWorker(executor, config.projectId);
+      await this.assertBuildCacheCommandsStopped(config.projectId);
+      const cleaned = await this.pruneManagedBuildState(executor);
+      if (cleaned.spaceReclaimed) log.log(`Build cache cleanup reclaimed ${cleaned.spaceReclaimed} bytes.\n`);
+      const storage = parseBuildStorage(await cacheHost.exec(DOCKER_BUILD_STORAGE_COMMAND));
+      assertBuildStorage(storage);
+      const reused = await ensureProjectBuildCache(this.docker, config.projectId);
+      const configPath = `/tmp/openship-buildkit-${randomUUID()}.toml`;
+      try {
+        const workerImage = await prepareProtectedBuildKitImage(executor,
+          image => this.prepareDeploymentImage(image, { logger: log }), log.callback);
+        await executor.writeFile(configPath, buildKitCacheConfig(storage));
+        try {
+          await executor.exec(`docker buildx create --name ${sq(builderName)} --node ${sq(buildWorker.nodeName)} --driver docker-container ${driverOptions} --driver-opt ${sq(`image=${workerImage}`)} --buildkitd-flags ${sq("--oci-worker-net=bridge")} --buildkitd-config ${sq(configPath)} --bootstrap`, { timeout: 120_000 });
+        } catch (cause) {
+          throw Object.assign(new AppError("The protected build worker could not start. Check rootful Linux Docker and IPv4/IPv6 packet-filter support; no repository build commands ran.",
+            503, "BUILD_METADATA_PROTECTION_UNAVAILABLE"), { cause });
+        }
+        await touchProjectBuildCache(cacheHost, config.projectId);
+        log.log("Build metadata protection is active inside the project worker.\n");
+        log.log(reused ? "Persistent build cache restored.\n" : "Starting a new persistent build cache.\n");
+      } finally {
+        await executor.exec(`rm -f -- ${sq(configPath)}`);
+      }
+    });
+  }
+
+  private async cleanupProtectedBuildWorker(projectId: string): Promise<void> {
+    const executor = this.connectionOptions!.executor!;
+    // Cancellation may terminate the shell before its EXIT trap. Reconcile the
+    // same project worker without the aborted signal, then retain its cache.
+    await removeProjectBuildKitWorker(executor, projectId);
+    await this.assertBuildCacheCommandsStopped(projectId);
+    await this.withBuildCacheLock(async () => {
+      await this.pruneManagedBuildState(executor);
+      assertBuildStorage(parseBuildStorage(await (await this.buildCacheHostExecutor(executor)).exec(DOCKER_BUILD_STORAGE_COMMAND)));
+    });
+  }
+
   /**
-   * Run native `docker build` on the remote host against an already-transferred
+   * Run the protected project BuildKit worker on the remote host against an already-transferred
    * context dir. One image; `dockerfileName` selects which Dockerfile to use (so N
    * services can build from one transferred tree) and is relative to
    * `remoteBuildDir` — the build CONTEXT, which for a compose service is its own
@@ -1773,101 +1847,30 @@ export class DockerRuntime implements RuntimeAdapter {
     const dockerfileFlag =
       dockerfileName && dockerfileName !== "Dockerfile" ? ` -f ${sq(dockerfileName)}` : "";
 
-    // BuildKit when the box actually has it: `RUN --mount=type=cache`, heredocs and
-    // the rest of the modern Dockerfile syntax only work under it, and the legacy
-    // builder fails those with a bare "the --mount option requires BuildKit".
-    // `--force-rm` is a legacy-builder concept (BuildKit keeps no intermediate
-    // containers to remove), so it goes when BuildKit is on.
-    const buildKit = await this.remoteBuildKitAvailable();
-    if (this.connectionOptions?.transport === "cloud" && !buildKit)
+    if (!await this.remoteBuildKitAvailable())
       throw new AppError(
-        "The managed Cloud BuildKit worker is unavailable. Recover the Cloud space before retrying; the current deployment has not been replaced.",
+        "Remote builds require Docker Buildx and the protected Openship BuildKit worker. Install Buildx on this server before retrying; no repository build commands ran.",
         503,
-        "CLOUD_BUILDKIT_UNAVAILABLE",
+        "BUILD_METADATA_PROTECTION_UNAVAILABLE",
       );
-    // Cloud workers remain project-owned for cancellation and crash recovery.
-    // Apply only the user's explicit CPU/RAM caps; zero dimensions stay uncapped.
-    const cloudLimits = this.connectionOptions?.transport === "cloud" ? dockerBuildResourceLimits(config.resources) : undefined;
-    const isolatedBuildKit = buildKit && cloudLimits !== undefined;
-    const buildWorker = isolatedBuildKit ? projectBuildKitWorker(config.projectId) : undefined;
-    const builderName = buildWorker?.builderName;
-    const removeBuilder = builderName ? `docker buildx rm --force --keep-state ${sq(builderName)}` : undefined;
-    const builderEnv = buildKit ? "DOCKER_BUILDKIT=1 " : "";
-    const ownershipHost = buildKit ? null : newBuildOwnershipHost();
-    // `--progress` is a buildx flag, NOT a docker-build flag: a CLI without the
-    // plugin rejects it outright with `unknown flag: --progress` and exit 125, before
-    // it ever looks at the context. `--force-rm` is the mirror image — a legacy-only
-    // concept (BuildKit keeps no intermediate containers to remove). So the flag set
-    // follows the builder; passing either unconditionally breaks one of the two.
-    const builderFlags = buildKit
-      ? " --progress=plain"
-      : ` --force-rm --add-host ${sq(`${ownershipHost}:127.0.0.1`)}`;
-    if (buildKit) {
-      log.log("Builder: BuildKit (docker buildx detected on the host)");
-    } else if (opts?.requiresBuildKit) {
-      // Said BEFORE the build rather than after it fails: the legacy builder's own
-      // error names a flag, not a fix. Not fatal — the syntax sniff is a heuristic,
-      // and refusing to build on it would be worse than letting docker decide.
-      log.log(
-        "This Dockerfile needs BuildKit, but the build host's docker CLI has no buildx plugin. Install it (`docker-buildx-plugin`, or Docker's official packages) — the build below will use the legacy builder and is likely to fail.",
-        "warn",
-      );
-    } else {
-      log.log(
-        "Builder: legacy (docker buildx not available on the host) — BuildKit-only Dockerfile syntax such as `RUN --mount` will not work",
-      );
-    }
-
-    // `cd` into the CONTEXT dir FIRST so docker resolves `-f` and the context
-    // `.` from the same place (BuildKit otherwise resolves `-f` against the SSH
-    // user's home, not the context).
-    // --progress=plain: over a non-TTY SSH pipe BuildKit's compact auto-progress
-    // prints terse "#N 0.xx" lines and DROPS the failed step's actual stdout/stderr
-    // (an OOM-killed `bun install`, a tsup error, …), so a failed build surfaced only
-    // as a bare "exited with code 1". Plain progress streams every line through.
-    let buildCmd =
-      `cd ${sq(remoteBuildDir)} && ` +
-      `${builderEnv}docker build${builderFlags} -t ${sq(tag)}${dockerfileFlag} ` +
-      `${labelArgs} ${buildArgs} .`;
-    let bootstrapBuilder: (() => Promise<void>) | undefined;
-    if (isolatedBuildKit) {
-      const software = await readSoftwareCache(executor, `${remoteBuildDir}/${dockerfileName || "Dockerfile"}`, signal);
-      if (software.args) log.log("Shared public build images are available; private build cache remains project-owned.\n");
-      else if (software.unavailable) log.log("Shared base images are unavailable on this Cloud space; uncached image layers will download from the registry. Project build cache remains enabled.\n", "warn");
-      const driverOptions = [
-        ...(cloudLimits.memory ? [`memory=${cloudLimits.memory}`, `memory-swap=${cloudLimits.memory}`] : []),
-        ...(cloudLimits.cpuquota ? [`cpu-quota=${cloudLimits.cpuquota}`, `cpu-period=${cloudLimits.cpuperiod}`] : []),
-      ].map(option => `--driver-opt ${sq(option)}`).join(" ");
-      bootstrapBuilder = () => this.withBuildCacheLock(async () => {
-        signal?.throwIfAborted();
-        await removeProjectBuildKitWorker(executor, config.projectId);
-        await this.assertBuildCacheCommandsStopped(config.projectId);
-        const cleaned = await this.pruneManagedBuildState(executor);
-        if (cleaned.spaceReclaimed) log.log(`Build cache cleanup reclaimed ${cleaned.spaceReclaimed} bytes.\n`);
-        const storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
-        assertBuildStorage(storage);
-        const reused = await ensureProjectBuildCache(this.docker, config.projectId);
-        const configPath = `/tmp/openship-buildkit-${randomUUID()}.toml`;
-        try {
-          await executor.writeFile(configPath, buildKitCacheConfig(storage));
-          await executor.exec(`docker buildx create --name ${sq(builderName!)} --node ${sq(buildWorker!.nodeName)} --driver docker-container${driverOptions ? ` ${driverOptions}` : ""} --buildkitd-config ${sq(configPath)} --bootstrap`, { timeout: 120_000 });
-          await touchProjectBuildCache(executor, config.projectId);
-          log.log(reused ? "Persistent build cache restored.\n" : "Starting a new persistent build cache.\n");
-        } finally {
-          await executor.exec(`rm -f -- ${sq(configPath)}`);
-        }
-      });
-      // Bootstrap pins state under the host lock; the build runs outside it.
-      buildCmd = [
-        "set -e",
-        `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
-        `cd ${sq(remoteBuildDir)}`,
-        `docker buildx build --builder ${sq(builderName!)} --load --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
-      ].join("\n");
-      log.log(Object.keys(cloudLimits!).length > 0
-        ? `Build worker limited to ${describeResourceLimits(config.resources)}.\n`
-        : "Build worker uses the server's resources without additional CPU or memory limits.\n");
-    }
+    await requireProtectedBuildHost(executor);
+    await this.buildCacheHostExecutor(executor);
+    const limits = dockerBuildResourceLimits(config.resources);
+    const worker = projectBuildKitWorker(config.projectId);
+    const removeBuilder = `docker buildx rm --force --keep-state ${sq(worker.builderName)}`;
+    const software = await readSoftwareCache(executor, `${remoteBuildDir}/${dockerfileName || "Dockerfile"}`, signal);
+    if (software.args) log.log("Shared public build images are available; private build cache remains project-owned.\n");
+    else if (software.unavailable) log.log("Shared base images are unavailable on this server; uncached image layers will download from the registry. Project build cache remains enabled.\n", "warn");
+    const buildCmd = [
+      "set -e",
+      `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
+      `cd ${sq(remoteBuildDir)}`,
+      `docker buildx build --builder ${sq(worker.builderName)} --load --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
+    ].join("\n");
+    log.log("Builder: protected BuildKit (Docker Buildx)");
+    log.log(Object.keys(limits).length > 0
+      ? `Build worker limited to ${describeResourceLimits(config.resources)}.\n`
+      : "Build worker uses the server's resources without additional CPU or memory limits.\n");
 
     log.log(
       `Running Docker build on remote (${Object.keys(resolvedBuildArgs).length} build argument${Object.keys(resolvedBuildArgs).length === 1 ? "" : "s"}; values hidden).`,
@@ -1880,22 +1883,12 @@ export class DockerRuntime implements RuntimeAdapter {
       "Running install inside container (docker build)",
     );
 
-    // Native SSH builds do not pass Docker's --memory flag, even when the
-    // project has a configured build limit. Keep that distinction explicit so
-    // an exit-137 diagnostic never claims a cap this path did not enforce.
     const diagnosticContext: DockerBuildDiagnosticContext = {
       configuredMemoryMb: config.resources.memoryMb,
-      memoryLimitApplied: Boolean(cloudLimits?.memory),
+      memoryLimitApplied: Boolean(limits.memory),
     };
-    const buildContainerTracker = buildKit
-      ? null
-      : this.remoteLegacyBuildContainerTracker(executor, ownershipHost!);
     const commandAbort = new AbortController();
-    const forwardCancellation = () => {
-      buildContainerTracker?.flush();
-      if (buildContainerTracker) void buildContainerTracker.terminateActive();
-      commandAbort.abort(signal?.reason);
-    };
+    const forwardCancellation = () => commandAbort.abort(signal?.reason);
     if (signal?.aborted) forwardCancellation();
     else signal?.addEventListener("abort", forwardCancellation, { once: true });
 
@@ -1909,8 +1902,6 @@ export class DockerRuntime implements RuntimeAdapter {
       },
       onTimeout: () => {
         timeoutError = dockerBuildIdleTimeoutError(timeoutMs, diagnosticContext);
-        buildContainerTracker?.flush();
-        if (buildContainerTracker) void buildContainerTracker.terminateActive();
         commandAbort.abort(timeoutError);
       },
     });
@@ -1918,26 +1909,13 @@ export class DockerRuntime implements RuntimeAdapter {
     let code: number | null = null;
     let execError: unknown = null;
     try {
-      if (bootstrapBuilder) await bootstrapBuilder();
-      else if (this._docker) {
-        let storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
-        const pressure = storage.freeBytes < buildStorageReserve(storage) || storage.freeInodes === 0;
-        // Bound the native daemon cache between builds as well as in the daily
-        // sweep. Docker protects records leased by other concurrent builds.
-        if (pressure) await this.pruneBuildCache({ all: true, keepStorageBytes: 0 });
-        else await this.retainNativeBuildCache(log);
-        if (pressure) {
-          storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
-        }
-        assertBuildStorage(storage);
-      }
+      await this.startProtectedBuildWorker(config, log, signal);
       signal?.throwIfAborted();
       const result = await executor.streamExec(
         buildCmd,
         (entry) => {
           idleMonitor.progress();
           log.observeBuildOutput(entry.message, entry.level);
-          buildContainerTracker?.observeChunk(entry.message);
           streamedFailureHint = chooseDockerBuildFailureHint(
             streamedFailureHint,
             this.extractBuildFailureHint(entry.message, diagnosticContext),
@@ -1954,18 +1932,8 @@ export class DockerRuntime implements RuntimeAdapter {
       execError = error;
     } finally {
       idleMonitor.stop();
-      buildContainerTracker?.flush();
       signal?.removeEventListener("abort", forwardCancellation);
-      if (removeBuilder) {
-        // Cancellation can terminate the remote shell before its EXIT trap.
-        // Retry the same project's worker cleanup without the aborted signal.
-        await removeProjectBuildKitWorker(executor, config.projectId);
-        await this.assertBuildCacheCommandsStopped(config.projectId);
-        await this.withBuildCacheLock(async () => {
-          await this.pruneManagedBuildState(executor);
-          assertBuildStorage(parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND)));
-        });
-      }
+      await this.cleanupProtectedBuildWorker(config.projectId);
     }
 
     log.log("─── end docker build output ───");
@@ -1974,23 +1942,18 @@ export class DockerRuntime implements RuntimeAdapter {
     // different: surface it as a cancelled BuildResult instead of continuing
     // through image verification and deploy.
     if (timeoutError) {
-      await stopTrackedBuildContainer(buildContainerTracker, log, "timed-out");
       throw timeoutError;
     }
     if (signal?.aborted) {
-      await stopTrackedBuildContainer(buildContainerTracker, log, "interrupted");
       throw new BuildCancelledError();
     }
     if (execError) {
-      await stopTrackedBuildContainer(buildContainerTracker, log, "interrupted");
       throw execError;
     }
     if (code === null) {
-      await stopTrackedBuildContainer(buildContainerTracker, log, "interrupted");
       throw new Error("docker build ended without an exit code");
     }
     if (code !== 0) {
-      await stopTrackedBuildContainer(buildContainerTracker, log, "interrupted");
       throw new Error(dockerBuildExitMessage(code, streamedFailureHint, diagnosticContext));
     }
     this.emitDockerStep(log, "install", "completed", "Image build finished");
@@ -2386,44 +2349,9 @@ export class DockerRuntime implements RuntimeAdapter {
     );
   }
 
-  /** Same proof model as the Engine-API tracker, using the already-live SSH executor. */
-  private remoteLegacyBuildContainerTracker(
-    executor: CommandExecutor,
-    ownershipHost: string,
-  ): LegacyBuildContainerTracker {
-    return new LegacyBuildContainerTracker(
-      {
-        inspect: async (id) => {
-          try {
-            const output = await executor.exec(`docker container inspect ${sq(id)}`);
-            const parsed: unknown = JSON.parse(output);
-            return Array.isArray(parsed) && parsed[0] && typeof parsed[0] === "object"
-              ? (parsed[0] as LegacyBuildContainerInspect)
-              : null;
-          } catch (error) {
-            if (/No such (?:object|container)|not found/i.test(safeErrorMessage(error)))
-              return null;
-            throw error;
-          }
-        },
-        kill: async (id) => {
-          await executor.exec(`docker container kill --signal KILL ${sq(id)} >/dev/null`);
-        },
-      },
-      // The native CLI path intentionally applies no OpenShip memory flag.
-      undefined,
-      ownershipHost,
-    );
-  }
-
   /**
-   * Dockerode build path. Used for local socket and TCP transports, plus
-   * SSH transports that didn't get an executor wired in (shouldn't happen
-   * in normal operation but kept as a safety net).
-   *
-   * This path is slower for SSH (HTTP-over-SSH upload has no streaming),
-   * but it's correct for local/TCP where there's no separate SSH
-   * connection to piggyback on.
+   * Engine-API build path for local socket and TCP transports. Remote server
+   * builds require an executor and the protected BuildKit worker instead.
    */
   private async buildViaDockerode(
     config: BuildConfig,
@@ -4567,6 +4495,7 @@ export class DockerRuntime implements RuntimeAdapter {
    * Cloud builds use isolated project workers; their collector checks ownership,
    * attachments and pending commands under the same lock as worker bootstrap.
    *
+   * SSH uses the same managed collector; its legacy daemon state stays separate.
    * Native build cache belongs to the DAEMON, not to a project: intermediate records
    * do not reliably retain OpenShip's final-image labels. Callers therefore own
    * the host-wide policy (bounded automatic retention vs an explicit full
@@ -4585,19 +4514,14 @@ export class DockerRuntime implements RuntimeAdapter {
       throw new RangeError("keepStorageBytes must be a non-negative safe integer");
     }
 
-    if (this.connectionOptions?.transport === "cloud") {
-      const executor = this.connectionOptions.executor;
-      if (!executor)
-        throw new AppError(
-          "The managed Cloud build executor is unavailable. Recover the Cloud space before retrying.",
-          503,
-          "CLOUD_BUILD_EXECUTOR_UNAVAILABLE",
-        );
+    const executor = this.managedBuildCacheExecutor();
+    if (executor) {
       if (Object.keys(options.filters ?? {}).length)
         throw new AppError(
-          "Docker Engine cache filters cannot be applied to managed Cloud project caches.",
+          "Docker Engine cache filters cannot be applied to managed project caches.",
           400,
-          "CLOUD_BUILD_CACHE_FILTER_UNSUPPORTED",
+          this.connectionOptions?.transport === "cloud" || this.transport?.kind === "cloud"
+            ? "CLOUD_BUILD_CACHE_FILTER_UNSUPPORTED" : "BUILD_CACHE_FILTER_UNSUPPORTED",
         );
       return this.withBuildCacheLock(() => {
         options.abortSignal?.throwIfAborted();
