@@ -32,6 +32,9 @@ vi.mock("@repo/db", () => ({
   },
 }));
 vi.mock("@repo/platform/engine/modules/deployments/compose/build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
+vi.mock("@repo/platform/engine/modules/deployments/compose/required-env-preflight", () => ({
+  assertRequiredServiceEnvironment: async () => {},
+}));
 vi.mock("@repo/platform/engine/modules/deployments/compose/deploy.service", () => ({ deployComposeServices: mocks.deployComposeServices }));
 vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
   cleanupBuildArtifact: mocks.cleanupBuildArtifact,

@@ -76,7 +76,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
 }) => {
   const { t } = useI18n();
   const deployment = useOptionalDeployment();
-  const { baseDomain } = usePlatform();
+  const { baseDomain, selfHosted } = usePlatform();
   const w = t.widgets.routing.publicEndpoints;
   const hasMultipleEndpoints = endpoints.length > 1;
   const primaryId = endpoints.find((endpoint) => !endpoint.redirectTo)?.id;
@@ -210,7 +210,7 @@ const PublicEndpointsCard: React.FC<PublicEndpointsCardProps> = ({
     <RouteProtectionButton
       hostname={endpointHostname(endpoint)}
       projectId={deployment.config.projectId}
-      unsupported={deployment.config.deployTarget === "cloud" || deployment.config.deployTarget === "cluster" || endpoint.domainType !== "custom" || endpointHostname(endpoint).startsWith("*.")}
+      unsupported={!selfHosted || deployment.config.deployTarget === "cloud" || deployment.config.deployTarget === "cluster" || endpoint.domainType !== "custom" || endpointHostname(endpoint).startsWith("*.")}
       draft={endpoint.protectionDraft}
       onDraftChange={(protectionDraft) => handleEndpointChange(endpoint.id, { protectionDraft })}
     />
