@@ -202,6 +202,40 @@ void app.whenReady().then(async () => {
       await popup.webContents.executeJavaScript("document.querySelector('iframe').srcdoc"),
       /<td>&lt;script&gt;fetch/,
     );
+    popup.webContents.debugger.attach("1.3");
+    try {
+      // Script execution is disabled in this frame, so inspect its rendered DOM
+      // over DevTools rather than relaxing the production sandbox for the test.
+      const { targetInfos } = (await popup.webContents.debugger.sendCommand(
+        "Target.getTargets",
+      )) as {
+        targetInfos: { targetId: string; type: string; url: string }[];
+      };
+      const target = targetInfos.find(
+        (target) => target.type === "iframe" && target.url === "about:srcdoc",
+      );
+      assert.ok(target);
+      const { sessionId } = await popup.webContents.debugger.sendCommand("Target.attachToTarget", {
+        targetId: target.targetId,
+        flatten: true,
+      });
+      const { root } = await popup.webContents.debugger.sendCommand(
+        "DOM.getDocument",
+        {},
+        sessionId,
+      );
+      const { nodeIds } = await popup.webContents.debugger.sendCommand(
+        "DOM.querySelectorAll",
+        {
+          nodeId: root.nodeId,
+          selector: "td",
+        },
+        sessionId,
+      );
+      assert.equal(nodeIds.length, 6, "The sandboxed preview renders the CSV cells");
+    } finally {
+      popup.webContents.debugger.detach();
+    }
     await new Promise((resolve) => setTimeout(resolve, 300));
     await closeViewer(popup);
     assert.equal(executions, 0, "No attachment script ran in the webmail origin");
