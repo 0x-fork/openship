@@ -20,15 +20,31 @@ const state = vi.hoisted(() => ({
   register: vi.fn(),
   dispose: vi.fn(),
   hostAdmission: vi.fn(),
+  preview: null as Record<string, unknown> | null,
+  source: null as Record<string, unknown> | null,
+  sourceRow: null as Record<string, unknown> | null,
+  enqueue: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
   repos: {
-    project: { findById: async () => state.project },
-    domain: { findByHostname: async () => state.domain },
+    project: {
+      findById: async (id: string) => id === "source" ? state.source : state.project,
+      findByIdInOrganization: async (id: string, org: string) => {
+        const value = id === "source" ? state.source : state.project;
+        return value?.organizationId === org ? value : null;
+      },
+    },
+    pullRequestPreview: {
+      findByProject: async () => state.preview,
+      list: async () => state.preview ? [state.preview] : [],
+      enqueue: state.enqueue,
+    },
+    domain: { findByHostname: async (hostname: string) => hostname === "dev.test"
+      ? { ...state.domain, projectId: "source" } : state.domain },
     server: { getInOrganization: async () => null },
     routeProtection: {
       list: async () => (state.row ? [state.row] : []),
-      readPrivate: async () => state.row,
+      readPrivate: async (id: string) => id === "source" ? state.sourceRow : state.row,
       save: state.save,
       markApplied: state.markApplied,
     },
@@ -64,6 +80,7 @@ import {
   changeRouteProtection,
   assertRouteProtectionTarget,
   listRouteProtection,
+  readPreviewRouteProtection,
 } from "@repo/platform/engine/lib/route-protection";
 import {
   createProjectRouteRegistrar,
@@ -81,9 +98,15 @@ const policy = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  state.save.mockReset();
   state.target = "local";
   state.cloud = false;
   state.active = true;
+  state.preview = null;
+  state.source = null;
+  state.sourceRow = null;
+  delete state.project.environmentType;
+  delete state.project.previewSettings;
   state.project.organizationId = "org";
   state.project.deletionInProgress = false;
   state.domain.projectId = "proj";
@@ -97,6 +120,84 @@ beforeEach(() => {
   state.setProtection.mockResolvedValue(true);
   state.register.mockResolvedValue(undefined);
   state.hostAdmission.mockResolvedValue(undefined);
+});
+
+describe("native preview password inheritance", () => {
+  function preview() {
+    state.project.environmentType = "preview";
+    state.preview = { sourceProjectId: "source", projectId: "proj", organizationId: "org" };
+    state.source = {
+      ...state.project,
+      id: "source",
+      environmentType: "development",
+      previewSettings: { enabled: true, comments: false, baseDomain: "preview.test", protectionHostname: "dev.test" },
+    };
+    state.sourceRow = { ...state.row, hostname: "dev.test", revision: "source-v1" };
+    state.row = null;
+    state.save.mockImplementation(async (projectId, hostname, revision, secret) => {
+      if (projectId === "proj") state.row = { hostname, revision, secret, enabled: secret !== null, appliedRevision: null };
+    });
+  }
+
+  it("persists a separate child session key before first publication and reuses it on retries", async () => {
+    preview();
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    const saved = JSON.parse(state.row!.secret as string);
+    expect(saved.verifier).toBe(policy.verifier);
+    expect(saved.salt).toBe(policy.salt);
+    expect(saved.signingKey).not.toBe(policy.signingKey);
+    expect(saved.version).not.toBe(policy.version);
+    expect(state.save.mock.invocationCallOrder[0]).toBeLessThan(state.register.mock.invocationCallOrder[0]!);
+    expect(state.register).toHaveBeenCalledWith(expect.objectContaining({ protection: saved }));
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    expect(state.save).toHaveBeenCalledTimes(1);
+    expect(state.register.mock.calls[1]![0].protection).toEqual(saved);
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, { ...route, domain: "second.preview.test" });
+    expect(state.register.mock.calls[2]![0].protection.signingKey).not.toBe(saved.signingKey);
+  });
+
+  it("denies publication when a secret is missing, ownership is foreign, or the target is unsupported", async () => {
+    preview();
+    state.sourceRow!.secret = null;
+    await expect(registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route))
+      .rejects.toMatchObject({ code: "ROUTE_PROTECTION_SECRET_MISSING" });
+    expect(state.register).not.toHaveBeenCalled();
+    state.source!.organizationId = "another-org";
+    await expect(registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route))
+      .rejects.toMatchObject({ code: "PREVIEW_ROUTE_PROTECTION_REQUIRED" });
+    expect(state.save).not.toHaveBeenCalled();
+    state.source!.organizationId = "org";
+    state.sourceRow!.secret = JSON.stringify(policy);
+    state.target = "cloud";
+    await expect(registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route))
+      .rejects.toMatchObject({ code: "ROUTE_PROTECTION_UNSUPPORTED" });
+    expect(state.register).not.toHaveBeenCalled();
+  });
+
+  it("rotates inherited sessions when the source revision changes and prevents a child unlock", async () => {
+    preview();
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    const oldKey = JSON.parse(state.row!.secret as string).signingKey;
+    state.sourceRow!.revision = "source-v2";
+    await registerProjectRoute({ id: "proj" }, { registerRoute: state.register }, route);
+    expect(JSON.parse(state.row!.secret as string).signingKey).not.toBe(oldKey);
+    await expect(changeRouteProtection(ctx, "proj", { hostname: route.domain, action: "unlock" }))
+      .rejects.toMatchObject({ code: "PREVIEW_ROUTE_PROTECTION_MANAGED" });
+    await expect(changeRouteProtection(ctx, "proj", { hostname: route.domain, action: "revoke" }))
+      .rejects.toMatchObject({ code: "PREVIEW_ROUTE_PROTECTION_MANAGED" });
+    expect(state.setProtection).not.toHaveBeenCalled();
+  });
+
+  it("requires a custom base domain and an enabled source password", async () => {
+    preview();
+    const source = state.source as never;
+    const settings = { enabled: true, comments: false, protectionHostname: "dev.test" };
+    await expect(readPreviewRouteProtection(ctx, source, settings))
+      .rejects.toMatchObject({ code: "PREVIEW_ROUTE_PROTECTION_REQUIRED" });
+    state.sourceRow!.enabled = false;
+    await expect(readPreviewRouteProtection(ctx, source, { ...settings, baseDomain: "preview.test" }))
+      .rejects.toMatchObject({ code: "PREVIEW_ROUTE_PROTECTION_REQUIRED" });
+  });
 });
 
 describe("route protection admission and publication", () => {
