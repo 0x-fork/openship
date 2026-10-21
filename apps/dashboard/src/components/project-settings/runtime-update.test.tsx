@@ -94,7 +94,7 @@ beforeEach(() => {
     data: { deployment_id: "new-deployment", project_id: "project-a" },
   });
   h.check.mockResolvedValue({
-    data: { checkedAt: new Date().toISOString(), images: [image], verification: {} },
+    data: { checkedAt: new Date().toISOString(), images: [image] },
   });
   h.pricing.mockReturnValue(false);
   element = document.createElement("div");
@@ -171,7 +171,6 @@ it.each([
       data: {
         checkedAt: new Date().toISOString(),
         images: [{ ...image, status, currentDigest }],
-        verification: {},
       },
     });
     await act(async () => root.render(<Harness />));
@@ -223,7 +222,7 @@ it("discards a digest check completed after switching services", async () => {
   await act(async () => root.render(<Harness serviceId="node" />));
   await act(async () =>
     pending.resolve({
-      data: { checkedAt: new Date().toISOString(), images: [image], verification: {} },
+      data: { checkedAt: new Date().toISOString(), images: [image] },
     }),
   );
   expect(element.textContent).not.toContain("php:8.4-fpm");
@@ -257,53 +256,4 @@ it("clears old image drift when the active deployment or configuration changes",
   expect(element.textContent).toContain(c.available);
   await act(async () => root.render(<Harness revision="deployment-two" />));
   expect(element.textContent).not.toContain(c.available);
-});
-
-it("shows the last observed deployed PHP version even when image digests are current", async () => {
-  h.check.mockResolvedValue({
-    data: {
-      checkedAt: "2026-10-21T14:00:00Z",
-      images: [{ ...image, status: "current" }],
-      verification: {
-        services: {
-          php: {
-            status: "verified",
-            runtime: "php",
-            version: "8.4.27",
-            checkedAt: "2026-10-21T13:00:00Z",
-            imageId: `sha256:${"a".repeat(64)}`,
-          },
-        },
-      },
-    },
-  });
-  await act(async () => root.render(<Harness />));
-  await menuAction(c.check);
-  expect(element.textContent).toContain(c.lastObserved);
-  expect(element.textContent).toContain("PHP 8.4.27");
-  expect(element.textContent).toContain("sha256:aaaaaaaaaaaa");
-  expect(element.textContent).not.toContain(c.available);
-});
-
-it("shows unavailable verification without presenting an unverified version as observed", async () => {
-  h.check.mockResolvedValue({
-    data: {
-      checkedAt: "2026-10-21T14:00:00Z",
-      images: [],
-      verification: {
-        app: {
-          status: "unavailable",
-          runtime: "go",
-          version: "1.26.1",
-          checkedAt: "2026-10-21T13:00:00Z",
-          reason: "Compiled application",
-        },
-      },
-    },
-  });
-  await act(async () => root.render(<Harness />));
-  await menuAction(c.check);
-  expect(element.textContent).toContain(c.verificationUnavailable);
-  expect(element.textContent).toContain("Compiled application");
-  expect(element.textContent).not.toContain("1.26.1");
 });

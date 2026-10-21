@@ -538,34 +538,6 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
       return rows.length > 0;
     },
 
-    /** Persist a new refresh request without letting an earlier deploy acknowledge it. */
-    async requestBuildCacheRefresh(id: string, organizationId: string): Promise<string | null> {
-      const token = generateId("bcr");
-      const rows = await db
-        .update(project)
-        .set({ buildCacheRefreshToken: token })
-        .where(and(
-          eq(project.id, id), eq(project.organizationId, organizationId), isNull(project.deletedAt),
-        ))
-        .returning();
-      return rows[0]?.buildCacheRefreshToken ?? null;
-    },
-
-    /** Compare-and-set: completion of an older refresh cannot consume a later clear. */
-    async acknowledgeBuildCacheRefresh(
-      id: string, organizationId: string, token: string,
-    ): Promise<boolean> {
-      const rows = await db
-        .update(project)
-        .set({ buildCacheRefreshToken: null })
-        .where(and(
-          eq(project.id, id), eq(project.organizationId, organizationId),
-          eq(project.buildCacheRefreshToken, token), isNull(project.deletedAt),
-        ))
-        .returning();
-      return rows.length > 0;
-    },
-
     async updateByApp(groupId: string, data: Partial<NewProject>) {
       const predicate = and(eq(project.groupId, groupId), isNull(project.deletedAt))!;
       await withProjectConfigurationWrite(db, predicate, async (tx) => tx

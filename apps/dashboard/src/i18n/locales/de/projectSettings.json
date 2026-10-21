@@ -1236,7 +1236,7 @@
   },
   "runtimeUpdates": {
     "options": "Optionen zur erneuten Bereitstellung",
-    "refresh": "Basisimages aktualisieren und neu bereitstellen",
+    "refresh": "Images aktualisieren und erneut bereitstellen",
     "refreshing": "Images werden aktualisiert…",
     "check": "Image-Updates prüfen",
     "title": "Image-Updates",
@@ -1244,10 +1244,8 @@
     "uncertain": "Die Anfrage hat das Zeitlimit überschritten. Prüfe vor einem erneuten Versuch den Bereitstellungsverlauf.",
     "available": "Image-Updates verfügbar",
     "current": "Die Image-Digests entsprechen den zuletzt beobachteten Registry-Digests.",
-    "checkUnavailable": "Der Image-Status ist nicht verfügbar. Stelle erneut bereit, um Digests zu erfassen.",
+    "checkUnavailable": "Für den Image-Vergleich sind erfasste Digests und Zugriff auf die Registry erforderlich.",
     "checkFailed": "Image-Updates konnten nicht geprüft werden.",
-    "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren.",
-    "lastObserved": "Zuletzt beobachtete Laufzeit",
-    "verificationUnavailable": "Verifizierung nicht verfügbar"
+    "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
   }
 }

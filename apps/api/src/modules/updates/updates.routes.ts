@@ -73,7 +73,7 @@ r.post(
     body: UpdateProjectSchemas.checkRuntime.input,
     mcp: {
       description:
-        "Check configured image tags and captured build bases against their current registry digests, with recorded deployed runtime verification. Does not deploy.",
+        "Check configured image tags and recorded build bases against their current registry digests. Does not deploy.",
     },
   },
   ctrl.checkRuntime,

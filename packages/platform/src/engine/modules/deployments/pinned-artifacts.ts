@@ -51,7 +51,6 @@ export interface PinnedArtifactSnapshot extends SnapshotClassInput {
   strictServiceScope?: boolean;
   refreshServiceIds?: string[];
   forcePullImages?: boolean;
-  buildCacheRefreshToken?: string;
   roleConfiguration?: unknown;
   webOwnerDeploymentId?: string;
   capacityAdjustment?: { key: string; requestHash: string };
@@ -130,7 +129,6 @@ export function withoutPinnedArtifacts<T extends PinnedArtifactSnapshot>(snapsho
     strictServiceScope: _strictScope,
     refreshServiceIds: _refreshServices,
     forcePullImages: _forcePull,
-    buildCacheRefreshToken: _cacheRefreshToken,
     capacityAdjustment: _capacityAdjustment,
     roleConfiguration: _roleConfiguration,
     webOwnerDeploymentId: _webOwner,

@@ -28,7 +28,6 @@ import {
 } from "../../lib/project-runtime-lock";
 import { resolveDeploymentEnvironment } from "./deployment-environment";
 import { deploymentResourceFailure } from "./resource-failure";
-import { verifyDeployedRuntime } from "./runtime-verification";
 import { recordRuntimeImageReceipts, runtimeImageTrackingRef } from "../../lib/runtime-image-receipts";
 import {
   BUILD_ENV_VARS,
@@ -2941,16 +2940,6 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   metaPatch.runtimeImages = recordRuntimeImageReceipts(priorImageReceipts,
     buildResult.baseImages !== undefined && buildResult.imageRef
       ? [{ imageRef: buildResult.imageRef, baseImages: buildResult.baseImages }] : []);
-  // Observe the interpreter only when the operator requested fresh images.
-  // Ordinary deployments must not incur new container probes or inherit an
-  // observation from a different image in a reused snapshot.
-  metaPatch.runtimeVerification = snapshot.forcePullImages === true ? {
-    app: await verifyDeployedRuntime({
-      runtime, containerId: deployResult.containerId, framework: snapshot.framework,
-      packageManager: snapshot.packageManager, imageRef: buildResult.imageRef,
-      staticFiles: isStaticFileServe, log: (message) => logger.log(message),
-    }),
-  } : {};
   // Image preparation resolves a registry tag to its immutable repo digest.
   // Freeze that exact reference into the successful deployment so a rollback
   // can re-pull the same bytes even after local image retention expires.

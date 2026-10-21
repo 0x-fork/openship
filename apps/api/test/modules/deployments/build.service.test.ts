@@ -699,48 +699,6 @@ describe("triggerDeployment", () => {
     kickoffBuild.mockResolvedValue("session-1");
   });
 
-  it.each([undefined, ["svc-api"]])("refreshes a pending cache clear without widening an explicit scope: %j", async (serviceIds) => {
-    repos.project.findById.mockResolvedValue(baseProject({ buildCacheRefreshToken: "clear-token" }));
-    repos.service.listByProject.mockResolvedValue([
-      { id: "svc-api", name: "api", enabled: true, advanced: null },
-      { id: "svc-db", name: "db", enabled: true, advanced: null },
-    ]);
-    const actual = await vi.importActual<typeof import("@repo/platform/engine/modules/deployments/smart-route")>(
-      "@repo/platform/engine/modules/deployments/smart-route",
-    );
-    resolveSmartRoute.mockImplementation(actual.resolveSmartRoute);
-    await triggerDeployment(ctx, { projectId: "project-1", smartRoute: true, forceAll: true, serviceIds });
-    const queued = repos.deployment.create.mock.calls.at(-1)?.[0];
-    expect(queued).toMatchObject({ forceAll: !serviceIds,
-      meta: { forcePullImages: true, buildCacheRefreshToken: "clear-token" } });
-    expect(queued.meta.targetServiceIds).toEqual(serviceIds);
-    expect(queued.meta.refreshServiceIds).toBeUndefined();
-    if (serviceIds) expect(queued.meta.strictServiceScope).toBe(true);
-  });
-
-  it.each(["rollback", "manual"])("retained snapshots do not consume a pending cache clear (%s)", async (trigger) => {
-    repos.project.findById.mockResolvedValue(baseProject({ buildCacheRefreshToken: "clear-token" }));
-    await triggerDeployment(ctx, { projectId: "project-1", trigger, reuseSnapshot: {
-      meta: { ...baseSnapshot(), forcePullImages: true, buildCacheRefreshToken: "old-token",
-        handoverImages: { web: "sha256:pinned" } }, envVars: null,
-    } });
-    const meta = repos.deployment.create.mock.calls.at(-1)?.[0]?.meta;
-    expect(meta.handoverImages).toEqual({ web: "sha256:pinned" });
-    expect(meta).not.toHaveProperty("forcePullImages");
-    expect(meta).not.toHaveProperty("buildCacheRefreshToken");
-  });
-
-  it("does not inherit a cache-clear token or pull hint after that intent was acknowledged", async () => {
-    const active = { id: "old", projectId: "project-1", organizationId: "org-1",
-      meta: { ...baseSnapshot(), forcePullImages: true, buildCacheRefreshToken: "acknowledged-token" } };
-    repos.project.findById.mockResolvedValue(baseProject({ activeDeploymentId: active.id }));
-    repos.deployment.findById.mockResolvedValue(active);
-    await triggerDeployment(ctx, { projectId: "project-1" });
-    const meta = repos.deployment.create.mock.calls.at(-1)?.[0]?.meta;
-    expect(meta).not.toHaveProperty("forcePullImages");
-    expect(meta).not.toHaveProperty("buildCacheRefreshToken");
-  });
-
   it.each(
     ["manual", "retry", "latest retry"].flatMap((entry) =>
       ["compose", "single"].map((mode) => ({ entry, mode })),
@@ -2010,7 +1968,6 @@ describe("triggerDeployment", () => {
     repos.project.findById.mockResolvedValue(
       baseProject({
         activeDeploymentId: "dep-live",
-        buildCacheRefreshToken: "pending-clear",
         framework: "nextjs",
         gitProvider: "github",
         gitUrl: "https://github.com/acme/app.git",
@@ -2052,8 +2009,6 @@ describe("triggerDeployment", () => {
     const meta = repos.deployment.create.mock.calls.at(-1)?.[0]?.meta;
     expect(meta.targetServiceIds).toBeUndefined();
     expect(meta.refreshServiceIds).toBeUndefined();
-    expect(meta.forcePullImages).toBeUndefined();
-    expect(meta.buildCacheRefreshToken).toBeUndefined();
   });
 
   it.each([
@@ -2208,31 +2163,6 @@ describe("redeployBuildSession environment snapshot", () => {
     expect(repos.project.getEnvMap).not.toHaveBeenCalled();
     expect(repos.deployment.create).not.toHaveBeenCalled();
     expect(kickoffBuild).not.toHaveBeenCalled();
-  });
-
-  it.each([false, true])("captures a pending cache clear when retrying a source build (same commit: %s)", async (useExistingCommit) => {
-    repos.project.findById.mockResolvedValue(baseProject({ activeDeploymentId: "dep-old", buildCacheRefreshToken: "pending-clear" }));
-    await redeployBuildSession(ctx, "dep-old", { useExistingCommit });
-    expect(repos.deployment.create).toHaveBeenCalledWith(expect.objectContaining({
-      forceAll: true,
-      meta: expect.objectContaining({ forcePullImages: true, buildCacheRefreshToken: "pending-clear" }),
-    }));
-  });
-
-  it("preserves the exact release-image retry while a cache clear is pending", async () => {
-    const frozenImage = `ghcr.io/acme/app@sha256:${"a".repeat(64)}`;
-    const old = await repos.deployment.findById();
-    repos.project.findById.mockResolvedValue(baseProject({ activeDeploymentId: "dep-old", buildCacheRefreshToken: "pending-clear",
-      gitProvider: "release", gitUrl: null, localPath: null, hasBuild: false,
-      releaseSource: { mode: "github", repo: "acme/app", artifactKind: "image", imageTemplate: "ghcr.io/acme/app:{{tag}}" },
-    }));
-    repos.deployment.findById.mockResolvedValue({ ...old, meta: { ...baseSnapshot(), releaseImageRef: frozenImage } });
-    await redeployBuildSession(ctx, "dep-old", { useExistingCommit: true });
-    const queued = repos.deployment.create.mock.calls.at(-1)?.[0];
-    expect(queued.forceAll).not.toBe(true);
-    expect(queued.meta.releaseImageRef).toBe(frozenImage);
-    expect(queued.meta).not.toHaveProperty("forcePullImages");
-    expect(queued.meta).not.toHaveProperty("buildCacheRefreshToken");
   });
 
   it("uses current project env and keeps service scopes out of the flat snapshot", async () => {
@@ -2567,20 +2497,6 @@ describe("requestBuildAccess — folder-upload compose services", () => {
     expect(repos.service.reconcileFromCompose).not.toHaveBeenCalled();
     expect(repos.service.syncFromCompose).not.toHaveBeenCalled();
     expect(repos.deployment.create).not.toHaveBeenCalled();
-  });
-
-  it.each([undefined, ["svc-api"]])("captures cache-clear intent through wizard admission at its requested scope: %j", async (serviceIds) => {
-    const uploadSessionId = seedSession();
-    repos.project.findById.mockResolvedValue(baseProject({ gitProvider: "upload", localPath: null, runtimeMode: null,
-      buildCacheRefreshToken: "pending-clear" }));
-    repos.service.listByProject.mockResolvedValue([{ id: "svc-api", projectId: "project-1", kind: "compose",
-      enabled: true, ...scannedServices[0] }]);
-    await requestBuildAccess(ctx, { projectId: "project-1", uploadSessionId, serviceIds });
-    const queued = repos.deployment.create.mock.calls.at(-1)?.[0];
-    expect(queued).toMatchObject({ forceAll: !serviceIds,
-      meta: { forcePullImages: true, buildCacheRefreshToken: "pending-clear" } });
-    expect(queued.meta.targetServiceIds).toEqual(serviceIds);
-    if (serviceIds) expect(queued.meta.strictServiceScope).toBe(true);
   });
 
   it("adopts the session's scanned services when the caller sent none", async () => {
@@ -3080,8 +2996,6 @@ describe("requestBuildAccess — folder-upload compose services", () => {
 
   it("accepts migration handover pins only through the internal options", async () => {
     const uploadSessionId = seedSession();
-    repos.project.findById.mockResolvedValue(baseProject({ gitProvider: "upload", localPath: null, runtimeMode: null,
-      buildCacheRefreshToken: "pending-clear" }));
 
     await requestBuildAccess(
       ctx,
@@ -3100,9 +3014,6 @@ describe("requestBuildAccess — folder-upload compose services", () => {
         }),
       }),
     );
-    const meta = repos.deployment.create.mock.calls.at(-1)?.[0]?.meta;
-    expect(meta).not.toHaveProperty("forcePullImages");
-    expect(meta).not.toHaveProperty("buildCacheRefreshToken");
   });
 
   it("ignores handover pins injected into the public request body", async () => {

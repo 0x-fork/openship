@@ -116,7 +116,16 @@
     "removeReleaseCommand": "Remover comando {number}",
     "runtimeImageLabel": "Imagem de execução",
     "runtimeImageDesc": "Imagem base de produção opcional para Docker. Deve ser compatível com o runtime e a receita gerada; deixe em branco para usar o padrão.",
-    "staticPathHint": "Servido como arquivos estáticos a partir da borda — nada é executado como processo."
+    "staticPathHint": "Servido como arquivos estáticos a partir da borda — nada é executado como processo.",
+    "runtimeTitle": "Ambiente de execução",
+    "runtimeDesc": "Escolha a imagem que executa a app. Atualizar imagens mantém a versão e os digests fixados.",
+    "runtimeBareDesc": "Esta app executa diretamente no servidor. Gira aí o ambiente instalado.",
+    "runtimeStaticDesc": "A imagem de compilação prepara os ficheiros estáticos. Nenhum ambiente da app é executado após a implementação.",
+    "runtimeDockerfileDesc": "O seu Dockerfile define a imagem de execução.",
+    "runtimeServicesDesc": "Escolha as imagens de execução de cada serviço em Serviços.",
+    "runtimePrebuiltDesc": "A imagem da aplicação selecionada inclui o seu ambiente de execução.",
+    "runtimeOverrideUnused": "Estas substituições guardadas não se aplicam a esta implementação. Limpe-as antes de guardar.",
+    "clearRuntimeOverrides": "Limpar substituições guardadas"
   },
   "projectSettings": {
     "framework": "Framework",

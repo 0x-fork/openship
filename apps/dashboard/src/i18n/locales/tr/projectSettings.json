@@ -1236,7 +1236,7 @@
   },
   "runtimeUpdates": {
     "options": "Yeniden dağıtım seçenekleri",
-    "refresh": "Temel imajları yenile ve yeniden dağıt",
+    "refresh": "İmajları yenile ve yeniden dağıt",
     "refreshing": "İmajlar yenileniyor…",
     "check": "İmaj güncellemelerini denetle",
     "title": "İmaj güncellemeleri",
@@ -1244,10 +1244,8 @@
     "uncertain": "İstek zaman aşımına uğradı. Yeniden denemeden önce dağıtım geçmişini kontrol edin.",
     "available": "İmaj güncellemeleri mevcut",
     "current": "İmaj özetleri kayıt defterinde son gözlenen özetlerle eşleşiyor.",
-    "checkUnavailable": "İmaj durumu kullanılamıyor. İmaj özetlerini kaydetmek için yeniden dağıtın.",
+    "checkUnavailable": "Karşılaştırma için kayıtlı özetler ve kayıt deposuna erişim gerekir.",
     "checkFailed": "İmaj güncellemeleri denetlenemedi.",
-    "pinned": "İmajlar özetle sabitlenmiş. Güncellemek için yapılandırılan referansı düzenleyin.",
-    "lastObserved": "Son gözlenen çalışma zamanı",
-    "verificationUnavailable": "Doğrulama kullanılamıyor"
+    "pinned": "İmajlar özetle sabitlenmiş. Güncellemek için yapılandırılan referansı düzenleyin."
   }
 }

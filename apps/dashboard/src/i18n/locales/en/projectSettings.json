@@ -1236,7 +1236,7 @@
   },
   "runtimeUpdates": {
     "options": "Redeploy options",
-    "refresh": "Refresh base images & redeploy",
+    "refresh": "Refresh images & redeploy",
     "refreshing": "Refreshing images…",
     "check": "Check image updates",
     "title": "Image updates",
@@ -1244,10 +1244,8 @@
     "uncertain": "The request timed out. Check deployment history before trying again.",
     "available": "Image updates available",
     "current": "Image digests match the latest observed registry digests.",
-    "checkUnavailable": "Image update status is unavailable. Redeploy to record image digests.",
+    "checkUnavailable": "Image comparison needs recorded digests and registry access.",
     "checkFailed": "Could not check image updates.",
-    "pinned": "Images are pinned by digest. Edit the configured reference to update them.",
-    "lastObserved": "Last observed runtime",
-    "verificationUnavailable": "Verification unavailable"
+    "pinned": "Images are pinned by digest. Edit the configured reference to update them."
   }
 }

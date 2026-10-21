@@ -14,19 +14,6 @@ const RuntimeScopeSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-const RuntimeVerificationSchema = Type.Object({
-  status: Type.Union([
-    Type.Literal("verified"),
-    Type.Literal("unavailable"),
-    Type.Literal("error"),
-  ]),
-  runtime: nullableString,
-  version: nullableString,
-  checkedAt: Type.String(),
-  imageRef: Type.Optional(nullableString),
-  imageId: Type.Optional(nullableString),
-  reason: Type.Optional(Type.String()),
-});
 export const RuntimeImageCheckResultSchema = Type.Object({
   checkedAt: Type.String(),
   images: Type.Array(
@@ -45,10 +32,6 @@ export const RuntimeImageCheckResultSchema = Type.Object({
       ]),
     }),
   ),
-  verification: Type.Object({
-    app: Type.Optional(RuntimeVerificationSchema),
-    services: Type.Optional(Type.Record(Type.String(), RuntimeVerificationSchema)),
-  }),
 });
 export const ProjectUpdateSchema = Type.Object({
   projectId: Type.String(),

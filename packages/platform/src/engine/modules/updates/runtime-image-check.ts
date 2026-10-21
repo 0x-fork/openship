@@ -1,9 +1,4 @@
-import { Value } from "@sinclair/typebox/value";
-import {
-  RuntimeImageCheckResultSchema,
-  type RuntimeImageCheckResult,
-  type UpdateRuntimeInput,
-} from "@repo/contracts";
+import type { RuntimeImageCheckResult, UpdateRuntimeInput } from "@repo/contracts";
 import {
   digestSha,
   isMutableImageRef,
@@ -168,24 +163,8 @@ export async function checkProjectRuntimeImages(
     reportCaughtError(error, "platform/engine/modules/updates/runtime-image-check");
   });
 
-  const rawVerification = meta.runtimeVerification;
-  const verification: RuntimeImageCheckResult["verification"] = Value.Check(
-    RuntimeImageCheckResultSchema.properties.verification,
-    rawVerification,
-  )
-    ? rawVerification
-    : {};
   return {
     checkedAt: new Date().toISOString(),
     images,
-    verification: input.serviceIds
-      ? {
-          services: Object.fromEntries(
-            Object.entries(verification.services ?? {}).filter(([id]) =>
-              input.serviceIds!.includes(id),
-            ),
-          ),
-        }
-      : verification,
   };
 }

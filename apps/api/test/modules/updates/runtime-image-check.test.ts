@@ -89,7 +89,7 @@ async function clients(owner: SeededOwner) {
   ];
 }
 
-it("compares recorded source bases independently of newer Git commits and returns actual version observations", async () => {
+it("compares recorded source image bases independently of newer Git commits", async () => {
   const { owner, project, deployment } = await fixture();
   await setMeta(deployment.id, {
     runtimeImages: {
@@ -99,18 +99,10 @@ it("compares recorded source bases independently of newer Git commits and return
       ],
       artifacts: { app: deployment.imageRef },
     },
-    runtimeVerification: {
-      app: {
-        status: "verified",
-        runtime: "php",
-        version: "8.4.27",
-        imageId: NEW,
-        checkedAt: new Date().toISOString(),
-      },
-    },
   });
   for (const client of await clients(owner)) {
     const result = await client.checkRuntime(project.id);
+    expect(Object.keys(result).sort()).toEqual(["checkedAt", "images"]);
     expect(result.images).toMatchObject([
       {
         ref: "php:8.4-cli-bookworm",
@@ -120,11 +112,6 @@ it("compares recorded source bases independently of newer Git commits and return
       },
       { ref: "dunglas/frankenphp:1-php8.4-bookworm", currentDigest: NEW, status: "current" },
     ]);
-    expect(result.verification.app).toMatchObject({
-      runtime: "php",
-      version: "8.4.27",
-      imageId: NEW,
-    });
   }
   expect(registry.digest).toHaveBeenCalledWith("php:8.4-cli-bookworm", { refresh: true });
 });
@@ -149,7 +136,7 @@ it("does not claim a source base is current when its deployed baseline is missin
   }
 });
 
-it("scopes checks to one image service, preserves pins and filters sibling verification", async () => {
+it("scopes checks to one image service and preserves digest pins", async () => {
   const { owner, project, deployment } = await fixture();
   const web = await repos.service.create({
     projectId: project.id,
@@ -169,30 +156,11 @@ it("scopes checks to one image service, preserves pins and filters sibling verif
     imageRef: web.image,
     imageDigest: `docker.io/library/wordpress@${OLD}`,
   });
-  await setMeta(deployment.id, {
-    runtimeVerification: {
-      services: {
-        [web.id]: {
-          status: "verified",
-          runtime: "php",
-          version: "8.3.36",
-          checkedAt: new Date().toISOString(),
-        },
-        [pinned.id]: {
-          status: "unavailable",
-          runtime: null,
-          version: null,
-          checkedAt: new Date().toISOString(),
-        },
-      },
-    },
-  });
   for (const client of await clients(owner)) {
     const result = await client.checkRuntime(project.id, { serviceIds: [web.id] });
     expect(result.images).toMatchObject([
       { serviceId: web.id, currentDigest: OLD, status: "update_available" },
     ]);
-    expect(Object.keys(result.verification.services ?? {})).toEqual([web.id]);
     const fixed = await client.checkRuntime(project.id, { serviceIds: [pinned.id] });
     expect(fixed.images).toMatchObject([{ status: "pinned", latestDigest: null }]);
   }

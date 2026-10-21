@@ -1236,7 +1236,7 @@
   },
   "runtimeUpdates": {
     "options": "Opções de reimplantação",
-    "refresh": "Atualizar imagens base e reimplantar",
+    "refresh": "Atualizar imagens e reimplantar",
     "refreshing": "Atualizando imagens…",
     "check": "Verificar atualizações de imagens",
     "title": "Atualizações de imagens",
@@ -1244,10 +1244,8 @@
     "uncertain": "O tempo da solicitação esgotou. Verifique o histórico de implantações antes de tentar novamente.",
     "available": "Atualizações de imagens disponíveis",
     "current": "Os digests das imagens correspondem aos últimos observados no registro.",
-    "checkUnavailable": "O estado das imagens está indisponível. Reimplante para registrar seus digests.",
+    "checkUnavailable": "A comparação exige digests registrados e acesso ao registro.",
     "checkFailed": "Não foi possível verificar atualizações de imagens.",
-    "pinned": "As imagens estão fixadas por digest. Edite a referência configurada para atualizá-las.",
-    "lastObserved": "Último ambiente observado",
-    "verificationUnavailable": "Verificação indisponível"
+    "pinned": "As imagens estão fixadas por digest. Edite a referência configurada para atualizá-las."
   }
 }

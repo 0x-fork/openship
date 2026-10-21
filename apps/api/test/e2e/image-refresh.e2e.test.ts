@@ -45,7 +45,7 @@ describeDockerE2E("refreshing cached Docker base images", () => {
     if (root) await rm(root, { recursive: true, force: true });
   });
 
-  it("clear-cache plus requested refresh replaces a stale tagged base without changing the tag", async () => {
+  it("explicit refresh replaces a stale tagged base without clearing build cache or changing the tag", async () => {
     await writeFile(join(root, "Dockerfile"), `FROM scratch\nLABEL ${marker}="old"\n`);
     const stream = await runtime.docker.buildImage(
       { context: root, src: ["Dockerfile"] },
@@ -87,7 +87,6 @@ describeDockerE2E("refreshing cached Docker base images", () => {
     };
     const cached = await build(false);
     expect(cached.Config.Labels?.[marker]).toBe("old");
-    await runtime.pruneBuildCache({ all: true });
     expect((await runtime.docker.getImage(base).inspect()).Config.Labels?.[marker]).toBe("old");
     const refreshed = await build(true);
     expect(refreshed.Config.Labels?.[marker]).toBeUndefined();

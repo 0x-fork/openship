@@ -79,7 +79,7 @@ Applying uses the existing deployment workflow with an update trigger. It return
 IDs, not proof that the new version is ready. [Follow the deployment](/docs/api/deployments#wait-decisions-and-cancellation)
 and handle its final outcome.
 
-## Refresh base images and redeploy
+## Refresh images and redeploy
 
 Use this operation after an image publisher releases a runtime fix under an existing tag. It refreshes
 the configured images, rebuilds source services with fresh base images, and deploys through the normal
@@ -134,7 +134,6 @@ const status = await ship.updates.checkRuntime("proj_123", { serviceIds: ["svc_w
 for (const image of status.images) {
   console.log(image.ref, image.currentDigest, image.latestDigest, image.status);
 }
-console.log(status.verification);
 ```
 
 REST uses `POST /api/updates/:projectId/runtime/check` with the same optional `serviceIds` body.
@@ -143,10 +142,9 @@ with a fresh check of each tracked tag. Source builds record the digests selecte
 Dockerfile bases; older builds and dynamic expressions remain `unknown` until a baseline is available.
 Missing credentials, unreachable registries and missing deployed digests also remain `unknown`.
 
-Image states are `update_available`, `current`, `pinned` and `unknown`. The `verification` object contains
-the interpreter versions and actual image IDs observed after the successful deployment. Its status is
-`verified`, `unavailable` or `error`; unavailable observations never fail deployment or imply a security
-update succeeded. Compiled or minimal images may not expose an interpreter version.
+Image states are `update_available`, `current`, `pinned` and `unknown`. The response contains
+`checkedAt` and `images`; it does not inspect an interpreter or execute commands inside the app.
+A changed digest describes image content, not a security remediation guarantee.
 
 ## Operations
 
@@ -158,6 +156,6 @@ update succeeded. Compiled or minimal images may not expose an interpreter versi
 | Refresh the organization’s update scan. | `updates.scan()` | `POST /api/updates/scan`<br />`updates:write` |
 | Apply an available update to the specified project ID. | `updates.apply(id)` | `POST /api/updates/:projectId/apply`<br />`project:write` |
 | Refresh configured runtime images and rebuild selected services at the deployed source version. | `updates.updateRuntime(id, input?)` | `POST /api/updates/:projectId/runtime`<br />`project:write` |
-| Compare deployed image and captured base digests with the registry and inspect recorded runtime observations. | `updates.checkRuntime(id, input?)` | `POST /api/updates/:projectId/runtime/check`<br />`project:read` |
+| Compare deployed image and recorded base-image digests with the registry. | `updates.checkRuntime(id, input?)` | `POST /api/updates/:projectId/runtime/check`<br />`project:read` |
 
 {/* api-operations:end */}
