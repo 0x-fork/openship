@@ -1832,12 +1832,22 @@ export class DockerRuntime implements RuntimeAdapter {
     executor?: CommandExecutor,
   ): Promise<{ baseImages?: BaseImageReceipt[]; restore: () => Promise<void> }> {
     const unknown = { restore: async () => {} };
+    // An advisory receipt must not turn an ordinary cached build into a registry
+    // update, or eagerly pull bases from stages the builder would never execute.
+    if (!config.refreshBaseImages) return unknown;
     const path = `${contextDir}/${dockerfileName}`;
-    let original: string;
+    let selected: { original: string; pinned: Awaited<ReturnType<typeof pinDockerfileBaseImages>> } | undefined;
     try {
-      signal?.throwIfAborted();
-      if (executor) {
-        original = await executor.exec(`python3 - ${sq(contextDir)} ${sq(path)} <<'OPENSHIP_BASES_PY'
+      // Share one small budget across the whole optional observation. The build's
+      // own --pull remains authoritative when metadata is slow or unavailable.
+      // Keep writes outside the timed promise: a late lookup may not rewrite a
+      // Dockerfile after the builder has already started reading its context.
+      const deadline = Date.now() + 5_000;
+      selected = await withTimeout((async () => {
+        signal?.throwIfAborted();
+        let original: string;
+        if (executor) {
+          original = await executor.exec(`python3 - ${sq(contextDir)} ${sq(path)} <<'OPENSHIP_BASES_PY'
 import os, sys
 root, path = sys.argv[1:]
 if not os.path.islink(path) and os.path.commonpath([os.path.realpath(root), os.path.realpath(path)]) == os.path.realpath(root):
@@ -1846,32 +1856,41 @@ if not os.path.islink(path) and os.path.commonpath([os.path.realpath(root), os.p
     if len(data) <= 1048576:
         print(data.decode('utf-8'), end='')
 OPENSHIP_BASES_PY`, { timeout: 5_000 });
-      } else {
-        const fs = await import("node:fs/promises");
-        const [stat, real, root] = await Promise.all([fs.lstat(path), fs.realpath(path), fs.realpath(contextDir)]);
-        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1_048_576 || !real.startsWith(`${root}/`)) return unknown;
-        original = await fs.readFile(path, "utf8");
-      }
-      const pinned = await pinDockerfileBaseImages(original, async ref => {
-        if (executor) return (await executor.exec(
-          `docker buildx imagetools inspect ${sq(ref)} --format '{{.Manifest.Digest}}'`, { timeout: 10_000 },
-        )).trim();
-        const image = await this.prepareDeploymentImage(ref, { force: config.refreshBaseImages, signal, logger: log });
-        return image.registryDigest?.split("@")[1];
-      }, signal);
-      if (!pinned.baseImages) return unknown;
-      if (pinned.dockerfile === original) return { ...unknown, baseImages: pinned.baseImages };
-      const write = async (contents: string) => {
-        if (executor) await executor.writeFile(path, contents);
-        else await (await import("node:fs/promises")).writeFile(path, contents);
-      };
-      await write(pinned.dockerfile);
-      return { baseImages: pinned.baseImages, restore: () => write(original) };
+        } else {
+          const fs = await import("node:fs/promises");
+          const [stat, real, root] = await Promise.all([fs.lstat(path), fs.realpath(path), fs.realpath(contextDir)]);
+          if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1_048_576 || !real.startsWith(`${root}/`)) return;
+          original = await fs.readFile(path, "utf8");
+        }
+        const pinned = await pinDockerfileBaseImages(original, async ref => {
+          signal?.throwIfAborted();
+          if (Date.now() >= deadline) throw new Error("Base-image observation timed out");
+          if (executor) return (await executor.exec(
+            `docker buildx imagetools inspect ${sq(ref)} --format '{{.Manifest.Digest}}'`,
+            { timeout: Math.max(1, deadline - Date.now()) },
+          )).trim();
+          const image = await this.prepareDeploymentImage(ref, { force: true, signal, logger: log });
+          return image.registryDigest?.split("@")[1];
+        }, signal);
+        return { original, pinned };
+      })(), 5_000, "Base-image observation timed out");
     } catch {
-      // diagnostics-ignore: optional base-image capture preserves ordinary builds with an explicitly unknown baseline; update pull failures surface from the actual builder.
+      // diagnostics-ignore: optional base-image capture leaves an explicitly unknown baseline; update pull failures surface from the actual builder.
       signal?.throwIfAborted();
       return unknown;
     }
+    signal?.throwIfAborted();
+    if (!selected?.pinned.baseImages) return unknown;
+    const { original, pinned } = selected;
+    if (pinned.dockerfile === original) return { ...unknown, baseImages: pinned.baseImages };
+    const write = async (contents: string) => {
+      if (executor) await executor.writeFile(path, contents);
+      else await (await import("node:fs/promises")).writeFile(path, contents);
+    };
+    // Unlike a missing receipt, a failed write can leave a partial Dockerfile.
+    // Stop before the builder instead of silently building those unknown bytes.
+    await write(pinned.dockerfile);
+    return { baseImages: pinned.baseImages, restore: () => write(original) };
   }
 
   private async buildImageOnRemote(
@@ -2435,7 +2454,13 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     cancelSignal?: AbortSignal,
   ): Promise<BaseImageReceipt[] | undefined> {
     log.log(`Streaming build context to Docker daemon - image tag: ${tag}`);
-    const pin = await this.pinBuildBaseImages(config, buildContext.buildContextDir, buildContext.dockerfileName, log, cancelSignal);
+    let pin: Awaited<ReturnType<DockerRuntime["pinBuildBaseImages"]>>;
+    try {
+      pin = await this.pinBuildBaseImages(config, buildContext.buildContextDir, buildContext.dockerfileName, log, cancelSignal);
+    } catch (error) {
+      await buildContext.cleanup();
+      throw error;
+    }
 
     const { body, abortSignal, abort, detachCancellation, takeError } = packBuildContext(
       buildContext.buildContextDir,
@@ -2500,8 +2525,11 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       // buildImage promise resolves as soon as the response starts, while tar-fs
       // may still be walking contextDir — deleting it here (the old `finally`
       // around buildImage alone) is exactly what raced the pack in #448.
-      await pin.restore();
-      await buildContext.cleanup();
+      try {
+        await pin.restore();
+      } finally {
+        await buildContext.cleanup();
+      }
     }
     return pin.baseImages;
   }

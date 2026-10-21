@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   permission: vi.fn(async () => {}),
   assertInstanceAdmin: vi.fn(async () => {}),
   clearBuildCache: vi.fn(),
+  requestRefresh: vi.fn(),
   audit: vi.fn(),
 }));
 
@@ -15,7 +16,7 @@ vi.mock("@repo/db", async (importOriginal) => {
     ...actual,
     repos: {
       ...actual.repos,
-      project: { ...actual.repos.project, findById: h.findProject },
+      project: { ...actual.repos.project, findById: h.findProject, requestBuildCacheRefresh: h.requestRefresh },
     },
   };
 });
@@ -65,6 +66,7 @@ describe("project build-cache controller", () => {
       cachesDeleted: ["cache-a", "cache-b"],
       spaceReclaimed: 8192,
     });
+    h.requestRefresh.mockResolvedValue("refresh-request");
   });
 
   it("requires project admin, clears the resolved host and returns reclaimed bytes", async () => {
@@ -85,6 +87,8 @@ describe("project build-cache controller", () => {
     );
     expect(h.assertInstanceAdmin).toHaveBeenCalledOnce();
     expect(h.clearBuildCache).toHaveBeenCalledWith(expect.objectContaining({ id: "proj_1" }));
+    expect(h.requestRefresh).toHaveBeenCalledWith("proj_1", "org_1");
+    expect(h.requestRefresh.mock.invocationCallOrder[0]).toBeGreaterThan(h.clearBuildCache.mock.invocationCallOrder[0]!);
     expect(h.audit).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: "user_1", organizationId: "org_1", source: "api" }),
       expect.objectContaining({
@@ -93,6 +97,29 @@ describe("project build-cache controller", () => {
         after: expect.objectContaining({ hostScoped: true, bytesReclaimed: 8192 }),
       }),
     );
+  });
+
+  it("does not queue a refresh or report a successful clear when pruning fails", async () => {
+    h.clearBuildCache.mockRejectedValue(new Error("cache worker is busy"));
+    const response = await app().request("/projects/proj_1/clear-build", { method: "POST" });
+    expect(response.status).toBe(500);
+    expect(h.requestRefresh).not.toHaveBeenCalled();
+    expect(h.audit).not.toHaveBeenCalled();
+  });
+
+  it("does not report success until next-deploy refresh intent is durable", async () => {
+    h.requestRefresh.mockRejectedValue(new Error("database unavailable"));
+    const response = await app().request("/projects/proj_1/clear-build", { method: "POST" });
+    expect(response.status).toBe(500);
+    expect(h.audit).not.toHaveBeenCalled();
+  });
+
+  it("never clears another organization's cache or requests its next refresh", async () => {
+    h.findProject.mockResolvedValue({ id: "proj_1", organizationId: "other-org" });
+    const response = await app().request("/projects/proj_1/clear-build", { method: "POST" });
+    expect(response.status).not.toBe(200);
+    expect(h.clearBuildCache).not.toHaveBeenCalled();
+    expect(h.requestRefresh).not.toHaveBeenCalled();
   });
 });
 

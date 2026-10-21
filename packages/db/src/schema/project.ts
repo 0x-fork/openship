@@ -158,6 +158,8 @@ export const project = pgTable(
     previewScannedAt: timestamp("preview_scanned_at"),
     /** Internal successful build receipts, keyed by project or service id. */
     buildCacheReceipts: jsonb("build_cache_receipts").$type<Record<string, { targets: string[]; deploymentId: string; completedAt: string; durationMs?: number }> | null>(),
+    /** Pending host-cache clear intent. Only a successful full refresh may acknowledge this token. */
+    buildCacheRefreshToken: text("build_cache_refresh_token"),
     /**
      * Per-project clone-token override (encrypted via lib/encryption).
      * When set, this is the first credential `resolveCloneToken` returns -

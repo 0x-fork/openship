@@ -9,6 +9,7 @@ import * as projectTeardown from "./project-teardown";
 import { assertResourceInOrg } from "../../lib/resource-access";
 import { instanceAuthorization } from "../../lib/instance-authorization";
 import { clearProjectBuildCache } from "../deployments/build-cache-gc";
+import { NotFoundError } from "@repo/core";
 
 export function createProjectLifecycleOperations(
   recordAudit: ProjectDependencies["recordAudit"],
@@ -193,6 +194,10 @@ export function createProjectLifecycleOperations(
       const project = await repos.project.findById(id);
       assertResourceInOrg(project, "Project", organizationId, id);
       const result = await clearProjectBuildCache(project);
+      // A successful cache clear also promises fresh configured images on the
+      // next normal redeploy. Do not report success until that intent is durable.
+      if (!(await repos.project.requestBuildCacheRefresh(id, organizationId)))
+        throw new NotFoundError("Project", id);
       recordAudit(ctx, {
         eventType: "project.build_cache.cleared",
         resourceType: "project",
@@ -203,6 +208,7 @@ export function createProjectLifecycleOperations(
           serverId: result.serverId,
           cachesDeleted: result.cachesDeleted.length,
           bytesReclaimed: result.spaceReclaimed,
+          refreshImagesOnNextDeploy: true,
         },
       });
       return {

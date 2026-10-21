@@ -142,25 +142,31 @@ action includes all enabled services. Both use your saved configuration and envi
 - Image services pull their configured tag again and deploy the acquired image.
 - Git source apps rebuild their deployed revision with fresh builder and production base images.
   Reusable build layers remain available; deleting the build cache is unnecessary.
+- If you do choose **Settings → Clear Build Cache**, the next full redeploy also refreshes
+  configured image tags. The request survives restarts and failed deployments; environment-only
+  refreshes and rollbacks leave it pending. A scoped service redeploy does not clear the project-wide request.
 - Digest pins stay fixed. Change the configured reference first if the fix requires a different digest
   or version tag. A tag naming an old PHP patch release does not automatically advance to a newer patch.
 
 **Check image updates** compares deployed image digests and captured source-build base digests with
 the current registry manifests. It shows changed references and a direct refresh action. Source
-applications can update their bases even
-when there is no new application commit. Local and uploaded source do not have a retained Git revision;
+applications can update their bases even when there is no new application commit. Local and uploaded
+source do not have a retained Git revision;
 use their normal Redeploy flow after selecting an explicit updated runtime image tag or digest.
 Source services carried from a different deployment, or restored from a rollback/migration artifact,
 also need an explicit source deployment before Openship can confirm their revision for a runtime update.
 Image-only services can be updated separately while those source services remain running.
 
-Source builds record the literal base images selected by the build. Older deployments and unsupported
-custom Dockerfile expressions have an unknown baseline; a registry result alone does not prove what
+Explicitly refreshed source builds record the literal base images selected by the build. Ordinary
+cached builds, older deployments, and unsupported custom Dockerfile expressions have an unknown
+baseline; a registry result alone does not prove what
 the previous build used. Refreshing a supported build records a baseline for future checks.
 
-The image publisher must have released its patched image first. After deployment, Openship records an
-interpreter version observed inside the deployed container and its image identity. View it in the build
-log or the image-check notice. Compiled applications, static files and minimal images may have no
+The image publisher must have released its patched image first. After an explicitly requested image
+refresh (including one requested by clearing cache), Openship records an interpreter version observed
+inside the deployed container and its image identity. Ordinary deployments do not run these extra
+probes. View the last observation in the build log or the image-check notice. Compiled applications,
+static files and minimal images may have no
 interpreter to probe; that observation stays unavailable. This does not certify that a particular
 vulnerability was fixed. Terminal remains available for application-specific verification.
 

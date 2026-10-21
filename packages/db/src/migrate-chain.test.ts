@@ -268,6 +268,41 @@ describe("migration chain applies to an existing, populated database", () => {
     expect(await appliedMigrations(client)).toBe(total);
   });
 
+  test("adds cache-refresh intent without changing deployed projects and preserves it across restart", async () => {
+    const cutoff = journal.entries.findIndex((entry) => entry.tag === "0199_project_build_cache_refresh");
+    expect(cutoff).toBeGreaterThan(0);
+    const legacy = migrationsPrefix(cutoff);
+    const { client, db } = await freshDb();
+    try {
+      await migrate(db, { migrationsFolder: legacy });
+      await client.exec("SET session_replication_role = replica;");
+      await seedRow(client, "project", SEED_ID);
+      await seedRow(client, "deployment", SEED_ID);
+      await client.query("UPDATE project SET active_deployment_id = $1 WHERE id = $1", [SEED_ID]);
+      const before = (await client.query<Record<string, unknown>>("SELECT * FROM project")).rows;
+      const releases = (await client.query("SELECT * FROM deployment")).rows;
+
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect((await client.query("SELECT * FROM project")).rows).toEqual(
+        before.map((project) => ({ ...project, build_cache_refresh_token: null })),
+      );
+      expect((await client.query("SELECT * FROM deployment")).rows).toEqual(releases);
+      expect(await db.select().from(schema.project)).toEqual([
+        expect.objectContaining({ id: SEED_ID, activeDeploymentId: SEED_ID, buildCacheRefreshToken: null }),
+      ]);
+
+      await client.query("UPDATE project SET build_cache_refresh_token = $1 WHERE id = $2", ["pending-refresh", SEED_ID]);
+      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      expect(await appliedMigrations(client)).toBe(total);
+      expect(await db.select().from(schema.project)).toEqual([
+        expect.objectContaining({ id: SEED_ID, activeDeploymentId: SEED_ID, buildCacheRefreshToken: "pending-refresh" }),
+      ]);
+    } finally {
+      rmSync(legacy, { recursive: true, force: true });
+      await client.close();
+    }
+  });
+
   test("adds runtime roles after the applied lifecycle migration without changing existing releases", async () => {
     const cutoff = journal.entries.findIndex((entry) => entry.tag === "0192_runtime_roles");
     expect(journal.entries[cutoff - 1]?.tag).toBe("0191_project_lifecycle_operation");
@@ -286,7 +321,7 @@ describe("migration chain applies to an existing, populated database", () => {
 
       await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map((project) => ({ ...project, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null })),
+        projects.map((project) => ({ ...project, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, build_cache_refresh_token: null })),
       );
       expect((await client.query("SELECT * FROM deployment")).rows).toEqual(
         deployments.map((deployment) => ({
@@ -332,7 +367,7 @@ describe("migration chain applies to an existing, populated database", () => {
       expect(await db.select().from(schema.instanceController)).toEqual([]);
       expect(await db.select().from(schema.instanceHandoff)).toEqual([]);
       expect((await client.query("SELECT * FROM project")).rows).toEqual(
-        projects.map((project) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null })),
+        projects.map((project) => ({ ...project, github_checks: null, runtime_version: null, runtime_image: null, lifecycle_operation: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, build_cache_refresh_token: null })),
       );
       expect(
         (await client.query("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")).rows.slice(
@@ -533,7 +568,7 @@ describe("migration chain applies to an existing, populated database", () => {
         const { cloud_workspace_id: _native, cloud_archive_strategy: _archive, ...previous } = old as typeof old & Record<string, unknown>;
         expect(row).toEqual({
           ...previous,
-          runtime_version: null, runtime_image: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null,
+          runtime_version: null, runtime_image: null, roles: null, preview_settings: null, preview_scanned_at: null, build_cache_receipts: null, build_cache_refresh_token: null,
           cloud_promotion: null,
           lifecycle_operation: null,
           cloud_static_hosting: "pages",

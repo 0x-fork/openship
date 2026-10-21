@@ -382,6 +382,49 @@ describe("runtime update shared SDK/HTTP operation", () => {
       expect(input).toMatchObject({ serviceIds: [image.id], strictServiceScope: true });
   });
 
+  it.each([false, true])(
+    "updates only an image sidecar without requiring its project's retained Git revision (adopted=%s)",
+    async (adopted) => {
+      const owner = await seedOwner(),
+        p = await project(owner, `revisionless-sidecar-${adopted}`),
+        c = await clients(owner);
+      await db
+        .update(schema.deployment)
+        .set({ commitSha: null, meta: adopted ? { adopt: true } : {} })
+        .where(eq(schema.deployment.id, p.activeDeploymentId!));
+      const image = await repos.service.create({
+        projectId: p.id,
+        name: "redis",
+        image: "redis:7",
+      });
+      const source = await repos.service.create({
+        projectId: p.id,
+        name: "web",
+        kind: "monorepo",
+        framework: "laravel",
+      });
+
+      for (const client of [c.native.updates, c.remote.updates]) {
+        await expect(client.updateRuntime(p.id, { serviceIds: [image.id] })).resolves.toEqual({
+          project_id: p.id,
+          deployment_id: "runtime-update",
+        });
+        await expect(client.updateRuntime(p.id, { serviceIds: [source.id] })).rejects.toThrow(
+          "no retained Git revision",
+        );
+      }
+      expect(provider.deploy).toHaveBeenCalledTimes(2);
+      for (const [, input] of provider.deploy.mock.calls) {
+        expect(input).toMatchObject({
+          serviceIds: [image.id],
+          strictServiceScope: true,
+          forcePullImages: true,
+        });
+        expect(input.commitSha).toBeUndefined();
+      }
+    },
+  );
+
   it("refuses a source sibling carried into a later scoped deployment", async () => {
     const owner = await seedOwner(),
       p = await project(owner, "carried-source"),

@@ -42,10 +42,15 @@ const h = vi.hoisted(() => ({
   statusWrites: [] as Array<{ id: string; status: string; extra?: Record<string, unknown> }>,
   sessionStatuses: [] as Array<{ id: string; status: string; detail?: Record<string, unknown> }>,
   activePointer: [] as string[],
+  activePointerError: null as Error | null,
   notifications: [] as string[],
   deletedUpdateStatuses: [] as string[],
   deleteUpdateStatusError: null as Error | null,
   finishedLogs: [] as unknown[][],
+  refreshAcknowledgements: [] as string[],
+  pendingRefreshToken: "refresh-1" as string | null,
+  refreshAcknowledgeError: null as Error | null,
+  refuseStatusWrites: false,
 }));
 
 vi.mock("@repo/db", () => ({
@@ -64,6 +69,7 @@ vi.mock("@repo/db", () => ({
       updateStatus: async (id: string, status: string, extra?: Record<string, unknown>) => {
         h.statusWrites.push({ id, status, extra });
         if (h.rejectAllStatusWrites) throw new Error("connection terminated unexpectedly");
+        if (h.refuseStatusWrites) return false;
         const rejection = jsonbRejection(extra ?? null);
         if (rejection) throw new Error(rejection);
       },
@@ -80,9 +86,17 @@ vi.mock("@repo/db", () => ({
     },
     project: {
       setActiveDeployment: async (projectId: string, depId: string) => {
+        if (h.activePointerError) throw h.activePointerError;
         h.activePointer.push(`${projectId}:${depId}`);
       },
       setCloudWorkspaceId: async () => {},
+      acknowledgeBuildCacheRefresh: async (id: string, orgId: string, token: string) => {
+        h.refreshAcknowledgements.push(`${id}:${orgId}:${token}`);
+        if (h.refreshAcknowledgeError) throw h.refreshAcknowledgeError;
+        if (token !== h.pendingRefreshToken) return false;
+        h.pendingRefreshToken = null;
+        return true;
+      },
     },
     service: { listByDeployment: async () => [] },
     updateStatus: {
@@ -115,7 +129,7 @@ vi.mock("@repo/platform/engine/modules/mail/webmail/webmail-install.service", ()
   onWebmailDeployed: async () => {},
 }));
 
-const { onSuccess, onFailure, reportPipelineError } =
+const { onSuccess, onFailure, onCancelled, reportPipelineError } =
   await import("@repo/platform/engine/modules/deployments/deployment-lifecycle");
 type LifecycleContext = Parameters<typeof onSuccess>[0];
 
@@ -163,10 +177,15 @@ beforeEach(() => {
   h.statusWrites = [];
   h.sessionStatuses = [];
   h.activePointer = [];
+  h.activePointerError = null;
   h.notifications = [];
   h.deletedUpdateStatuses = [];
   h.deleteUpdateStatusError = null;
   h.finishedLogs = [];
+  h.refreshAcknowledgements = [];
+  h.pendingRefreshToken = "refresh-1";
+  h.refreshAcknowledgeError = null;
+  h.refuseStatusWrites = false;
 });
 
 describe("lifecycle: a rejected log payload cannot invert the outcome", () => {
@@ -506,6 +525,100 @@ describe("repo: finishBuildSession sheds the payload, never the status", () => {
     // Absent from the SET clause — not merely set to undefined. A caller with no
     // payload has nothing to shed, so its error must propagate untouched.
     expect("logs" in writes[0]).toBe(false);
+  });
+});
+
+describe("next-deploy cache-refresh acknowledgement", () => {
+  function refreshContext(): LifecycleContext {
+    const ctx = ctxFor();
+    ctx.dep.forceAll = true;
+    ctx.dep.trigger = "redeploy";
+    ctx.dep.meta = { forcePullImages: true, buildCacheRefreshToken: "refresh-1" };
+    return ctx;
+  }
+
+  it("consumes the captured request after a successful full project refresh", async () => {
+    const ctx = refreshContext();
+    await onSuccess(ctx, { containerId: "refreshed-app", durationMs: 1 });
+    expect(h.pendingRefreshToken).toBeNull();
+    expect(h.refreshAcknowledgements).toEqual(["prj_1:org_1:refresh-1"]);
+    expect(statusPairs()).toEqual(["dep_1:ready"]);
+    expect(h.sessionStatuses.at(-1)?.status).toBe("ready");
+  });
+
+  it.each([
+    ["non-forced build", { forceAll: false }],
+    ["rollback", { trigger: "rollback" }],
+    ["selected services", { meta: { targetServiceIds: ["svc-api"] } }],
+    ["environment-only refresh", { meta: { refreshServiceIds: ["svc-api"] } }],
+    ["cached image build", { meta: { forcePullImages: false } }],
+    ["uncaptured intent", { meta: { buildCacheRefreshToken: undefined } }],
+  ] as const)("keeps the request pending for %s", async (_label, override) => {
+    const ctx = refreshContext();
+    ctx.dep = { ...ctx.dep, ...override, meta: { ...(ctx.dep.meta as object), ...("meta" in override ? override.meta : {}) } };
+    await onSuccess(ctx, { containerId: "app", durationMs: 1 });
+    expect(h.pendingRefreshToken).toBe("refresh-1");
+    expect(h.refreshAcknowledgements).toEqual([]);
+  });
+
+  it.each([
+    ["pending keep/reject decision", { decisionPending: true }],
+    ["failed service", { metaPatch: { composeDeployment: { failedServices: 1 } } }],
+    ["partial failure evidence", { failureMeta: { errorCode: "BUILD_FAILED" } }],
+  ] as const)("keeps intent after a published %s", async (_label, result) => {
+    await onSuccess(refreshContext(), { containerId: "partial-app", durationMs: 1, ...result });
+    expect(h.pendingRefreshToken).toBe("refresh-1");
+    expect(h.refreshAcknowledgements).toEqual([]);
+  });
+
+  it("keeps intent after build failure or cancellation", async () => {
+    await onFailure(refreshContext(), "build failed", 1);
+    await onCancelled(refreshContext());
+    expect(h.pendingRefreshToken).toBe("refresh-1");
+    expect(h.refreshAcknowledgements).toEqual([]);
+  });
+
+  it("does not acknowledge when the ready write failed or the deployment was cancelled", async () => {
+    h.rejectAllStatusWrites = true;
+    await onSuccess(refreshContext(), { containerId: "app", durationMs: 1 });
+    h.rejectAllStatusWrites = false;
+    h.refuseStatusWrites = true;
+    const cancelled = refreshContext();
+    await onSuccess(cancelled, { containerId: "app", durationMs: 1 });
+    expect(cancelled.settled).toBe("cancelled");
+    expect(h.pendingRefreshToken).toBe("refresh-1");
+    expect(h.refreshAcknowledgements).toEqual([]);
+  });
+
+  it("an older completing build cannot consume a subsequent clear", async () => {
+    h.pendingRefreshToken = "refresh-2";
+    await onSuccess(refreshContext(), { containerId: "old-refresh-app", durationMs: 1 });
+    expect(h.pendingRefreshToken).toBe("refresh-2");
+    const next = refreshContext();
+    next.dep.meta = { forcePullImages: true, buildCacheRefreshToken: "refresh-2" };
+    await onSuccess(next, { containerId: "new-refresh-app", durationMs: 1 });
+    expect(h.pendingRefreshToken).toBeNull();
+  });
+
+  it("a failed acknowledgement leaves the successful app ready and the intent retryable", async () => {
+    h.refreshAcknowledgeError = new Error("database unavailable after ready");
+    const ctx = refreshContext();
+    await expect(onSuccess(ctx, { containerId: "live-app", durationMs: 1 })).resolves.toBeUndefined();
+    expect(ctx.settled).toBe("ready");
+    expect(h.activePointer).toEqual(["prj_1:dep_1"]);
+    expect(h.sessionStatuses.at(-1)?.status).toBe("ready");
+    expect(h.pendingRefreshToken).toBe("refresh-1");
+  });
+
+  it("keeps the intent when saving the project's active release fails", async () => {
+    h.activePointerError = new Error("active deployment write failed");
+    const ctx = refreshContext();
+    await expect(onSuccess(ctx, { containerId: "live-app", durationMs: 1 })).resolves.toBeUndefined();
+    expect(ctx.settled).toBe("ready");
+    expect(h.activePointer).toEqual([]);
+    expect(h.sessionStatuses.at(-1)?.status).toBe("ready");
+    expect(h.refreshAcknowledgements).toEqual([]);
+    expect(h.pendingRefreshToken).toBe("refresh-1");
   });
 });
 

@@ -30,10 +30,15 @@ const mocks = vi.hoisted(() => ({
   onNoChanges: vi.fn(async () => {}),
   onReconciling: vi.fn(async () => {}),
   onSuccess: vi.fn(async () => {}),
+  verifyDeployedServiceRuntimes: vi.fn(),
   setDeploymentStatus: vi.fn(async () => {}),
 }));
 
 vi.mock("@repo/db", () => ({ repos: {} }));
+vi.mock("@repo/platform/engine/modules/deployments/runtime-verification", () => ({
+  verifyDeployedServiceRuntimes: mocks.verifyDeployedServiceRuntimes,
+}));
+
 vi.mock("@repo/platform/engine/modules/deployments/compose/build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
 vi.mock("@repo/platform/engine/modules/deployments/compose/required-env-preflight", () => ({
   assertRequiredServiceEnvironment: async () => {},
@@ -113,6 +118,7 @@ function composeResult(
 async function run(
   builtImageRefs: Map<string, string>,
   result: Record<string, unknown>,
+  forcePullImages?: boolean,
 ): Promise<void> {
   mocks.buildComposeImages.mockResolvedValue({
     cancelled: false,
@@ -134,7 +140,7 @@ async function run(
     usesManagedRouting: false,
     logger: new BuildLogger(() => {}),
     ctx: { dep: { id: "d1" }, provisioned: {} } as never,
-    snapshot: SNAPSHOT as never,
+    snapshot: { ...SNAPSHOT, forcePullImages } as never,
     buildSessionId: "bld_x",
     composeInterpolationEnv: {},
     buildEnvVars: {},
@@ -146,6 +152,25 @@ async function run(
 describe("executeComposePipeline — built-artifact cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.verifyDeployedServiceRuntimes.mockResolvedValue({ svc_1: { status: "verified", runtime: "php", version: "8.4.27", checkedAt: "2026-10-21T00:00:00Z" } });
+  });
+
+  it.each([undefined, false, true])("observes only requested image refreshes and leaves ordinary deploys probe-free: %s", async (forcePullImages) => {
+    await run(new Map([["svc_1", "openship/web:bld_x"]]), composeResult("ready", [
+      { serviceId: "svc_1", serviceName: "web", status: "running", containerId: "container-web" },
+    ]), forcePullImages);
+    expect(mocks.onSuccess).toHaveBeenCalledOnce();
+    const meta = (mocks.onSuccess.mock.calls[0] as unknown as [unknown, { metaPatch: Record<string, unknown> }])[1].metaPatch;
+    if (forcePullImages) {
+      expect(mocks.verifyDeployedServiceRuntimes).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        projectId: "p1", imageRefs: new Map([["svc_1", "openship/web:bld_x"]]),
+      }));
+      expect(meta.runtimeVerification).toMatchObject({ services: { svc_1: { version: "8.4.27" } } });
+    } else {
+      expect(mocks.verifyDeployedServiceRuntimes).not.toHaveBeenCalled();
+      expect(meta.runtimeVerification).toEqual({});
+    }
+    expect(meta.runtimeImages).toMatchObject({ artifacts: { services: { svc_1: "openship/web:bld_x" } } });
   });
 
   it("never reclaims a static sub-app's published doc-root", async () => {

@@ -68,6 +68,7 @@ r.post(
   "/:projectId/runtime/check",
   {
     tag: "project:read",
+    readOnly: true,
     ids: { project: "projectId" },
     body: UpdateProjectSchemas.checkRuntime.input,
     mcp: {

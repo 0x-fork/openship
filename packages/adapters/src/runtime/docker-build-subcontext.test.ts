@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -326,11 +326,65 @@ describe("remote docker build — declared build context (#634)", () => {
       { connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}) },
     );
     const results = await runtime.buildImages(
-      [spec(serviceConfig(await makeRepo(source)))], new BuildLogger(() => {}),
+      [spec(serviceConfig(await makeRepo(source), { refreshBaseImages: true }))], new BuildLogger(() => {}),
     );
     expect(results[0]!.result.baseImages).toEqual([{ ref: "php:8.4-fpm", digest }]);
     expect(writes).toHaveBeenCalledWith(expect.stringContaining("Dockerfile.api"), `FROM php:8.4-fpm@${digest}\n`);
     expect(writes).toHaveBeenLastCalledWith(expect.stringContaining("Dockerfile.api"), source);
+  });
+
+  it("does not probe or rewrite bases for an ordinary remote redeploy", async () => {
+    const source = "FROM php:8.4-fpm\n";
+    const executor = {
+      exec: vi.fn(async (command: string) => {
+        if (command.includes("OPENSHIP_BASES_PY")) return source;
+        if (command.startsWith("docker buildx imagetools inspect "))
+          return `sha256:${"d".repeat(64)}`;
+        return "";
+      }),
+      streamExec: vi.fn(async () => ({ code: 0, output: "" })),
+      writeFile: vi.fn(async () => {}),
+    } as unknown as CommandExecutor;
+    const runtime = runtimeFor(
+      { kind: "ssh", description: "test ssh" },
+      { connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}) },
+    );
+    const results = await runtime.buildImages(
+      [spec(serviceConfig(await makeRepo(source)))], new BuildLogger(() => {}),
+    );
+    expect(results[0]!.result.status).toBe("deploying");
+    expect(results[0]!.result.baseImages).toBeUndefined();
+    const commands = vi.mocked(executor.exec).mock.calls.map(([command]) => command);
+    expect(commands.some(command => command.includes("OPENSHIP_BASES_PY"))).toBe(false);
+    expect(commands.some(command => command.startsWith("docker buildx imagetools inspect "))).toBe(false);
+    expect(executor.writeFile).not.toHaveBeenCalled();
+    const command = vi.mocked(executor.streamExec).mock.calls.find(([command]) => command.includes("docker buildx build"))?.[0];
+    expect(command).toBeDefined();
+    expect(command).not.toContain(" --pull ");
+  });
+
+  it("does not start the builder after a failed temporary Dockerfile rewrite", async () => {
+    const source = "FROM php:8.4-fpm\n";
+    const executor = {
+      exec: vi.fn(async (command: string) => {
+        if (command.includes("OPENSHIP_BASES_PY")) return source;
+        if (command.startsWith("docker buildx imagetools inspect "))
+          return `sha256:${"d".repeat(64)}`;
+        return "";
+      }),
+      streamExec: vi.fn(async () => ({ code: 0, output: "" })),
+      writeFile: vi.fn(async () => { throw new Error("Dockerfile write failed: disk full"); }),
+    } as unknown as CommandExecutor;
+    const runtime = runtimeFor(
+      { kind: "ssh", description: "test ssh" },
+      { connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}) },
+    );
+    const results = await runtime.buildImages([
+      spec(serviceConfig(await makeRepo(source), { refreshBaseImages: true })),
+    ], new BuildLogger(() => {}));
+    expect(results[0]!.result.status).toBe("failed");
+    expect(results[0]!.result.errorMessage).toContain("Dockerfile write failed: disk full");
+    expect(vi.mocked(executor.streamExec).mock.calls.some(([command]) => command.includes("docker buildx build"))).toBe(false);
   });
 });
 
@@ -434,6 +488,31 @@ describe("mixed batch — one tree, different contexts (#634)", () => {
 });
 
 describe("dockerode docker build — declared build context (#634)", () => {
+  it.each(["capture", "restore"] as const)("cleans the native build context when receipt %s fails", async (phase) => {
+    const buildImage = vi.fn(async (body: Readable) => {
+      await finished(body.resume());
+      return Readable.from([]);
+    });
+    const runtime = runtimeFor({ kind: "local", description: "local socket" }, {
+      _docker: { buildImage },
+      streamDockerodeBuild: vi.fn(async () => {}),
+    });
+    const failure = new Error(`Dockerfile ${phase} failed: disk unavailable`);
+    const pin = vi.spyOn(runtime as unknown as {
+      pinBuildBaseImages(): Promise<{ restore(): Promise<void> }>;
+    }, "pinBuildBaseImages");
+    if (phase === "capture") pin.mockRejectedValue(failure);
+    else pin.mockResolvedValue({ restore: async () => { throw failure; } });
+    const result = await runtime.build(serviceConfig(await makeRepo(), { refreshBaseImages: true }));
+    expect(result.status).toBe("failed");
+    expect(result.errorMessage).toContain(failure.message);
+    const [contextDir] = vi.mocked(runtime as unknown as {
+      estimateContextSize(path: string): Promise<number>;
+    }).estimateContextSize.mock.calls[0]!;
+    await expect(access(contextDir)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(buildImage).toHaveBeenCalledTimes(phase === "capture" ? 0 : 1);
+  });
+
   async function capturedTar(): Promise<{ options: Record<string, unknown>; tar: string[] }> {
     let options: Record<string, unknown> = {};
     let tar: string[] = [];
@@ -499,7 +578,7 @@ describe("dockerode docker build — declared build context (#634)", () => {
     });
     const repo = await makeRepo("FROM php:8.4-fpm\n");
     const results = await runtime.buildImages(["one", "two"].map(name => ({
-      ...spec(serviceConfig(repo, { sessionId: `bases-${name}` })), serviceName: name,
+      ...spec(serviceConfig(repo, { sessionId: `bases-${name}`, refreshBaseImages: true })), serviceName: name,
     })), new BuildLogger(() => {}));
     expect(results.map(({ result }) => result.baseImages)).toEqual([
       [{ ref: "php:8.4-fpm", digest }], [{ ref: "php:8.4-fpm", digest }],
@@ -507,6 +586,67 @@ describe("dockerode docker build — declared build context (#634)", () => {
     expect(packed).toHaveLength(2);
     for (const contents of packed) expect(contents).toContain(`FROM php:8.4-fpm@${digest}`);
     expect(prepareDeploymentImage).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not acquire or pin base images during an ordinary native redeploy", async () => {
+    const source = "FROM php:8.4-fpm\n";
+    const prepareDeploymentImage = vi.fn(async () => {
+      throw new Error("ordinary redeploy must not acquire a base before the builder");
+    });
+    let packed = "";
+    const buildImage = vi.fn(async (body: Readable, _opts: Record<string, unknown>) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of body.pipe(createGunzip())) chunks.push(Buffer.from(chunk));
+      packed = Buffer.concat(chunks).toString("utf8");
+      return Readable.from([]);
+    });
+    const runtime = runtimeFor({ kind: "local", description: "local socket" }, {
+      _docker: { buildImage }, prepareDeploymentImage,
+      streamDockerodeBuild: vi.fn(async () => {}),
+    });
+    const results = await runtime.buildImages([
+      spec(serviceConfig(await makeRepo(source))),
+    ], new BuildLogger(() => {}));
+    expect(results[0]!.result.status).toBe("deploying");
+    expect(results[0]!.result.baseImages).toBeUndefined();
+    expect(prepareDeploymentImage).not.toHaveBeenCalled();
+    expect(packed).toContain(source);
+    expect(packed).not.toContain("FROM php:8.4-fpm@");
+    expect(buildImage.mock.calls[0]?.[1].pull).toBe(false);
+  });
+
+  it("continues the requested native pull when optional receipt capture never completes", async () => {
+    const source = "FROM php:8.4-fpm\n";
+    let completeLookup!: (value: { imageId: string; deploymentRef: string; registryDigest: string }) => void;
+    const prepareDeploymentImage = vi.fn(() => new Promise<{ imageId: string; deploymentRef: string; registryDigest: string }>(resolve => {
+      completeLookup = resolve;
+    }));
+    let packed = "";
+    const buildImage = vi.fn(async (body: Readable, _opts: Record<string, unknown>) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of body.pipe(createGunzip())) chunks.push(Buffer.from(chunk));
+      packed = Buffer.concat(chunks).toString("utf8");
+      return Readable.from([]);
+    });
+    const runtime = runtimeFor({ kind: "local", description: "local socket" }, {
+      _docker: { buildImage }, prepareDeploymentImage,
+      streamDockerodeBuild: vi.fn(async () => {}),
+    });
+    const results = await runtime.buildImages([
+      spec(serviceConfig(await makeRepo(source), { refreshBaseImages: true })),
+    ], new BuildLogger(() => {}));
+    expect(results[0]!.result.status).toBe("deploying");
+    expect(results[0]!.result.baseImages).toBeUndefined();
+    expect(prepareDeploymentImage).toHaveBeenCalledTimes(1);
+    expect(buildImage.mock.calls[0]?.[1].pull).toBe(true);
+    expect(packed).toContain(source);
+    expect(packed).not.toContain("FROM php:8.4-fpm@");
+    // A lookup completing after the budget cannot mutate a context already sent
+    // to Docker or publish an unproven receipt for the successful build.
+    const digest = `sha256:${"f".repeat(64)}`;
+    completeLookup({ imageId: digest, deploymentRef: `php@${digest}`, registryDigest: `php@${digest}` });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(results[0]!.result.baseImages).toBeUndefined();
   });
 });
 

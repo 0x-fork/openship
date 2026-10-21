@@ -222,9 +222,10 @@ describe("instance-scope FK references (servers / mail_servers)", () => {
   });
 
   it("does not carry preview automation or host cache receipts in a portable project export", () => {
-    const tables = { project: [{ id: "source", previewSettings: { enabled: true }, previewScannedAt: new Date(), buildCacheReceipts: { source: { deploymentId: "old-host-build" } } }] };
+    const tables = { project: [{ id: "source", previewSettings: { enabled: true }, previewScannedAt: new Date(), buildCacheReceipts: { source: { deploymentId: "old-host-build" } }, buildCacheRefreshToken: "old-host-clear" }], deployment: [{ meta: { buildCacheRefreshToken: "old-host-clear", buildCommand: "build" } }] };
     stripInstanceRefsInPlace(tables);
-    expect(tables.project[0]).toMatchObject({ id: "source", previewSettings: null, previewScannedAt: null, buildCacheReceipts: null });
+    expect(tables.project[0]).toMatchObject({ id: "source", previewSettings: null, previewScannedAt: null, buildCacheReceipts: null, buildCacheRefreshToken: null });
+    expect(tables.deployment[0]!.meta).toEqual({ buildCommand: "build" });
   });
 
   it("is a no-op on tables and rows that carry no instance reference", () => {

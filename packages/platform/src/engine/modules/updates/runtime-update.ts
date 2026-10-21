@@ -105,13 +105,9 @@ export async function updateProjectRuntime(
       "Runtime updates need a deployed Git revision to keep application code unchanged. Use Redeploy for local or uploaded source.",
     );
   }
-  // Catalog image-only projects retain the legacy GitHub provider default but
-  // have no repository or source revision. They only need registry images.
-  if (
-    deploymentClass.source === "git" &&
-    (hasSourceBuild || !!project.gitUrl?.trim()) &&
-    !isFullCommitSha(active.commitSha)
-  ) {
+  // Image-only scopes need registry images, even if their project also has a
+  // repository. A retained Git revision is required only when rebuilding source.
+  if (hasSourceBuild && !isFullCommitSha(active.commitSha)) {
     throw new ValidationError(
       "The active deployment has no retained Git revision. Redeploy it before updating its runtime.",
     );

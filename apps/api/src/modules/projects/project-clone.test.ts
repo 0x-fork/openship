@@ -24,6 +24,7 @@ const h = {
     serverId: "srv_a",
     environmentSlug: "production",
     activeDeploymentId: "dep_live",
+    buildCacheRefreshToken: "source-host-clear",
     cloudPromotion: { id: "source-transfer-receipt" },
     framework: "nextjs",
     routeStrategy: "loopback",
@@ -231,7 +232,7 @@ describe("what it deliberately does NOT copy", () => {
     const p = clonedProject();
     // `id`/`groupId` are the insert's, and name/slug/serverId/workspaceId/activeDeploymentId are set
     // explicitly above — the rest must simply be absent.
-    for (const field of ["deletedAt", "deletionInProgress", "lifecycleOperation", "disabledAt", "favicon", "faviconCheckedAt", "compositeRoutes", "cloudPromotion", "id", "groupId", "createdAt", "updatedAt"]) {
+    for (const field of ["deletedAt", "deletionInProgress", "lifecycleOperation", "disabledAt", "favicon", "faviconCheckedAt", "compositeRoutes", "cloudPromotion", "buildCacheRefreshToken", "id", "groupId", "createdAt", "updatedAt"]) {
       expect(p, field).not.toHaveProperty(field);
     }
   });

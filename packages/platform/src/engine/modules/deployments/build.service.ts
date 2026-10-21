@@ -67,7 +67,7 @@ import { decryptEnvMap, encrypt } from "../../lib/encryption";
 import { getCommitByRef, getLatestCommit, getRepository } from "../github/github.service";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import { resolveSmartRoute } from "./smart-route";
-import { snapshotNeedsGitSource, snapshotNeedsProjectSource, withoutPinnedArtifacts, strictRefreshImages } from "./pinned-artifacts";
+import { hasPinnedArtifacts, snapshotNeedsGitSource, snapshotNeedsProjectSource, withoutPinnedArtifacts, strictRefreshImages } from "./pinned-artifacts";
 import { deploymentWorkload, projectToClass, snapshotToClass } from "./deployment-class";
 import { needsRunningApplication } from "./build-execution-plan";
 import {
@@ -413,6 +413,8 @@ export interface DeploymentConfigSnapshot {
    * already exists locally. This is deployment intent, not durable project
    * configuration, and is cleared when a snapshot is reused. */
   forcePullImages?: boolean;
+  /** One-shot cache clear receipt; only a successful full rebuild acknowledges it. */
+  buildCacheRefreshToken?: string;
   /**
    * `targetServiceIds` is an EXCLUSIVE scope, not just a build subset: a service outside
    * it is never deployed, never failed and never reaped.
@@ -1336,6 +1338,22 @@ export async function checkNoActiveBuild(projectId: string) {
   }
 }
 
+/** Pending cache clears apply to ordinary builds, never retained-artifact replays. */
+function pendingBuildCacheRefreshToken(
+  project: Project,
+  opts: { preserveArtifacts?: boolean; trigger?: string } = {},
+): string | undefined {
+  return !opts.preserveArtifacts && opts.trigger !== "rollback"
+    ? project.buildCacheRefreshToken ?? undefined
+    : undefined;
+}
+
+function captureBuildCacheRefresh(snapshot: DeploymentConfigSnapshot, token: string | undefined) {
+  if (!token) return;
+  snapshot.forcePullImages = true;
+  snapshot.buildCacheRefreshToken = token;
+}
+
 export async function createQueuedDeployment(opts: Parameters<typeof createQueuedDeploymentUnlocked>[0]) {
   // A service env apply owns the same lock until its replacement is durable.
   // Once a queued row exists, apply refuses it via listInFlightByProject, so
@@ -2176,6 +2194,11 @@ export async function requestBuildAccess(
     snapshot.branch,
   );
 
+  const cacheRefreshToken = pendingBuildCacheRefreshToken(project, {
+    preserveArtifacts: hasPinnedArtifacts(snapshot) || Boolean(refreshServiceIds?.length),
+  });
+  captureBuildCacheRefresh(snapshot, cacheRefreshToken);
+
   const dep = await createQueuedDeployment({
     analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,
@@ -2195,7 +2218,8 @@ export async function requestBuildAccess(
     // stateful services (DBs/caches) on an unrelated change.
     serviceIds,
     refreshServiceIds,
-    strictServiceScope: internal?.strictServiceScope,
+    forceAll: cacheRefreshToken ? !serviceIds?.length : undefined,
+    strictServiceScope: internal?.strictServiceScope || Boolean(cacheRefreshToken && serviceIds?.length),
   });
 
   // Store env vars on project as "latest defaults"
@@ -2533,6 +2557,12 @@ export async function redeployBuildSession(
     composeServices: currentComposeServices.length > 0 ? currentComposeServices : undefined,
   };
 
+  const cacheRefreshToken = pendingBuildCacheRefreshToken(project, {
+    trigger: opts?.trigger,
+    preserveArtifacts: Boolean(opts?.useExistingCommit && isReleaseProvider(project.gitProvider) && frozenMeta?.releaseImageRef),
+  });
+  captureBuildCacheRefresh(refreshedMeta, cacheRefreshToken);
+
   // ── Resolve rollback context (shared helper — single default) ─────────
   const { rollbackStrategy, commitShaBefore } = await resolveRollbackContext(project, branch);
 
@@ -2554,6 +2584,7 @@ export async function redeployBuildSession(
     envVars: Object.keys(currentProjectEnv).length > 0 ? currentProjectEnv : null,
     rollbackStrategy,
     commitShaBefore,
+    forceAll: cacheRefreshToken ? true : undefined,
   });
 
   // Kick off the actual build. Without this, the new deployment row would
@@ -2721,6 +2752,10 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   if (!project || project.organizationId !== ctx.organizationId) {
     throw new NotFoundError("Project", data.projectId);
   }
+  const cacheRefreshToken = pendingBuildCacheRefreshToken(project, {
+    preserveArtifacts: data.refresh || Boolean(data.reuseSnapshot), trigger: data.trigger,
+  });
+  const strictServiceScope = data.strictServiceScope || Boolean(cacheRefreshToken && data.serviceIds?.length);
   if (data.previewAdmission && data.commitSha) {
     const existing = await repos.pullRequestPreview.admittedDeployment(data.previewAdmission.id, data.previewAdmission.token, data.commitSha);
     if (existing && existing.projectId === project.id) {
@@ -2825,7 +2860,7 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   // repo scan when the push didn't touch the compose file. Existing projects
   // reconcile best-effort; a declared compose project with no rows is strict so
   // it cannot silently fall through with an empty service set.
-  if (data.strictServiceScope && !data.serviceIds?.length) {
+  if (strictServiceScope && !data.serviceIds?.length) {
     throw new AppError("An exact deployment scope requires at least one service ID", 400);
   }
 
@@ -2866,7 +2901,7 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   // replace, or disable service rows after the hook-level validation ran. A
   // stale ID must fail before a deployment row is queued, never degrade into a
   // partial or broader deployment.
-  if (data.strictServiceScope && data.serviceIds?.length) {
+  if (strictServiceScope && data.serviceIds?.length) {
     try {
       assertExactServiceTargets(await repos.service.listByProject(project.id), data.serviceIds);
     } catch (err) {
@@ -2885,8 +2920,10 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   // This is an instruction for THIS run, not release configuration. In
   // particular, a rollback that reuses a snapshot from an incoming webhook
   // must not inherit its force-pull behavior.
-  if (data.forcePullImages) snapshot.forcePullImages = true;
+  if (data.forcePullImages || cacheRefreshToken) snapshot.forcePullImages = true;
   else delete snapshot.forcePullImages;
+  delete snapshot.buildCacheRefreshToken;
+  captureBuildCacheRefresh(snapshot, cacheRefreshToken);
   const routeState = await resolveProjectRouteState(project);
 
   // Resolve the snapshot's target (deployTarget + serverId + runtimeMode) from
@@ -3016,8 +3053,8 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
     serviceIds: resolvedServiceIds,
     changedPaths: resolvedChangedPaths,
   } = await resolveSmartRoute(ctx, project, {
-    smartRoute: data.smartRoute,
-    forceAll: data.forceAll,
+    smartRoute: cacheRefreshToken ? false : data.smartRoute,
+    forceAll: cacheRefreshToken ? !data.serviceIds?.length : data.forceAll,
     serviceIds: data.serviceIds,
     isReuse: !!reuse,
     commitSha,
@@ -3035,7 +3072,7 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   let finalForceAll = resolvedForceAll;
   let finalServiceIds = resolvedServiceIds;
   let refreshServiceIds: string[] | undefined;
-  if (data.smartRoute && !data.forceAll && !data.serviceIds?.length && !reuse) {
+  if (data.smartRoute && !cacheRefreshToken && !data.forceAll && !data.serviceIds?.length && !reuse) {
     const envDirty = await resolveEnvDirtyServiceIds(project, environment);
     if (envDirty && envDirty.size > 0 && !finalForceAll && finalServiceIds) {
       // Code-changed subset + env-only services → deploy the union; the
@@ -3109,7 +3146,7 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
     forceAll: finalForceAll,
     serviceIds: finalServiceIds,
     refreshServiceIds,
-    strictServiceScope: data.strictServiceScope,
+    strictServiceScope,
     resourceChanges: data.resourceChanges,
     changedPaths: resolvedChangedPaths ?? null,
   });

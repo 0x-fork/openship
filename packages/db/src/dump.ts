@@ -1339,6 +1339,7 @@ export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
     row.previewSettings = null;
     row.previewScannedAt = null;
     row.buildCacheReceipts = null;
+    row.buildCacheRefreshToken = null;
     row.hostPort = null;
     row.localPath = null;
   }
@@ -1360,6 +1361,7 @@ export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
       "handoverAppImage",
       "handoverStaticDir",
       "adopt",
+      "buildCacheRefreshToken",
     ])
       delete next[key];
     row.meta = next;

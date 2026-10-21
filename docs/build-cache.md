@@ -200,3 +200,21 @@ The 20% free-space target is a cleanup policy, not an additional admission limit
 or a promise that a build will fit. Running workloads, protected artifacts and
 active build layers can use the remaining disk; failed builds retain the current
 release. No customer plans, daemon configuration or running services are changed.
+
+
+## Clearing caches and refreshing images
+
+An instance administrator can clear unused Docker build cache from a project's settings.
+The prune remains server-wide; running containers, volumes, and shared image tags are not deleted.
+After a successful prune, Openship saves a one-shot refresh request for that project. Its next
+normal full deployment uses the existing `forcePullImages` instruction to refresh configured
+image tags and Dockerfile bases. The request survives restarts, failed builds, partial service
+updates, and environment-only refreshes. A successful full deployment acknowledges only the
+request it captured; a newer cache clear remains pending. Rollbacks retain their exact artifacts.
+
+The existing **Refresh base images & redeploy** action uses the same instruction without
+pruning useful build cache. Neither path changes configured version tags or digest pins, nor
+proves that an upstream publisher has released a security fix. Image checks and runtime
+observations remain advisory and run only on explicitly refreshed deployments. Ordinary builds
+do not run the extra interpreter probes or perform additional receipt-resolution
+requests to registries; base-image receipts are captured during explicitly requested refreshes.

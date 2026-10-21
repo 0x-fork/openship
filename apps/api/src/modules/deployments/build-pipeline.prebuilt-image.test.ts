@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   onFailure: vi.fn(),
   onCancelled: vi.fn(),
   onSuccess: vi.fn(),
+  verifyDeployedRuntime: vi.fn(),
   reportPipelineError: vi.fn(),
   setDeploymentStatus: vi.fn(),
   onDeploymentReady: vi.fn(),
@@ -268,6 +269,10 @@ vi.mock("@repo/platform/engine/lib/openship-manifest-sync", () => ({
 }));
 vi.mock("@repo/platform/engine/modules/deployments/attach-linked-networks", () => ({ attachLinkedNetworks: vi.fn(async () => undefined) }));
 vi.mock("@repo/platform/engine/modules/deployments/port-audit.service", () => ({ auditPorts: vi.fn(async () => []) }));
+vi.mock("@repo/platform/engine/modules/deployments/runtime-verification", () => ({
+  verifyDeployedRuntime: mocks.verifyDeployedRuntime,
+}));
+
 vi.mock("@repo/platform/engine/modules/deployments/stability-audit.service", () => ({ verifyDeployedContainers: vi.fn(async () => []) }));
 vi.mock("@repo/platform/engine/modules/deployments/output-audit.service", () => ({
   auditStaticOutput: vi.fn(async () => []),
@@ -522,6 +527,7 @@ describe("single-app prebuilt release-image pipeline", () => {
       if (ctx.provisioned.imageRef) await ctx.runtime.destroy(ctx.provisioned.imageRef);
     });
     mocks.onSuccess.mockResolvedValue(undefined);
+    mocks.verifyDeployedRuntime.mockResolvedValue({ status: "verified", runtime: "php", version: "8.4.27", checkedAt: "2026-10-21T00:00:00Z" });
     mocks.reportPipelineError.mockResolvedValue(undefined);
     mocks.onDeploymentReady.mockResolvedValue(undefined);
     mocks.ensureRoutingReady.mockResolvedValue({ edgeDown: false });
@@ -564,6 +570,26 @@ describe("single-app prebuilt release-image pipeline", () => {
       usesManagedRouting: true,
     } as never;
     vi.mocked(resolveDeploymentPlatform).mockResolvedValue(resolvedPlatform);
+  });
+
+  it.each([undefined, false, true])("observes a deployed runtime only when image refresh was requested: %s", async (forcePullImages) => {
+    const dep = deployment({ meta: { ...snapshot(), forcePullImages,
+      runtimeVerification: { app: { status: "verified", runtime: "php", version: "8.4.26", checkedAt: "earlier" } } } });
+    await run(dep);
+    await drainDeploymentExecutions();
+    expect(mocks.onSuccess).toHaveBeenCalledOnce();
+    const observed = mocks.onSuccess.mock.calls[0]![1].metaPatch.runtimeVerification;
+    if (forcePullImages) {
+      expect(mocks.verifyDeployedRuntime).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        runtime: resolvedRuntime, containerId: "container-1", imageRef: RESOLVED_IMAGE,
+      }));
+      expect(observed).toMatchObject({ app: { runtime: "php", version: "8.4.27" } });
+    } else {
+      expect(mocks.verifyDeployedRuntime).not.toHaveBeenCalled();
+      expect(observed).toEqual({});
+    }
+    // Interpreter probes are independent of artifact/image receipt tracking.
+    expect(mocks.onSuccess.mock.calls[0]![1].metaPatch).toHaveProperty("runtimeImages");
   });
 
   it.each([false, true])("routes a hostname verified during the first build and surfaces edge failures (write fails: %s, #1281)", async (writeFails) => {

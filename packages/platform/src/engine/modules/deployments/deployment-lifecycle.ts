@@ -42,6 +42,7 @@ import { trackBackgroundWork } from "../../lib/background-work";
 import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
 import { computeCleanupKeepSet } from "../projects/cleanup-keep-set";
 import { deploymentResourceFailure, type DeploymentFailureMeta } from "./resource-failure";
+import type { DeploymentConfigSnapshot } from "./build.service";
 
 /**
  * Shared routing/TLS advisory for a deploy whose workloads succeeded. Connection
@@ -857,13 +858,35 @@ export async function onSuccess(
   // in this tail may throw: it would skip the terminal SSE event below, and a
   // deploy whose `complete` never arrives sits on "Deploying" forever with
   // nothing ever coming to correct it.
-  await repos.project
+  const activeDeploymentSaved = await repos.project
     .setActiveDeployment(project.id, dep.id)
-    .catch((err) =>
+    .then(() => true)
+    .catch((err) => {
       errorDiagnostics.error("platform/engine/modules/deployments/deployment-lifecycle",
         `[deployment-lifecycle] setActiveDeployment failed project=${project.id} deployment=${dep.id}: ${safeErrorMessage(err)}`, err,
-      ),
-    );
+      );
+      return false;
+    });
+
+  // This is one-shot operational intent, never a preference. Only an entirely
+  // refreshed and published project can acknowledge the clear that admitted it.
+  // If ready/active bookkeeping fails, leave the intent for a later retry.
+  const snapshot = dep.meta as Partial<DeploymentConfigSnapshot> | null;
+  if (
+    outcome.state === "applied" && activeDeploymentSaved && dep.forceAll &&
+    snapshot?.forcePullImages && snapshot.buildCacheRefreshToken &&
+    dep.trigger !== "rollback" && !snapshot.targetServiceIds?.length &&
+    !snapshot.refreshServiceIds?.length && !result.decisionPending &&
+    !result.failureMeta && !(Number(mergedMeta?.composeDeployment?.failedServices ?? 0) > 0)
+  ) {
+    try {
+      await repos.project.acknowledgeBuildCacheRefresh(
+        project.id, dep.organizationId, snapshot.buildCacheRefreshToken,
+      );
+    } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/deployments/deployment-lifecycle");
+    }
+  }
 
   // A newer release makes a prior held keep/reject decision moot — mark it
   // superseded so no stale deployment reads as "Action Required". Best-effort.

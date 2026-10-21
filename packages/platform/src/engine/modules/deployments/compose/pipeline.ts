@@ -562,10 +562,14 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     logger.log(`Deployment completed with warnings: ${warningMessage}\n`, "warn");
   }
 
-  const runtimeVerification = await verifyDeployedServiceRuntimes({
-    runtime, projectId: project.id, services: composeResult.services, snapshot,
-    imageRefs: composeBuild.imageRefs, log: (message) => logger.log(message),
-  });
+  // Keep ordinary deploys free of interpreter probes. A refreshed cohort is
+  // observed once; stale observations must not follow a different artifact.
+  const runtimeVerification = snapshot.forcePullImages === true ? {
+    services: await verifyDeployedServiceRuntimes({
+      runtime, projectId: project.id, services: composeResult.services, snapshot,
+      imageRefs: composeBuild.imageRefs, log: (message) => logger.log(message),
+    }),
+  } : {};
   throwIfDeploymentCancelled(opts.signal);
   await onSuccess(ctx, {
     containerId: composeResult.primaryContainerId ?? COMPOSE_SENTINEL,
@@ -591,7 +595,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
           baseImages: composeBuild.baseImages?.get(service.serviceId),
         })),
       ),
-      runtimeVerification: { services: runtimeVerification },
+      runtimeVerification,
       composeDeployment: {
         totalServices: composeResult.summary.total,
         successfulServices: composeResult.summary.successful,
