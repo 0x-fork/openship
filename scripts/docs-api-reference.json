@@ -2394,6 +2394,18 @@
       "description": "Apply an available update to the specified project ID.",
       "route": "POST /api/updates/:projectId/apply"
     },
+    "updates.updateRuntime": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Refresh configured runtime images and rebuild selected services at the deployed source version.",
+      "route": "POST /api/updates/:projectId/runtime"
+    },
+    "updates.checkRuntime": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Compare deployed image and recorded base-image digests with the registry.",
+      "route": "POST /api/updates/:projectId/runtime/check"
+    },
     "audit.list": {
       "page": "audit",
       "section": "Operations",

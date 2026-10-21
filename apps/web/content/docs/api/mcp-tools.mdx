@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **512 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **514 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -644,6 +644,8 @@ The current API has **512 unique tools**. Permission tags below describe the rou
 | --- | --- | --- |
 | `get_updates`<br />`GET /api/updates` | List update statuses for the org (apps, projects, self-app, webmail). ?behind=1 filters to those with an update available. | `updates:read` |
 | `post_updates_by_projectId_apply`<br />`POST /api/updates/:projectId/apply` | Apply the available update to a project/app (force-pulls image tags, redeploys, pre-deploy backup). | `project:write` |
+| `post_updates_by_projectId_runtime`<br />`POST /api/updates/:projectId/runtime` | Refresh published runtime images and rebuild selected services at the active commit, without upgrading application code. Omit serviceIds to update the project. | `project:write` |
+| `post_updates_by_projectId_runtime_check`<br />`POST /api/updates/:projectId/runtime/check` | Check configured image tags and recorded build bases against their current registry digests. Does not deploy. | `project:read` |
 | `post_updates_scan`<br />`POST /api/updates/scan` | Trigger a fresh update scan across the org's projects/apps. | `updates:write` |
 
 ## HTTP-only routes
