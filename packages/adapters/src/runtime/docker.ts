@@ -2137,6 +2137,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     const gitInvocation = assembleGitClone({
       repoUrl: config.repoUrl,
       gitToken: config.gitToken,
+      gitTokenRepositories: config.gitTokenRepositories,
       gitCredentialHelperPath: config.gitCredentialHelperPath,
       ssh: sshMaterial,
       ambient: config.gitAmbient,
