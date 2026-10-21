@@ -133,7 +133,7 @@ function spec(config: BuildConfig, logger = new BuildLogger(() => {})) {
 }
 
 describe("remote docker build — declared build context (#634)", () => {
-  it("runs docker build INSIDE the service directory with a context-relative -f", async () => {
+  it.each([false, true])("runs docker build INSIDE the service directory with a context-relative -f (refresh bases: %s)", async (refreshBaseImages) => {
     const commands: string[] = [];
     const logs: string[] = [];
     const executor: CommandExecutor = {
@@ -158,7 +158,7 @@ describe("remote docker build — declared build context (#634)", () => {
     const results = await runtime.buildImages(
       [
         spec(
-          serviceConfig(await makeRepo(), { buildArgs: { APP_PACKAGE: "@myorg/api" } }),
+          serviceConfig(await makeRepo(), { buildArgs: { APP_PACKAGE: "@myorg/api" }, refreshBaseImages }),
           new BuildLogger((entry) => logs.push(entry.message)),
         ),
       ],
@@ -169,6 +169,7 @@ describe("remote docker build — declared build context (#634)", () => {
 
     const buildCmd = commands.find((c) => /docker buildx build\b/.test(c) && c.includes(" -t "))!;
     expect(buildCmd).toBeDefined();
+    expect(buildCmd.includes(" --pull ")).toBe(refreshBaseImages);
     // The context is the SERVICE dir, so `.` means `svc` and the Dockerfile path is
     // relative to it. A tree-root `cd` plus `-f svc/Dockerfile.api` is the bug.
     expect(buildCmd).toMatch(/cd '\/tmp\/openship-build-sess-svc\/svc'\n/);
@@ -246,6 +247,58 @@ describe("remote docker build — declared build context (#634)", () => {
     expect(command).not.toContain("--add-host");
   });
 
+  it.each(["current", "changed", "unavailable"] as const)(
+    "refreshes base images when the shared software pack is %s",
+    async (registryState) => {
+      const commands: string[] = [];
+      const sourceDigest = `sha256:${"a".repeat(64)}`;
+      const executor = {
+        exec: vi.fn(async (command: string) => {
+          if (command.startsWith("python3 - "))
+            return JSON.stringify({
+              pack: {
+                version: 2,
+                platform: "linux/amd64",
+                images: [{
+                  path: "images/php-8-4-fpm",
+                  image: "php:8.4-fpm",
+                  digest: `sha256:${"b".repeat(64)}`,
+                  sourceDigest,
+                }],
+              },
+              platform: "linux/amd64",
+              dockerfile: "FROM php:8.4-fpm\n",
+            });
+          if (command.startsWith("docker buildx imagetools inspect ")) {
+            if (registryState === "unavailable") throw new Error("registry unavailable");
+            return registryState === "current" ? sourceDigest : `sha256:${"c".repeat(64)}`;
+          }
+          return "";
+        }),
+        streamExec: vi.fn(async (command: string) => {
+          commands.push(command);
+          return { code: 0, output: "" };
+        }),
+        writeFile: vi.fn(async () => {}),
+      } as unknown as CommandExecutor;
+      const runtime = runtimeFor(
+        { kind: "ssh", description: "test ssh" },
+        { connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}) },
+      );
+      const results = await runtime.buildImages(
+        [spec(serviceConfig(await makeRepo("FROM php:8.4-fpm\n"), { refreshBaseImages: true }))],
+        new BuildLogger(() => {}),
+      );
+      expect(results[0]!.result.status).toBe("deploying");
+      const command = commands.find((command) => /docker buildx build\b/.test(command))!;
+      expect(command).toContain(" --pull ");
+      // A stale/unknown pack must never override fresh registry resolution.
+      if (registryState === "current")
+        expect(command).toContain(" --build-context 'php:8.4-fpm=oci-layout://");
+      else expect(command).not.toContain(" --build-context ");
+    },
+  );
+
   it.each(["", "github.com/docker/buildx v0.17.1 abc123\n"])(
     "refuses remote execution without a successful Buildx sentinel: %j", async (probe) => {
       const { command, result } = await buildCommandWithProbeOutput(probe);
@@ -254,6 +307,31 @@ describe("remote docker build — declared build context (#634)", () => {
       expect(result.errorMessage).toContain("Remote builds require Docker Buildx");
     },
   );
+
+  it("builds the selected remote digest and restores the temporary Dockerfile", async () => {
+    const digest = `sha256:${"d".repeat(64)}`;
+    const source = "FROM php:8.4-fpm\n";
+    const writes = vi.fn(async () => {});
+    const executor = {
+      exec: vi.fn(async (command: string) => {
+        if (command.includes("OPENSHIP_BASES_PY")) return source;
+        if (command.startsWith("docker buildx imagetools inspect ")) return digest;
+        return "";
+      }),
+      streamExec: vi.fn(async () => ({ code: 0, output: "" })),
+      writeFile: writes,
+    } as unknown as CommandExecutor;
+    const runtime = runtimeFor(
+      { kind: "ssh", description: "test ssh" },
+      { connectionOptions: { executor }, transferBuildContext: vi.fn(async () => {}) },
+    );
+    const results = await runtime.buildImages(
+      [spec(serviceConfig(await makeRepo(source)))], new BuildLogger(() => {}),
+    );
+    expect(results[0]!.result.baseImages).toEqual([{ ref: "php:8.4-fpm", digest }]);
+    expect(writes).toHaveBeenCalledWith(expect.stringContaining("Dockerfile.api"), `FROM php:8.4-fpm@${digest}\n`);
+    expect(writes).toHaveBeenLastCalledWith(expect.stringContaining("Dockerfile.api"), source);
+  });
 });
 
 describe("mixed batch — one tree, different contexts (#634)", () => {
@@ -402,14 +480,48 @@ describe("dockerode docker build — declared build context (#634)", () => {
 
     expect(options.version).toBeUndefined();
   });
+
+  it("sends pinned bases to the native builder and restores their tracking refs between services", async () => {
+    const digest = `sha256:${"e".repeat(64)}`;
+    const packed: string[] = [];
+    const prepareDeploymentImage = vi.fn(async () => ({
+      imageId: `sha256:${"f".repeat(64)}`, deploymentRef: `php@${digest}`, registryDigest: `php@${digest}`,
+    }));
+    const buildImage = vi.fn(async (body: Readable) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of body.pipe(createGunzip())) chunks.push(Buffer.from(chunk));
+      packed.push(Buffer.concat(chunks).toString("utf8"));
+      return Readable.from([]);
+    });
+    const runtime = runtimeFor({ kind: "local", description: "local socket" }, {
+      _docker: { buildImage }, prepareDeploymentImage,
+      streamDockerodeBuild: vi.fn(async () => {}),
+    });
+    const repo = await makeRepo("FROM php:8.4-fpm\n");
+    const results = await runtime.buildImages(["one", "two"].map(name => ({
+      ...spec(serviceConfig(repo, { sessionId: `bases-${name}` })), serviceName: name,
+    })), new BuildLogger(() => {}));
+    expect(results.map(({ result }) => result.baseImages)).toEqual([
+      [{ ref: "php:8.4-fpm", digest }], [{ ref: "php:8.4-fpm", digest }],
+    ]);
+    expect(packed).toHaveLength(2);
+    for (const contents of packed) expect(contents).toContain(`FROM php:8.4-fpm@${digest}`);
+    expect(prepareDeploymentImage).toHaveBeenCalledTimes(2);
+  });
 });
 
-describe.each([
+const engineBuildCases = ([
   { mode: "single", transport: "socket" },
   { mode: "single", transport: "tcp" },
   { mode: "batch", transport: "socket" },
   { mode: "batch", transport: "tcp" },
-] as const)("$transport Engine API $mode build results", ({ mode, transport }) => {
+] as const).flatMap(testCase =>
+  [false, true].map(refreshBaseImages => ({ ...testCase, refreshBaseImages })),
+);
+
+describe.each(engineBuildCases)(
+  "$transport Engine API $mode build results (refresh bases: $refreshBaseImages)",
+  ({ mode, transport, refreshBaseImages }) => {
   describe.each(["classic", "buildkit"])("%s builder", (builder) => {
     it.each([false, true])(
       "keeps results authoritative and isolated across builds (firstFails=%s)",
@@ -450,6 +562,7 @@ describe.each([
         const configs = ["first", "next"].map((name) =>
           serviceConfig(repo, {
             sessionId: `result-${transport}-${mode}-${builder}-${firstFails}-${name}`,
+            refreshBaseImages,
           }),
         );
         const results = [];
@@ -470,6 +583,7 @@ describe.each([
         if (firstFails) expect(results[0]?.errorMessage).toContain(daemonError);
         expect(buildImage).toHaveBeenCalledTimes(2);
         for (const [, options] of buildImage.mock.calls) {
+          expect(options.pull).toBe(refreshBaseImages);
           expect(options.version).toBe(builder === "buildkit" ? "2" : undefined);
         }
         expect(verifyImageBuilt).toHaveBeenCalledTimes(firstFails ? 1 : 2);

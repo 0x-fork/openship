@@ -1233,5 +1233,21 @@
     "connection": "GitHub connection",
     "deliveryFailed": "Checks could not be delivered",
     "saveFailed": "Could not save GitHub check settings."
+  },
+  "runtimeUpdates": {
+    "options": "Redeploy options",
+    "refresh": "Refresh base images & redeploy",
+    "refreshing": "Refreshing images…",
+    "check": "Check image updates",
+    "title": "Image updates",
+    "failed": "Could not start image refresh.",
+    "uncertain": "The request timed out. Check deployment history before trying again.",
+    "available": "Image updates available",
+    "current": "Image digests match the latest observed registry digests.",
+    "checkUnavailable": "Image update status is unavailable. Redeploy to record image digests.",
+    "checkFailed": "Could not check image updates.",
+    "pinned": "Images are pinned by digest. Edit the configured reference to update them.",
+    "lastObserved": "Last observed runtime",
+    "verificationUnavailable": "Verification unavailable"
   }
 }

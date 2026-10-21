@@ -28,6 +28,14 @@ filled dropdown. Derive the default and supported versions from the selected sta
 builders inline. Docker builds offer an optional runtime base image in Advanced settings, with
 its managed default as the placeholder. Keep overrides explicit, validate compatibility, and
 show failures inline; blank resets the override. Bare and service-owned recipes do not offer it. The saved project Configuration card shows the selected version beside its build settings.
+Image updates belong in the existing project and service Redeploy dropdown. Reuse the same
+**Refresh base images & redeploy** and **Check image updates** actions for every stack, including
+prebuilt image services. Keep runtime version and image editing in the existing configuration
+flow. Refresh preserves configured versions and digest pins. Image drift uses the same compact
+notice and direct redeploy action as source commits; unknown baselines are never reported current.
+Display observed runtime verification in deployment results and logs, without treating a configured
+version or an old successful deployment as proof of the currently running runtime. Restart and
+environment refresh must not imply an image update, cache deletion or automatic security coverage.
 Borderless cards do not remove those functional indicators. Menus should use the shared dropdown
 component's existing positioning, keyboard behavior, and menu surface.
 

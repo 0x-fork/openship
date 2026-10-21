@@ -30,6 +30,7 @@ import type {
 } from "@repo/adapters";
 import { BuildLogger } from "@repo/adapters";
 import { deploymentResourceFailure } from "../resource-failure";
+import { recordRuntimeImageReceipts } from "../../../lib/runtime-image-receipts";
 
 import type { BuildConfigSnapshotLike } from "../build-config";
 import {
@@ -63,6 +64,7 @@ import { strictRefreshImages } from "../pinned-artifacts";
 import { cloudCapacityFailure } from "../../../lib/cloud-capacity";
 import { retirePreviousRoleContainers } from "../role-runtime";
 import { assertRequiredServiceEnvironment } from "./required-env-preflight";
+import { verifyDeployedServiceRuntimes } from "../runtime-verification";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -560,6 +562,11 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     logger.log(`Deployment completed with warnings: ${warningMessage}\n`, "warn");
   }
 
+  const runtimeVerification = await verifyDeployedServiceRuntimes({
+    runtime, projectId: project.id, services: composeResult.services, snapshot,
+    imageRefs: composeBuild.imageRefs, log: (message) => logger.log(message),
+  });
+  throwIfDeploymentCancelled(opts.signal);
   await onSuccess(ctx, {
     containerId: composeResult.primaryContainerId ?? COMPOSE_SENTINEL,
     url: composeResult.publicUrl,
@@ -574,6 +581,17 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
       causes: composeBuild.buildErrorCauses,
     }) : undefined,
     metaPatch: {
+      runtimeImages: recordRuntimeImageReceipts(
+        (dep.meta as { runtimeImages?: unknown } | null)?.runtimeImages ??
+          (previous?.meta as { runtimeImages?: unknown } | null)?.runtimeImages,
+        composeResult.services.filter(service => !service.carried && service.status !== "failed" && service.status !== "failure" &&
+          composeBuild.builtImageRefs.has(service.serviceId)).map(service => ({
+          serviceId: service.serviceId,
+          imageRef: composeBuild.builtImageRefs.get(service.serviceId)!,
+          baseImages: composeBuild.baseImages?.get(service.serviceId),
+        })),
+      ),
+      runtimeVerification: { services: runtimeVerification },
       composeDeployment: {
         totalServices: composeResult.summary.total,
         successfulServices: composeResult.summary.successful,

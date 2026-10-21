@@ -757,9 +757,11 @@ describe("single-app prebuilt release-image pipeline", () => {
     }
   });
 
-  it.each(["docker", "kubernetes"])("%s pulls the frozen image, skips source builds, and freezes the digest", async (runtimeName) => {
+  it.each(["docker", "kubernetes"].flatMap(runtimeName =>
+    ["update", "manual", "redeploy"].map(trigger => ({ runtimeName, trigger })),
+  ))("$runtimeName $trigger refreshes the registry image, skips source builds, and freezes the digest", async ({ runtimeName, trigger }) => {
     resolvedRuntime.name = runtimeName;
-    await run();
+    await run(deployment({ trigger }));
     await vi.waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledTimes(1));
     await vi.waitFor(() =>
       expect(mocks.acknowledgeBuildExecutionFinished).toHaveBeenCalledWith("build-session-1"),
@@ -772,7 +774,8 @@ describe("single-app prebuilt release-image pipeline", () => {
         slug: "release-app",
         imageRef: SOURCE_IMAGE,
         envVars: { API_TOKEN: "secret", PORT: "8080" },
-        forcePull: true,
+        forcePull: trigger === "update",
+        refreshMutableTag: trigger !== "update",
       }),
       expect.anything(),
     );

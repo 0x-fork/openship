@@ -1233,5 +1233,21 @@
     "updateFailed": "Échec de la mise à jour",
     "toastTitle": "Source",
     "cliManaged": "Il s'agit du plan de contrôle d'Openship — il se met à jour lui-même. Exécutez « openship update » sur l'hôte pour le mettre à niveau ; rien à modifier ici."
+  },
+  "runtimeUpdates": {
+    "options": "Options de redéploiement",
+    "refresh": "Actualiser les images de base et redéployer",
+    "refreshing": "Actualisation des images…",
+    "check": "Vérifier les mises à jour d’images",
+    "title": "Mises à jour d’images",
+    "failed": "Impossible de lancer l’actualisation des images.",
+    "uncertain": "Le délai de la requête a expiré. Consultez l’historique des déploiements avant de réessayer.",
+    "available": "Mises à jour d’images disponibles",
+    "current": "Les digests des images correspondent aux derniers digests observés dans le registre.",
+    "checkUnavailable": "L’état des images est indisponible. Redéployez pour enregistrer leurs digests.",
+    "checkFailed": "Impossible de vérifier les mises à jour d’images.",
+    "pinned": "Les images sont épinglées par digest. Modifiez la référence configurée pour les actualiser.",
+    "lastObserved": "Dernier runtime observé",
+    "verificationUnavailable": "Vérification indisponible"
   }
 }
