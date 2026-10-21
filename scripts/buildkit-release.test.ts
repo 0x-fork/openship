@@ -1,4 +1,5 @@
 import { expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -364,3 +365,58 @@ it("verifies both architectures through the Docker process with no publisher reg
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+const nativeDocker = Bun.which("docker");
+const nativeCliTest = nativeDocker || process.env.CI ? it : it.skip;
+nativeCliTest(
+  "keeps a config-installed Buildx discoverable to native Docker without copying registry auth",
+  () => {
+    if (!nativeDocker)
+      throw new Error("CI requires the Docker CLI for plugin discovery verification.");
+    const dir = mkdtempSync(join(tmpdir(), "openship-buildx-discovery-test-"));
+    const initialConfig = process.env.DOCKER_CONFIG;
+    try {
+      const original = join(dir, "publisher");
+      const plugins = join(original, "cli-plugins");
+      mkdirSync(plugins, { recursive: true });
+      const plugin = join(plugins, "docker-buildx");
+      writeFileSync(
+        plugin,
+        `#!/bin/sh
+if [ "$1" = "docker-cli-plugin-metadata" ]; then
+  printf '%s\\n' '{"SchemaVersion":"0.1.0","Vendor":"Openship test","Version":"0.0.0","ShortDescription":"Buildx discovery fixture"}'
+else
+  printf '%s\\n' 'openship-buildx-discovery-fixture'
+fi
+`,
+      );
+      chmodSync(plugin, 0o755);
+      const auth = '{"auths":{"ghcr.io":{"auth":"test-only"}}}';
+      writeFileSync(join(original, "config.json"), auth);
+      process.env.DOCKER_CONFIG = original;
+      const docker = (args: string[], env: NodeJS.ProcessEnv) => {
+        expect(existsSync(join(env.DOCKER_CONFIG!, "config.json"))).toBe(false);
+        if (args[0] === "buildx") {
+          // Version never contacts a daemon/registry, even if a system plugin
+          // masks the missing config plugin. Its unique marker proves discovery.
+          const version = execFileSync(nativeDocker, ["buildx", "version"], {
+            env,
+            encoding: "utf8",
+            timeout: 10_000,
+          });
+          expect(version.trim()).toBe("openship-buildx-discovery-fixture");
+          return JSON.stringify(index);
+        }
+        if (args[0] === "pull") return "";
+        return JSON.stringify([built(args.at(-1)!.endsWith("b".repeat(64)) ? "arm64" : "amd64")]);
+      };
+      verifyBuildkitReleaseImage("ghcr.io/oblien/openship-buildkit:1.2.3", sha, docker);
+      expect(readFileSync(join(original, "config.json"), "utf8")).toBe(auth);
+      expect(existsSync(plugin)).toBe(true);
+    } finally {
+      if (initialConfig === undefined) delete process.env.DOCKER_CONFIG;
+      else process.env.DOCKER_CONFIG = initialConfig;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

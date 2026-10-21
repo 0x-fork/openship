@@ -1,6 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { isProtectedBuildKitConfig } from "../packages/core/src/build-metadata-policy";
 
@@ -37,6 +45,18 @@ export function verifyBuildkitReleaseImage(
   const env: NodeJS.ProcessEnv = { ...process.env, DOCKER_CONFIG: config };
   delete env.DOCKER_AUTH_CONFIG;
   try {
+    // setup-buildx installs the executable in the publisher's Docker config.
+    // Keep only that plugin discoverable; never copy config.json or auth.
+    const plugin = join(
+      process.env.DOCKER_CONFIG || join(homedir(), ".docker"),
+      "cli-plugins",
+      "docker-buildx",
+    );
+    if (existsSync(plugin)) {
+      const plugins = join(config, "cli-plugins");
+      mkdirSync(plugins);
+      symlinkSync(realpathSync(plugin), join(plugins, "docker-buildx"));
+    }
     const index = JSON.parse(run(["buildx", "imagetools", "inspect", "--raw", image], env));
     for (const architecture of ["amd64", "arm64"]) {
       const manifests = index.manifests?.filter(
