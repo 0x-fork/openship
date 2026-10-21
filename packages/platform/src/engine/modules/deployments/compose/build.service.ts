@@ -559,7 +559,7 @@ export async function buildComposeImages(opts: {
   const contextServices = cloudDocker
     ? [...new Map([...buildable, ...mountedInlineSources].map(service => [service.id, service])).values()]
     : buildable;
-  const inlineBuilds = await materializeInlineBuildContexts(contextServices, Boolean(cloudDocker));
+  const inlineBuilds = await materializeInlineBuildContexts(contextServices, Boolean(cloudDocker) || env.CLOUD_MODE);
 
   try {
     if (cloudDocker && (buildable.length > 0 || sourceMounted.length > 0)) {
@@ -820,7 +820,7 @@ export async function buildComposeImages(opts: {
       // own ambient credentials, or the token already on buildConfig.gitToken.
       // Never for an inline build — cloning on the host replaces the shared tree,
       // so the materialized context would never reach the build.
-      if (opts.cloneOnServer && !inlineBuild) buildConfig.cloneOnServer = true;
+      if (opts.cloneOnServer && (!inlineBuild || inlineBuilds.files)) buildConfig.cloneOnServer = true;
       if (opts.gitCredentialHelperPath) {
         buildConfig.gitCredentialHelperPath = opts.gitCredentialHelperPath;
       }
@@ -1004,3 +1004,4 @@ export async function buildComposeImages(opts: {
     durationMs: Date.now() - startedAt,
   };
 }
+import { env } from "../../../config/env";

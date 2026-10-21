@@ -30,7 +30,6 @@ export const drainServerInstallations = installations.drain;
 
 export const serverInstallationDependencies: NonNullable<ServerDependencies["installations"]> = {
   async lookup(input) {
-    assertSelfHosted();
     const session = input.sessionId ? getSetupSession(input.sessionId) : getActiveSetupSession();
     if (!session) return { active: false };
     return {

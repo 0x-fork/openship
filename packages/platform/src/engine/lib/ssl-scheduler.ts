@@ -43,7 +43,6 @@ export interface RenewalResult {
  * - Returns a structured result for the caller to log or return to the client
  */
 export async function renewExpiringCerts(): Promise<RenewalResult> {
-  if (env.CLOUD_MODE) return { renewed: 0, failed: 0, total: 0, details: [] };
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() + SYSTEM.DOMAINS.SSL_RENEW_BEFORE_DAYS);
 
@@ -56,14 +55,22 @@ export async function renewExpiringCerts(): Promise<RenewalResult> {
   // Previously only `manualSsl` was excluded. The other two escaped by luck: their
   // rows carry no `sslExpiresAt`, and findExpiringSsl compares on it — so a single
   // `updateSsl({ sslExpiresAt })` anywhere would have handed them to certbot.
-  const allDomains = (await repos.domain.findExpiringSsl(cutoff)).filter(
+  let allDomains = (await repos.domain.findExpiringSsl(cutoff)).filter(
     (d) => !tlsIssuedElsewhere(d) && d.ownerType !== MAIL_DOMAIN_OWNER,
   );
+  if (env.CLOUD_MODE) {
+    const customerDomains = [];
+    for (const domain of allDomains) {
+      const project = domain.projectId ? await repos.project.findById(domain.projectId) : null;
+      if (project?.serverId && !project.workspaceId) customerDomains.push(domain);
+    }
+    allDomains = customerDomains;
+  }
 
   // Mail installs are canonical even when an older setup never registered a
   // domain row. Use their cached observations to find missing/stale certificates;
   // the shared lifecycle below still owns every ACME order and its locks.
-  const mailCandidates = (await repos.mailServer.list()).filter((mail) => {
+  const mailCandidates = (env.CLOUD_MODE ? [] : await repos.mailServer.list()).filter((mail) => {
     if (!mail.installedAt || !mail.certificateAutoRenew) return false;
     const health = currentMailCertificateHealth(
       mail.certificateHealth,

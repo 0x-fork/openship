@@ -1977,6 +1977,13 @@ export class DockerRuntime implements RuntimeAdapter {
     const executor = this.connectionOptions?.executor;
     if (!executor) throw new Error("Clone-on-server requires an SSH executor on connectionOptions");
 
+    if (config.inlineSourceFiles || config.sourceTransfer) {
+      const { prepareRemoteSource } = await import("./remote-source");
+      await executor.mkdir(remoteContextDir);
+      await prepareRemoteSource({ executor }, config, remoteContextDir, log);
+      signal?.throwIfAborted();
+      return;
+    }
     const useHelper = !!config.gitCredentialHelperPath;
 
     // Prefer a direct GitHub tarball download on the server (no git, no history,

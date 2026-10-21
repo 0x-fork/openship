@@ -38,7 +38,7 @@ import {
 } from "./workspace-ready";
 import { cloudDockerProjectPaths } from "./docker-paths";
 import { ensureCloudProjectVolume, resolveCloudProjectVolumeName } from "./docker-volume";
-import { prepareManagedSource } from "./source";
+import { prepareRemoteSource } from "../remote-source";
 import { pickHostPort } from "../host-port";
 import { scanPorts } from "../../system/port-scan";
 export { CLOUD_SERVER_IMAGE as CLOUD_DOCKER_IMAGE } from "./server-connection";
@@ -387,7 +387,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       const source = `/tmp/openship-cloud-source-${createHash("sha256").update(config.sessionId).digest("hex").slice(0, 24)}`;
       await this.executor.mkdir(source);
       try {
-        if (await prepareManagedSource(this.connection, config, source, logger)) {
+        if (await prepareRemoteSource(this.connection, config, source, logger)) {
           // The source capability supplies already-authorized uploaded bytes.
         } else if (config.localPath) {
           await this.executor.transferIn(config.localPath, source, logger.callback);

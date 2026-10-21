@@ -1,3 +1,5 @@
+import { assertManagementActive } from "../billing/management.service";
+import { verifyCustomerSshConnection } from "../../lib/customer-ssh";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { withServerExecution } from "../../lib/server-execution";
 /** Retained server diagnostics and component installers behind shared authorization. */
@@ -133,7 +135,6 @@ export async function runEphemeralConnectionTest(body: CreateServerInput) {
 
 
 export async function testConnection(ctx: ExecutionContext, body: CreateServerInput) {
-  if (env.CLOUD_MODE) return failSystem({ error: "Not available" }, 404);
 
   // Gate to org owner/admin: this endpoint connects to an arbitrary SSH host
   // from the request body (onboarding/setup wizard flow). Even non-Hono
@@ -146,6 +147,11 @@ export async function testConnection(ctx: ExecutionContext, body: CreateServerIn
     return failSystem({ error: "Insufficient permissions" }, 403);
   }
 
+  if (env.CLOUD_MODE) {
+    await assertManagementActive(ctx.organizationId);
+    await verifyCustomerSshConnection(body);
+    return { ok: true, message: "SSH connection verified", code: "ok" };
+  }
   const result = await runEphemeralConnectionTest(body);
   if (result.ok) audit.recordAsync(operationAuditContext(ctx), { eventType: "server:write", resourceType: "server", resourceId: "*" });
   return result;
@@ -224,7 +230,7 @@ async function buildEphemeralSshConfig(body: CreateServerInput) {
  */
 export async function checkServer(ctx: ExecutionContext, serverId: string, body: Parameters<ServerOperations["check"]>[1] = {}) {
   const server = await repos.server.getInOrganization(serverId, ctx.organizationId);
-  if (!server || env.CLOUD_MODE !== !!server.workspaceId) return failSystem({ error: "Server not found" }, 404);
+  if (!server || (env.CLOUD_MODE && server.isLocal)) return failSystem({ error: "Server not found" }, 404);
   const managed = !!server.workspaceId;
   const startedAt = Date.now();
 
@@ -414,7 +420,6 @@ export function dependencyFailureMessage(component: string, missing: string[]): 
  * Returns: { success: boolean, component: string, version?: string, error?: string }
  */
 export async function installComponent(ctx: ExecutionContext, serverId: string, body: Parameters<ServerOperations["installComponent"]>[1]) {
-  if (env.CLOUD_MODE) return failSystem({ error: "Not available" }, 404);
 
 
   
@@ -495,7 +500,6 @@ export async function installComponent(ctx: ExecutionContext, serverId: string, 
  * Returns: { success: boolean, component: string, error?: string, logs?: string[] }
  */
 export async function removeComponent(ctx: ExecutionContext, serverId: string, body: Parameters<ServerOperations["removeComponent"]>[1]) {
-  if (env.CLOUD_MODE) return failSystem({ error: "Not available" }, 404);
 
 
   
@@ -557,7 +561,7 @@ export async function removeComponent(ctx: ExecutionContext, serverId: string, b
 export async function scanExposedPorts(ctx: ExecutionContext, serverId: string) {
   const organizationId = ctx.organizationId;
   const server = await repos.server.getInOrganization(serverId, organizationId);
-  if (!server || env.CLOUD_MODE !== !!server.workspaceId) return failSystem({ error: "Server not found" }, 404);
+  if (!server || (env.CLOUD_MODE && server.isLocal)) return failSystem({ error: "Server not found" }, 404);
 
   if (!server.workspaceId) {
     await assertServerExecution(server);

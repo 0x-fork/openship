@@ -1,3 +1,4 @@
+import { env } from "../config/env";
 /**
  * SSH Connection Manager - per-server cached executors with idle-TTL.
  *
@@ -100,13 +101,13 @@ export async function buildSshConfig(
   assertSshDestination(config);
   parseSshTuningArgs(config.sshArgs);
 
-  if (settings.purpose === "migration_source") {
+  if (env.CLOUD_MODE || settings.purpose === "migration_source") {
     // These are customer-owned sources reached by the SaaS, never operator SSH
     // configuration. Pin the actual dial address on EVERY reconnect (no DNS TOCTOU).
     if (transport !== "direct" || settings.sshKeyPath || settings.sshJumpHost || settings.sshArgs ||
         !["password", "key"].includes(settings.sshAuthMethod ?? "") ||
         (!settings.sshHostKey && !options?.trustOnFirstUse)) {
-      throw new AppError("Migration sources require direct SSH with a password or uploaded private key", 400, "INVALID_MIGRATION_CONNECTION");
+      throw new AppError("Customer-owned servers require direct SSH with a password or uploaded private key", 400, "INVALID_MIGRATION_CONNECTION");
     }
     config.host = (await resolvePinnedHost(settings.sshHost)).ip;
     config.hostVerifier = settings.sshHostKey
@@ -424,6 +425,16 @@ export class SshConnectionManager {
   async acquire(serverId: string): Promise<CommandExecutor> {
     const startedAt = Date.now();
     if (this.destroyed) throw new Error("SshManager has been destroyed");
+    if (env.CLOUD_MODE) {
+      const server = await repos.server.get(serverId);
+      if (!server) throw new AppError("Server not found", 404, "SERVER_NOT_FOUND");
+      // Includes pooled connections and background jobs. Saved import-only
+      // connections retain their separate, explicitly scoped migration flow.
+      if (server.purpose !== "migration_source") {
+        const { assertServerExecution } = await import("../modules/system/server-access");
+        await assertServerExecution(server);
+      }
+    }
 
     // A row we've ALREADY classified as this host resolves to the shared channel
     // directly — BEFORE the generic cache fast-path below. That path returns the

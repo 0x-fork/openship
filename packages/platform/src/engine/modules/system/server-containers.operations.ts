@@ -7,7 +7,7 @@ import type { ServerDependencies } from "../../../servers";
 import { subscriptionEvents } from "../../../event-stream";
 import { authorization } from "../../lib/authorization";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
-import { assertSelfHosted, requireSelfHostedServer, assertServerExecution } from "./server-access";
+import { infrastructureServers, requireSelfHostedServer, assertServerExecution } from "./server-access";
 import { applyAllContainers, scanOrgContainers, detectServerContainers, loadOrgContainerIssues, runContainerApply } from "./server-containers.service";
 import { getActiveContainerApplySession, listContainerApplySessions, subscribeContainerApplySession } from "../../lib/server-container-session";
 
@@ -27,24 +27,21 @@ function record(ctx: ExecutionContext, id: string, after?: Record<string, unknow
 export const serverContainerCollection: Pick<ServerDependencies["collection"],
   "listAllContainers" | "scanAllContainers" | "containersBehind" | "containerIssues" | "applyingContainers" | "applyAllContainers"
 > = {
-  async listAllContainers(ctx) { assertSelfHosted(); return groupedContainers(ctx.organizationId); },
+  async listAllContainers(ctx) { return groupedContainers(ctx.organizationId); },
   async scanAllContainers(ctx) {
-    assertSelfHosted();
-    await scanOrgContainers(ctx.organizationId, server => authorizedServer(ctx, server.id, "write").then(() => {}));
+      await scanOrgContainers(ctx.organizationId, server => authorizedServer(ctx, server.id, "write").then(() => {}));
     const result = await groupedContainers(ctx.organizationId);
     record(ctx, "*");
     return result;
   },
   async containersBehind(ctx) {
-    assertSelfHosted();
-    const rows = await repos.serverContainerStatus.listBehindByOrg(ctx.organizationId);
+      const rows = await repos.serverContainerStatus.listBehindByOrg(ctx.organizationId);
     return { servers: new Set(rows.map(row => row.serverId)).size, components: rows.length };
   },
-  async containerIssues(ctx) { assertSelfHosted(); return loadOrgContainerIssues(ctx.organizationId); },
+  async containerIssues(ctx) { return loadOrgContainerIssues(ctx.organizationId); },
   applyingContainers: listApplyingContainers,
   async applyAllContainers(ctx, input = {}) {
-    assertSelfHosted();
-    const result = await applyAllContainers(ctx.organizationId, input.intents,
+      const result = await applyAllContainers(ctx.organizationId, input.intents,
       server => authorizedServer(ctx, server.id, "write").then(() => {}));
     record(ctx, "*", {
       intents: input.intents ?? ["update", "repair"],
@@ -98,7 +95,7 @@ export const serverContainerStreams: NonNullable<ServerDependencies["containers"
 
 async function groupedContainers(organizationId: string) {
   const [servers, rows, projectCounts] = await Promise.all([
-    repos.server.listByOrganization(organizationId),
+    infrastructureServers(organizationId),
     repos.serverContainerStatus.listByOrg(organizationId),
     repos.project.countActiveByServer(organizationId),
   ]);
@@ -122,9 +119,8 @@ async function groupedContainers(organizationId: string) {
 }
 
 export async function listApplyingContainers(ctx: ExecutionContext) {
-  assertSelfHosted();
   const [servers, rows] = await Promise.all([
-    repos.server.listByOrganization(ctx.organizationId),
+    infrastructureServers(ctx.organizationId),
     repos.serverContainerStatus.listByOrg(ctx.organizationId),
   ]);
   const names = new Map(servers.map((s) => [s.id, s.name ?? s.sshHost]));

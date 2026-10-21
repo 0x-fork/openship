@@ -655,3 +655,4 @@ export {
   probeDockerExecutionPlatforms,
   DOCKER_BINFMT_IMAGE,
 } from "./runtime/docker-platforms";
+export { prepareRemoteSource } from "./runtime/remote-source";

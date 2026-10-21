@@ -1,3 +1,5 @@
+import { assertManagementAccess } from "../billing/management.service";
+import { verifyCustomerSshConnection } from "../../lib/customer-ssh";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
   networkCollection,
@@ -82,7 +84,6 @@ const CAPACITY_PROBE_TIMEOUT_MS = 4000;
  * machine's hardware (the reason `getTrustedHostCapacity` exists).
  */
 async function probeServerCapacity(serverId: string, organizationId: string): Promise<HostCapacity | null> {
-  if (env.CLOUD_MODE) return null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<null>((resolve) => {
     timer = setTimeout(() => resolve(null), CAPACITY_PROBE_TIMEOUT_MS);
@@ -114,7 +115,7 @@ async function listServers(ctx: ExecutionContext, live = true) {
   // target and every host operation refuses, so the local row is hidden rather
   // than listed-but-dead. Enforced by createHostExecutor throwing — this only
   // stops the UI from offering something the API will reject.
-  const eligible = rows.filter((s) => !env.CLOUD_MODE || !!s.workspaceId);
+  const eligible = rows.filter((s) => !env.CLOUD_MODE || !s.isLocal);
   const all = [];
   for (const server of eligible) {
     if (server.isLocal && hostControlDisabled()) continue;
@@ -149,7 +150,7 @@ async function getServer(ctx: ExecutionContext, id: string) {
   // Org-scoped: out-of-org server ids 404 indistinguishably from missing.
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
-  if (env.CLOUD_MODE && !server.workspaceId) return failServer({ error: "Server not found" }, 404);
+  if (env.CLOUD_MODE && server.isLocal) return failServer({ error: "Server not found" }, 404);
   const cloud = server.workspaceId ? await managed.get(ctx, server.workspaceId) : null;
 
   await primeGeo();
@@ -185,7 +186,7 @@ async function probeReachability(ctx: ExecutionContext, id: string) {
 
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
-  if (env.CLOUD_MODE && !server.workspaceId) return failServer({ error: "Server not found" }, 404);
+  if (env.CLOUD_MODE && server.isLocal) return failServer({ error: "Server not found" }, 404);
   if (server.workspaceId) {
     try {
       await withServerExecution(ctx.organizationId, id, executor => executor.exec("true", { timeout: 10_000 }));
@@ -212,7 +213,15 @@ async function probeReachability(ctx: ExecutionContext, id: string) {
 
 /** POST /servers - create a new server */
 async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
-  assertSelfHosted();
+  if (!env.CLOUD_MODE) return createConnectedServer(ctx, body);
+  return withServerInventoryLock(ctx.organizationId, async () => {
+    await assertManagementAccess(ctx.organizationId);
+    const { settings, hostKey } = await verifyCustomerSshConnection(body);
+    return createConnectedServer(ctx, { ...body, ...settings }, hostKey);
+  });
+}
+
+async function createConnectedServer(ctx: ExecutionContext, body: CreateServerInput, sshHostKey?: string) {
 
   const host = (body.sshHost as string)?.trim();
   if (!host) return failServer({ error: "SSH host is required" }, 400);
@@ -223,7 +232,7 @@ async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
   // API's own loopback (the container's, when compose-deployed) where there is no
   // sshd → the "Can't reach 127.0.0.1" failure.
   if (
-    resolvesToLocalHost({
+    !env.CLOUD_MODE && resolvesToLocalHost({
       sshHost: host,
       sshPort: body.sshPort,
       sshJumpHost: body.sshJumpHost,
@@ -269,6 +278,7 @@ async function createServer(ctx: ExecutionContext, body: CreateServerInput) {
   assertNativeSshSettings(body);
   const server = await repos.server.create({
     organizationId: ctx.organizationId,
+    sshHostKey,
     name: body.name?.trim() || null,
     sshHost: host,
     sshPort: body.sshPort ?? 22,
@@ -346,7 +356,7 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
     audit.recordAsync(operationAuditContext(ctx), { eventType: "server:write", resourceType: "server", resourceId: id, after: { name: cloud.name } });
     return serializeServer({ ...existing, name: cloud.name }, cloud);
   }
-  assertSelfHosted();
+  if (env.CLOUD_MODE) await assertServerExecution(existing);
 
   // #527: an isLocal row's ssh* fields are DISPLAY-ONLY. Every operation on this box goes
   // through the container→host channel, whose credentials come from OPENSHIP_HOST_SSH_*
@@ -384,6 +394,12 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
     });
 
   const patch: Record<string, unknown> = {};
+  if (env.CLOUD_MODE && LOCAL_ROW_READONLY_FIELDS.some(field => body[field] !== undefined)) {
+    const connection = { ...existing, ...body, sshHost: body.sshHost?.trim() || existing.sshHost! };
+    const changedDestination = body.sshHost !== undefined && body.sshHost !== existing.sshHost || body.sshPort !== undefined && body.sshPort !== existing.sshPort;
+    const { hostKey } = await verifyCustomerSshConnection(connection, "deployment", changedDestination ? undefined : existing.sshHostKey ?? undefined);
+    patch.sshHostKey = hostKey;
+  }
 
   if (body.name !== undefined) patch.name = body.name?.trim() || null;
   if (body.sshHost !== undefined) patch.sshHost = body.sshHost?.trim() || existing.sshHost;
@@ -464,7 +480,6 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
  * lossy in secrets.
  */
 async function serverDeletionPreview(ctx: ExecutionContext, id: string) {
-  assertSelfHosted();
 
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) return failServer({ error: "Server not found" }, 404);
@@ -554,7 +569,6 @@ async function deleteServer(
   id: string,
   input: Parameters<ServerOperations["remove"]>[1] = {},
 ) {
-  assertSelfHosted();
   return withServerInventoryLock(ctx.organizationId, () => deleteServerUnderLock(ctx, id, input));
 }
 
@@ -564,7 +578,6 @@ async function deleteServerUnderLock(
   input: NonNullable<Parameters<ServerOperations["remove"]>[1]>,
 ) {
   // A queued operation must recheck access after acquiring the shared lock.
-  assertSelfHosted();
   await authorization.authorize(ctx, { resourceType: "server", resourceId: id, action: "admin" });
 
   // Primary gate: deleting a server is admin-tier (destructive).

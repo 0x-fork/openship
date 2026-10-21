@@ -1104,6 +1104,7 @@ async function executeBuildAndDeploy(
     // and desktop-relay eligibility. The desktop relay (reverse tunnel; nothing
     // persisted) is opted into per deploy via snapshot.forwardGitCredentials.
     const clonePlan = resolveClonePlan({
+      isHosted: env.CLOUD_MODE,
       effectiveTarget: resolved.effectiveTarget,
       serverId: resolved.serverId,
       runtimeIsBare: runtime.name === "bare",
@@ -1162,7 +1163,7 @@ async function executeBuildAndDeploy(
           // Docker clone-on-server can degrade to an api-host clone, so resolve
           // gracefully (a LOCAL fallback credential, flagged apiHostFallback) instead
           // of hard-failing at token resolution after the server is provisioned.
-          allowApiHostFallback: clonePlan.dockerClonesOnTarget,
+          allowApiHostFallback: !env.CLOUD_MODE && clonePlan.dockerClonesOnTarget,
           // Lets the chain ask the target server whether it already reaches this
           // repo on its own — only consulted for a clone that runs THERE.
           serverExecutor: clonePlan.cloneRunsOnTarget ? targetExecutor : null,
@@ -1183,8 +1184,8 @@ async function executeBuildAndDeploy(
     // check shown in the picker and the decision made here can never disagree.
     const cloneCredentialAvailable = cloneOnServerAvailable(gitCred).available;
     const effectiveCloneOnTarget =
-      cloneOnTarget && (runtime.name === "bare" || cloneCredentialAvailable);
-    if (cloneOnTarget && runtime.name !== "bare" && !cloneCredentialAvailable) {
+      cloneOnTarget && (env.CLOUD_MODE || runtime.name === "bare" || cloneCredentialAvailable);
+    if (!env.CLOUD_MODE && cloneOnTarget && runtime.name !== "bare" && !cloneCredentialAvailable) {
       logger.log(
         "Clone-on-server was requested, but nothing can authenticate the clone on the build host — " +
           "the server has no GitHub identity of its own, no App/PAT token is available, and no git " +

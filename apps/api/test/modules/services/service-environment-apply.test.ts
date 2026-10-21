@@ -372,11 +372,11 @@ describe("apply service environment operation", () => {
   it("keeps Cloud quota and allocation checks ahead of the runtime replacement", async () => {
     h.cloud.CLOUD_MODE = true;
     await applyServiceEnvironment(ctx, "p1", "api");
-    expect(h.plan).toHaveBeenCalledExactlyOnceWith("org1", null);
-    expect(h.quota).toHaveBeenCalledExactlyOnceWith("org1", 1, ["api"], null);
+    expect(h.plan).toHaveBeenCalledExactlyOnceWith("org1", null, undefined);
+    expect(h.quota).toHaveBeenCalledExactlyOnceWith("org1", 1, ["api"], null, undefined);
     expect(h.limits).toHaveBeenCalledExactlyOnceWith("org1", runtime, [
       { containerId: "old-api", allocatedResources: row.allocatedResources },
-    ], null);
+    ], null, undefined);
     expect(h.limits.mock.invocationCallOrder[0]).toBeLessThan(apply.mock.invocationCallOrder[0]!);
   });
 
