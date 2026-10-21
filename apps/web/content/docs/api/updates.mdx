@@ -79,6 +79,73 @@ Applying uses the existing deployment workflow with an update trigger. It return
 IDs, not proof that the new version is ready. [Follow the deployment](/docs/api/deployments#wait-decisions-and-cancellation)
 and handle its final outcome.
 
+## Refresh images and redeploy
+
+Use this operation after an image publisher releases a runtime fix under an existing tag. It refreshes
+the configured images, rebuilds source services with fresh base images, and deploys through the normal
+health checks and rollback policy. It keeps the deployed Git commit or release version instead of
+shipping newer application code. No prior update scan is required.
+
+<Tabs items={['SDK', 'REST API']} groupId="api-transport" persist>
+<Tab value="SDK">
+
+```ts
+// Omit serviceIds to update all eligible services in the project.
+const submitted = await ship.updates.updateRuntime("proj_123", {
+  serviceIds: ["svc_web"],
+});
+if (submitted.awaiting_actions) {
+  console.log(submitted.action_request_id);
+} else {
+  console.log(submitted.deployment_id);
+}
+```
+
+</Tab>
+<Tab value="REST API">
+
+```bash
+curl -X POST "$OPENSHIP_URL/api/updates/proj_123/runtime" \
+  -H "Authorization: Bearer $OPENSHIP_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"serviceIds":["svc_web"]}'
+```
+
+</Tab>
+</Tabs>
+
+The action preserves configured tags and digest pins. A pinned image cannot acquire a fix published
+under a different digest: edit its image reference first. Rebuilding a source app refreshes its
+builder and production bases; clearing the layer cache is not required to fetch a fresh base.
+The image publisher must have shipped the fix before this action can install it. Follow the deployment
+and verify the runtime version inside the running service before treating a security update as complete.
+
+Source updates require a confirmed deployed Git revision. Local uploads, inline template builds and
+source images carried from another deployment or replayed by rollback/migration are refused rather
+than rebuilt against an uncertain revision. Deploy those source services explicitly to establish their
+baseline first. Image-only services can still be updated independently with `serviceIds`.
+For a standalone image-release application with added sidecars, select sidecar services explicitly;
+updating the main release image and those services together is not supported by this operation.
+
+## Check image and base-image digests
+
+```ts
+const status = await ship.updates.checkRuntime("proj_123", { serviceIds: ["svc_web"] });
+for (const image of status.images) {
+  console.log(image.ref, image.currentDigest, image.latestDigest, image.status);
+}
+```
+
+REST uses `POST /api/updates/:projectId/runtime/check` with the same optional `serviceIds` body.
+This operation requires project read access and does not deploy. It uses the shared registry resolver,
+with a fresh check of each tracked tag. Source builds record the digests selected for supported literal
+Dockerfile bases; older builds and dynamic expressions remain `unknown` until a baseline is available.
+Missing credentials, unreachable registries and missing deployed digests also remain `unknown`.
+
+Image states are `update_available`, `current`, `pinned` and `unknown`. The response contains
+`checkedAt` and `images`; it does not inspect an interpreter or execute commands inside the app.
+A changed digest describes image content, not a security remediation guarantee.
+
 ## Operations
 
 {/* api-operations:start */}
@@ -88,5 +155,7 @@ and handle its final outcome.
 | List update status; behindOnly filters to available updates. | `updates.list(input?)` | `GET /api/updates`<br />`updates:read` |
 | Refresh the organization’s update scan. | `updates.scan()` | `POST /api/updates/scan`<br />`updates:write` |
 | Apply an available update to the specified project ID. | `updates.apply(id)` | `POST /api/updates/:projectId/apply`<br />`project:write` |
+| Refresh configured runtime images and rebuild selected services at the deployed source version. | `updates.updateRuntime(id, input?)` | `POST /api/updates/:projectId/runtime`<br />`project:write` |
+| Compare deployed image and recorded base-image digests with the registry. | `updates.checkRuntime(id, input?)` | `POST /api/updates/:projectId/runtime/check`<br />`project:read` |
 
 {/* api-operations:end */}

@@ -1,6 +1,10 @@
 import { BuildLogger, type LogEntry } from "@repo/adapters";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@repo/platform/engine/modules/deployments/compose/required-env-preflight", () => ({
+  assertRequiredServiceEnvironment: async () => {},
+}));
+
 /**
  * The two halves of #498, driven through the REAL `executeComposePipeline` with a
  * canned `deployComposeServices` result:

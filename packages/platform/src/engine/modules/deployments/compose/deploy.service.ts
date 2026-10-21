@@ -143,7 +143,7 @@ import {
 import { resolveRouteRedirect } from "../../../lib/domain-redirect";
 import { isRealContainerRef } from "../../../lib/container-ref";
 import { resolveServicePort } from "./domain-helpers";
-import { mergeServiceDeployEnv } from "./service-env-layers";
+import { loadServiceDeployEnvironment } from "./required-env-preflight";
 import { compileProjectRoutingFields } from "../../../lib/project-routing-fields";
 import { buildCompositeRegistration, buildDomainFanoutRegistrations } from "./composite-route";
 import { collectComposeRoutePortDemands } from "./route-port-demands";
@@ -1734,24 +1734,14 @@ async function deployComposeServicesUnlocked(
     const cached = resolvedEnvironmentByServiceId.get(service.id);
     if (cached) return cached;
 
-    const serviceEnvMap = await repos.project.getEnvMap(project.id, dep.environment, service.id);
-    const decryptedServiceEnv = decryptEnvMap(serviceEnvMap, (key) => {
-      logger.log(
-        `Warning: failed to decrypt env var "${key}" for service "${service.name}", skipping.\n`,
-        "warn",
-        { serviceName: service.name },
-      );
+    const layered = await loadServiceDeployEnvironment({
+      projectId: project.id,
+      dep,
+      service,
+      projectEnv: decryptedProjectEnv,
+      frozenEnv: depEnv,
+      logger,
     });
-    const layered = mergeServiceDeployEnv(
-      {
-        project: decryptedProjectEnv,
-        frozen: depEnv,
-        inline: (service.environment as Record<string, string>) ?? {},
-        templateKeys: service.advanced?.environmentTemplateKeys,
-        service: decryptedServiceEnv,
-      },
-      frozenEnvWins,
-    );
     if (layered.overriddenProjectKeys.length > 0) {
       logger.log(
         `Service "${service.name}" uses service-level values instead of project environment for: ${layered.overriddenProjectKeys.join(", ")}. Update or remove those service overrides to use project values.\n`,

@@ -28,6 +28,7 @@ import {
 } from "../../lib/project-runtime-lock";
 import { resolveDeploymentEnvironment } from "./deployment-environment";
 import { deploymentResourceFailure } from "./resource-failure";
+import { recordRuntimeImageReceipts, runtimeImageTrackingRef } from "../../lib/runtime-image-receipts";
 import {
   BUILD_ENV_VARS,
   AppError,
@@ -2934,10 +2935,18 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   // `metaPatch` is spread into deployment.meta (persisted) and read back for the
   // SSE payload in onSuccess, so both live + refresh see the same result.
   const metaPatch: Record<string, unknown> = {};
+  const priorImageReceipts = (dep.meta as { runtimeImages?: unknown } | null)?.runtimeImages ??
+    (prevDep?.meta as { runtimeImages?: unknown } | null)?.runtimeImages;
+  metaPatch.runtimeImages = recordRuntimeImageReceipts(priorImageReceipts,
+    buildResult.baseImages !== undefined && buildResult.imageRef
+      ? [{ imageRef: buildResult.imageRef, baseImages: buildResult.baseImages }] : []);
   // Image preparation resolves a registry tag to its immutable repo digest.
   // Freeze that exact reference into the successful deployment so a rollback
   // can re-pull the same bytes even after local image retention expires.
   if (snapshot.releaseImageRef && (runtime.name === "docker" || runtime.name === "kubernetes") && buildResult.imageRef) {
+    metaPatch.runtimeImageSource = runtimeImageTrackingRef(snapshot.releaseImageRef,
+      (dep.meta as { runtimeImageSource?: unknown } | null)?.runtimeImageSource,
+      dep.trigger === "rollback" || !!snapshot.refreshAppDeploymentId || !!snapshot.handoverAppImage);
     metaPatch.releaseImageRef = buildResult.imageRef;
   }
   if (portCheck.length > 0) metaPatch.portCheck = portCheck;
@@ -3031,6 +3040,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     logger.log(`Deployment completed with warnings: ${warningMessage}\n`, "warn");
   }
 
+  throwIfDeploymentCancelled(phase.cancellationSignal);
   await onSuccess(ctx, {
     containerId: deployResult.containerId!,
     url: deployResult.url,

@@ -72,7 +72,7 @@ jobs:
       - uses: actions/setup-go@v6
         if: steps.resume.outputs.reused != 'true'
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.9"
           cache-dependency-path: packages/actions-runner/go.sum
       - name: Execute native jobs, cancel and recover interrupted process groups
         if: steps.resume.outputs.reused != 'true'

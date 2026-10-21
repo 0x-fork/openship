@@ -116,7 +116,16 @@
     "removeReleaseCommand": "删除命令 {number}",
     "runtimeImageLabel": "运行镜像",
     "runtimeImageDesc": "可选的 Docker 生产基础镜像。必须与运行时和生成的构建方案兼容；留空以使用默认值。",
-    "staticPathHint": "从边缘节点作为静态文件提供服务 — 不作为进程运行。"
+    "staticPathHint": "从边缘节点作为静态文件提供服务 — 不作为进程运行。",
+    "runtimeTitle": "运行时",
+    "runtimeDesc": "选择运行应用的镜像。刷新镜像会保留所选版本和固定摘要。",
+    "runtimeBareDesc": "此应用直接在服务器上运行。请在服务器上管理已安装的运行时。",
+    "runtimeStaticDesc": "构建镜像负责准备静态文件。部署后不会运行应用运行时。",
+    "runtimeDockerfileDesc": "运行时镜像由 Dockerfile 指定。",
+    "runtimeServicesDesc": "请在“服务”中为每项服务选择运行时镜像。",
+    "runtimePrebuiltDesc": "所选应用镜像已包含运行时。",
+    "runtimeOverrideUnused": "这些已保存的覆盖设置不适用于本次部署。请先清除再保存。",
+    "clearRuntimeOverrides": "清除已保存的覆盖设置"
   },
   "projectSettings": {
     "framework": "框架",

@@ -23,11 +23,20 @@ dim and dark lift the inner surface. Form dropdowns use a lighter surface than t
 the trigger override above is intentional because `filled` alone uses the input background.
 
 Keep visible keyboard focus, error indicators, meaningful selection outlines, and useful dividers.
-Runtime version selection belongs in the existing deploy wizard's build settings, using the shared
-filled dropdown. Derive the default and supported versions from the selected stack's runtime policy, and report incompatible custom
-builders inline. Docker builds offer an optional runtime base image in Advanced settings, with
-its managed default as the placeholder. Keep overrides explicit, validate compatibility, and
-show failures inline; blank resets the override. Bare and service-owned recipes do not offer it. The saved project Configuration card shows the selected version beside its build settings.
+Runtime version, build image, and runtime image selection belong in a visible **Runtime** section of the
+existing deploy wizard. Use the shared filled dropdown and inputs. Derive supported versions and
+managed image defaults from the stack's runtime policy; show incompatible custom overrides inline.
+Blank resets an image override. Unsupported destinations explain which source or server owns the
+runtime, and saved overrides remain visible so users can clear them. Static Docker builds show
+only the build image. Do not repeat these fields under Advanced. The saved project Configuration
+card shows the selected runtime version.
+Image updates belong in the existing project and service Redeploy dropdown. Reuse the same
+**Refresh images & redeploy** and **Check image updates** actions for every stack, including
+prebuilt image services. Refresh preserves configured versions and digest pins. Image drift uses
+the existing compact recommendation notice and direct redeploy action; unknown baselines are never
+reported current. Record image identities in deployment metadata without executing interpreter
+probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
+environment refresh do not imply an image update or automatic security coverage.
 Borderless cards do not remove those functional indicators. Menus should use the shared dropdown
 component's existing positioning, keyboard behavior, and menu surface.
 
