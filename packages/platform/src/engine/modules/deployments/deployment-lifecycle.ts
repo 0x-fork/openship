@@ -23,7 +23,7 @@ import {
 } from "@repo/db";
 import { DockerRuntime, isEdgeDownMessage, type BuildLogger, type LogEntry } from "@repo/adapters";
 import type { RuntimeAdapter } from "@repo/adapters";
-import { SYSTEM, safeErrorMessage } from "@repo/core";
+import { SYSTEM, redactUrlCredentials, safeErrorMessage } from "@repo/core";
 import { env } from "../../config/index";
 import { isArtifactRef } from "../../lib/container-ref";
 import type { DeploymentMeta } from "../../lib/deployment-runtime";
@@ -538,6 +538,9 @@ export async function onFailure(
     await protectRoleHandoverOutcome(ctx);
     return;
   }
+  // Redact before ANY sink (error reporter, SSE, notification payloads, the row):
+  // a clone failure can quote the credentialed clone URL.
+  if (error) error = redactUrlCredentials(error);
   if (project.workspaceId) {
     errorMeta = {
       ...errorMeta,
