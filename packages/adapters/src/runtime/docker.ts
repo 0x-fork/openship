@@ -37,6 +37,8 @@ import * as tarFs from "tar-fs";
 import { randomUUID } from "node:crypto";
 import { projectBuildKitWorker, removeProjectBuildKitWorker } from "./docker-buildkit-worker";
 import { readSoftwareCache } from "./docker-software-cache";
+import { pinDockerfileBaseImages } from "./docker-base-images";
+import type { BaseImageReceipt } from "@repo/core";
 import {
   DEFAULT_BUILD_CACHE_KEEP_BYTES, DOCKER_BUILD_STORAGE_COMMAND, parseBuildStorage,
   assertBuildStorage, buildKitCacheConfig,
@@ -1821,7 +1823,94 @@ export class DockerRuntime implements RuntimeAdapter {
    * `remoteBuildDir` — the build CONTEXT, which for a compose service is its own
    * `build:` directory inside that tree, not the tree root (#634).
    */
+  private async pinBuildBaseImages(
+    config: BuildConfig,
+    contextDir: string,
+    dockerfileName: string,
+    log: BuildLogger,
+    signal?: AbortSignal,
+    executor?: CommandExecutor,
+  ): Promise<{ baseImages?: BaseImageReceipt[]; restore: () => Promise<void> }> {
+    const unknown = { restore: async () => {} };
+    // An advisory receipt must not turn an ordinary cached build into a registry
+    // update, or eagerly pull bases from stages the builder would never execute.
+    if (!config.refreshBaseImages) return unknown;
+    const path = `${contextDir}/${dockerfileName}`;
+    let selected: { original: string; pinned: Awaited<ReturnType<typeof pinDockerfileBaseImages>> } | undefined;
+    try {
+      // Share one small budget across the whole optional observation. The build's
+      // own --pull remains authoritative when metadata is slow or unavailable.
+      // Keep writes outside the timed promise: a late lookup may not rewrite a
+      // Dockerfile after the builder has already started reading its context.
+      const deadline = Date.now() + 5_000;
+      selected = await withTimeout((async () => {
+        signal?.throwIfAborted();
+        let original: string;
+        if (executor) {
+          original = await executor.exec(`python3 - ${sq(contextDir)} ${sq(path)} <<'OPENSHIP_BASES_PY'
+import os, sys
+root, path = sys.argv[1:]
+if not os.path.islink(path) and os.path.commonpath([os.path.realpath(root), os.path.realpath(path)]) == os.path.realpath(root):
+    with open(path, 'rb') as source:
+        data = source.read(1048577)
+    if len(data) <= 1048576:
+        print(data.decode('utf-8'), end='')
+OPENSHIP_BASES_PY`, { timeout: 5_000 });
+        } else {
+          const fs = await import("node:fs/promises");
+          const [stat, real, root] = await Promise.all([fs.lstat(path), fs.realpath(path), fs.realpath(contextDir)]);
+          if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1_048_576 || !real.startsWith(`${root}/`)) return;
+          original = await fs.readFile(path, "utf8");
+        }
+        const pinned = await pinDockerfileBaseImages(original, async ref => {
+          signal?.throwIfAborted();
+          if (Date.now() >= deadline) throw new Error("Base-image observation timed out");
+          if (executor) return (await executor.exec(
+            `docker buildx imagetools inspect ${sq(ref)} --format '{{.Manifest.Digest}}'`,
+            { timeout: Math.max(1, deadline - Date.now()) },
+          )).trim();
+          const image = await this.prepareDeploymentImage(ref, { force: true, signal, logger: log });
+          return image.registryDigest?.split("@")[1];
+        }, signal);
+        return { original, pinned };
+      })(), 5_000, "Base-image observation timed out");
+    } catch {
+      // diagnostics-ignore: optional base-image capture leaves an explicitly unknown baseline; update pull failures surface from the actual builder.
+      signal?.throwIfAborted();
+      return unknown;
+    }
+    signal?.throwIfAborted();
+    if (!selected?.pinned.baseImages) return unknown;
+    const { original, pinned } = selected;
+    if (pinned.dockerfile === original) return { ...unknown, baseImages: pinned.baseImages };
+    const write = async (contents: string) => {
+      if (executor) await executor.writeFile(path, contents);
+      else await (await import("node:fs/promises")).writeFile(path, contents);
+    };
+    // Unlike a missing receipt, a failed write can leave a partial Dockerfile.
+    // Stop before the builder instead of silently building those unknown bytes.
+    await write(pinned.dockerfile);
+    return { baseImages: pinned.baseImages, restore: () => write(original) };
+  }
+
   private async buildImageOnRemote(
+    config: BuildConfig,
+    remoteBuildDir: string,
+    dockerfileName: string,
+    tag: string,
+    log: BuildLogger,
+    opts?: { signal?: AbortSignal; requiresBuildKit?: boolean },
+  ): Promise<BaseImageReceipt[] | undefined> {
+    const pin = await this.pinBuildBaseImages(config, remoteBuildDir, dockerfileName, log, opts?.signal, this.connectionOptions?.executor);
+    try {
+      await this.runRemoteImageBuild(config, remoteBuildDir, dockerfileName, tag, log, opts);
+      return pin.baseImages;
+    } finally {
+      await pin.restore();
+    }
+  }
+
+  private async runRemoteImageBuild(
     config: BuildConfig,
     remoteBuildDir: string,
     dockerfileName: string,
@@ -1846,6 +1935,7 @@ export class DockerRuntime implements RuntimeAdapter {
       .join(" ");
     const dockerfileFlag =
       dockerfileName && dockerfileName !== "Dockerfile" ? ` -f ${sq(dockerfileName)}` : "";
+    const pullFlag = config.refreshBaseImages ? " --pull" : "";
 
     if (!await this.remoteBuildKitAvailable())
       throw new AppError(
@@ -1865,7 +1955,9 @@ export class DockerRuntime implements RuntimeAdapter {
       "set -e",
       `trap ${sq(`${removeBuilder} >/dev/null 2>&1 || true`)} EXIT HUP INT TERM`,
       `cd ${sq(remoteBuildDir)}`,
-      `docker buildx build --builder ${sq(worker.builderName)} --load --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
+      // Update runs refresh FROMs; ordinary builds retain local-only base support.
+      // Cache substitutions above are independently validated against the registry.
+      `docker buildx build --builder ${sq(worker.builderName)}${pullFlag} --load --progress=plain${software.args} -t ${sq(tag)}${dockerfileFlag} ${labelArgs} ${buildArgs} .`,
     ].join("\n");
     log.log("Builder: protected BuildKit (Docker Buildx)");
     log.log(Object.keys(limits).length > 0
@@ -2258,13 +2350,13 @@ export class DockerRuntime implements RuntimeAdapter {
     tag: string,
     log: BuildLogger,
     signal?: AbortSignal,
-  ): Promise<void> {
+  ): Promise<BaseImageReceipt[] | undefined> {
     const remoteContextDir = `/tmp/openship-build-${config.sessionId}`;
     try {
       // The whole TREE is transferred (a narrowed context still needs its siblings
       // present for a compose batch); only the `docker build` cwd narrows.
       await this.transferBuildContext(buildContext.contextDir, remoteContextDir, log);
-      await this.buildImageOnRemote(
+      return await this.buildImageOnRemote(
         config,
         buildContext.contextSubdir
           ? `${remoteContextDir}/${buildContext.contextSubdir}`
@@ -2362,12 +2454,20 @@ export class DockerRuntime implements RuntimeAdapter {
    */
   private async buildViaDockerode(
     config: BuildConfig,
-    buildContext: Awaited<ReturnType<typeof createDockerBuildContext>>,
+    buildContext: Pick<Awaited<ReturnType<typeof createDockerBuildContext>>,
+      "buildContextDir" | "contextEntries" | "dockerfileName" | "ignoreContextPath" | "requiresBuildKit" | "cleanup">,
     tag: string,
     log: BuildLogger,
     cancelSignal?: AbortSignal,
-  ): Promise<void> {
+  ): Promise<BaseImageReceipt[] | undefined> {
     log.log(`Streaming build context to Docker daemon - image tag: ${tag}`);
+    let pin: Awaited<ReturnType<DockerRuntime["pinBuildBaseImages"]>>;
+    try {
+      pin = await this.pinBuildBaseImages(config, buildContext.buildContextDir, buildContext.dockerfileName, log, cancelSignal);
+    } catch (error) {
+      await buildContext.cleanup();
+      throw error;
+    }
 
     const { body, abortSignal, abort, detachCancellation, takeError } = packBuildContext(
       buildContext.buildContextDir,
@@ -2390,6 +2490,7 @@ export class DockerRuntime implements RuntimeAdapter {
       await this.retainNativeBuildCache(log);
       const stream = await this.docker.buildImage(body, {
         t: tag,
+        pull: config.refreshBaseImages === true,
         dockerfile: buildContext.dockerfileName,
         labels: this.labels({ projectId: config.projectId, sessionId: config.sessionId }),
         buildargs: resolveDockerBuildArgs(config),
@@ -2431,8 +2532,13 @@ export class DockerRuntime implements RuntimeAdapter {
       // buildImage promise resolves as soon as the response starts, while tar-fs
       // may still be walking contextDir — deleting it here (the old `finally`
       // around buildImage alone) is exactly what raced the pack in #448.
-      await buildContext.cleanup();
+      try {
+        await pin.restore();
+      } finally {
+        await buildContext.cleanup();
+      }
     }
+    return pin.baseImages;
   }
 
   /**
@@ -2674,6 +2780,7 @@ export class DockerRuntime implements RuntimeAdapter {
       // no context transfer. Only for SSH server builds that opted in.
       if (sshExecutor && config.cloneOnServer) {
         const remoteContextDir = `/tmp/openship-build-${config.sessionId}`;
+        let baseImages: BaseImageReceipt[] | undefined;
         try {
           this.emitDockerStep(log, "clone", "running", "Cloning source on the server...");
           await this.cloneSourceOnRemote(config, remoteContextDir, log, abort.signal);
@@ -2686,7 +2793,7 @@ export class DockerRuntime implements RuntimeAdapter {
             config.stack === "docker",
             log,
           );
-          await this.buildImageOnRemote(config, remoteBuildDir, dockerfileName, tag, log, {
+          baseImages = await this.buildImageOnRemote(config, remoteBuildDir, dockerfileName, tag, log, {
             signal: abort.signal,
           });
         } finally {
@@ -2708,6 +2815,7 @@ export class DockerRuntime implements RuntimeAdapter {
           imageRef: tag,
           durationMs: Date.now() - startTime,
           managedCacheTargets: await this.managedCacheReceipt(tag, log),
+          ...(baseImages && { baseImages }),
         };
       }
 
@@ -2762,6 +2870,7 @@ export class DockerRuntime implements RuntimeAdapter {
         this.emitDockerStep(log, "build", "skipped", "No build command configured");
       }
 
+      let baseImages: BaseImageReceipt[] | undefined;
       if (sshExecutor) {
         // ── Fast SSH path ──────────────────────────────────────────────
         // Bypass dockerode for the upload - it tars and POSTs the context
@@ -2770,10 +2879,10 @@ export class DockerRuntime implements RuntimeAdapter {
         // per-3s `~X% · Y MB sent · Z MB/s` progress), then run native
         // `docker build` on the remote so its real stdout/stderr streams
         // back uninterpreted.
-        await this.buildViaSshTarPipe(config, buildContext, tag, log, abort.signal);
+        baseImages = await this.buildViaSshTarPipe(config, buildContext, tag, log, abort.signal);
       } else {
         // ── Dockerode path (local socket, TCP, or SSH without executor) ─
-        await this.buildViaDockerode(config, buildContext, tag, log, abort.signal);
+        baseImages = await this.buildViaDockerode(config, buildContext, tag, log, abort.signal);
       }
 
       // Last gate before the image counts as deployable. Cancelling mid-build is
@@ -2790,7 +2899,7 @@ export class DockerRuntime implements RuntimeAdapter {
       log.log(`[build] ✓ Image ${tag} ready`);
       log.step("build", "completed", `Finalizing image ${tag}`);
       const durationMs = Date.now() - startTime;
-      return { sessionId: config.sessionId, status: "deploying", imageRef: tag, durationMs, managedCacheTargets: await this.managedCacheReceipt(tag, log) };
+      return { sessionId: config.sessionId, status: "deploying", imageRef: tag, durationMs, managedCacheTargets: await this.managedCacheReceipt(tag, log), ...(baseImages && { baseImages }) };
     } catch (err) {
       observeCaughtError(err, "adapters/runtime/docker");
       if (abort.signal.aborted || err instanceof BuildCancelledError) return cancelled();
@@ -2992,6 +3101,7 @@ export class DockerRuntime implements RuntimeAdapter {
         status: "deploying",
         imageRef: hostOutDir,
         managedCacheTargets: buildResult.managedCacheTargets,
+        ...(buildResult.baseImages && { baseImages: buildResult.baseImages }),
         durationMs: elapsed(),
       };
     } catch (err) {
@@ -3587,8 +3697,9 @@ export class DockerRuntime implements RuntimeAdapter {
             spec.logger.log(`Using Docker build context: ${remoteBuildSubdir}\n`);
           }
 
+          let baseImages: BaseImageReceipt[] | undefined;
           if (isSsh) {
-            await this.buildImageOnRemote(
+            baseImages = await this.buildImageOnRemote(
               spec.config,
               remoteBuildDir,
               dockerfileName,
@@ -3597,62 +3708,16 @@ export class DockerRuntime implements RuntimeAdapter {
               { signal, requiresBuildKit },
             );
           } else {
-            // Own the pack (error handler + abort) so a build-context read
-            // failure fails just this service instead of crashing the API — see
-            // packBuildContext (#448). tree.cleanup() only runs after the whole
-            // loop (outer finally), so the context stays put while tar-fs walks.
-            const { body, abortSignal, abort, detachCancellation, takeError } = packBuildContext(
-              buildContextDir ?? tree!.contextDir,
-              contextEntries ?? [],
-              signal,
+            // The shared tree belongs to the batch, so only restore this
+            // Dockerfile here; outer cleanup runs after every service finishes.
+            baseImages = await this.buildViaDockerode(spec.config, {
+              buildContextDir: buildContextDir ?? tree!.contextDir,
+              contextEntries: contextEntries ?? [],
+              dockerfileName,
+              requiresBuildKit,
               ignoreContextPath,
-            );
-            const builder = this.selectDockerodeBuilder(spec.config, requiresBuildKit, spec.logger);
-            const buildLimits = dockerBuildResourceLimits(spec.config.resources);
-            const ownershipHost = builder.options.version !== "2" ? newBuildOwnershipHost() : null;
-            const diagnosticContext: DockerBuildDiagnosticContext = {
-              configuredMemoryMb: spec.config.resources.memoryMb,
-              memoryLimitApplied:
-                builder.options.version !== "2" && buildLimits.memory !== undefined,
-            };
-            try {
-              await this.retainNativeBuildCache(spec.logger);
-              const stream = await this.docker.buildImage(body, {
-                t: tag,
-                dockerfile: dockerfileName,
-                labels: this.labels({
-                  projectId: spec.config.projectId,
-                  sessionId: spec.config.sessionId,
-                }),
-                buildargs: resolveDockerBuildArgs(spec.config),
-                ...buildLimits,
-                ...(ownershipHost && { extrahosts: `${ownershipHost}:127.0.0.1` }),
-                forcerm: true,
-                ...builder.options,
-                abortSignal,
-              });
-              detachCancellation();
-              await this.streamDockerodeBuild(stream, spec.logger, {
-                trace: builder.trace,
-                diagnosticContext,
-                abortBuild: abort,
-                cancelSignal: signal,
-                ...(ownershipHost && {
-                  legacyBuilder: { expectedMemoryBytes: buildLimits.memory, ownershipHost },
-                }),
-              });
-            } catch (err) {
-              observeCaughtError(err, "adapters/runtime/docker");
-              const contextErr = takeError();
-              throw contextErr
-                ? new Error(
-                    `Failed to read Docker build context: ${safeErrorMessage(contextErr)}`,
-                    { cause: contextErr },
-                  )
-                : err;
-            } finally {
-              detachCancellation();
-            }
+              cleanup: async () => {},
+            }, tag, spec.logger, signal);
           }
 
           // Same last gate as build(): an image that finished under a cancel must
@@ -3688,6 +3753,7 @@ export class DockerRuntime implements RuntimeAdapter {
                   status: "deploying" as const,
                   imageRef: spec.config.staticOutDir,
                   managedCacheTargets: await this.managedCacheReceipt(tag, spec.logger),
+                  ...(baseImages && { baseImages }),
                   durationMs: Date.now() - startedAt,
                 };
             spec.onResult?.(result);
@@ -3702,6 +3768,7 @@ export class DockerRuntime implements RuntimeAdapter {
             imageRef: tag,
             durationMs: Date.now() - startedAt,
             managedCacheTargets: await this.managedCacheReceipt(tag, spec.logger),
+            ...(baseImages && { baseImages }),
           };
           spec.onResult?.(result);
           results.push({ serviceName: spec.serviceName, result });

@@ -1233,5 +1233,19 @@
     "saved": "Regla guardada",
     "saveFailed": "Error al guardar la regla",
     "loadFailed": "Error al cargar las reglas"
+  },
+  "runtimeUpdates": {
+    "options": "Opciones de redespliegue",
+    "refresh": "Actualizar imágenes y volver a desplegar",
+    "refreshing": "Actualizando imágenes…",
+    "check": "Buscar actualizaciones de imágenes",
+    "title": "Actualizaciones de imágenes",
+    "failed": "No se pudo iniciar la actualización de imágenes.",
+    "uncertain": "La solicitud agotó el tiempo de espera. Revisa el historial de despliegues antes de volver a intentarlo.",
+    "available": "Actualizaciones de imágenes disponibles",
+    "current": "Los digests de las imágenes coinciden con los últimos observados en el registro.",
+    "checkUnavailable": "La comparación requiere resúmenes registrados y acceso al registro.",
+    "checkFailed": "No se pudieron buscar actualizaciones de imágenes.",
+    "pinned": "Las imágenes están fijadas por digest. Edita la referencia configurada para actualizarlas."
   }
 }

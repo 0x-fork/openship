@@ -22,6 +22,9 @@ export * from "./mail-image-ref";
 // that matches it at pull time must derive the registry from the SAME functions.
 export {
   buildImageRef,
+  isMutableImageRef,
+  type BaseImageReceipt,
+  type RuntimeImageReceipts,
   DOCKER_HUB_REGISTRY,
   normalizeRegistryHost,
   registryConfigKeys,

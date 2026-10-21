@@ -7,7 +7,7 @@
  */
 
 import { PRICING } from "@repo/core";
-import type { BuildStrategy, ProxySettings, BuildStep, LogEntry } from "@repo/core";
+import type { BaseImageReceipt, BuildStrategy, ProxySettings, BuildStep, LogEntry } from "@repo/core";
 import type { Readable, Duplex } from "node:stream";
 export type { BuildStrategy } from "@repo/core";
 
@@ -128,6 +128,9 @@ export interface BuildConfig {
   /** Internal: cache mounts are enabled only after the runtime confirms a
    * compatible BuildKit path. False preserves legacy/capped Engine builds. */
   buildCache?: boolean;
+  /** Internal deployment intent: refresh Dockerfile base images from their
+   * registries before rebuilding. Normal builds preserve local-only bases. */
+  refreshBaseImages?: boolean;
   /** Shell command to install dependencies */
   installCommand: string;
   /**
@@ -430,6 +433,9 @@ export interface BuildResult {
   artifactOwned?: boolean;
   /** Cache mounts proven by the successfully built generated image. */
   managedCacheTargets?: string[];
+  /** Registry bases pinned into the Dockerfile used by this successful build.
+   * Absent means the build's complete base-image identity is unknown. */
+  baseImages?: BaseImageReceipt[];
   durationMs?: number;
   /** Human-readable error description when status is "failed" */
   errorMessage?: string;

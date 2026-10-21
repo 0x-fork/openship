@@ -1233,5 +1233,19 @@
     "connection": "GitHub bağlantısı",
     "deliveryFailed": "Kontroller iletilemedi",
     "saveFailed": "GitHub kontrol ayarları kaydedilemedi."
+  },
+  "runtimeUpdates": {
+    "options": "Yeniden dağıtım seçenekleri",
+    "refresh": "İmajları yenile ve yeniden dağıt",
+    "refreshing": "İmajlar yenileniyor…",
+    "check": "İmaj güncellemelerini denetle",
+    "title": "İmaj güncellemeleri",
+    "failed": "İmaj yenileme başlatılamadı.",
+    "uncertain": "İstek zaman aşımına uğradı. Yeniden denemeden önce dağıtım geçmişini kontrol edin.",
+    "available": "İmaj güncellemeleri mevcut",
+    "current": "İmaj özetleri kayıt defterinde son gözlenen özetlerle eşleşiyor.",
+    "checkUnavailable": "Karşılaştırma için kayıtlı özetler ve kayıt deposuna erişim gerekir.",
+    "checkFailed": "İmaj güncellemeleri denetlenemedi.",
+    "pinned": "İmajlar özetle sabitlenmiş. Güncellemek için yapılandırılan referansı düzenleyin."
   }
 }

@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({ repos: {} }));
+
 vi.mock("@repo/platform/engine/modules/deployments/compose/build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
 vi.mock("@repo/platform/engine/modules/deployments/compose/required-env-preflight", () => ({
   assertRequiredServiceEnvironment: async () => {},
