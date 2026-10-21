@@ -22,7 +22,7 @@ import { infrastructureIpv4 } from "./infrastructure";
 import { shellQuote } from "./shell-split";
 
 export { BUILD_METADATA_POLICY_VERSION, BUILD_METADATA_IPV4, BUILD_METADATA_IPV6,
-  buildMetadataFirewallScript, buildKitGuardEntrypoint } from "./build-metadata-policy";
+  buildMetadataFirewallScript, buildKitGuardEntrypoint, isProtectedBuildKitConfig } from "./build-metadata-policy";
 
 /**
  * A firewall Openship can drive.

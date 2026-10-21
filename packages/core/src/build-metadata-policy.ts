@@ -1,6 +1,14 @@
 /** Remote-build policy only. Keep provider DNS reachable; deny metadata and
  * credential agents by destination regardless of the URL or DNS spelling. */
 export const BUILD_METADATA_POLICY_VERSION = "1";
+
+/** The published artifact and the runtime enforce the same image identity. */
+export function isProtectedBuildKitConfig(config: unknown): boolean {
+  const value = config as { Labels?: Record<string, unknown>; Entrypoint?: unknown } | null;
+  return value?.Labels?.["org.openship.build-metadata-policy"] === BUILD_METADATA_POLICY_VERSION &&
+    JSON.stringify(value.Entrypoint) === JSON.stringify(["/usr/local/bin/openship-buildkitd"]);
+}
+
 export const BUILD_METADATA_IPV4 = [
   "169.254.169.254/32", // EC2, Azure, GCE, OCI, DigitalOcean, Hetzner
   "169.254.170.2/32", // ECS task credentials

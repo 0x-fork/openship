@@ -79,9 +79,15 @@ BuildKit/kernel vulnerability. Bare and Kubernetes builds are outside its scope.
 
 `openship-buildkit` is built for amd64 and arm64 by the existing Docker-images
 release workflow. It wraps a digest-pinned official BuildKit image with the
-shared metadata policy. Release operations must publish its matching version
-before deploying an API/binary/desktop release that requires it. If the artifact
-is missing or fails policy-label/entrypoint checks, builds fail with
+shared metadata policy. The workflow publishes this worker first and verifies
+anonymous pulls of both architectures against the same policy-label/entrypoint
+predicate used at runtime, plus the release commit. Other image tags wait for
+that verification. The separate Release workflow requires a successful image
+publication receipt for its exact version tag and commit before publishing API,
+desktop or CLI bundles. Ordinary npm-only dispatches require that same receipt;
+a named resume continues to verify the original already-published release source.
+A new GHCR package that is still private blocks publication with package-visibility
+setup guidance. If the worker is missing or fails policy-label/entrypoint checks, builds fail with
 `BUILD_METADATA_PROTECTION_UNAVAILABLE`; they do not use an upstream fallback.
 An API source checkout builds and transfers this trusted image using the same
 managed-image delivery as edge/mail, with a development tag derived only from

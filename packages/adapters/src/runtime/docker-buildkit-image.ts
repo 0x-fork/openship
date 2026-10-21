@@ -1,4 +1,4 @@
-import { AppError, BUILD_METADATA_POLICY_VERSION, buildImageRef } from "@repo/core";
+import { AppError, isProtectedBuildKitConfig, buildImageRef } from "@repo/core";
 import type { CommandExecutor, LogCallback } from "../types";
 import { sq } from "./build-pipeline";
 
@@ -74,10 +74,7 @@ export async function prepareProtectedBuildKitImage(
       Config?: { Labels?: Record<string, string>; Entrypoint?: string[] };
     }>;
     const config = configs.length === 1 ? configs[0]?.Config : undefined;
-    if (
-      config?.Labels?.["org.openship.build-metadata-policy"] !== BUILD_METADATA_POLICY_VERSION ||
-      JSON.stringify(config.Entrypoint) !== JSON.stringify(["/usr/local/bin/openship-buildkitd"])
-    )
+    if (!isProtectedBuildKitConfig(config))
       throw new Error("The selected worker image does not contain the required metadata guard.");
     return image;
   } catch (cause) {
