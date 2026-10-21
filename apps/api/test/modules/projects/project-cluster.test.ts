@@ -179,3 +179,53 @@ describe("project cluster lifecycle admission", () => {
     expect(h.trigger).not.toHaveBeenCalled();
   });
 });
+
+describe("Swarm target admission", () => {
+  const input = {
+    clusterId: "swarm",
+    config: { replicas: 2 },
+    expectedUpdatedAt: now.toISOString(),
+    acknowledgePlacement: true as const,
+  };
+  beforeEach(() => {
+    h.find.mockResolvedValue({ ...project(), clusterId: null });
+    h.active.mockResolvedValue(null);
+    h.ready.mockResolvedValue({
+      runtime: { provider: "swarm", plan: { hosts: [{ serverId: "manager" }] } },
+    });
+  });
+  it("requires the correct placement acknowledgement, while retaining Kubernetes confirmation", async () => {
+    await expect(
+      operations.setClusterTarget(ctx, "project", {
+        ...input,
+        acknowledgePlacement: undefined,
+        stateless: true,
+      }),
+    ).rejects.toMatchObject({ code: "CLUSTER_PLACEMENT_ACKNOWLEDGEMENT_REQUIRED" });
+    expect(h.bind).not.toHaveBeenCalled();
+    await operations.setClusterTarget(ctx, "project", input);
+    expect(h.bind).toHaveBeenCalledWith(
+      "org",
+      "project",
+      "swarm",
+      { replicas: 2 },
+      now.toISOString(),
+    );
+    h.bind.mockClear();
+    h.ready.mockResolvedValue({
+      runtime: { provider: "k3s", plan: { hosts: [{ serverId: "manager" }] } },
+    });
+    await expect(operations.setClusterTarget(ctx, "project", input)).rejects.toMatchObject({
+      code: "CLUSTER_PLACEMENT_ACKNOWLEDGEMENT_REQUIRED",
+    });
+    expect(h.bind).not.toHaveBeenCalled();
+  });
+  it("refuses to silently migrate a running project before changing its target", async () => {
+    h.active.mockResolvedValue({ id: "existing", containerId: "docker-container" });
+    await expect(operations.setClusterTarget(ctx, "project", input)).rejects.toMatchObject({
+      code: "CLUSTER_MIGRATION_REQUIRED",
+    });
+    expect(h.bind).not.toHaveBeenCalled();
+    expect(h.trigger).not.toHaveBeenCalled();
+  });
+});

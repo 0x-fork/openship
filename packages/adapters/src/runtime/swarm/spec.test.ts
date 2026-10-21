@@ -36,7 +36,7 @@ describe("Swarm preserves the shared service contract", () => {
     expect(swarmContainerSpec(config(), image).Env).toEqual(["TOKEN=private"]);
   });
   it("preserves private TCP/UDP bindings and all route ports without publishing Swarm ingress", () => {
-    const result = swarmGatewayPorts({ ...config(), publicPort: 3000, cloudProxyPorts: [4000] });
+    const result = swarmGatewayPorts({ ...config(), publicPort: 3000, routedPorts: [4000] });
     expect(result.portBindings).toEqual({
       "8080/tcp": [{ HostIp: "127.0.0.1", HostPort: "" }],
       "53/udp": [{ HostIp: "127.0.0.1", HostPort: "5353" }],
@@ -49,6 +49,17 @@ describe("Swarm preserves the shared service contract", () => {
     { advanced: { extraHosts: { host: "host-gateway" } } },
     { ports: ["8080:8081-8085"] },
     { ports: ["70000"] },
+    { volumes: ["/host/data:/data"] },
+    { volumes: ["data:/data:Z"] },
+    { advanced: { files: [{ path: "../private", content: "secret" }] } },
+    {
+      advanced: {
+        files: [
+          { path: "/etc/app", content: "a" },
+          { path: "/etc/app", content: "b" },
+        ],
+      },
+    },
   ])("refuses unsupported scheduling inputs before deployment: %j", (extra) => {
     expect(() =>
       assertSwarmServiceConfig({ ...config(), ...extra } as MultiServiceDeployConfig),

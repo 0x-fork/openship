@@ -36,6 +36,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.delete(schema.project);
   await db.delete(schema.projectGroup);
+  await db.delete(schema.clusterRuntime);
   await db.delete(schema.computeCluster);
   await db.delete(schema.managedNetworkOperation);
   await db.delete(schema.serverCluster);
@@ -267,4 +268,12 @@ describe("existing Swarm connections", () => {
     await expect(clusters.remove("org", cluster.id, cluster.revision)).rejects.toMatchObject({code: "CLUSTER_CONFLICT"});
     expect((await clusters.get("org", cluster.id)).scaling?.provider).toBe("swarm");
   });
+});
+
+it("keeps deferred network membership enforced when Swarm makes network IDs nullable", async () => {
+  const network = await networks.create("org", config(), "network", "hash");
+  const cluster = await clusters.create("org", {name: "Native", networkId: network.id, serverIds: ["a"]}, "native", "hash-native");
+  await expect(db.update(schema.computeClusterMember).set({networkId: null}).where(eq(schema.computeClusterMember.clusterId, cluster.id))).rejects.toThrow();
+  await expect(db.update(schema.computeCluster).set({networkId: null}).where(eq(schema.computeCluster.id, cluster.id))).rejects.toThrow();
+  expect((await clusters.get("org", cluster.id)).networkId).toBe(network.id);
 });

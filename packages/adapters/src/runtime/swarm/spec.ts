@@ -1,13 +1,43 @@
 import type Dockerode from "dockerode";
-import { AppError, parseComposeDurationNs, type ComposeAdvanced } from "@repo/core";
+import { AppError, parseComposeDurationNs, parseVolumeMount, isHostPathSource } from "@repo/core";
 import { parsePortBindings, toDockerHealthcheck } from "../docker";
 import { splitRuntimeEnv } from "../runtime-env";
 import type { MultiServiceDeployConfig } from "../types";
 
 /** Refuse unsupported contracts before stopping any previous release. */
 export function assertSwarmServiceConfig(
-  config: Pick<MultiServiceDeployConfig, "advanced" | "ports" | "namespaces" | "restart">,
+  config: Pick<MultiServiceDeployConfig, "advanced" | "ports" | "namespaces" | "restart"> & {
+    volumes?: string[];
+  },
 ) {
+  for (const volume of config.volumes ?? []) {
+    const mount = parseVolumeMount(volume);
+    if (
+      (mount.source && isHostPathSource(mount.source)) ||
+      mount.options.some((option) => !["rw", "ro", "nocopy"].includes(option))
+    )
+      throw new AppError(
+        "Swarm storage requires named volumes; host paths and SELinux flags cannot be scheduled safely.",
+        422,
+        "SWARM_SETTING_UNSUPPORTED",
+      );
+  }
+  const paths = new Set<string>();
+  for (const file of config.advanced?.files ?? []) {
+    if (
+      !file.path.startsWith("/") ||
+      file.path.includes("\0") ||
+      file.path.split("/").includes("..") ||
+      paths.has(file.path) ||
+      Buffer.byteLength(file.content) > 500_000
+    )
+      throw new AppError(
+        "Swarm config files need unique absolute paths and must be smaller than 500 KB.",
+        422,
+        "SWARM_SETTING_UNSUPPORTED",
+      );
+    paths.add(file.path);
+  }
   for (const key of ["gpus", "runtime", "shmSize", "networkMode", "pidMode"] as const) {
     if (config.advanced?.[key] !== undefined)
       throw new AppError(
@@ -88,6 +118,7 @@ export function swarmGatewayPorts(config: MultiServiceDeployConfig) {
   const ports = new Set(Object.keys(parsed.exposedPorts));
   for (const port of [
     config.publicPort,
+    ...(config.routedPorts ?? []),
     ...(config.cloudProxyPorts ?? []),
     ...(config.cloudEndpoints ?? []).map((item) => item.port),
   ])

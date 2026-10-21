@@ -325,7 +325,7 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
         },
         logger,
       );
-      expect(built.status, built.error).toBe("deploying");
+      expect(built.status, built.errorMessage).toBe("deploying");
       expect(built.imageRef).toMatch(/^registry:5000\/openship\/swarm-e2e@sha256:[a-f0-9]{64}$/);
       const source = service("source", {
         serviceName: "source",
@@ -377,7 +377,12 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       );
       expect(failed.status).toBe("failed");
       expect(await read(original)).toBe("one:private-file");
-      expect(await runtime.listProjectContainerIds("swarm-e2e")).toEqual([original]);
+      const afterFailure = await runtime.listProjectContainerIds("swarm-e2e");
+      expect(afterFailure).toContain(original);
+      for (const ref of afterFailure.filter((id) => id !== original)) {
+        expect((await runtime.status(ref)).desired).toBe(0);
+        await runtime.destroy(ref);
+      }
       const next = service("two", { previousContainerId: original });
       const success = await runDeployPipeline(
         env(next),

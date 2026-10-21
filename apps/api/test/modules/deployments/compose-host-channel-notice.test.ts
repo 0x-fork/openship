@@ -2311,3 +2311,21 @@ it("rejects an invalid GPU request before pulling images or replacing any siblin
   expect(fixture.activate).not.toHaveBeenCalled();
   expect(fixture.runtime.destroy).not.toHaveBeenCalled();
 });
+
+it("passes generated config through scheduler-native files without requiring a host writer", async () => {
+  h.services = [{id: "svc-web", projectId: "p1", name: "web", enabled: true, dependsOn: [],
+    image: "busybox:1.37", ports: [], volumes: [], exposed: false, environment: {GREETING: "${GREETING:-hello}"},
+    advanced: {environmentTemplateKeys: ["GREETING"], files: [{path: "/etc/app.yml", content: "enabled: true"}]},
+  }];
+  h.previousServiceRows = [];
+  const runtime = startingRuntime();
+  Object.assign(runtime, {name: "swarm", supports: (cap: string) => ["clusterStatus", "containerIp", "serviceConfigFiles"].includes(cap)});
+  const {logger} = recordingLogger();
+  const result = await deployComposeServices(project, dep, runtime, logger);
+  expect(result.status, JSON.stringify(result.services)).toBe("ready");
+  expect(runtime.deployServiceWorkload).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    environment: expect.objectContaining({GREETING: "hello"}),
+    advanced: expect.objectContaining({files: [{path: "/etc/app.yml", content: "enabled: true"}]}),
+    volumes: [],
+  }), expect.any(Function));
+});

@@ -52,6 +52,8 @@ export type RuntimeCapability =
   | "clusterStatus"
   /** A service release can be stopped, restored on failure, then retired on success. */
   | "retainedServiceCutover"
+  /** Mount resolved service config files through the scheduler, without host bind paths. */
+  | "serviceConfigFiles"
   | "stop"
   | "start"
   | "restart"
@@ -617,6 +619,8 @@ export interface MultiServiceDeployConfig {
   cloudEndpoints?: Array<{ hostname: string; port: number; custom: boolean }>;
   /** Ports needed by project/composite edge routes, without a service hostname. */
   cloudProxyPorts?: number[];
+  /** Container ports needed by the shared route layer, including secondary domains. */
+  routedPorts?: number[];
   /** Service names this service depends on (compose `depends_on`). Used for
    *  readiness ordering on runtimes with no native healthcheck. */
   dependsOn?: string[];

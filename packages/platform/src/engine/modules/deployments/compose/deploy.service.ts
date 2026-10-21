@@ -2082,6 +2082,7 @@ async function deployComposeServicesUnlocked(
     }
     const files = resolveGeneratedConfigFiles(service);
     if (files.length === 0) continue;
+    if (runtime.supports("serviceConfigFiles")) continue;
     await withGeneratedConfigWriter(service, async (writer) => {
       for (const [index, file] of files.entries()) {
         throwIfDeploymentCancelled(opts?.signal);
@@ -3041,7 +3042,12 @@ async function deployComposeServicesUnlocked(
       // selected file above; the stable path is replaced atomically only when this
       // service is about to be activated, so the old container keeps its old inode.
       const generatedConfigFiles = resolveGeneratedConfigFiles(svc);
-      if (generatedConfigFiles.length > 0) {
+      if (generatedConfigFiles.length > 0 && runtime.supports("serviceConfigFiles")) {
+        serviceRuntimeConfig.advanced = {
+          ...serviceRuntimeConfig.advanced,
+          files: generatedConfigFiles.map((file) => ({path: file.containerPath, content: file.content})),
+        };
+      } else if (generatedConfigFiles.length > 0) {
         const generatedConfigBinds = await withGeneratedConfigWriter(svc, async (writer) => {
           const binds: string[] = [];
           for (const file of generatedConfigFiles) {
@@ -3123,6 +3129,7 @@ async function deployComposeServicesUnlocked(
       // the runtime config). The pipeline fans out one upstream per distinct port.
       const proxyRoutes =
         !cloudHosted ? routes.filter((route) => route.targetPort !== undefined) : [];
+      serviceRuntimeConfig.routedPorts = proxyRoutes.map((route) => route.targetPort!);
       if (cloudHosted) {
         serviceRuntimeConfig.cloudEndpoints = routes
           .filter((route) => route.targetPort !== undefined)

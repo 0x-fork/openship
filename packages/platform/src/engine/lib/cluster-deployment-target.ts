@@ -86,6 +86,8 @@ export async function assertClusterWorkloadSupported(input: {
       image?: string | null;
       advanced?: ComposeAdvanced;
       ports?: string[];
+      volumes?: string[];
+      restart?: string;
     }>;
     for (const service of services)
       assertSwarmServiceConfig({ advanced: service.advanced, ports: service.ports ?? [] });

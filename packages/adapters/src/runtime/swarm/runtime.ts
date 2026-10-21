@@ -96,6 +96,7 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
     "deploymentContainerQuery",
     "clusterStatus",
     "retainedServiceCutover",
+    "serviceConfigFiles",
   ]);
   readonly unsupportedComposeKeys = new Set<keyof ComposeAdvanced>(); // Validation rejects; never silently drops.
   private readonly lifetime = new AbortController();
@@ -278,21 +279,7 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
     const docker = await this.client();
     const references: Dockerode.SecretReference[] = [],
       ids: string[] = [];
-    const paths = new Set<string>();
     for (const file of config.advanced?.files ?? []) {
-      if (
-        !file.path.startsWith("/") ||
-        file.path.includes("\0") ||
-        file.path.split("/").includes("..") ||
-        paths.has(file.path) ||
-        Buffer.byteLength(file.content) > 500_000
-      )
-        throw new AppError(
-          "Swarm config files need unique absolute paths and must be smaller than 500 KB.",
-          422,
-          "SWARM_SETTING_UNSUPPORTED",
-        );
-      paths.add(file.path);
       const name = `${this.prefix}-cfg-${hash(`${config.deploymentId}:${config.serviceName}:${file.path}`)}`;
       const fingerprint = hash(file.content);
       let secret: Dockerode.Secret;
@@ -1017,19 +1004,30 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
           },
         }),
     );
+    let settleStopped: () => void = () => {};
     const stop = () => {
+      if (closed) return;
       closed = true;
+      settleStopped();
       source.destroy();
       sinks.forEach((sink) => sink.destroy());
       this.streams.delete(stop);
     };
     this.streams.add(stop);
     const completed = new Promise<void>((resolve, reject) => {
+      settleStopped = resolve;
       const finish = (error?: Error) => {
         if (finished || closed) return;
         finished = true;
-        for (const message of buffers.filter(Boolean))
-          onLog({ timestamp: new Date().toISOString(), message, level: parseLogLevel(message) });
+        for (const [index, buffer] of buffers.entries()) {
+          const message = buffer + decoders[index]!.end();
+          if (message)
+            onLog({
+              timestamp: new Date().toISOString(),
+              message,
+              level: index === 1 ? "error" : parseLogLevel(message),
+            });
+        }
         opts?.onEnd?.(error);
         this.streams.delete(stop);
         if (error) reject(error);
