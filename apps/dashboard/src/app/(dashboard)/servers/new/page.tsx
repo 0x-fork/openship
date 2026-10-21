@@ -169,7 +169,7 @@ function ConnectedServerSetup({ choice }: { choice?: ReactNode }) {
 
         let session: Awaited<ReturnType<typeof systemApi.getInstallSession>> | null = null;
         try {
-          session = await systemApi.getInstallSession();
+          session = await systemApi.getInstallSession(undefined, editId ?? undefined);
         } catch (diagnosticFailure) {
           observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/servers/new/page");
           /* no active session */

@@ -66,12 +66,35 @@ Hosted connections accept direct SSH with a password or uploaded private key.
 Public addresses are resolved and pinned on each connection, and the first
 successful connection pins the host key. Local/agent credentials, jump hosts,
 local key paths and custom SSH arguments are unavailable to SaaS customers.
+Reachability and exposed-port checks use the same public-address validation and
+pin the actual TCP destination, including after DNS changes. The control-plane
+mode defines this trust boundary: connecting a customer-owned server to SaaS
+does not grant access to the SaaS host, local credentials or private network.
+The SaaS operator's ACME account settings, EAB credentials and CA configuration
+are not forwarded to customer edges. Self-hosted control planes retain their
+configured certificate provider; SaaS-managed customer hosts use the edge's
+default public certificate provider and their own certificate accounts.
 Management expiration blocks new control-plane operations; it does not stop or
 delete running applications or data. Disconnect removes Openship records only.
 Normal explicit project deletion retains its existing destructive confirmation.
 
 Clusters, instance migration and mail administration retain their existing
 availability constraints; this feature does not expose the SaaS operator host.
+
+Component installation and removal share the existing deployment provisioning
+lock for the target host, held until the background installation finishes.
+Different servers can install concurrently. The database advisory lock also
+prevents another API replica from changing the same host at the same time.
+Installation discovery is limited to the active organization and the caller's
+server permissions; named session replay and prompt responses require the same
+server authority. SDK/CLI callers can select a server explicitly; released
+desktop clients using the legacy session ID query remain compatible.
+Live setup logs remain process-local; multi-replica deployments need session
+affinity for reattachment. A missing local session never authorizes an overlapping
+installation, because its host's advisory lock remains held by the worker.
+
+Provider-managed Cloud Spaces retain their separate subscription/lifecycle
+operations. Generic connected-server deletion rejects them before project cleanup.
 
 ## Validation boundaries
 

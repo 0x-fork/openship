@@ -402,14 +402,16 @@ server
 
 server.command("install-session [sessionId]")
   .description("Inspect a server installation session")
-  .action(guard(async (sessionId?: string) => {
-    printJson(await getShipClient().servers.getInstallSession({ sessionId }));
+  .option("--server <serverId>", "Select the server's current installation")
+  .action(guard(async (sessionId: string | undefined, opts: { server?: string }) => {
+    printJson(await getShipClient().servers.getInstallSession({ sessionId, serverId: opts.server }));
   }));
 
 server.command("install-events [sessionId]")
   .description("Reattach to installation logs and prompts without starting another install")
-  .action(guard(async (sessionId?: string) => {
-    await followInstall(getShipClient().servers.installEvents({ sessionId }));
+  .option("--server <serverId>", "Select the server's current installation")
+  .action(guard(async (sessionId: string | undefined, opts: { server?: string }) => {
+    await followInstall(getShipClient().servers.installEvents({ sessionId, serverId: opts.server }));
   }));
 
 server.command("uninstall <serverId> <component>")

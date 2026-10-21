@@ -93,6 +93,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
+  tryAcquireAdvisoryLock: async () => ({ release: async () => {} }),
   schema: {},
   getDriver: () => "postgres",
   repos: {
@@ -2017,7 +2018,7 @@ describe("server installation HTTP/native parity", () => {
     expect(setupPromptState(session.id)).toEqual({ pending: false, subscribers: 0 });
   });
 
-  it("keeps session replay and response private, including busy-install errors", async () => {
+  it("keeps session replay and response private without blocking an independent server", async () => {
     restrictToServer();
     const session = createSetupSession([{ name: "edge", label: "Edge" }], "server-b");
     setupSessions.add(session.id);
@@ -2026,11 +2027,15 @@ describe("server installation HTTP/native parity", () => {
       await expect(servers.getInstallSession({ sessionId: session.id })).rejects.toMatchObject({ code: "NOT_FOUND" });
       await expect(servers.respondToInstall({ sessionId: session.id, action: "override" })).rejects.toMatchObject({ code: "NOT_FOUND" });
       await expect(servers.installEvents({ sessionId: session.id })[Symbol.asyncIterator]().next()).rejects.toMatchObject({ code: "NOT_FOUND" });
-      const failure = await servers.installComponents("server-a", { components: ["edge"] })[Symbol.asyncIterator]().next().catch(error => error);
-      expect(failure).toMatchObject({ statusCode: 409, code: "install_in_progress" });
-      expect(JSON.stringify(failure.details)).not.toContain(session.id);
+      await expect(servers.getInstallSession()).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await servers.getInstallSession({ serverId: "server-a" })).toEqual({ active: false });
+      const events = [];
+      for await (const event of servers.installComponents("server-a", { components: ["edge"] })) events.push(event);
+      expect(events.at(-1)?.event).toBe("end");
+      expect(JSON.stringify(events)).not.toContain(session.id);
+      await drainServerInstallations();
     }
-    expect(h.installEdge).not.toHaveBeenCalled();
+    expect(h.installEdge).toHaveBeenCalledTimes(2);
   });
 
   it("revalidates server grants before starting the next installation component", async () => {

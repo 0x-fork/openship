@@ -929,7 +929,6 @@ export class SshConnectionManager {
    */
   async diagnoseReachability(serverId: string, timeoutMs = 2500): Promise<ReachabilityDiagnosis> {
     if (this.destroyed) return { reachable: false, code: "unknown" };
-    if (this.isConnected(serverId)) return { reachable: true, code: "ok" };
 
     // Read the cooldown BEFORE the row so a remote box in cooldown still pays no
     // probe; the row read that follows is a local DB hit, and it's what decides
@@ -939,6 +938,12 @@ export class SshConnectionManager {
 
     const server = await repos.server.get(serverId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/ssh-manager"); return undefined; });
     if (!server) return { reachable: false, code: "unknown" };
+    if (env.CLOUD_MODE && server.purpose !== "migration_source") {
+      const { assertServerExecution } = await import("../modules/system/server-access");
+      await assertServerExecution(server);
+    }
+    // A cached connection proves reachability, never ongoing authorization.
+    if (this.isConnected(serverId)) return { reachable: true, code: "ok" };
 
     // An isLocal row is THIS box (the auto-registered "This Server"). Its ssh*
     // fields are display-only — self-server.ts writes `127.0.0.1`/SERVER_IP purely
@@ -1003,7 +1008,13 @@ export class SshConnectionManager {
       }
     }
 
-    const ok = await probeTcp(host, port, timeoutMs);
+    // Apply the same destination policy as SSH on every new dial. Passing the
+    // validated address (not the hostname) prevents a second DNS lookup rebinding
+    // this diagnostic to the SaaS control plane or its private network.
+    const dialHost = env.CLOUD_MODE || server.purpose === "migration_source"
+      ? (await resolvePinnedHost(host)).ip
+      : host;
+    const ok = await probeTcp(dialHost, port, timeoutMs);
     if (ok) this.recordSuccess(serverId);
     else this.recordFailure(serverId);
     return { reachable: ok, code: ok ? "ok" : "unreachable", ...endpoint };

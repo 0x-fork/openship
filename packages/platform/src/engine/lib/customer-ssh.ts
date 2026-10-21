@@ -1,6 +1,7 @@
-import { AppError, assertSshSettings } from "@repo/core";
+import { AppError } from "@repo/core";
 import { createExecutor } from "@repo/adapters";
 import { buildSshConfig, type SshSettingsInput } from "./ssh-manager";
+import { validateSshConnectionOptions } from "./ssh-validation";
 
 /** Same SSH adapter as connected servers; first successful authentication pins
  * the public host key. Saved sources check that key on every reconnect. */
@@ -9,7 +10,7 @@ export async function verifyCustomerSshConnection(
   purpose: "deployment" | "migration_source" = "deployment",
   expectedHostKey?: string,
 ) {
-  assertSshSettings(input);
+  validateSshConnectionOptions(input);
   if (
     !input.sshHost ||
     input.sshKeyPath ||

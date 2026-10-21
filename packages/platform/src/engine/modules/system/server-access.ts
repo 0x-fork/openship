@@ -11,7 +11,8 @@ export function assertSelfHosted(): void {
   if (env.CLOUD_MODE) throw new AppError("Not available in cloud mode", 404, "CAPABILITY_UNAVAILABLE");
 }
 
-export async function requireSelfHostedServer(ctx: ExecutionContext, id: string): Promise<ConnectedServer> {
+/** Customer-owned host; the control-plane mode determines its trust policy. */
+export async function requireConnectedServer(ctx: ExecutionContext, id: string): Promise<ConnectedServer> {
   const server = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!server) throw new NotFoundError("Server", id);
   assertDeploymentServer(server);

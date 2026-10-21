@@ -30,16 +30,17 @@ import { managedServerCollection, serverLifecycleResources } from "./server-life
 import { serverNetworkSettings } from "./server-network-settings.operations";
 import { serverManagedControls } from "./server-managed.operations";
 import { hostControlDisabled } from "@repo/adapters";
-import { AppError, assertSshSettings, normalizeSshTransport, safeErrorMessage, type HostCapacity } from "@repo/core";
+import { AppError, normalizeSshTransport, safeErrorMessage, type HostCapacity } from "@repo/core";
 import { invalidateOpenRestyPaths } from "../../lib/openresty-paths";
 import { getHostCapacity, invalidateHostCapacity } from "../../lib/host-capacity";
 import { sshManager, type ReachabilityDiagnosis } from "../../lib/ssh-manager";
+import { validateSshConnectionOptions } from "../../lib/ssh-validation";
 import { resolvesToLocalHost } from "../../lib/self-host";
 import { boxOwningOrgId } from "../../lib/box-org";
 import { ensureLocalServer, localServerHostChannel } from "../../lib/startup/self-server";
 import { encryptSecretField } from "../../lib/credential-encryption";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
-import { assertServerExecution, assertNativeSshSettings } from "./server-access";
+import { assertServerExecution, assertNativeSshSettings, assertDeploymentServer } from "./server-access";
 import {
   serverContainerCollection,
   serverContainerResources,
@@ -63,15 +64,6 @@ import { clusterStorageCollection } from "./cluster-storage.operations";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { authorization } from "../../lib/authorization";
 import { mergeCloudServerInventory } from "../../lib/cloud/server-inventory";
-
-function validateConnectionOptions(settings: Parameters<typeof assertSshSettings>[0]): void {
-  try {
-    assertSshSettings(settings);
-  } catch (error) {
-    observeCaughtError(error, "platform/engine/modules/system/server.operations");
-    failServer({ error: safeErrorMessage(error) }, 400);
-  }
-}
 
 /** GET /servers - list servers in the caller's active organization. */
 /** A dead box must not stall the whole server list: the GPU annotation is the least important thing on it. */
@@ -225,7 +217,7 @@ async function createConnectedServer(ctx: ExecutionContext, body: CreateServerIn
 
   const host = (body.sshHost as string)?.trim();
   if (!host) return failServer({ error: "SSH host is required" }, 400);
-  validateConnectionOptions({ ...body, sshHost: host });
+  validateSshConnectionOptions({ ...body, sshHost: host });
 
   // Adding THIS host as a server (loopback / the box's own SERVER_IP on a
   // server-host) must NOT create a plain SSH row — deploys/probes would dial the
@@ -387,7 +379,7 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
   if (LOCAL_ROW_READONLY_FIELDS.some((field) => body[field] !== undefined))
     assertNativeSshSettings({ ...existing, ...body });
   if (LOCAL_ROW_READONLY_FIELDS.some((field) => body[field] !== undefined))
-    validateConnectionOptions({
+    validateSshConnectionOptions({
       ...existing,
       ...body,
       sshHost: body.sshHost?.trim() || existing.sshHost,
@@ -584,6 +576,10 @@ async function deleteServerUnderLock(
   // Org-scoped: refuse to delete a server outside the caller's org.
   const existing = await repos.server.getInOrganization(id, ctx.organizationId);
   if (!existing) return failServer({ error: "Server not found" }, 404);
+  assertDeploymentServer(existing);
+  // Refuse the wrong lifecycle before touching projects, not at the final row
+  // deletion after their teardown has already happened.
+  if (existing.workspaceId) throw new AppError("Manage this server through its Cloud workspace", 409, "MANAGED_SERVER_LIFECYCLE_REQUIRED");
   // The auto-registered host ("This Server") is not user-removable — it IS the
   // machine OpenShip runs on, and the boot reconcile would just recreate it.
   // Checked before any teardown so a refused removal never destroys a workload.

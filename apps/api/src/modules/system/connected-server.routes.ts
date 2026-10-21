@@ -20,6 +20,11 @@ import * as rateLimit from "./rate-limit.controller";
 import * as serverContainers from "./server-containers.controller";
 import * as serverModules from "./server-modules.controller";
 const r = secureRouter(new Hono(), { module: "system", basePath: "/api/system" });
+// `id` is retained for released desktop clients; SDK callers use sessionId.
+const installSessionQuery = Type.Object({
+  ...ServerInstallSessionInputSchema.properties,
+  id: Type.Optional(ResourceIdSchema),
+}, { additionalProperties: false });
 r.get(
   "/servers/:id/infrastructure",
   {
@@ -227,6 +232,7 @@ r.get(
   {
     tag: "server:read",
     authorizationHandledByOperation: true,
+    query: installSessionQuery,
     mcpExcluded:
       "SSE transport for live progress. Use the resource’s JSON status/log tools over MCP, or an authenticated HTTP client for streaming.",
   },
@@ -241,10 +247,7 @@ r.get(
       description:
         "Read the current or named server installation session, including progress and pending decisions. query.serverId selects the server; query.sessionId reattaches to a specific session.",
     },
-    query: Type.Object(
-      { serverId: ResourceIdSchema, ...ServerInstallSessionInputSchema.properties },
-      { additionalProperties: false },
-    ),
+    query: installSessionQuery,
   },
   serverCheck.getInstallSession,
 );
