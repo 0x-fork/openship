@@ -1,7 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, repos, schema } from "@repo/db";
-import { DockerRuntime } from "@repo/adapters";
+import { DockerRuntime, initPlatform, resetPlatform } from "@repo/adapters";
 import { ProjectControlSchemas } from "@repo/contracts";
 import { createResourceOperations } from "../../../../../packages/platform/src/resource-operations";
 import { createProjectControls } from "@repo/platform/engine/modules/projects/project-controls.operations";
@@ -28,6 +28,8 @@ const { configureRuntimeRoles, getRoleConfiguration } =
   await import("@repo/platform/engine/modules/projects/role-configuration.service");
 const imageId = `sha256:${"a".repeat(64)}`;
 const owned: string[] = [];
+beforeAll(() => initPlatform({ target: "selfhosted", runtime: "docker" }));
+afterAll(() => resetPlatform());
 beforeEach(() => {
   h.start.mockClear();
   h.access.mockClear();
@@ -118,6 +120,21 @@ describe("runtime role configuration admission", () => {
     });
     expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(true);
     expect((await configureRuntimeRoles(f.ctx, f.project.id, f.input)).deploymentId).toBeTruthy();
+  });
+  it("resolves a release recorded before runtimeMode existed the same way its runtime does", async () => {
+    const f = await fixture();
+    const { runtimeMode: _recorded, ...legacy } = f.active.meta as Record<string, unknown>;
+    await repos.deployment.updateStatus(f.active.id, "ready", { meta: legacy });
+    expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(true);
+    expect((await configureRuntimeRoles(f.ctx, f.project.id, f.input)).deploymentId).toBeTruthy();
+    await initPlatform({ target: "selfhosted", runtime: "bare" });
+    try {
+      expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(
+        false,
+      );
+    } finally {
+      await initPlatform({ target: "selfhosted", runtime: "docker" });
+    }
   });
   it("uses the deployment topology rules for primary records and disabled sidecars", async () => {
     const f = await fixture();

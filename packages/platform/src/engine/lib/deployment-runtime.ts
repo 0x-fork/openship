@@ -384,6 +384,17 @@ export function resolveEffectiveTarget(
   return "cloud";
 }
 
+/** Snapshots recorded before `runtimeMode` was persisted run on the target's default
+ *  runtime. Every reader of a release's runtime must resolve it here, or an upgraded
+ *  project is treated as a different runtime than the one actually serving it. */
+export function resolveSnapshotRuntimeMode(
+  snapshot: DeploymentMeta,
+  effectiveTarget: DeployTarget,
+  base: Platform = platform(),
+): RuntimeMode {
+  return snapshot.runtimeMode ?? (effectiveTarget === "cloud" || base.runtime.name === "docker" ? "docker" : "bare");
+}
+
 /** Normalize execution identity once at the runtime boundary. A managed server
  * is resolved through its owner; it can never fall through to SSH or the API's
  * local Docker socket. Dedicated native and Docker use this same destination. */
@@ -562,8 +573,7 @@ async function createDeploymentPlatform(
     const { resolveClusterDeploymentPlatform } = await import("./cluster-deployment-target");
     return resolveClusterDeploymentPlatform(snapshot, opts?.organizationId);
   }
-  const runtimeMode =
-    snapshot.runtimeMode ?? (effectiveTarget === "cloud" || basePlatform.runtime.name === "docker" ? "docker" : "bare");
+  const runtimeMode = resolveSnapshotRuntimeMode(snapshot, effectiveTarget, basePlatform);
 
   if (effectiveTarget === "local" || effectiveTarget === "server") {
     const resolvedTarget = await resolveSelfHostedDeploymentTarget(
@@ -1373,7 +1383,7 @@ export async function resolveDeploymentRuntimeForRead(
     return resolveClusterDeploymentRuntime(snapshot, dep.organizationId);
   }
 
-  const runtimeMode = snapshot.runtimeMode ?? (effectiveTarget === "cloud" || platform().runtime.name === "docker" ? "docker" : "bare");
+  const runtimeMode = resolveSnapshotRuntimeMode(snapshot, effectiveTarget);
 
   if (effectiveTarget === "server") {
     const target = destination.server

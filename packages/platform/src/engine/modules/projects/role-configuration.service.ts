@@ -9,7 +9,12 @@ import { snapshotToClass } from "../deployments/deployment-class";
 import { findActiveDeployment } from "../../lib/active-deployment";
 import { assertResourceInOrg, assertNotControlPlane } from "../../lib/resource-access";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
-import { withDeploymentRuntime } from "../../lib/deployment-runtime";
+import {
+  resolveEffectiveTarget,
+  resolveSnapshotRuntimeMode,
+  withDeploymentRuntime,
+} from "../../lib/deployment-runtime";
+import { platform } from "../../lib/platform-config";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import {
   checkNoActiveBuild,
@@ -25,10 +30,13 @@ async function unsupported(
   const meta = active?.meta as DeploymentConfigSnapshot | null;
   if (!active?.containerId || !meta) return "Deploy this app before configuring runtime roles.";
   if (project.disabledAt) return "Resume this app before configuring runtime roles.";
+  // Reject Cloud and cluster releases first: the runtime fallback below does not apply to
+  // cluster targets, and resolving the target throws on conflicting cluster metadata.
   if (
-    meta.runtimeMode !== "docker" ||
     meta.deployTarget === "cloud" ||
     meta.clusterId ||
+    resolveSnapshotRuntimeMode(meta, resolveEffectiveTarget(platform().target, meta)) !==
+      "docker" ||
     meta.composeServices?.length ||
     snapshotToClass(meta).workload === "static"
   )
