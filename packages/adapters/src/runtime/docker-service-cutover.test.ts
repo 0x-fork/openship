@@ -124,6 +124,7 @@ describe("Docker staged service publication and retirement", () => {
   it("does not mutate either container while constructing the plan", () => {
     const { plan, events, destroy } = fixture();
     expect(plan.previousContainerId).toBe("original-id");
+    expect(plan.previousDeploymentId).toBe("deployment-old");
     expect(plan.config).toBe(config);
     expect(events).toEqual([]);
     expect(destroy).not.toHaveBeenCalled();

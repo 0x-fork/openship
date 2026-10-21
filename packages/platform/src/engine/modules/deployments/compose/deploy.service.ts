@@ -10,7 +10,7 @@
  */
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
-import { findActiveDeployment } from "@repo/platform/engine/lib/active-deployment";
+import { findActiveDeployment, findProjectDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
 import { deploymentForcesImagePull, deploymentImagePullPolicy, isMutableImageRef } from "../image-pull-policy";
 import { assertCloudDeploymentLimits } from "../../../lib/plan-guard";
@@ -148,6 +148,7 @@ import { loadServiceDeployEnvironment } from "./required-env-preflight";
 import { compileProjectRoutingFields } from "../../../lib/project-routing-fields";
 import { buildCompositeRegistration, buildDomainFanoutRegistrations, planCompositeRoute } from "./composite-route";
 import { collectComposeRoutePortDemands } from "./route-port-demands";
+import { hasRestorableServicePorts } from "./cutover-route-identity";
 import { newerThanRestoredRelease, serviceKind } from "./project-services";
 import {
   OUT_OF_SCOPE_SKIP_REASON,
@@ -3305,10 +3306,34 @@ async function deployComposeServicesCore(
         const canStage = runtime instanceof DockerRuntime && !cloudHosted && !usesHostLoopback &&
           !opts?.strictScope && singleTarget && previous?.containerId && !cutover.pending &&
           opts?.hostPortTarget && opts.executor;
-        const plan = canStage ? await runtime.prepareServiceCutover(group, serviceRuntimeConfig, {
+        let plan = canStage ? await runtime.prepareServiceCutover(group, serviceRuntimeConfig, {
           executor: opts?.executor,
           onLog: entry => logger.callback({ ...entry, serviceName: svc.name }),
         }) : null;
+        if (plan) {
+          // A carried row may belong to a newer release whose pending port edits
+          // were never applied. The actual container's label identifies the only
+          // snapshot authoritative for restoring its upstreams.
+          try {
+            const owner = plan.previousDeploymentId
+              ? await findProjectDeployment(project, plan.previousDeploymentId)
+              : undefined;
+            const routePorts = routeContext ? collectComposeRoutePortDemands({
+              project, services: enabled, domainRows: [...domainByHostname.values()],
+              previousRows: previousServiceDeps, runtimeName: runtime.name,
+              usesManagedRouting: routeContext.usesManagedRouting,
+            }).get(svc.id) : undefined;
+            const requiredPorts = [...new Set([
+              ...(serviceRuntimeConfig.publicPort ? [serviceRuntimeConfig.publicPort] : []),
+              ...routedContainerPorts, ...(routePorts ?? []),
+            ])];
+            if (!owner || !hasRestorableServicePorts(owner.meta, svc.name, requiredPorts)) plan = null;
+          } catch (error) {
+            observeCaughtError(error, "platform/engine/modules/deployments/compose/deploy.service");
+            plan = null;
+          }
+          if (!plan) logger.log(`Keeping normal service replacement for "${svc.name}": the outgoing container's routing ports cannot be verified from its saved deployment.\n`, "info");
+        }
         if (!plan && previous?.containerId && runtime instanceof DockerRuntime && !cloudHosted && !usesHostLoopback && !singleTarget) {
           logger.log(`Keeping normal service replacement for "${svc.name}": overlap requires one independent target.\n`, "info");
         }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { BuildLogger, CommandExecutor, MultiServiceRuntimeAdapter } from "@repo/adapters";
+import type { BuildLogger, CommandExecutor, MultiServiceRuntimeAdapter, DockerRuntime as DockerRuntimeType, CloudDockerRuntime as CloudDockerRuntimeType } from "@repo/adapters";
 import type { Deployment, Project } from "@repo/db";
 
 /**
@@ -41,6 +41,7 @@ const h = vi.hoisted(() => ({
   updateServiceDeployment: vi.fn(),
   services: [] as Array<Record<string, unknown>>,
   previousServiceRows: [] as Array<Record<string, unknown>>,
+  deploymentById: new Map<string, Record<string, unknown>>(),
   previousDeployment: { id: "d-old", projectId: "p1", organizationId: "org1", containerId: "compose", createdAt: null } as Record<
     string,
     unknown
@@ -62,7 +63,7 @@ vi.mock("@repo/db", () => ({
       markServiceDeploymentFailed: async () => undefined,
     },
     deployment: {
-      findById: async () => h.previousDeployment,
+      findById: async (id: string) => h.deploymentById.get(id) ?? h.previousDeployment,
     },
     project: {
       getEnvMap: async () => ({}),
@@ -172,7 +173,7 @@ function imageRefreshFixture() {
       containerId: id, status: "running", imageId: id === "old-db" ? dbId : apiId, ip: "172.18.0.2",
     })),
     getContainerIp: vi.fn(async () => "172.18.0.3"), destroy: vi.fn(async () => undefined),
-  }) as DockerRuntime;
+  }) as DockerRuntimeType;
   h.services = [
     { id: "svc-db", projectId: "p1", name: "db", image: dbRef, enabled: true,
       updatedAt: new Date(0), dependsOn: [], advanced: null, ports: [], exposed: false },
@@ -241,6 +242,8 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
   const configurations: Array<Record<string, any>> = [];
   const publishRoute = vi.fn(async () => undefined);
   const pullImage = vi.fn(async () => undefined);
+  const resolveRoutingTarget = vi.fn(async (id: string, port: number) => ({ workspace: "shared-vm",
+    port: id === "web-container" ? (port === 8080 ? 30001 : 30002) : 30003 }));
   const runtime = Object.assign(Object.create(CloudDockerRuntime.prototype), {
     name: "docker", workspaceId: "shared-vm", projectId: "p1", unsupportedComposeKeys: new Set(),
     supports: (cap: string) => cap === "dockerHost",
@@ -250,13 +253,12 @@ it("deploys Cloud Compose endpoints, internal paths, generated files and contain
       const hostPortByContainerPort = config.serviceName === "web" ? { 8080: 30001, 9090: 30002 } : { 8080: 30003 };
       return { status: "running", containerId: `${config.serviceName}-container`, hostPortByContainerPort };
     }),
-    resolveRoutingTarget: vi.fn(async (id: string, port: number) => ({ workspace: "shared-vm",
-      port: id === "web-container" ? (port === 8080 ? 30001 : 30002) : 30003 })),
+    resolveRoutingTarget,
     getContainerIp: vi.fn(async () => "172.18.0.2"), listAllContainers: vi.fn(async () => []),
     destroy: vi.fn(async () => undefined), publishRoute, pullImage,
-  }) as CloudDockerRuntime;
+  }) as CloudDockerRuntimeType;
   const routing = Object.assign(Object.create(CloudInfraProvider.prototype), {
-    publishRoute, resolveRoutingTarget: runtime.resolveRoutingTarget,
+    publishRoute, resolveRoutingTarget,
   });
   const executor = {
     exec: vi.fn(async () => ""), mkdir: vi.fn(async () => undefined), rm: vi.fn(async () => undefined),
@@ -329,6 +331,7 @@ beforeEach(() => {
   vi.unstubAllEnvs();
   vi.clearAllMocks();
   h.targetLockHeld = false;
+  h.deploymentById.clear();
   h.probeDeployedReadiness.mockReset().mockResolvedValue({ failure: null });
   h.applyProjectRouting.mockReset().mockResolvedValue(undefined);
   h.reapplyProjectLiveRoutes.mockReset().mockResolvedValue(undefined);
@@ -481,12 +484,13 @@ describe("compose deploy — host channel unavailable", () => {
       customDomain: "api.example.com", domainType: "custom", dependsOn: [],
       advanced: { resources: { cpuCores: 1, memoryMb: 512 } } });
     h.previousServiceRows = h.previousServiceRows.filter(row => row.serviceId === "svc-api");
+    h.previousDeployment.meta = { port: 8080, composeServices: structuredClone(h.services) };
     const publish = vi.fn(async () => ({ ip: "172.18.0.4" }));
     const retire = vi.fn(async () => undefined);
     const prepared = vi.mocked(f.runtime.prepareServiceCutover).mockImplementation(async (_group, config) => ({
-      config: { ...config }, previousContainerId: "old-api", publish, retire,
+      config: { ...config }, previousContainerId: "old-api", previousDeploymentId: "d-old", publish, retire,
     }));
-    f.runtime.sampleStability = vi.fn(async () => ({ state: "running", exitCode: null, restartCount: 0,
+    f.runtime.sampleStability = vi.fn(async () => ({ state: "running" as const, exitCode: null, restartCount: 0,
       health: null, errorLine: null, oomKilled: false, restartPolicy: "always" }));
     f.pull.mockImplementation(async ref => {
       if (ref === f.apiRef) f.images.set(ref, f.metadata(ref, f.nextId));
@@ -511,6 +515,47 @@ describe("compose deploy — host channel unavailable", () => {
     expect(f.retire.mock.invocationCallOrder[0]).toBeGreaterThan(h.upsertServiceDeployment.mock.invocationCallOrder.at(-1)!);
     expect(f.retire.mock.invocationCallOrder[0]).toBeGreaterThan(f.registerRoute.mock.invocationCallOrder.at(-1)!);
     expect(h.upsertServiceDeployment).toHaveBeenCalledWith(expect.objectContaining({ serviceId: "svc-api", ip: "172.18.0.4" }));
+  });
+
+  it.each(["changed port", "unknown snapshot", "unowned snapshot"])("keeps normal replacement for %s", async reason => {
+    const f = stagedFixture();
+    if (reason === "changed port") Object.assign(h.services[0]!, { exposedPort: "9090", ports: ["9090"] });
+    if (reason === "unknown snapshot") h.previousDeployment.meta = {};
+    if (reason === "unowned snapshot") {
+      h.deploymentById.set("d-unowned", { ...h.previousDeployment, id: "d-unowned",
+        organizationId: "another-organization" });
+      f.prepared.mockImplementation(async (_group, config) => ({ config: { ...config },
+        previousContainerId: "old-api", previousDeploymentId: "d-unowned",
+        publish: f.publish, retire: f.retire }));
+    }
+    const result = await f.run(f.routingOptions);
+    expect(result.cutover).toBeUndefined();
+    expect(f.publish).not.toHaveBeenCalled();
+    expect(f.retire).not.toHaveBeenCalled();
+  });
+
+  it("includes a composite route's additional upstream in the predecessor port proof", async () => {
+    const f = stagedFixture();
+    const result = await f.run(f.routingOptions, "manual", { compositeRoutes: [{
+      hostname: "api.example.com", isCustomDomain: true, rootServiceId: "svc-api",
+      rootPort: 8080, locations: [{ pathPrefix: "/other", serviceId: "svc-api", port: 9090 }],
+    }] });
+    expect(f.prepared).toHaveBeenCalled();
+    expect(result.cutover).toBeUndefined();
+    expect(f.publish).not.toHaveBeenCalled();
+  });
+
+  it("checks a carried container's own deployment instead of the active release's pending port edit", async () => {
+    const f = stagedFixture();
+    h.deploymentById.set("d-container-owner", { ...h.previousDeployment, id: "d-container-owner" });
+    Object.assign(h.services[0]!, { exposedPort: "9090", ports: ["9090"] });
+    h.previousDeployment.meta = { port: 9090, composeServices: structuredClone(h.services) };
+    f.prepared.mockImplementation(async (_group, config) => ({ config: { ...config },
+      previousContainerId: "old-api", previousDeploymentId: "d-container-owner",
+      publish: f.publish, retire: f.retire }));
+    const result = await f.run(f.routingOptions);
+    expect(result.cutover).toBeUndefined();
+    expect(f.publish).not.toHaveBeenCalled();
   });
 
   it("waits for the final composite route before retiring the old container", async () => {
@@ -764,7 +809,7 @@ describe("compose deploy — host channel unavailable", () => {
       })),
       getContainerIp: vi.fn(async () => "172.18.0.3"),
       destroy: vi.fn(async () => undefined), pullImage, deployServiceWorkload,
-    }) as DockerRuntime;
+    }) as DockerRuntimeType;
     h.services = [{
       id: "svc-api", projectId: "p1", name: "api", image: rowImage, build,
       enabled: true, dependsOn: [], advanced: null, ports: [], exposed: false,
@@ -1802,7 +1847,7 @@ describe("compose deploy — host channel unavailable", () => {
       getContainerIp: vi.fn(async () => "172.18.0.3"),
       destroy: vi.fn(async () => undefined),
       pullImage, deployServiceWorkload,
-    }) as DockerRuntime;
+    }) as DockerRuntimeType;
     h.services = [
       { id: "svc-local", projectId: "p1", name: "local-app", image: "my-app:custom",
         enabled: true, dependsOn: [], advanced: null, ports: [], exposed: false },

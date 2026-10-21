@@ -326,6 +326,10 @@ Overlap is optional. It requires saved CPU and memory limits and fresh
 measurements showing that the deployment host has enough spare capacity for the
 replacement. Missing limits or unavailable measurements keep the normal
 replacement order; Openship does not invent resource limits to enable overlap.
+Every routed upstream port must also be present in the frozen configuration of
+the outgoing container's own deployment. Changed or unverifiable ports keep the
+normal replacement order so routing recovery cannot dial the old container on a
+new port.
 
 Fixed host ports, managed Cloud ingress, shared namespaces, devices, additional
 networks, static network addresses, Docker-owned health checks, and dependent

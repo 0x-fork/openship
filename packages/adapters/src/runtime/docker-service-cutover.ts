@@ -6,6 +6,8 @@ import { stableName } from "./cutover";
 export interface DockerServiceCutover {
   config: MultiServiceDeployConfig;
   previousContainerId: string;
+  /** Container-label provenance; the engine verifies its saved routing ports. */
+  readonly previousDeploymentId?: string;
   /** Publish service DNS only after the caller has verified readiness. */
   publish(containerId: string): Promise<{ ip?: string }>;
   /** Called only after the complete stack is healthy, routed and persisted. */
@@ -37,6 +39,7 @@ export function dockerServiceCutover(
   return {
     config,
     previousContainerId,
+    previousDeploymentId: previous.Config?.Labels?.["openship.deployment"],
     async publish(containerId) {
       const { info } = await inspectCandidate(containerId);
       const endpoint = Object.entries(info.NetworkSettings?.Networks ?? {}).find(

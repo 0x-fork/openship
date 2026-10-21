@@ -75,7 +75,9 @@ describeDockerE2E("Compose engine overlap commits through its existing pipeline"
     const previous = await seedDeployment(project, {
       containerId: "compose",
       imageRef: "compose",
-      meta: { deployTarget: "local", runtimeMode: "docker" },
+      meta: { deployTarget: "local", runtimeMode: "docker", port: 8080,
+        composeServices: [{ name: service.name, enabled: true, kind: "compose",
+          ports: [], exposed: true, exposedPort: "8080" }] },
     });
     const group = await runtime.ensureServiceGroup({ deploymentId: previous.id, projectId, slug });
     const old = await runtime.deployServiceWorkload(group, {
