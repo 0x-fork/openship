@@ -124,10 +124,11 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
     repository.trim() === (view.config?.imageRepository ?? "") &&
     view.activeClusterId === view.clusterId;
   // A failed admission may have saved the desired count without starting a release.
+  const activeReplicas = view?.activeReplicas ?? view?.status?.desired;
   const needsInstanceRelease =
     onlyInstancesChanged &&
     (count !== view?.config?.replicas ||
-      (!!view?.status && view.status.desired > 0 && view.status.desired !== count));
+      (activeReplicas !== undefined && activeReplicas > 0 && activeReplicas !== count));
   const blocked =
     databaseNeedsOperator ||
     busy ||
@@ -404,7 +405,7 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
                 <div className="space-y-1 text-xs leading-relaxed text-muted-foreground">
                   {needsInstanceRelease && (
                     <p>
-                      {view.status?.desired ?? view.config?.replicas} → {count} instances
+                      {activeReplicas ?? view.config?.replicas} → {count} instances
                     </p>
                   )}
                   <p>Instances are placed automatically on available servers.</p>

@@ -1494,6 +1494,8 @@ async function deployComposeServicesUnlocked(
   const carryProjectResources = resolveRuntimeResources(
     (carryAnchorDep?.meta as { resources?: ResourceConfig | null } | null)?.resources,
   );
+  const previousReplicas = (carryAnchorDep?.meta as { clusterConfig?: { replicas: number } } | null)?.clusterConfig?.replicas;
+  const nextReplicas = (dep.meta as { clusterConfig?: { replicas: number } } | null)?.clusterConfig?.replicas;
   const carryEnvMeta = carryAnchor
     ? await repos.project.listEnvVarChangeMeta(project.id, dep.environment).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/compose/deploy.service"); return []; })
     : [];
@@ -1514,6 +1516,7 @@ async function deployComposeServicesUnlocked(
     if (dep.trigger === "rollback") return false;
     if (opts?.targetServiceIds) return false; // smart subset already carries non-targets forward
     if (!carryAnchor) return false; // never deployed → deploy it
+    if (previousReplicas !== nextReplicas) return false; // Replica settings are project-level, not service edits.
     if (svc.build || !svc.image) return false; // must be image-only (external); buildables always rebuild
     if (svc.updatedAt > carryAnchor) return false; // image/command/ports/volumes/… changed
     // Project limits are not service edits. Compare effective caps through the

@@ -6,6 +6,7 @@ import {
   resolveProjectVolumes,
   safeErrorMessage,
   validateClusterWorkload,
+  type ClusterWorkloadStatus,
 } from "@repo/core";
 import { kubernetesProjectNamespace } from "@repo/adapters";
 import { ProjectClusterSchemas, type ProjectCluster } from "@repo/contracts";
@@ -48,6 +49,7 @@ export function createProjectClusterOperations(
       updatedAt: project.updatedAt.toISOString(),
       activeDeploymentId: active?.id ?? null,
       activeClusterId: meta?.clusterId ?? null,
+      ...(meta?.clusterConfig ? { activeReplicas: meta.clusterConfig.replicas } : {}),
       internalHost:
         meta?.clusterId &&
         active?.containerId?.startsWith("k8s:") &&
@@ -60,9 +62,33 @@ export function createProjectClusterOperations(
     };
     if (active?.containerId && meta?.clusterId) {
       try {
-        result.status = await withDeploymentRuntime(active, (runtime) => {
+        result.status = await withDeploymentRuntime(active, async (runtime) => {
           if (!runtime.supports("clusterStatus") || !runtime.status)
             throw new Error("The active release does not use the cluster runtime.");
+          if (active.containerId === "compose") {
+            const rows = await repos.service.listByDeployment(active.id);
+            const statuses: ClusterWorkloadStatus[] = [];
+            for (const row of rows) {
+              if (!row.containerId) continue;
+              const status = await runtime.status(row.containerId);
+              statuses.push({
+                ...status,
+                message: status.message ? `${row.serviceName}: ${status.message}` : null,
+              });
+            }
+            if (!statuses.length)
+              throw new Error("No service instances are recorded for this release.");
+            return statuses.reduce((total, status) => ({
+              desired: total.desired + status.desired,
+              ready: total.ready + status.ready,
+              available: total.available + status.available,
+              updated: total.updated + status.updated,
+              generation: total.generation + status.generation,
+              observedGeneration: total.observedGeneration + status.observedGeneration,
+              message: [total.message, status.message].filter(Boolean).join("; ") || null,
+              pods: [...total.pods, ...status.pods],
+            }));
+          }
           return runtime.status(active.containerId!);
         });
         result.observedAt = new Date().toISOString();
@@ -211,7 +237,11 @@ export function createProjectClusterOperations(
         record(ctx, id, { action: "cluster.replicas", replicas: input.replicas });
         // A configuration release reuses the immutable image. It uses the same
         // admission, cancellation, logs, history and recovery as every deploy.
-        const deployed = await triggerDeployment(ctx, { projectId: id, refresh: true });
+        const deployed = await triggerDeployment(ctx, {
+          projectId: id,
+          refresh: true,
+          forceAll: true,
+        });
         if (!deployed.deployment)
           throw new AppError("Deployment was not queued", 409, "ACTIONS_CHECKS_PENDING");
         return { deploymentId: deployed.deployment.id };

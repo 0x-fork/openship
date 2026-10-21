@@ -373,8 +373,11 @@ function runtime() {
   return {
     name: "docker",
     capabilities: new Set(["prebuiltImage", "deploy", "containerIp", "releaseCommand"]),
-    supports: (capability: string): boolean =>
-      capability === "prebuiltImage" || capability === "deploy" || capability === "containerIp" || capability === "releaseCommand",
+    supports(capability: string): boolean {
+      return capability === "prebuiltImage" || capability === "deploy" || capability === "containerIp" || capability === "releaseCommand" ||
+        (capability === "dockerHost" && this.name === "docker") ||
+        (capability === "clusterStatus" && ["kubernetes", "swarm"].includes(this.name));
+    },
     prepareImage: (...args: unknown[]) => mocks.prepareImage(...args),
     runReleaseCommand: (...args: unknown[]) => mocks.runReleaseCommand(...args),
     build: (...args: unknown[]) => mocks.build(...args),
@@ -757,7 +760,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     }
   });
 
-  it.each(["docker", "kubernetes"])("%s pulls the frozen image, skips source builds, and freezes the digest", async (runtimeName) => {
+  it.each(["docker", "kubernetes", "swarm"])("%s pulls the frozen image, skips source builds, and freezes the digest", async (runtimeName) => {
     resolvedRuntime.name = runtimeName;
     await run();
     await vi.waitFor(() => expect(mocks.onSuccess).toHaveBeenCalledTimes(1));

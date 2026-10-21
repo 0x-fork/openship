@@ -49,6 +49,7 @@ export const ProjectClusterSchema = Type.Object({
   updatedAt: Type.String(),
   activeDeploymentId: nullableString,
   activeClusterId: nullableString,
+  activeReplicas: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
   internalHost: nullableString,
   observedAt: Type.Optional(nullableString),
   status: Type.Union([ClusterWorkloadStatusSchema, Type.Null()]),

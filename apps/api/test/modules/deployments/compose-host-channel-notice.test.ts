@@ -420,6 +420,18 @@ describe("compose deploy — host channel unavailable", () => {
     expect(result.services.every(service => service.carried)).toBe(true);
   });
 
+  it("applies a project replica change even when service image and configuration are unchanged", async () => {
+    const f = imageRefreshFixture();
+    h.previousDeployment.meta = { clusterConfig: { replicas: 2 } };
+    const result = await deployComposeServices(
+      { ...project, activeDeploymentId: "d-old", routeStrategy: "container-ip" } as Project,
+      { ...dep, meta: { clusterConfig: { replicas: 3 } } }, f.runtime, f.logger,
+    );
+    expect(result.status).toBe("ready");
+    expect(f.activate).toHaveBeenCalledTimes(2);
+    expect(result.services.some(service => service.carried)).toBe(false);
+  });
+
   it("recreates only changed image content and deploys the immutable image acquired", async () => {
     const f = imageRefreshFixture();
     f.pull.mockImplementation(async ref => {

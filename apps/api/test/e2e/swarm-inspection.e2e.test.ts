@@ -239,7 +239,7 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       transport: "socket",
       dockerSocketPath: socketPath,
     });
-    const runtime = new SwarmRuntime({
+    const runtimeOptions = {
       projectId: "swarm-e2e",
       runtimeId: "runtime-e2e",
       clusterUid: observed.clusterId!,
@@ -248,7 +248,8 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       builder: async () => builder,
       resolveRegistryAuth: async () => undefined,
       gatewayImage: "openresty/openresty:1.27.1.2-0-alpine",
-    });
+    };
+    let runtime = new SwarmRuntime(runtimeOptions);
     const logger = new BuildLogger(() => {});
     const service = (
       release: string,
@@ -452,7 +453,7 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       });
       const authored = await seedService(project.id, {
         name: "configured",
-        image: "busybox:1.37",
+        image: (await manager.getImage("busybox:1.37").inspect()).RepoDigests![0]!,
         ports: ["8080"],
         exposed: false,
         dependsOn: [],
@@ -469,11 +470,11 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       });
       const { deployComposeServices } =
         await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
-      const deployCompose = async () => {
+      const deployCompose = async (replicas = 2) => {
         const deployment = await seedDeployment(project, {
           imageRef: "compose",
           containerId: "compose",
-          meta: { runtimeMode: "docker", deployTarget: "local" },
+          meta: { runtimeMode: "docker", deployTarget: "local", clusterConfig: { replicas } },
         });
         const current = (await repos.project.findById(project.id))!;
         const result = await deployComposeServices(current, deployment, runtime, logger, {
@@ -500,7 +501,17 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       const composedTwo = await deployCompose();
       expect(await read(composedTwo)).toBe("updated-env:config-two");
       expect((await runtime.getContainerInfo(composedOne)).status).toBe("missing");
-      await runtime.destroy(composedTwo);
+      await runtime.dispose();
+      runtime = new SwarmRuntime({
+        ...runtimeOptions,
+        config: { ...runtimeOptions.config, replicas: 3 },
+        builder: () => DockerRuntime.create({ transport: "socket", dockerSocketPath: socketPath }),
+      });
+      const composedThree = await deployCompose(3);
+      expect(composedThree).not.toBe(composedTwo);
+      expect((await runtime.status(composedThree)).ready).toBe(3);
+      expect(await read(composedThree)).toBe("updated-env:config-two");
+      await runtime.destroy(composedThree);
 
       await runtime.cleanupProject("swarm-e2e");
       const retained = await manager.listVolumes({

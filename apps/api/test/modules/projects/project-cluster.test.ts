@@ -15,13 +15,15 @@ const h = vi.hoisted(() => ({
   builds: vi.fn(),
   audit: vi.fn(),
   available: vi.fn(),
+  runtime: vi.fn(),
+  serviceRows: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
   repos: {
     project: { findById: h.find },
     clusterRuntime: { bindProject: h.bind },
     clusterDatabase: { list: vi.fn(async () => []) },
-    service: { listByProject: vi.fn(async () => []) },
+    service: { listByProject: vi.fn(async () => []), listByDeployment: h.serviceRows },
   },
 }));
 vi.mock("@repo/platform/engine/lib/active-deployment", () => ({ findActiveDeployment: h.active }));
@@ -33,7 +35,9 @@ vi.mock("@repo/platform/engine/lib/cluster-deployment-target", () => ({
   requireClusterDeploymentTarget: h.ready,
   assertClusterWorkloadSupported: h.supported,
 }));
-vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({ withDeploymentRuntime: vi.fn() }));
+vi.mock("@repo/platform/engine/lib/deployment-runtime", () => ({
+  withDeploymentRuntime: h.runtime,
+}));
 vi.mock("@repo/platform/engine/modules/system/managed-network.operations", () => ({
   fleetAdmin: h.fleet,
 }));
@@ -95,6 +99,41 @@ describe("project cluster lifecycle admission", () => {
       expect(h.trigger).not.toHaveBeenCalled();
     },
   );
+  it("aggregates a Compose release without treating total tasks as the per-service replica setting", async () => {
+    h.active.mockResolvedValue({
+      id: "release",
+      containerId: "compose",
+      meta: { clusterId: "cluster", clusterConfig: { replicas: 2 } },
+    });
+    h.serviceRows.mockResolvedValue([
+      { containerId: "web-release", serviceName: "web" },
+      { containerId: "db-release", serviceName: "db" },
+    ]);
+    const status = vi.fn(async (ref: string) => ({
+      desired: ref === "web-release" ? 2 : 1,
+      ready: 1,
+      available: 1,
+      updated: 1,
+      generation: 1,
+      observedGeneration: 1,
+      message: ref === "web-release" ? "starting" : null,
+      pods: [],
+    }));
+    h.runtime.mockImplementation(async (_deployment, work) =>
+      work({ supports: () => true, status }),
+    );
+    expect(await operations.getClusterWorkload(ctx, "project")).toMatchObject({
+      activeReplicas: 2,
+      error: null,
+      status: { desired: 3, ready: 2, available: 2, updated: 2, message: "web: starting" },
+    });
+    expect(status.mock.calls.map(([ref]) => ref)).toEqual(["web-release", "db-release"]);
+    status.mockRejectedValueOnce(new Error("manager unreachable"));
+    expect(await operations.getClusterWorkload(ctx, "project")).toMatchObject({
+      status: null,
+      error: "manager unreachable",
+    });
+  });
   it("scales through a configuration release, using the existing deployment lifecycle", async () => {
     expect(
       await operations.scaleClusterWorkload(ctx, "project", {
@@ -111,7 +150,11 @@ describe("project cluster lifecycle admission", () => {
       now.toISOString(),
     );
     expect(h.trigger).toHaveBeenCalledOnce();
-    expect(h.trigger).toHaveBeenCalledWith(ctx, { projectId: "project", refresh: true });
+    expect(h.trigger).toHaveBeenCalledWith(ctx, {
+      projectId: "project",
+      refresh: true,
+      forceAll: true,
+    });
   });
   it.each([
     { expectedDeploymentId: "old", expectedUpdatedAt: now.toISOString() },
