@@ -437,6 +437,7 @@ export async function buildComposeImages(opts: {
   buildEnvVars: Record<string, string>;
   buildResources: ResourceConfig;
   gitToken?: string;
+  gitTokenRepositories?: string[];
   /** Relay helper path on the build host — desktop clone-on-server credential. */
   gitCredentialHelperPath?: string;
   /** Per-server SSH clone credential (ssh-server-key / deploy-key mode). */
@@ -826,6 +827,7 @@ export async function buildComposeImages(opts: {
       }
       if (opts.gitSsh) buildConfig.gitSsh = opts.gitSsh;
       if (opts.gitAmbient) buildConfig.gitAmbient = opts.gitAmbient;
+      buildConfig.gitTokenRepositories = opts.gitTokenRepositories;
 
       return { service, buildConfig, serviceLogger };
     };

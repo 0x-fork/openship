@@ -91,6 +91,8 @@ export type GitHubTokenSource =
 export interface TokenResult {
   token: string;
   source: GitHubTokenSource;
+  /** Exact server-authorized repository names for an expanded App clone mint. */
+  repositories?: string[];
 }
 
 /**
@@ -176,6 +178,7 @@ interface ChainCtx {
   organizationId?: string;
   purpose: GitHubPurpose;
   tokenCtx: TokenContext;
+  installationRepositories?: string[];
   /**
    * The 0-bypass permission verdict for this (target, op), resolved ONCE up front
    * and shared by every consumer: the App branch's mint AND its probe (so preflight
@@ -273,13 +276,17 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
       // it travels to build workers. Matching the credential to the grant is the
       // other half of GHSA-hp2g-hw7g-f3vm's "owner-wide" defect: authorization and
       // capability now have the same width.
-      return tryInstallationToken(
+      const extraRepositories = await authorizedExtraRepositories(c);
+      const token = await tryInstallationToken(
         c.ctx,
         c.tokenCtx.owner,
         c.tokenCtx.installationId,
         c.tokenCtx.repo,
-        await authorizedExtraRepositories(c),
+        extraRepositories,
       );
+      if (token && c.tokenCtx.extraRepositories?.length)
+        c.installationRepositories = installationTokenRepositories(c.tokenCtx.repo, extraRepositories);
+      return token;
     },
     probe: async (c) => {
       if (!c.tokenCtx.owner || !c.targetAuthorized) return false;
@@ -478,7 +485,15 @@ export async function tokenFor(
   const c = await chainCtx(ctx, purpose, tokenCtx);
   for (const spec of chainFor(purpose, tokenCtx.only, tokenCtx.exclude)) {
     const token = await spec.resolve(c);
-    if (token) return { token, source: spec.kind };
+    if (token) {
+      return {
+        token,
+        source: spec.kind,
+        ...(spec.kind === "app-installation" && c.installationRepositories
+          ? { repositories: c.installationRepositories }
+          : {}),
+      };
+    }
   }
   return null;
 }

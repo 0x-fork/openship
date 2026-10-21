@@ -1221,6 +1221,7 @@ async function executeBuildAndDeploy(
     // hasServer=false but must build its OWN image, not the static nginx one —
     // so key strictly off the static workload, not `!hasServer` (issue #538-B).
     buildConfig.isStatic = workload === "static";
+    buildConfig.gitTokenRepositories = gitCred.tokenRepositories;
     // When opted in, the runtime clones on the remote build host instead of the
     // orchestrator transferring the context. The credential arrives either via
     // the relay (gitCredentialHelperPath, set once the relay is open) or the
@@ -1321,6 +1322,7 @@ async function executeBuildAndDeploy(
           buildResources,
           runtimeResources: prodResources,
           gitToken: gitCred.token,
+          gitTokenRepositories: gitCred.tokenRepositories,
           gitCredentialHelperPath: composeRelay?.scriptPath,
           gitSsh: gitCred.ssh,
           gitAmbient: effectiveCloneOnTarget ? gitCred.ambient : undefined,

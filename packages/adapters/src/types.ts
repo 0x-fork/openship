@@ -220,6 +220,8 @@ export interface BuildConfig {
   resources: ResourceConfig;
   /** Ephemeral token for cloning private repos - never persisted */
   gitToken?: string;
+  /** Server-authorized expanded App repository grant, never persisted. */
+  gitTokenRepositories?: string[];
   /**
    * Desktop-only: absolute path to a git credential-helper script on the
    * REMOTE build host (written by the deploy git-credential relay). When set,

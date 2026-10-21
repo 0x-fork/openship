@@ -71,6 +71,8 @@ import { resolveGitHubApiBaseUrl } from "./github-source.service";
  */
 export interface BuildGitCredential {
   token?: string;
+  /** Ephemeral exact repository grant returned by the expanded App mint. */
+  tokenRepositories?: string[];
   relay?: boolean;
   /**
    * The TARGET SERVER authenticates the clone with its own pre-existing git
@@ -238,7 +240,7 @@ async function expandAppTokenForSubmodules(
     return { result: minted, repos: 1 };
   }
   traceLog(extras, `App token expanded for ${extra.length} same-owner submodule repo(s): ${extra.join(", ")}`);
-  return { result: reminted, repos: 1 + extra.length };
+  return { result: reminted, repos: reminted.repositories?.length ?? 1 + extra.length };
 }
 
 const GITMODULES_FETCH_TIMEOUT_MS = 10_000;
@@ -305,7 +307,7 @@ async function resolveLocalCredential(
   tokenCtx: TokenContext,
   trace: CredentialTrace = { source: "none", repos: 0, notes: [] },
   extras: ResolveExtras = {},
-): Promise<{ token?: string }> {
+): Promise<BuildGitCredential> {
   const customSource = tokenCtx.owner
     ? await resolveGitHubApiBaseUrl(
         ctx.organizationId,
@@ -332,7 +334,7 @@ async function resolveLocalCredential(
   const { result: r, repos } = await expandAppTokenForSubmodules(ctx, "local", localCtx, first, extras);
   if (r?.token) {
     recordToken(trace, r, repos);
-    return { token: r.token };
+    return { token: r.token, ...(r.repositories ? { tokenRepositories: r.repositories } : {}) };
   }
   await assertAnonymousCloneCanWork(tokenCtx, customSource, extras, trace);
   return {};
@@ -541,7 +543,7 @@ async function resolveBuildGitTokenTraced(
   );
   if (r?.token) {
     recordToken(trace, r, repos);
-    return { token: r.token };
+    return { token: r.token, ...(r.repositories ? { tokenRepositories: r.repositories } : {}) };
   }
 
   // 5. PUBLIC github.com repo → clone anonymously (nothing to ship). FAST PATH

@@ -78,7 +78,7 @@ beforeEach(() => {
   requireTokenFor.mockRejectedValue(new Error("GITHUB_REMOTE_TOKEN_REQUIRED"));
   tokenFor.mockImplementation(async (_c: unknown, _p: string, tc: { extraRepositories?: string[] }) =>
     tc.extraRepositories?.length
-      ? { token: WIDE_TOKEN, source: "app-installation" }
+      ? { token: WIDE_TOKEN, source: "app-installation", repositories: ["webapp", ...tc.extraRepositories] }
       : { token: PARENT_TOKEN, source: "app-installation" },
   );
 });
@@ -100,7 +100,7 @@ describe("submodule token expansion", () => {
       ),
     );
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "local", onLog, gitRef: "abc123" });
-    expect(res).toEqual({ token: WIDE_TOKEN });
+    expect(res).toEqual({ token: WIDE_TOKEN, tokenRepositories: ["webapp", "shared-auth"] });
     // .gitmodules read with the parent token, at the deployed ref
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe(`https://api.github.com/repos/${OWNER}/webapp/contents/.gitmodules?ref=abc123`);
@@ -114,9 +114,21 @@ describe("submodule token expansion", () => {
   it("does the same on the remote (server) chain", async () => {
     fetchMock.mockResolvedValue(gitmodulesResponse(`url = ../shared-auth.git\n`));
     const res = await resolveBuildGitToken({ ...base, buildStrategy: "server", onLog });
-    expect(res).toEqual({ token: WIDE_TOKEN });
+    expect(res).toEqual({ token: WIDE_TOKEN, tokenRepositories: ["webapp", "shared-auth"] });
     const remint = tokenFor.mock.calls.find((c) => c[2].extraRepositories);
     expect(remint![1]).toBe("remote");
+  });
+
+  it("passes only the server-authorized mint grant to the clone worker", async () => {
+    fetchMock.mockResolvedValue(gitmodulesResponse(`url = ../shared-auth.git\nurl = ../denied.git\n`));
+    tokenFor.mockImplementation(async (_c: unknown, _p: string, tc: { extraRepositories?: string[] }) =>
+      tc.extraRepositories?.length
+        ? { token: WIDE_TOKEN, source: "app-installation", repositories: ["webapp", "shared-auth"] }
+        : { token: PARENT_TOKEN, source: "app-installation" },
+    );
+    const result = await resolveBuildGitToken({ ...base, buildStrategy: "server", onLog });
+    expect(result).toEqual({ token: WIDE_TOKEN, tokenRepositories: ["webapp", "shared-auth"] });
+    expect(logs.find((line) => line.startsWith("clone auth:"))).toContain("repos=2");
   });
 
   it("keeps the parent-only token when there is no .gitmodules (404), without warning", async () => {

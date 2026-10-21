@@ -70,7 +70,7 @@ describe("tokenFor extraRepositories (submodule expansion)", () => {
       repo: "webapp",
       extraRepositories: ["shared-auth", "webapp", "shared-ui"],
     });
-    expect(res).toEqual({ token: "apptok", source: "app-installation" });
+    expect(res).toEqual({ token: "apptok", source: "app-installation", repositories: ["webapp", "shared-auth", "shared-ui"] });
     expect(ghAuth.getInstallationToken).toHaveBeenCalledWith(ctxOrg, "acme", undefined, {
       repositories: ["webapp", "shared-auth", "shared-ui"],
     });
@@ -81,7 +81,7 @@ describe("tokenFor extraRepositories (submodule expansion)", () => {
 
   it("drops extras the caller is not authorized for", async () => {
     canUseGitHubRepo.mockImplementation(async (_c: unknown, t: { repo?: string }) => t.repo !== "secret-sub");
-    await tokenFor(ctxOrg, "remote", {
+    const result = await tokenFor(ctxOrg, "remote", {
       owner: "acme",
       repo: "webapp",
       extraRepositories: ["shared-auth", "secret-sub"],
@@ -89,6 +89,7 @@ describe("tokenFor extraRepositories (submodule expansion)", () => {
     expect(ghAuth.getInstallationToken).toHaveBeenCalledWith(ctxOrg, "acme", undefined, {
       repositories: ["webapp", "shared-auth"],
     });
+    expect(result?.repositories).toEqual(["webapp", "shared-auth"]);
   });
 
   it("ignores extras when the parent repo itself is not authorized", async () => {
