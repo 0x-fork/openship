@@ -632,7 +632,11 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
         log?.(message);
         previous = message;
       }
-      if (status.ready === status.desired && status.desired > 0) {
+      if (
+        status.ready === status.desired &&
+        status.updated === status.desired &&
+        status.desired > 0
+      ) {
         stableSince ||= Date.now();
         if (Date.now() - stableSince >= 5_000) return;
       } else stableSince = 0;
@@ -740,6 +744,7 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
   }
   async restart(ref: string) {
     const service = await this.service(ref);
+    if (!service.Spec.Mode?.Replicated?.Replicas) return this.start(ref);
     await this.update(service, (spec) => {
       spec.TaskTemplate.ForceUpdate = (spec.TaskTemplate.ForceUpdate ?? 0) + 1;
     });
@@ -785,7 +790,11 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
       desired: service.Spec.Mode?.Replicated?.Replicas ?? 0,
       ready,
       available: ready,
-      updated: ready,
+      updated: current.filter(
+        (task) =>
+          task.Status.State === "running" &&
+          (task.Spec?.ForceUpdate ?? 0) === (service.Spec.TaskTemplate.ForceUpdate ?? 0),
+      ).length,
       generation: service.Version.Index,
       observedGeneration: service.Version.Index,
       message:

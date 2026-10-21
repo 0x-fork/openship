@@ -24,8 +24,7 @@ export const computeCluster = pgTable(
     name: text("name").notNull(),
     location: text("location"),
     revision: integer("revision").notNull().default(1),
-    networkId: text("network_id")
-      .references(() => privateNetwork.id, { onDelete: "no action" }),
+    networkId: text("network_id").references(() => privateNetwork.id, { onDelete: "no action" }),
     requestId: text("request_id").notNull(),
     inputHash: text("input_hash").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),

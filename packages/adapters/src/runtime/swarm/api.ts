@@ -70,6 +70,7 @@ export interface SwarmTask {
   NodeID?: string;
   Slot?: number;
   ServiceID: string;
+  Spec?: { ForceUpdate?: number };
   DesiredState: string;
   Status: {
     State: string;

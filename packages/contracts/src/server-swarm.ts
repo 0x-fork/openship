@@ -1,9 +1,12 @@
 import { Type, type Static } from "@sinclair/typebox";
 
-export const ConnectSwarmInputSchema = Type.Object({
-  name: Type.String({minLength: 1, maxLength: 100}),
-  requestId: Type.String({minLength: 16, maxLength: 64, pattern: "^[a-zA-Z0-9_-]+$"}),
-}, {additionalProperties: false});
+export const ConnectSwarmInputSchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1, maxLength: 100 }),
+    requestId: Type.String({ minLength: 16, maxLength: 64, pattern: "^[a-zA-Z0-9_-]+$" }),
+  },
+  { additionalProperties: false },
+);
 
 const nullableString = Type.Union([Type.String(), Type.Null()]);
 const nullableCount = Type.Union([Type.Integer({ minimum: 0 }), Type.Null()]);

@@ -97,7 +97,9 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
   const count = Number(instances);
   const validCount = Number.isInteger(count) && count >= 1 && count <= 100;
   const selected = clusters.find((cluster) => cluster.id === clusterId);
-  const database = clusterWorkloadNeedsOperator(project.framework) || clusterWorkloadNeedsOperator(project.appTemplateId);
+  const database =
+    clusterWorkloadNeedsOperator(project.framework) ||
+    clusterWorkloadNeedsOperator(project.appTemplateId);
   const databaseNeedsOperator = database && selected?.scaling?.provider !== "swarm";
   const selectedState = clusterScalingState(selected);
   // Project operators may scale an existing release without access to the fleet catalog.
@@ -186,7 +188,9 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
               }
             : {}),
           expectedUpdatedAt: view.updatedAt,
-          ...(selected?.scaling?.provider === "swarm" ? {acknowledgePlacement: true as const} : {stateless: true as const}),
+          ...(selected?.scaling?.provider === "swarm"
+            ? { acknowledgePlacement: true as const }
+            : { stateless: true as const }),
         });
         updateTarget(next);
       }
@@ -227,9 +231,11 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
         </Button>
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        {databaseNeedsOperator ? "Database scaling requires the database operator on Kubernetes. A new database on Swarm uses one instance pinned to its data on the connected manager." : resolveWorkload(project.options?.workloadType, project.options?.hasServer) === "web"
-          ? "Run multiple instances of this application. Traffic goes to healthy instances automatically."
-          : "Run multiple instances of this worker. Each instance processes work independently."}
+        {databaseNeedsOperator
+          ? "Database scaling requires the database operator on Kubernetes. A new database on Swarm uses one instance pinned to its data on the connected manager."
+          : resolveWorkload(project.options?.workloadType, project.options?.hasServer) === "web"
+            ? "Run multiple instances of this application. Traffic goes to healthy instances automatically."
+            : "Run multiple instances of this worker. Each instance processes work independently."}
       </p>
       {!view && loading && (
         <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -450,7 +456,9 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
                     disabled={busy || disabled || loading}
                   />
                   <span>
-                    {selected?.scaling?.provider === "swarm" ? "Stateless services can run across nodes. Services with named volumes stay on the connected manager with one instance." : "Each instance can run independently. Important data is stored outside the application instance."}
+                    {selected?.scaling?.provider === "swarm"
+                      ? "Stateless services can run across nodes. Services with named volumes stay on the connected manager with one instance."
+                      : "Each instance can run independently. Important data is stored outside the application instance."}
                   </span>
                 </label>
               )}
@@ -490,8 +498,9 @@ function ClusterScaling({ project, disabled, resources, onDeploy, onClusterState
               <summary className="cursor-pointer text-muted-foreground">Technical details</summary>
               <div className="mt-3 space-y-3 text-muted-foreground">
                 <p>
-                  {selected?.scaling?.provider === "swarm" ? "Docker Swarm" : "Kubernetes (K3s)"} manages instance placement and recovery. OpenShip Edge currently
-                  sends incoming traffic through one cluster server.
+                  {selected?.scaling?.provider === "swarm" ? "Docker Swarm" : "Kubernetes (K3s)"}{" "}
+                  manages instance placement and recovery. OpenShip Edge currently sends incoming
+                  traffic through one cluster server.
                 </p>
                 {view.internalHost && (
                   <p className="break-all">

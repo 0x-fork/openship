@@ -12,14 +12,18 @@ export async function assertProjectStorageEmpty(
   organizationId: string,
   projectId: string,
   clusterId: string,
-  options?: {deletingProject?: boolean},
+  options?: { deletingProject?: boolean },
 ) {
   const runtime = await repos.clusterRuntime.get(organizationId, clusterId);
   if (runtime?.provider === "swarm") {
     // The shared teardown applies the user's keep/wipe choice to manager-local
     // volumes. Retargeting is not a storage migration and must never imply one.
     if (options?.deletingProject) return;
-    throw new AppError("Move a Swarm project's data through an explicit migration before changing its cluster.", 409, "CLUSTER_VOLUMES_ATTACHED");
+    throw new AppError(
+      "Move a Swarm project's data through an explicit migration before changing its cluster.",
+      409,
+      "CLUSTER_VOLUMES_ATTACHED",
+    );
   }
   const connection = await openClusterApi(organizationId, clusterId);
   try {

@@ -3,12 +3,15 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import Dockerode from "dockerode";
+import { repos } from "@repo/db";
+import { seedOrg, seedProject, seedDeployment, seedService, setActive } from "../helpers/seed";
 import net from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   DockerRuntime,
+  NoopInfraProvider,
   SwarmRuntime,
   runDeployPipeline,
   BuildLogger,
@@ -391,9 +394,12 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       );
       expect(success.status, success.error).toBe("ready");
       expect(await read(success.containerId!)).toBe("two:private-file");
+      await runtime.restart(success.containerId!);
+      expect(await read(success.containerId!)).toBe("two:private-file");
+      expect((await runtime.status(success.containerId!)).updated).toBe(2);
       await runtime.stop(success.containerId!);
       expect((await runtime.status(success.containerId!)).desired).toBe(0);
-      await runtime.start(success.containerId!);
+      await runtime.restart(success.containerId!);
       expect(await read(success.containerId!)).toBe("two:private-file");
 
       const data = service("data-one", {
@@ -432,6 +438,70 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
 
       for (const ref of await runtime.listProjectContainerIds("swarm-e2e"))
         await runtime.destroy(ref);
+      // Drive the real Compose orchestrator and repositories too: a config-only
+      // redeploy must persist the new release and apply the shared env/file merge.
+      const org = await seedOrg();
+      const project = await seedProject(org.organizationId, {
+        id: "swarm-e2e",
+        slug: "swarm-e2e",
+        framework: "docker",
+        hasBuild: false,
+        hasServer: true,
+        runtimeMode: "docker",
+        routeStrategy: "container-ip",
+      });
+      const authored = await seedService(project.id, {
+        name: "configured",
+        image: "busybox:1.37",
+        ports: ["8080"],
+        exposed: false,
+        dependsOn: [],
+        environment: { MESSAGE: "${MESSAGE:-from-compose}" },
+        advanced: {
+          environmentTemplateKeys: ["MESSAGE"],
+          files: [{ path: "/run/message", content: "config-one" }],
+        },
+        commandArgv: [
+          "sh",
+          "-c",
+          'mkdir -p /www; printf "%s:" "$MESSAGE" > /www/index.html; cat /run/message >> /www/index.html; exec httpd -f -p 8080 -h /www',
+        ],
+      });
+      const { deployComposeServices } =
+        await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
+      const deployCompose = async () => {
+        const deployment = await seedDeployment(project, {
+          imageRef: "compose",
+          containerId: "compose",
+          meta: { runtimeMode: "docker", deployTarget: "local" },
+        });
+        const current = (await repos.project.findById(project.id))!;
+        const result = await deployComposeServices(current, deployment, runtime, logger, {
+          routing: new NoopInfraProvider(),
+          ssl: new NoopInfraProvider(),
+          usesManagedRouting: false,
+        });
+        expect(result.status, JSON.stringify(result.services)).toBe("ready");
+        const rows = await repos.service.listByDeployment(deployment.id);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.status).toBe("success");
+        await setActive(project.id, deployment.id);
+        return rows[0]!.containerId!;
+      };
+      const composedOne = await deployCompose();
+      expect(await read(composedOne)).toBe("from-compose:config-one");
+      await repos.service.update(authored.id, {
+        environment: { MESSAGE: "updated-env" },
+        advanced: {
+          environmentTemplateKeys: [],
+          files: [{ path: "/run/message", content: "config-two" }],
+        },
+      });
+      const composedTwo = await deployCompose();
+      expect(await read(composedTwo)).toBe("updated-env:config-two");
+      expect((await runtime.getContainerInfo(composedOne)).status).toBe("missing");
+      await runtime.destroy(composedTwo);
+
       await runtime.cleanupProject("swarm-e2e");
       const retained = await manager.listVolumes({
         filters: { label: ["openship.project=swarm-e2e"] },

@@ -1,4 +1,5 @@
 import type Dockerode from "dockerode";
+import { swarmRequest } from "./api";
 import {
   AppError,
   type SwarmInspection,
@@ -27,26 +28,7 @@ function read(
   signal: AbortSignal,
   query?: Record<string, boolean>,
 ): Promise<unknown> {
-  signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    docker.modem.dial(
-      {
-        path: query ? `${path}?` : path,
-        options: query,
-        method: "GET",
-        abortSignal: signal,
-        statusCodes: {
-          200: true,
-          400: "Bad request",
-          403: "Forbidden",
-          404: "Not found",
-          500: "Docker unavailable",
-          503: "Swarm unavailable",
-        },
-      },
-      (error: Error | null, result: unknown) => (error ? reject(error) : resolve(result)),
-    );
-  });
+  return swarmRequest(docker, "GET", path, { query, signal });
 }
 
 function serviceSummary(raw: unknown): SwarmServiceSummary {
