@@ -89,6 +89,7 @@ Installation discovery is limited to the active organization and the caller's
 server permissions; named session replay and prompt responses require the same
 server authority. SDK/CLI callers can select a server explicitly; released
 desktop clients using the legacy session ID query remain compatible.
+The SDK keeps that wire alias for session IDs so it also works with older APIs.
 Live setup logs remain process-local; multi-replica deployments need session
 affinity for reattachment. A missing local session never authorizes an overlapping
 installation, because its host's advisory lock remains held by the worker.

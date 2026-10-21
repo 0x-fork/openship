@@ -19,7 +19,9 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
   const installSessionQuery = (command: unknown) => {
     const input = parseInput(ServerInstallSessionInputSchema, command ?? {});
     const params = new URLSearchParams();
-    if (input.sessionId) params.set("sessionId", input.sessionId);
+    // Released servers read `id`; keep that wire alias while the shared public
+    // contract uses sessionId. New servers accept both without ambiguity.
+    if (input.sessionId) params.set("id", input.sessionId);
     if (input.serverId) params.set("serverId", input.serverId);
     return params.size ? `?${params}` : "";
   };

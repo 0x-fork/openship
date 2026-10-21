@@ -155,7 +155,7 @@ describe("server installation outcomes", () => {
 
 describe("server administration recovery", () => {
   it.each([
-    { args: ["setup-existing"], query: { sessionId: "setup-existing" } },
+    { args: ["setup-existing"], query: { id: "setup-existing" } },
     { args: ["--server", "srv1"], query: { serverId: "srv1" } },
   ])("reattaches to an installation without running it again: $args", async ({ args, query }) => {
     setJsonMode(true);

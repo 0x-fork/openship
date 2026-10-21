@@ -20,7 +20,7 @@ import * as rateLimit from "./rate-limit.controller";
 import * as serverContainers from "./server-containers.controller";
 import * as serverModules from "./server-modules.controller";
 const r = secureRouter(new Hono(), { module: "system", basePath: "/api/system" });
-// `id` is retained for released desktop clients; SDK callers use sessionId.
+// `id` is retained for released desktop clients and SDK/server compatibility.
 const installSessionQuery = Type.Object({
   ...ServerInstallSessionInputSchema.properties,
   id: Type.Optional(ResourceIdSchema),
