@@ -607,7 +607,7 @@ async function archivePreviousDeployment(
  */
 async function reuseRetainedArtifact(opts: {
   snapshot: DeploymentConfigSnapshot;
-  runtime: { name: string };
+  runtime: Pick<RuntimeAdapter, "name" | "supports">;
   buildSessionId: string;
   targetExecutor?: CommandExecutor | null;
   /** Reaches the static release tree; see `sharedMountExecutor`. */
@@ -649,7 +649,7 @@ async function reuseRetainedArtifact(opts: {
   }
 
   const refreshFrom = refreshAppDeploymentId(snapshot);
-  if (runtime.name === "kubernetes" && (refreshFrom || pinnedAppImage(snapshot))) {
+  if (runtime.supports("clusterStatus") && (refreshFrom || pinnedAppImage(snapshot))) {
     const image = pinnedAppImage(snapshot);
     if (!image || !/@sha256:[a-f0-9]{64}$/.test(image)) {
       throw new Error("This cluster release has no immutable image to reuse. Redeploy it before applying replica or configuration changes.");
@@ -949,6 +949,7 @@ async function executeBuildAndDeploy(
             ? `static (build runtime: ${runtime.name}, served as files)`
             : workload === "worker"
               ? "worker (supervised container, no port, no route)"
+              : runtime.name === "swarm" ? "Docker Swarm services"
               : runtime.name === "kubernetes" ? "Kubernetes replicas"
               : resolved.runtimeMode === "docker"
                 ? "sandboxed (Docker container)"
@@ -1552,6 +1553,11 @@ async function executeBuildAndDeploy(
       return;
     }
     const activate = async () => {
+      if (runtime.prepareDeployment && servedRouting.deployMode !== "static-file-serve") {
+        const previous = await findActiveDeployment(project);
+        deployConfig.previousContainerId = previous?.containerId ?? undefined;
+        await runtime.prepareDeployment(deployConfig);
+      }
       if (runtime instanceof DockerRuntime && servedRouting.deployMode !== "static-file-serve") {
         const previous = await findActiveDeployment(project);
         deployConfig.previousContainerId = previous?.containerId ?? undefined;
@@ -2169,9 +2175,9 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
         // Overlap (run-new-then-swap, zero-downtime) needs a unique container +
         // its own host port; a pinned loopback port can't be double-bound and bare
         // binds a fixed port → stop-first.
-        canOverlap: !usesHostLoopback,
+        canOverlap: !usesHostLoopback && !runtime.supports("retainedServiceCutover"),
         ensureRuntimeReady: async () => {
-          if (runtime.name === "kubernetes") return;
+          if (runtime.supports("clusterStatus")) return;
           const system = phase.system;
           if (!system) return;
           await system.ensureFeature("deploy", (entry) =>
@@ -2179,7 +2185,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
           );
         },
         ensurePorts: async (cfg, promptUser) => {
-          if (runtime.name === "kubernetes" || phase.effectiveTarget === "cloud") return;
+          if (runtime.supports("clusterStatus") || phase.effectiveTarget === "cloud") return;
           const executor = phase.targetExecutor;
           if (!executor) return;
           // A published container binds exactly ONE host port — the loopback pin.
@@ -2937,7 +2943,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   // Image preparation resolves a registry tag to its immutable repo digest.
   // Freeze that exact reference into the successful deployment so a rollback
   // can re-pull the same bytes even after local image retention expires.
-  if (snapshot.releaseImageRef && (runtime.name === "docker" || runtime.name === "kubernetes") && buildResult.imageRef) {
+  if (snapshot.releaseImageRef && (runtime.supports("dockerHost") || runtime.supports("clusterStatus")) && buildResult.imageRef) {
     metaPatch.releaseImageRef = buildResult.imageRef;
   }
   if (portCheck.length > 0) metaPatch.portCheck = portCheck;

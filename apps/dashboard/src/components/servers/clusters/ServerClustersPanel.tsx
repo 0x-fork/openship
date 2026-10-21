@@ -101,11 +101,11 @@ export function ServerClustersPanel({
               </div>
               <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                 <UiIcon name="network" aria-hidden="true" className="size-3.5" />
-                {cluster.network.name}
+                {cluster.network?.name ?? "Docker Swarm · existing network"}
               </span>
               <div className="mt-5 flex items-center justify-between border-t border-border pt-3 text-xs text-muted-foreground">
                 <span className="truncate font-mono">
-                  <BlurIp>{cluster.network.network.cidrs.join(", ")}</BlurIp>
+                  <BlurIp>{cluster.network?.network.cidrs.join(", ") ?? "Connected manager"}</BlurIp>
                 </span>
                 <UiIcon name="arrow-right" className="ms-3 size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
               </div>

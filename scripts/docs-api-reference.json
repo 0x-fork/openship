@@ -1290,6 +1290,12 @@
       "description": "Read the private networks and compute cluster associated with a server.",
       "route": "GET /api/system/servers/:id/infrastructure"
     },
+    "servers.connectSwarm": {
+      "page": "servers",
+      "section": "Docker Swarm",
+      "description": "Connect a verified existing Swarm manager for new project deployments. Requires fleet administration. Reuse requestId after a lost response; does not alter existing stacks or nodes.",
+      "route": "POST /api/system/servers/:id/swarm/connect"
+    },
     "servers.inspectSwarm": {
       "page": "servers",
       "section": "Docker Swarm inspection",

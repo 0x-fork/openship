@@ -655,3 +655,5 @@ export {
   DOCKER_BINFMT_IMAGE,
 } from "./runtime/docker-platforms";
 export { inspectDockerSwarm } from "./runtime/swarm/inspect";
+export { SwarmRuntime } from "./runtime/swarm/runtime";
+export { assertSwarmServiceConfig } from "./runtime/swarm/spec";

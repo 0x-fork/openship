@@ -3,6 +3,18 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import Dockerode from "dockerode";
+import net from "node:net";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import {
+  DockerRuntime,
+  SwarmRuntime,
+  runDeployPipeline,
+  BuildLogger,
+  type DeployEnvironment,
+} from "@repo/adapters";
+import type { DeployConfig, MultiServiceDeployConfig } from "@repo/adapters";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { inspectDockerSwarm, type CommandExecutor } from "@repo/adapters";
 import { probeEdge, freeEdgeTargets } from "../../../../packages/adapters/src/system/proxy/detect";
@@ -31,6 +43,21 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
     await docker(["pull", image], 120_000);
     await docker(["network", "create", "--label", "openship.test=swarm-inspection", network]);
     networkCreated = true;
+    const registry = await docker(
+      [
+        "create",
+        "--network",
+        network,
+        "--network-alias",
+        "registry",
+        "--label",
+        "openship.test=swarm-inspection",
+        "registry:2.8.3",
+      ],
+      120_000,
+    );
+    containers.push(registry);
+    await docker(["start", registry]);
     const createNode = async () => {
       const container = await docker([
         "create",
@@ -44,6 +71,7 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
         "--publish",
         "127.0.0.1::2375",
         image,
+        "--insecure-registry=registry:5000",
       ]);
       containers.push(container);
       await docker(["start", container]);
@@ -179,4 +207,247 @@ describeDockerE2E("Swarm inspection and ownership on independent Docker daemons"
       (await inspectDockerSwarm(manager, true)).inventory?.stacks[0]?.services[0]?.runningTasks,
     ).toBe(1);
   }, 30_000);
+
+  it("deploys across nodes, uses shared rollback, preserves data and deletes only owned resources", async () => {
+    const foreign = (await manager.listServices()).map((item) => ({
+      id: item.ID,
+      version: item.Version?.Index,
+    }));
+    const observed = await inspectDockerSwarm(manager);
+    const temp = await mkdtemp(join(tmpdir(), "opsh-swarm-"));
+    // Only transport location is substituted. The real Docker builder and Swarm
+    // adapter operate against disposable daemons, never the test host's Swarm.
+    const sockets = new Set<net.Socket>();
+    const proxy = net.createServer((socket) => {
+      const upstream = net.connect({ host: "127.0.0.1", port: Number(manager.modem.port) });
+      for (const peer of [socket, upstream]) {
+        sockets.add(peer);
+        peer.on("error", () => {
+          socket.destroy();
+          upstream.destroy();
+        });
+        peer.on("close", () => sockets.delete(peer));
+      }
+      socket.pipe(upstream).pipe(socket);
+    });
+    const socketPath = join(temp, "docker.sock");
+    await new Promise<void>((resolve) => proxy.listen(socketPath, resolve));
+    const builder = await DockerRuntime.create({
+      transport: "socket",
+      dockerSocketPath: socketPath,
+    });
+    const runtime = new SwarmRuntime({
+      projectId: "swarm-e2e",
+      runtimeId: "runtime-e2e",
+      clusterUid: observed.clusterId!,
+      managerNodeId: observed.nodeId!,
+      config: { replicas: 2, imageRepository: "registry:5000/openship/swarm-e2e" },
+      builder: async () => builder,
+      resolveRegistryAuth: async () => undefined,
+      gatewayImage: "openresty/openresty:1.27.1.2-0-alpine",
+    });
+    const logger = new BuildLogger(() => {});
+    const service = (
+      release: string,
+      extra: Partial<MultiServiceDeployConfig> = {},
+    ): MultiServiceDeployConfig => ({
+      projectId: "swarm-e2e",
+      deploymentId: release,
+      slug: "swarm-e2e",
+      serviceName: "web",
+      image: "busybox:1.37",
+      ports: ["8080"],
+      publicPort: 8080,
+      volumes: [],
+      namespaceVolumes: true,
+      environment: { SETTING: release },
+      advanced: { files: [{ path: "/run/test-message", content: "private-file" }] },
+      commandArgv: [
+        "sh",
+        "-c",
+        'mkdir -p /www; printf "%s:" "$SETTING" > /www/index.html; cat /run/test-message >> /www/index.html; echo started; exec httpd -f -p 8080 -h /www',
+      ],
+      ...extra,
+    });
+    const cfg = (release: string): DeployConfig => ({
+      deploymentId: release,
+      projectId: "swarm-e2e",
+      buildSessionId: release,
+      environment: "production",
+      port: 8080,
+      envVars: {},
+      resources: { cpuCores: 0, memoryMb: 0, diskMb: 0 },
+    });
+    const group = await runtime.ensureServiceGroup({
+      projectId: "swarm-e2e",
+      deploymentId: "one",
+      slug: "swarm-e2e",
+    });
+    const env = (definition: MultiServiceDeployConfig): DeployEnvironment => ({
+      canOverlap: false,
+      preflight: () => runtime.prepareServiceWorkload(definition),
+      activate: async (_config, log) => runtime.deployServiceWorkload(group, definition, log),
+      deactivate: (id) => runtime.destroy(id),
+      deactivateRetaining: (id) => runtime.stop(id),
+      reactivatePrevious: (id) => runtime.start(id),
+      retireRetainedPrevious: (id) => runtime.destroy(id),
+      stopActivated: (id) => runtime.stop(id),
+    });
+    const read = async (ref: string) =>
+      inside(`wget -qO- http://${await runtime.getContainerIp(ref)}:8080`);
+    try {
+      await writeFile(
+        join(temp, "Dockerfile"),
+        'FROM busybox:1.37\nCOPY message /www/index.html\nCMD ["httpd", "-f", "-p", "8080", "-h", "/www"]\n',
+      );
+      await writeFile(join(temp, "message"), "source-built-release");
+      await writeFile(join(temp, ".dockerignore"), "docker.sock\n");
+      const built = await runtime.build(
+        {
+          sessionId: "source-build",
+          projectId: "swarm-e2e",
+          slug: "swarm-e2e",
+          repoUrl: "",
+          branch: "main",
+          localPath: temp,
+          stack: "docker",
+          dockerfilePath: "Dockerfile",
+          buildImage: "busybox:1.37",
+          runtimeImage: "busybox:1.37",
+          packageManager: "none",
+          installCommand: "",
+          buildCommand: "",
+          outputDirectory: ".",
+          port: 8080,
+          envVars: {},
+          hasServer: true,
+          resources: { cpuCores: 0, memoryMb: 0, diskMb: 0 },
+        },
+        logger,
+      );
+      expect(built.status, built.error).toBe("deploying");
+      expect(built.imageRef).toMatch(/^registry:5000\/openship\/swarm-e2e@sha256:[a-f0-9]{64}$/);
+      const source = service("source", {
+        serviceName: "source",
+        image: built.imageRef!,
+        advanced: {},
+        commandArgv: undefined,
+      });
+      const sourceRelease = await runDeployPipeline(
+        env(source),
+        { config: cfg("source"), domains: [] },
+        logger,
+      );
+      expect(sourceRelease.status, sourceRelease.error).toBe("ready");
+      expect(await read(sourceRelease.containerId!)).toBe("source-built-release");
+      expect(
+        new Set((await runtime.status(sourceRelease.containerId!)).pods.map((pod) => pod.nodeName))
+          .size,
+      ).toBe(2);
+      await runtime.destroy(sourceRelease.containerId!);
+
+      const first = await runDeployPipeline(
+        env(service("one")),
+        { config: cfg("one"), domains: [] },
+        logger,
+      );
+      expect(first.status, first.error).toBe("ready");
+      const original = first.containerId!;
+      expect(await read(original)).toBe("one:private-file");
+      const status = await runtime.status(original);
+      expect(status).toMatchObject({ desired: 2, ready: 2 });
+      expect(new Set(status.pods.map((pod) => pod.nodeName)).size).toBe(2);
+      const created = await manager.getService(original.split(":").at(-1)!).inspect();
+      expect(created.Endpoint?.Ports ?? []).toEqual([]); // No cluster-wide public ingress.
+      expect(
+        (await runtime.getRuntimeLogs(original)).some((entry) => entry.message.includes("started")),
+      ).toBe(true);
+
+      // A failed health gate goes through the SAME pipeline as Docker/Kubernetes.
+      const broken = service("bad", { previousContainerId: original });
+      const failed = await runDeployPipeline(
+        {
+          ...env(broken),
+          healthCheck: async () => {
+            throw new Error("intentional failed readiness");
+          },
+        },
+        { config: cfg("bad"), domains: [], previousContainerId: original },
+        logger,
+      );
+      expect(failed.status).toBe("failed");
+      expect(await read(original)).toBe("one:private-file");
+      expect(await runtime.listProjectContainerIds("swarm-e2e")).toEqual([original]);
+      const next = service("two", { previousContainerId: original });
+      const success = await runDeployPipeline(
+        env(next),
+        { config: cfg("two"), domains: [], previousContainerId: original },
+        logger,
+      );
+      expect(success.status, success.error).toBe("ready");
+      expect(await read(success.containerId!)).toBe("two:private-file");
+      await runtime.stop(success.containerId!);
+      expect((await runtime.status(success.containerId!)).desired).toBe(0);
+      await runtime.start(success.containerId!);
+      expect(await read(success.containerId!)).toBe("two:private-file");
+
+      const data = service("data-one", {
+        serviceName: "data",
+        ports: [],
+        publicPort: undefined,
+        volumes: ["data:/data"],
+        advanced: {},
+        commandArgv: [
+          "sh",
+          "-c",
+          "test -f /data/value || echo durable > /data/value; exec sleep 600",
+        ],
+      });
+      const persisted = await runtime.deployServiceWorkload(group, data);
+      expect(await runtime.status(persisted.containerId)).toMatchObject({
+        desired: 1,
+        ready: 1,
+        pods: [expect.objectContaining({ nodeName: observed.nodeId })],
+      });
+      await runtime.stop(persisted.containerId);
+      const data2 = {
+        ...data,
+        deploymentId: "data-two",
+        previousContainerId: persisted.containerId,
+        commandArgv: ["sh", "-c", 'test "$(cat /data/value)" = durable || exit 1; exec sleep 600'],
+      };
+      const restored = await runtime.deployServiceWorkload(group, data2);
+      await expect(runtime.start(persisted.containerId)).rejects.toMatchObject({
+        code: "CLUSTER_WORKLOAD_BUSY",
+      });
+      expect((await runtime.status(restored.containerId)).ready).toBe(1);
+      await expect(runtime.destroy(`swarm:wrong:${created.ID}`)).rejects.toMatchObject({
+        code: "CLUSTER_WORKLOAD_OWNERSHIP",
+      });
+
+      for (const ref of await runtime.listProjectContainerIds("swarm-e2e"))
+        await runtime.destroy(ref);
+      await runtime.cleanupProject("swarm-e2e");
+      const retained = await manager.listVolumes({
+        filters: { label: ["openship.project=swarm-e2e"] },
+      });
+      expect(retained.Volumes?.length).toBe(1);
+      await runtime.cleanupProject("swarm-e2e", { wipeVolumes: true });
+      expect(
+        (await manager.listVolumes({ filters: { label: ["openship.project=swarm-e2e"] } }))
+          .Volumes ?? [],
+      ).toEqual([]);
+      expect(
+        (await manager.listServices()).map((item) => ({
+          id: item.ID,
+          version: item.Version?.Index,
+        })),
+      ).toEqual(foreign);
+    } finally {
+      await runtime.dispose();
+      sockets.forEach((socket) => socket.destroy());
+      await new Promise<void>((resolve) => proxy.close(() => resolve()));
+      await rm(temp, { recursive: true, force: true });
+    }
+  }, 360_000);
 });

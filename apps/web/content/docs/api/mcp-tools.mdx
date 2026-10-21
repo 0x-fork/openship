@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **513 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **514 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -630,6 +630,7 @@ The current API has **513 unique tools**. Permission tags below describe the rou
 | `post_system_servers_by_id_ports_scan`<br />`POST /api/system/servers/:id/ports/scan` | Inspect listening ports through this server's execution connection. Returns protocol, bound address and process without changing listeners. Managed Cloud listeners are inside the server; public access is controlled by provider networking and project routes. | `server:read` |
 | `post_system_servers_by_id_resize`<br />`POST /api/system/servers/:id/resize` | Apply a reviewed managed server resize with its preview revision, idempotency key and restart confirmation. Preserves container recovery checkpoints and waits for deployments. Poll server get for completion. | `server:admin` |
 | `post_system_servers_by_id_retry`<br />`POST /api/system/servers/:id/retry` | Retry this managed server's failed lifecycle operation. Reuses its provider identity and saved recovery checkpoint. Inspect the error first, then poll server get for progress. | `server:admin` |
+| `post_system_servers_by_id_swarm_connect`<br />`POST /api/system/servers/:id/swarm/connect` | Connect an existing Swarm manager as a project deployment target. Verifies cluster identity without creating, joining, upgrading or adopting nodes or stacks. Requires fleet administration. | `server:admin`<br />Self-hosted |
 | `post_system_servers_by_id_tunnels`<br />`POST /api/system/servers/:id/tunnels` | Save an SSH port-forwarding tunnel configuration. Start it separately; its local bind address belongs to the Openship controller. | `server:write`<br />Self-hosted |
 | `post_system_servers_by_id_tunnels_by_tunnelId_start`<br />`POST /api/system/servers/:id/tunnels/:tunnelId/start` | Start this saved tunnel on the Openship controller and return its local address. Read the tunnel list to inspect state. | `server:write`<br />Self-hosted |
 | `post_system_servers_by_id_tunnels_by_tunnelId_stop`<br />`POST /api/system/servers/:id/tunnels/:tunnelId/stop` | Stop this controller-side SSH tunnel while retaining its saved configuration. | `server:write`<br />Self-hosted |

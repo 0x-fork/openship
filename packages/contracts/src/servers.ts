@@ -1,10 +1,11 @@
 import {
   NetworkCollectionSchemas,
   ComputeClusterCollectionSchemas,
+  ComputeClusterSchema,
   ServerInfrastructureSchema,
 } from "./infrastructure-resources";
 import { ClusterRuntimeCollectionSchemas } from "./cluster-runtime";
-import { SwarmInspectionInputSchema, SwarmInspectionSchema } from "./server-swarm";
+import { SwarmInspectionInputSchema, SwarmInspectionSchema, ConnectSwarmInputSchema } from "./server-swarm";
 import { ClusterStorageCollectionSchemas } from "./cluster-storage";
 import { ManagedServerResourceSchemas } from "./server-managed";
 import { Type, type Static } from "@sinclair/typebox";
@@ -535,6 +536,7 @@ export const ServerResourceSchemas = {
   removeManaged: { action: "admin", input: RemoveManagedServerInputSchema, output: CloudWorkspaceSchema },
   infrastructure: { action: "read", output: ServerInfrastructureSchema },
   inspectSwarm: { action: "admin", input: SwarmInspectionInputSchema, optionalInput: true, output: SwarmInspectionSchema },
+  connectSwarm: { action: "admin", input: ConnectSwarmInputSchema, output: ComputeClusterSchema },
   inspectNetwork: { action: "admin", output: NetworkHostObservationSchema },
   githubStatus: {
     action: "read",

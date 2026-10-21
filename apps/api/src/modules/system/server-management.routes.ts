@@ -26,6 +26,7 @@ import {
   ComputeClusterCollectionSchemas,
   ClusterStorageCollectionSchemas,
   SwarmInspectionInputSchema,
+  ConnectSwarmInputSchema,
 } from "@repo/contracts";
 import { Type } from "@sinclair/typebox";
 import * as serverCheck from "./server-check.controller";
@@ -718,6 +719,12 @@ r.get(
   },
   serversCtrl.inspectSwarm,
 );
+r.post("/servers/:id/swarm/connect", {
+  body: ConnectSwarmInputSchema,
+  tag: "server:admin",
+  authorizationHandledByOperation: true,
+  mcp: {description: "Connect an existing Swarm manager as a project deployment target. Verifies cluster identity without creating, joining, upgrading or adopting nodes or stacks. Requires fleet administration."},
+}, serversCtrl.connectSwarm);
 // Read-only blast-radius snapshot for the removal confirm: which projects and apps
 // this box currently runs, and which server-scoped records go with it.
 r.get(

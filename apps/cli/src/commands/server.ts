@@ -13,6 +13,7 @@ import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
  *
  * SSH installation and native-module commands remain self-hosted only.
  */
+import { randomUUID } from "node:crypto";
 import { Command, Option } from "commander";
 import chalk from "chalk";
 import ora from "ora";
@@ -100,6 +101,12 @@ server.command("swarm")
   .argument("<id>", "Connected server ID; use a Swarm manager for stack inventory")
   .option("--details", "Include stacks, services, ports, mounts and nodes")
   .action((id: string, options: { details?: boolean }) => printResult(() => getShipClient().servers.inspectSwarm(id, { details: options.details ?? false })));
+server.command("connect-swarm")
+  .description("Use an existing Swarm manager for project deployments; preserves existing stacks")
+  .argument("<id>", "Connected Swarm manager server ID")
+  .requiredOption("--name <name>", "Cluster display name")
+  .option("--request-id <uuid>", "Reuse after a lost response for an idempotent retry")
+  .action((id: string, options: {name: string; requestId?: string}) => printResult(() => getShipClient().servers.connectSwarm(id, {name: options.name, requestId: options.requestId ?? randomUUID()})));
 server.command("destinations").description("List deployment destinations and their supported capabilities")
   .action(() => printResult(() => getShipClient().servers.destinations()));
 for (const [name, method, description] of [

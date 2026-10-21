@@ -3199,6 +3199,16 @@ async function deployComposeServicesUnlocked(
         const serviceLogger = createServicePipelineLogger(logger, svc.name, svc.id);
         const routeDomains = toRoutedDomainInputs(proxyRoutes);
         const deployEnv: DeployEnvironment = {
+          ...(runtime.prepareServiceWorkload ? {
+            preflight: () => runtime.prepareServiceWorkload!(serviceRuntimeConfig),
+          } : {}),
+          ...(runtime.supports("retainedServiceCutover") ? {
+            canOverlap: false,
+            deactivateRetaining: (id: string) => runtime.stop(id),
+            reactivatePrevious: (id: string) => runtime.start(id),
+            retireRetainedPrevious: (id: string) => runtime.destroy(id),
+            stopActivated: (id: string) => runtime.stop(id),
+          } : {}),
           ...(runtime instanceof DockerRuntime ? {
             preflight: () => runtime.prepareServiceVolumes(serviceRuntimeConfig),
           } : {}),

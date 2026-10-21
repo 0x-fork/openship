@@ -7,7 +7,7 @@ import {
   safeErrorMessage,
   validateClusterWorkload,
 } from "@repo/core";
-import { KubernetesRuntime, kubernetesProjectNamespace } from "@repo/adapters";
+import { kubernetesProjectNamespace } from "@repo/adapters";
 import { ProjectClusterSchemas, type ProjectCluster } from "@repo/contracts";
 import type { ResourceServices } from "../../../resource-operations";
 import type { ProjectDependencies } from "../../../projects";
@@ -35,6 +35,7 @@ export function createProjectClusterOperations(
     assertClusterManagementAvailable();
     const project = await repos.project.findById(id);
     assertResourceInOrg(project, "Project", ctx.organizationId, id);
+    const services = (await repos.service.listByProject(id)).filter((service) => service.enabled);
     const active = await findActiveDeployment(project);
     const meta = active?.meta as DeploymentMeta | null;
     const result: ProjectCluster = {
@@ -42,12 +43,12 @@ export function createProjectClusterOperations(
       serverId: project.serverId,
       config: project.clusterConfig,
       requiresImageRepository:
-        !project.releaseSource || releaseArtifactKind(project.releaseSource) !== "image",
+        services.length ? services.some((service) => !service.image || !!service.advanced?.build) : !project.releaseSource || releaseArtifactKind(project.releaseSource) !== "image",
       updatedAt: project.updatedAt.toISOString(),
       activeDeploymentId: active?.id ?? null,
       activeClusterId: meta?.clusterId ?? null,
       internalHost:
-        meta?.clusterId && snapshotToClass(meta).workload === "web"
+        meta?.clusterId && active?.containerId?.startsWith("k8s:") && snapshotToClass(meta).workload === "web"
           ? `app.${kubernetesProjectNamespace(project.id)}.svc.cluster.local`
           : null,
       status: null,
@@ -57,7 +58,7 @@ export function createProjectClusterOperations(
     if (active?.containerId && meta?.clusterId) {
       try {
         result.status = await withDeploymentRuntime(active, (runtime) => {
-          if (!(runtime instanceof KubernetesRuntime))
+          if (!runtime.supports("clusterStatus") || !runtime.status)
             throw new Error("The active release does not use the cluster runtime.");
           return runtime.status(active.containerId!);
         });
@@ -115,8 +116,13 @@ export function createProjectClusterOperations(
             ctx.organizationId,
             input.clusterId,
           );
+          if (runtime.provider === "swarm" ? input.acknowledgePlacement !== true : input.stateless !== true)
+            throw new AppError(runtime.provider === "swarm" ? "Acknowledge Swarm placement: named volumes stay on the connected manager with one instance." : "Confirm that instances can run independently before selecting Kubernetes.", 422, "CLUSTER_PLACEMENT_ACKNOWLEDGEMENT_REQUIRED");
+          if (runtime.provider === "swarm" && project.clusterId !== input.clusterId && await findActiveDeployment(project))
+            throw new AppError("Create a new project on this Swarm. Moving a running project requires an explicit data and routing migration.", 422, "CLUSTER_MIGRATION_REQUIRED");
           for (const host of runtime.plan.hosts) await authorizeMember(ctx, host.serverId);
           await assertClusterWorkloadSupported({
+            provider: runtime.provider,
             projectId: id,
             workload: projectToClass(project).workload,
             framework: project.framework,

@@ -59,7 +59,8 @@ export const SetProjectClusterSchema = Type.Object(
     clusterId: nullableString,
     config: Type.Optional(ClusterWorkloadConfigSchema),
     expectedUpdatedAt: Type.String(),
-    stateless: Type.Literal(true),
+    stateless: Type.Optional(Type.Literal(true)),
+    acknowledgePlacement: Type.Optional(Type.Literal(true)),
   },
   { additionalProperties: false },
 );

@@ -25,6 +25,9 @@ export async function inspectSwarm(c: Context) {
   });
   return c.json(await operationData(c, operations().inspectSwarm(operationContext(c), param(c, "id"), input)));
 }
+export async function connectSwarm(c: Context) {
+  return c.json(await operationData(c, operations().connectSwarm(operationContext(c), param(c, "id"), await c.req.json())), 201);
+}
 export async function probeReachability(c: Context) {
   return c.json(await operationData(c, operations().reachability(operationContext(c), param(c, "id"))));
 }

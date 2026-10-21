@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { randomUUID } from "@/lib/random-uuid";
 import { Icon } from "@repo/ui/icons";
 import { reportCaughtError } from "@repo/core/diagnostics";
 import { Button } from "@/components/ui/button";
@@ -10,12 +12,21 @@ import { systemApi } from "@/lib/api/system";
 
 type Inspection = Awaited<ReturnType<typeof systemApi.inspectSwarm>>;
 
-export function ServerSwarm({ serverId }: { serverId: string }) {
+export function ServerSwarm({
+  serverId,
+  connected = false,
+}: {
+  serverId: string;
+  connected?: boolean;
+}) {
   const scope = useCloudResourceKey();
-  return <SwarmCard key={`${scope}:${serverId}`} serverId={serverId} />;
+  return <SwarmCard key={`${scope}:${serverId}`} serverId={serverId} connected={connected} />;
 }
 
-function SwarmCard({ serverId }: { serverId: string }) {
+function SwarmCard({ serverId, connected }: { serverId: string; connected: boolean }) {
+  const router = useRouter();
+  const [connecting, setConnecting] = useState(false);
+  const connectionRequest = useRef<string | null>(null);
   const [value, setValue] = useState<Inspection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,7 +83,7 @@ function SwarmCard({ serverId }: { serverId: string }) {
         <Button
           variant="secondary"
           size="sm"
-          disabled={loading}
+          disabled={loading || connecting}
           onClick={() => void load(expanded)}
         >
           {loading ? "Checking…" : "Refresh"}
@@ -103,12 +114,43 @@ function SwarmCard({ serverId }: { serverId: string }) {
         <>
           <p className="text-sm text-muted-foreground">
             {value.nodeCount ?? "Unknown"} nodes · {value.managerCount ?? "Unknown"} managers.
-            Inspection only; deployments and service changes remain managed by Docker Swarm.
+            Deploy new projects through Openship. Existing stacks stay under their current
+            management.
           </p>
+          {!connected && (
+            <Button
+              disabled={loading || connecting}
+              onClick={async () => {
+                if (connecting) return;
+                const current = request.current;
+                setConnecting(true);
+                setError(null);
+                connectionRequest.current ??= randomUUID();
+                try {
+                  const cluster = await systemApi.connectSwarm(serverId, {
+                    name: "Docker Swarm",
+                    requestId: connectionRequest.current,
+                  });
+                  if (request.current === current)
+                    router.push(`/servers/clusters/${encodeURIComponent(cluster.id)}`);
+                } catch (cause) {
+                  reportCaughtError(cause, "dashboard/components/servers/ServerSwarm");
+                  if (request.current === current)
+                    setError(
+                      cause instanceof Error ? cause.message : "Could not connect this Swarm.",
+                    );
+                } finally {
+                  if (request.current === current) setConnecting(false);
+                }
+              }}
+            >
+              {connecting ? "Connecting…" : "Use for deployments"}
+            </Button>
+          )}
           <Button
             variant="secondary"
             size="sm"
-            disabled={loading}
+            disabled={loading || connecting}
             aria-expanded={expanded}
             onClick={() => {
               setExpanded(!expanded);

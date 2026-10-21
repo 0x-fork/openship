@@ -22,6 +22,7 @@ import { NetworkSetupConfirmation } from "./NetworkSetupConfirmation";
 import { NetworkStreamNotice } from "./NetworkStreamNotice";
 import { ClusterRuntimePanel } from "./ClusterRuntimePanel";
 import { ClusterStoragePanel } from "./ClusterStoragePanel";
+import { ServerSwarm } from "../ServerSwarm";
 
 export function ClusterDetail({ id }: { id: string }) {
   const { t } = useI18n();
@@ -128,12 +129,12 @@ export function ClusterDetail({ id }: { id: string }) {
             </div>
             {capabilities?.canManage && (
               <div className="flex items-center gap-2">
-                <Button asChild variant="secondary">
+                {cluster.network && <Button asChild variant="secondary">
                   <Link href={`/servers/clusters/${encodeURIComponent(id)}/edit`}>
                     <UiIcon name="sliders" className="size-4" />
                     {c.editCluster}
                   </Link>
-                </Button>
+                </Button>}
                 <Button
                   variant="ghost"
                   onClick={() => {
@@ -144,12 +145,12 @@ export function ClusterDetail({ id }: { id: string }) {
                   className="hover:bg-danger/10 hover:text-danger"
                 >
                   <UiIcon name="trash" className="size-4" />
-                  {c.removeCluster}
+                  {cluster.scaling?.provider === "swarm" ? "Disconnect cluster" : c.removeCluster}
                 </Button>
               </div>
             )}
           </div>
-          <ClusterRuntimePanel
+          {cluster.network ? <><ClusterRuntimePanel
             key={cluster.id}
             cluster={cluster}
             canManage={!!capabilities?.canManage}
@@ -210,18 +211,21 @@ export function ClusterDetail({ id }: { id: string }) {
                   <BlurIp>{cluster.network.network.cidrs.join(", ")}</BlurIp>
                 </p>
                 <Button asChild variant="secondary" className="w-full">
-                  <Link href={`/servers/networks/${encodeURIComponent(cluster.networkId)}`}>
+                  <Link href={`/servers/networks/${encodeURIComponent(cluster.network.id)}`}>
                     {c.openNetwork}
                     <UiIcon name="arrow-up-right" className="size-4 rtl:-rotate-90" />
                   </Link>
                 </Button>
               </aside>
             </div>
-          </div>
+          </div></> : <div className="space-y-5">
+            <p className="text-sm text-muted-foreground">Create or save a project draft, then choose this cluster in Topology → Scale before deploying. Source builds require a registry repository. Persistent services run as one instance on this manager; stateless services can run across the cluster.</p>
+            {cluster.serverIds.map((serverId) => <ServerSwarm key={serverId} serverId={serverId} connected />)}
+          </div>}
           {removing && (
             <NetworkSetupConfirmation
               title={c.removeCluster}
-              description={c.removeDescription}
+              description={cluster.scaling?.provider === "swarm" ? "Disconnecting removes this cluster from Openship. It does not leave Swarm or change its nodes. Remove the Openship projects and retained deployments using it first." : c.removeDescription}
               confirmLabel={c.removeCluster}
               busy={busy}
               error={error}

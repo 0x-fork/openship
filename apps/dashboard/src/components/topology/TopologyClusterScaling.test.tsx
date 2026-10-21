@@ -305,8 +305,8 @@ describe("topology cluster scaling", () => {
       await render("server", framework);
       expect(host.textContent).toContain("Database scaling");
       expect(host.querySelector('input[type="number"]')).toBeNull();
-      expect(h.get).not.toHaveBeenCalled();
-      expect(h.list).not.toHaveBeenCalled();
+      expect(h.set).not.toHaveBeenCalled();
+      expect(h.scale).not.toHaveBeenCalled();
     },
   );
 });

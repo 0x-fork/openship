@@ -16,6 +16,8 @@ type VolumeOwner = {
   projectId: string;
   workload: string;
   previous?: { containerId: string; serviceName?: string; required?: boolean };
+  /** A scheduler verifies its release ownership before returning the saved mounts. */
+  readPrevious?: () => Promise<Pick<Dockerode.ContainerInspectInfo, "Mounts"> | undefined>;
 };
 
 /**
@@ -48,10 +50,13 @@ export async function resolveImageVolumeBinds(
   for (const mount of mounts) if (mount.source) targets.delete(mount.target);
   const binds = mounts.filter((mount) => mount.source).map(formatVolumeMount);
   if (!targets.size) return binds;
-  let previous: Dockerode.ContainerInspectInfo | undefined;
+  let previous: Pick<Dockerode.ContainerInspectInfo, "Mounts"> | undefined = await owner.readPrevious?.();
+  let previousLabels: Record<string, string> | undefined;
   if (owner.previous) {
     try {
-      previous = await docker.getContainer(owner.previous.containerId).inspect();
+      const container = await docker.getContainer(owner.previous.containerId).inspect();
+      previous = container;
+      previousLabels = container.Config.Labels ?? {};
     } catch (error) {
       if (!isRuntimeNotFoundError(error)) throw error;
       if (owner.previous.required !== false)
@@ -62,7 +67,7 @@ export async function resolveImageVolumeBinds(
     }
   }
   if (previous && owner.previous) {
-    const labels = previous.Config.Labels ?? {};
+    const labels = previousLabels ?? {};
     if (
       labels[OPENSHIP_LABEL.project] !== owner.projectId ||
       (owner.previous.serviceName &&

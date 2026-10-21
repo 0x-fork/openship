@@ -48,6 +48,10 @@ export type RuntimeCapability =
   | "prebuiltImage"
   | "deploy"
   | "multiServiceDeploy"
+  /** Scheduler-level replica/task status, independent of Docker task containers. */
+  | "clusterStatus"
+  /** A service release can be stopped, restored on failure, then retired on success. */
+  | "retainedServiceCutover"
   | "stop"
   | "start"
   | "restart"
@@ -210,6 +214,9 @@ export interface RuntimeAdapter {
 
   /** Check if a specific feature is supported */
   supports(cap: RuntimeCapability): boolean;
+  status?(containerId: string): Promise<import("@repo/core").ClusterWorkloadStatus>;
+  /** Prepare an artifact's settings/storage before stopping its previous release. */
+  prepareDeployment?(config: DeployConfig): Promise<void>;
 
   /** Clean up any resources held by the runtime (connections, temp files) */
   dispose?(): Promise<void>;
@@ -667,6 +674,7 @@ export interface MultiServiceRuntimeAdapter extends RuntimeAdapter {
    * everything it's given (the Docker runtime).
    */
   readonly unsupportedComposeKeys: ReadonlySet<keyof ComposeAdvanced>;
+  prepareServiceWorkload?(config: MultiServiceDeployConfig): Promise<void>;
 
   /** Prepare shared runtime state for sibling services (network, workspace, mesh, etc.) */
   ensureServiceGroup(config: {

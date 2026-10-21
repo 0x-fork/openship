@@ -4,8 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { swarmFixture } from "../../../../../packages/contracts/test/swarm-fixture";
 
-const h = vi.hoisted(() => ({ inspect: vi.fn(), scope: "instance-a:org-a" }));
-vi.mock("@/lib/api/system", () => ({ systemApi: { inspectSwarm: h.inspect } }));
+const h = vi.hoisted(() => ({ inspect: vi.fn(), connect: vi.fn(), push: vi.fn(), scope: "instance-a:org-a" }));
+vi.mock("next/navigation", () => ({useRouter: () => ({push: h.push})}));
+vi.mock("@/lib/api/system", () => ({ systemApi: { inspectSwarm: h.inspect, connectSwarm: h.connect } }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.scope }));
 vi.mock("@repo/core/diagnostics", () => ({ reportCaughtError: vi.fn() }));
 vi.mock("@repo/ui/icons", () => ({ Icon: () => null }));
@@ -81,4 +82,15 @@ it("guides a worker to a manager without offering adoption or pretending the clu
   expect(element.textContent).toContain("Connect a manager");
   expect(element.textContent).not.toContain("Review stacks");
   expect(element.textContent).not.toContain("No Swarm services");
+});
+
+it("reuses a connection request after a lost response and opens the shared cluster page", async () => {
+  await render();
+  h.connect.mockRejectedValueOnce(new Error("Connection lost"));
+  await click("Use for deployments");
+  const request = h.connect.mock.calls[0]![1];
+  h.connect.mockResolvedValueOnce({id: "swarm-cluster"});
+  await click("Use for deployments");
+  expect(h.connect).toHaveBeenLastCalledWith("server-a", request);
+  expect(h.push).toHaveBeenCalledWith("/servers/clusters/swarm-cluster");
 });
