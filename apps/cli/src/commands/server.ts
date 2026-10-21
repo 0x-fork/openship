@@ -95,6 +95,11 @@ server.addCommand(clusterCommand);
 server.addCommand(serverGitHubCommand);
 server.addCommand(tunnelCommand);
 server.addCommand(containerCommand);
+server.command("swarm")
+  .description("Inspect an existing Docker Swarm without changing its services")
+  .argument("<id>", "Connected server ID; use a Swarm manager for stack inventory")
+  .option("--details", "Include stacks, services, ports, mounts and nodes")
+  .action((id: string, options: { details?: boolean }) => printResult(() => getShipClient().servers.inspectSwarm(id, { details: options.details ?? false })));
 server.command("destinations").description("List deployment destinations and their supported capabilities")
   .action(() => printResult(() => getShipClient().servers.destinations()));
 for (const [name, method, description] of [

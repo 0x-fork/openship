@@ -590,6 +590,7 @@ export interface TunnelInfo {
 }
 
 export const systemApi = {
+  inspectSwarm: (id: string, details = false) => checkedResponse(ServerResourceSchemas.inspectSwarm, api.get(`${endpoints.system.server(id)}/swarm?details=${details}`, { timeout: 45_000 })),
   /**
    * Vhosts the local edge serves that Openship no longer tracks.
    *

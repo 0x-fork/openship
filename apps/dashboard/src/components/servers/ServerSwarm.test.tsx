@@ -1,0 +1,84 @@
+// @vitest-environment happy-dom
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { swarmFixture } from "../../../../../packages/contracts/test/swarm-fixture";
+
+const h = vi.hoisted(() => ({ inspect: vi.fn(), scope: "instance-a:org-a" }));
+vi.mock("@/lib/api/system", () => ({ systemApi: { inspectSwarm: h.inspect } }));
+vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.scope }));
+vi.mock("@repo/core/diagnostics", () => ({ reportCaughtError: vi.fn() }));
+vi.mock("@repo/ui/icons", () => ({ Icon: () => null }));
+import { ServerSwarm } from "./ServerSwarm";
+
+let root: Root, element: HTMLDivElement;
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.clearAllMocks();
+  h.scope = "instance-a:org-a";
+  element = document.createElement("div");
+  document.body.append(element);
+  root = createRoot(element);
+  h.inspect.mockResolvedValue({ ...swarmFixture(), inventory: null });
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  element.remove();
+  vi.unstubAllGlobals();
+});
+const render = () => act(async () => root.render(<ServerSwarm serverId="server-a" />));
+const click = async (label: string) => {
+  const button = [...element.querySelectorAll("button")].find(
+    (button) => button.textContent === label,
+  );
+  expect(button, label).toBeTruthy();
+  await act(async () => button!.click());
+};
+
+it("loads inventory only on request and preserves it with a visible retry on connection failure", async () => {
+  await render();
+  expect(h.inspect).toHaveBeenCalledWith("server-a", false);
+  expect(element.textContent).not.toContain("shop_web");
+  h.inspect.mockResolvedValueOnce(swarmFixture());
+  await click("Review stacks");
+  expect(element.textContent).toContain("shop_web");
+  expect(element.textContent).toContain("1 / 2 tasks");
+  h.inspect.mockRejectedValueOnce(new Error("Connection lost"));
+  await click("Refresh");
+  expect(element.querySelector('[role="alert"]')?.textContent).toContain("Connection lost");
+  expect(element.textContent).toContain("last successful observation");
+  expect(element.textContent).toContain("shop_web");
+  h.inspect.mockResolvedValueOnce(swarmFixture());
+  await click("Refresh");
+  expect(element.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("discards old inventory and late results when the active organization changes", async () => {
+  let resolve!: (value: ReturnType<typeof swarmFixture>) => void;
+  h.inspect.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  await render();
+  h.scope = "instance-a:org-b";
+  h.inspect.mockResolvedValueOnce({
+    ...swarmFixture(),
+    state: "inactive",
+    role: null,
+    inventory: null,
+  });
+  await render();
+  await act(async () => resolve(swarmFixture()));
+  expect(element.textContent).toBe("");
+});
+
+it("guides a worker to a manager without offering adoption or pretending the cluster is empty", async () => {
+  h.inspect.mockResolvedValueOnce({ ...swarmFixture(), role: "worker", inventory: null });
+  await render();
+  expect(element.querySelector("a")?.getAttribute("href")).toBe("/servers/new");
+  expect(element.textContent).toContain("Connect a manager");
+  expect(element.textContent).not.toContain("Review stacks");
+  expect(element.textContent).not.toContain("No Swarm services");
+});

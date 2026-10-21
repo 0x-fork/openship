@@ -1302,6 +1302,12 @@
       "description": "Read the private networks and compute cluster associated with a server.",
       "route": "GET /api/system/servers/:id/infrastructure"
     },
+    "servers.inspectSwarm": {
+      "page": "servers",
+      "section": "Docker Swarm inspection",
+      "description": "Inspect membership on a connected self-hosted Docker server. Set details=true for a manager's stacks, services and nodes. Requires server administration; does not adopt or change workloads.",
+      "route": "GET /api/system/servers/:id/swarm"
+    },
     "servers.clusterCapabilities": {
       "page": "servers",
       "section": "Legacy network methods",
