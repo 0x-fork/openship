@@ -136,6 +136,74 @@ describe("runtime role configuration admission", () => {
       await initPlatform({ target: "selfhosted", runtime: "docker" });
     }
   });
+  it.each([
+    { managedWorkspaceId: "workspace" },
+    {
+      managedServer: {
+        projectId: "cloud-project",
+        workspaceId: "workspace",
+        ownerWorkspaceId: "owner",
+      },
+    },
+  ])("rejects legacy managed Cloud releases without an explicit target: %j", async (binding) => {
+    const f = await fixture();
+    const {
+      runtimeMode: _runtime,
+      deployTarget: _target,
+      ...legacy
+    } = f.active.meta as Record<string, unknown>;
+    await repos.deployment.updateStatus(f.active.id, "ready", {
+      meta: { ...legacy, ...binding },
+    });
+    expect(await getRoleConfiguration(f.project.id, f.org.organizationId)).toMatchObject({
+      supported: false,
+      reason: expect.stringContaining("single-app Docker"),
+    });
+    await expect(configureRuntimeRoles(f.ctx, f.project.id, f.input)).rejects.toThrow(
+      "single-app Docker",
+    );
+    expect(await repos.deployment.listInFlightByProject(f.project.id)).toEqual([]);
+    expect(h.start).not.toHaveBeenCalled();
+  });
+  it("rejects a legacy release using Desktop's default Cloud target", async () => {
+    const f = await fixture();
+    const {
+      runtimeMode: _runtime,
+      deployTarget: _target,
+      ...legacy
+    } = f.active.meta as Record<string, unknown>;
+    await repos.deployment.updateStatus(f.active.id, "ready", { meta: legacy });
+    await initPlatform({ target: "desktop" });
+    try {
+      expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(
+        false,
+      );
+      await expect(configureRuntimeRoles(f.ctx, f.project.id, f.input)).rejects.toThrow(
+        "single-app Docker",
+      );
+      expect(await repos.deployment.listInFlightByProject(f.project.id)).toEqual([]);
+      expect(h.start).not.toHaveBeenCalled();
+    } finally {
+      await initPlatform({ target: "selfhosted", runtime: "docker" });
+    }
+  });
+  it.each([
+    { deployTarget: "cluster" },
+    { deployTarget: "server", clusterId: "cluster" },
+    { deployTarget: "server", runtimeMode: "bare" },
+  ])("rejects unsupported active release metadata before queueing work: %j", async (target) => {
+    const f = await fixture();
+    const { runtimeMode: _runtime, ...legacy } = f.active.meta as Record<string, unknown>;
+    await repos.deployment.updateStatus(f.active.id, "ready", {
+      meta: { ...legacy, ...target },
+    });
+    expect((await getRoleConfiguration(f.project.id, f.org.organizationId)).supported).toBe(false);
+    await expect(configureRuntimeRoles(f.ctx, f.project.id, f.input)).rejects.toThrow(
+      "single-app Docker",
+    );
+    expect(await repos.deployment.listInFlightByProject(f.project.id)).toEqual([]);
+    expect(h.start).not.toHaveBeenCalled();
+  });
   it("uses the deployment topology rules for primary records and disabled sidecars", async () => {
     const f = await fixture();
     await seedService(f.project.id, { name: "primary", kind: "app", enabled: true });

@@ -30,19 +30,21 @@ async function unsupported(
   const meta = active?.meta as DeploymentConfigSnapshot | null;
   if (!active?.containerId || !meta) return "Deploy this app before configuring runtime roles.";
   if (project.disabledAt) return "Resume this app before configuring runtime roles.";
-  // Reject Cloud and cluster releases first: the runtime fallback below does not apply to
-  // cluster targets, and resolving the target throws on conflicting cluster metadata.
+  const unsupportedRuntime = "Runtime role configuration requires a single-app Docker deployment.";
+  // Cluster releases are unsupported even when their target metadata conflicts.
+  if (meta.clusterId || meta.deployTarget === "cluster") return unsupportedRuntime;
+  const base = platform();
+  const target = resolveEffectiveTarget(base.target, meta);
   if (
-    meta.deployTarget === "cloud" ||
-    meta.clusterId ||
-    resolveSnapshotRuntimeMode(meta, resolveEffectiveTarget(platform().target, meta)) !==
-      "docker" ||
+    target === "cloud" ||
+    target === "cluster" ||
+    resolveSnapshotRuntimeMode(meta, target, base) !== "docker" ||
     meta.composeServices?.length ||
     snapshotToClass(meta).workload === "static"
   )
-    return "Runtime role configuration requires a single-app Docker deployment.";
+    return unsupportedRuntime;
   if (await shouldUseProjectServicePipeline(project, meta.composeServices))
-    return "Runtime role configuration requires a single-app Docker deployment.";
+    return unsupportedRuntime;
   return null;
 }
 
