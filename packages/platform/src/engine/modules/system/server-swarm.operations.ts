@@ -5,7 +5,7 @@ import { reportCaughtError } from "@repo/core/diagnostics";
 import { inspectDockerSwarm } from "@repo/adapters";
 import type { ServerDependencies } from "../../../servers";
 import { createServerDockerRuntime, resolveServerExecutor } from "../../lib/deployment-runtime";
-import { assertServerExecution, requireSelfHostedServer } from "./server-access";
+import { assertSelfHosted, requireConnectedServer } from "./server-access";
 import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { inspectHostIssuedIdentity } from "../../lib/host-port-target";
 import { authorization } from "../../lib/authorization";
@@ -21,8 +21,8 @@ export const serverSwarmResources = {
         action: "admin",
         scope: "all",
       });
-      const server = await requireSelfHostedServer(ctx, id);
-      await assertServerExecution(server);
+      assertSelfHosted();
+      const server = await requireConnectedServer(ctx, id);
       const name = input.name.trim();
       if (!name) throw new AppError("Enter a name for this Swarm.", 422, "INVALID_CLUSTER");
       const target = await resolveServerExecutor(id, ctx.organizationId);
@@ -79,8 +79,8 @@ export const serverSwarmResources = {
     });
   },
   async inspectSwarm(ctx, id, input = {}) {
-    const server = await requireSelfHostedServer(ctx, id);
-    await assertServerExecution(server);
+    assertSelfHosted();
+    await requireConnectedServer(ctx, id);
     const runtime = await createServerDockerRuntime(id, ctx.organizationId);
     try {
       return await inspectDockerSwarm(runtime.docker, input.details === true);

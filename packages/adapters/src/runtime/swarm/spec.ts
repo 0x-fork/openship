@@ -8,8 +8,15 @@ import type { MultiServiceDeployConfig } from "../types";
 export function assertSwarmServiceConfig(
   config: Pick<MultiServiceDeployConfig, "advanced" | "ports" | "namespaces" | "restart"> & {
     volumes?: string[];
+    resources?: MultiServiceDeployConfig["resources"];
   },
 ) {
+  if (config.resources?.swapDisabled || config.advanced?.resources?.swapDisabled)
+    throw new AppError(
+      "Docker Swarm cannot enforce per-service swap settings. Remove Disable swap or use a standalone Docker target.",
+      422,
+      "SWARM_SETTING_UNSUPPORTED",
+    );
   for (const volume of config.volumes ?? []) {
     const mount = parseVolumeMount(volume);
     if (

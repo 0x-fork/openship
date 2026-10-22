@@ -46,6 +46,8 @@ describe("Swarm preserves the shared service contract", () => {
   it.each([
     { advanced: { networkMode: "service:db" } },
     { advanced: { gpus: "all" } },
+    { resources: { memoryMb: 512, swapDisabled: true } },
+    { advanced: { resources: { memoryMb: 512, swapDisabled: true } } },
     { advanced: { extraHosts: { host: "host-gateway" } } },
     { ports: ["8080:8081-8085"] },
     { ports: ["70000"] },
