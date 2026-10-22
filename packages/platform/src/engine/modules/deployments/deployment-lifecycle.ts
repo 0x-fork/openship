@@ -181,12 +181,14 @@ export function collectLogs(ctx: LifecycleContext): LogEntry[] {
 }
 
 /** Only canonical project service rows can match a worker-derived keep list. */
-function attachedInfrastructureIds(dep: Deployment, services: Service[]): Set<string> {
+async function attachedInfrastructureIds(dep: Deployment, services?: Service[]): Promise<Set<string>> {
   const declared = (dep.meta as { attachedInfrastructureServiceIds?: unknown } | null)?.attachedInfrastructureServiceIds;
-  return new Set(Array.isArray(declared) ? services.filter(service =>
+  if (!Array.isArray(declared) || declared.length === 0) return new Set();
+  const rows = services ?? await repos.service.listByProject(dep.projectId);
+  return new Set(rows.filter(service =>
     declared.includes(service.id) && service.projectId === dep.projectId &&
     service.kind === "compose" && service.image && !service.build,
-  ).map(service => service.id) : []);
+  ).map(service => service.id));
 }
 
 /**
@@ -223,8 +225,7 @@ async function cleanupOwnedServiceContainers(
   // row, so a process-local keep list would lose a ready database on restart.
   let retainedInfrastructure: Set<string>;
   try {
-    retainedInfrastructure = attachedInfrastructureIds(ctx.dep,
-      await repos.service.listByProject(ctx.project.id));
+    retainedInfrastructure = await attachedInfrastructureIds(ctx.dep);
   } catch (error) {
     errorDiagnostics.error("platform/engine/modules/deployments/deployment-lifecycle",
       "Could not verify independent infrastructure ownership; automatic container cleanup deferred.", error);
@@ -812,7 +813,7 @@ export async function onCancelled(
     serviceDeps.length > 0 ? await repos.service.listByProject(dep.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/deployment-lifecycle"); return []; }) : [];
   const serviceNameMap = new Map(services.map((s) => [s.id, s.name]));
 
-  const retainedInfrastructure = attachedInfrastructureIds(dep, services);
+  const retainedInfrastructure = await attachedInfrastructureIds(dep, services);
   for (const serviceDep of serviceDeps) {
     const retained = serviceDep.status === "success" && retainedInfrastructure.has(serviceDep.serviceId);
     sessionManager.broadcastServiceStatus(dep.id, {
