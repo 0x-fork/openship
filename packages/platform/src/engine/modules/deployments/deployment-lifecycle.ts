@@ -532,6 +532,7 @@ export async function onFailure(
   error?: string,
   durationMs?: number,
   errorMeta?: { errorCode?: string; errorDetails?: Record<string, unknown>; errorMessage?: string },
+  opts: { keepProvisioned?: boolean } = {},
 ): Promise<void> {
   const { runtime, project, dep, buildSessionId, provisioned } = ctx;
   if (dep.roleHandover?.phase === "committing") {
@@ -559,9 +560,9 @@ export async function onFailure(
   // failure reason even for direct compose-pipeline failures (#751).
   ensureTerminalFailureLog(ctx, error);
 
-  // Always delete the workspace/container on failure so the user doesn't
-  // have to manually clean up.
-  if (runtime && provisioned.imageRef) {
+  // Routing recovery can leave either release serving traffic. Preserve both
+  // until the operator resolves it; an ordinary failed attempt still cleans up.
+  if (!opts.keepProvisioned && runtime && provisioned.imageRef) {
     try {
       await cleanupBuildArtifact(runtime, provisioned.imageRef);
     } catch (destroyErr) {
@@ -574,7 +575,7 @@ export async function onFailure(
     }
   }
 
-  await cleanupOwnedServiceContainers(ctx, "failure");
+  if (!opts.keepProvisioned) await cleanupOwnedServiceContainers(ctx, "failure");
 
   // INVARIANT: failure writes the DEPLOYMENT row only — NEVER the project row.
   // The project's live-release pointer (activeDeploymentId) advances solely on
