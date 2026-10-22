@@ -8,6 +8,7 @@ import { Icon } from "@repo/ui/icons";
 import { reportCaughtError } from "@repo/core/diagnostics";
 import { Button } from "@/components/ui/button";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
+import { usePlatform } from "@/context/PlatformContext";
 import { systemApi } from "@/lib/api/system";
 
 type Inspection = Awaited<ReturnType<typeof systemApi.inspectSwarm>>;
@@ -20,6 +21,8 @@ export function ServerSwarm({
   connected?: boolean;
 }) {
   const scope = useCloudResourceKey();
+  const { selfHosted, deployMode } = usePlatform();
+  if (!selfHosted && deployMode !== "desktop") return null;
   return <SwarmCard key={`${scope}:${serverId}`} serverId={serverId} connected={connected} />;
 }
 

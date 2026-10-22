@@ -4,9 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { swarmFixture } from "../../../../../packages/contracts/test/swarm-fixture";
 
-const h = vi.hoisted(() => ({ inspect: vi.fn(), connect: vi.fn(), push: vi.fn(), scope: "instance-a:org-a" }));
+const h = vi.hoisted(() => ({ inspect: vi.fn(), connect: vi.fn(), push: vi.fn(), platform: { selfHosted: true, deployMode: "docker" }, scope: "instance-a:org-a" }));
 vi.mock("next/navigation", () => ({useRouter: () => ({push: h.push})}));
 vi.mock("@/lib/api/system", () => ({ systemApi: { inspectSwarm: h.inspect, connectSwarm: h.connect } }));
+vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => h.platform }));
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.scope }));
 vi.mock("@repo/core/diagnostics", () => ({ reportCaughtError: vi.fn() }));
 vi.mock("@repo/ui/icons", () => ({ Icon: () => null }));
@@ -17,6 +18,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
   h.scope = "instance-a:org-a";
+  h.platform = { selfHosted: true, deployMode: "docker" };
   element = document.createElement("div");
   document.body.append(element);
   root = createRoot(element);
@@ -93,4 +95,18 @@ it("reuses a connection request after a lost response and opens the shared clust
   await click("Use for deployments");
   expect(h.connect).toHaveBeenLastCalledWith("server-a", request);
   expect(h.push).toHaveBeenCalledWith("/servers/clusters/swarm-cluster");
+});
+
+it("does not offer Swarm or inspect a host through the Cloud controller", async () => {
+  h.platform = { selfHosted: false, deployMode: "docker" };
+  await render();
+  expect(element.textContent).toBe("");
+  expect(h.inspect).not.toHaveBeenCalled();
+  expect(h.connect).not.toHaveBeenCalled();
+});
+
+it("keeps Swarm available from Desktop", async () => {
+  h.platform = { selfHosted: false, deployMode: "desktop" };
+  await render();
+  expect(h.inspect).toHaveBeenCalledWith("server-a", false);
 });
