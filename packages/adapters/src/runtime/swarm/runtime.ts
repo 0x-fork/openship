@@ -105,6 +105,9 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
   private readonly prepared = new WeakMap<MultiServiceDeployConfig, Prepared>();
   private readonly preparedSingle = new WeakMap<DeployConfig, MultiServiceDeployConfig>();
   private readonly streams = new Set<() => void>();
+  // An aborted client request does not prove the manager cancelled its write.
+  // Do not restart the incumbent while a delayed create can still launch a writer.
+  private readonly uncertainCreations = new Set<string>();
   private readonly prefix: string;
   constructor(
     private readonly options: {
@@ -559,6 +562,8 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
       );
     let id: string;
     const auth = await this.options.resolveRegistryAuth(config.image);
+    this.signal.throwIfAborted();
+    this.uncertainCreations.add(config.serviceName);
     try {
       const result = await swarmRequest<{ ID: string }>(docker, "POST", "/services/create", {
         body: prepared.spec,
@@ -591,6 +596,8 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
       id = existing.ID;
     }
     const ref = this.ref(id);
+    this.id(ref); // Validate the receipt before allowing automatic incumbent recovery.
+    this.uncertainCreations.delete(config.serviceName);
     try {
       await this.waitReady(ref, log);
       await this.ensureGateway(await this.service(ref));
@@ -731,6 +738,12 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
   }
   async start(ref: string) {
     const service = await this.service(ref);
+    if (this.uncertainCreations.has(service.Spec.Labels!["openship.service"]!))
+      throw new AppError(
+        "The manager has not confirmed whether the candidate was created. The previous release stays stopped to protect its data. Inspect and recover this deployment before retrying.",
+        409,
+        "CLUSTER_ROLLOUT_UNCERTAIN",
+      );
     await this.assertNoOtherWriter(service.Spec.Labels!["openship.service"]!, service.Spec.Name!);
     await this.update(service, (spec) => {
       spec.Mode = { Replicated: { Replicas: Number(spec.Labels!["openship.replicas"]) } };
