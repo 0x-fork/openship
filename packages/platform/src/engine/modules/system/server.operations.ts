@@ -28,6 +28,7 @@ import * as managed from "../cloud-workspaces/cloud-workspace.service";
 import { withServerExecution } from "../../lib/server-execution";
 import { managedServerCollection, serverLifecycleResources } from "./server-lifecycle.operations";
 import { serverNetworkSettings } from "./server-network-settings.operations";
+import { serverSwarmResources } from "./server-swarm.operations";
 import { serverManagedControls } from "./server-managed.operations";
 import { hostControlDisabled } from "@repo/adapters";
 import { AppError, normalizeSshTransport, safeErrorMessage, type HostCapacity } from "@repo/core";
@@ -857,6 +858,7 @@ export const serverDependencies: ServerDependencies = {
     ...serverNetworkSettings,
     ...serverManagedControls,
     ...infrastructureResources,
+    ...serverSwarmResources,
     get: getServer,
     reachability: probeReachability,
     update: updateServer,

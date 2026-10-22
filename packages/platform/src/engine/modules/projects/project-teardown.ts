@@ -247,7 +247,7 @@ async function teardownProjectLocked(
   if (preload?.organizationId === ctx.organizationId && preload.clusterId)
     await (
       await import("../../lib/project-storage-guard")
-    ).assertProjectStorageEmpty(ctx.organizationId, projectId, preload.clusterId);
+    ).assertProjectStorageEmpty(ctx.organizationId, projectId, preload.clusterId, {deletingProject: true});
   if (preload?.appTemplateId === "openship") {
     push({
       step: "guard_control_plane",
@@ -904,7 +904,7 @@ async function stepRuntimeCleanup(
   // The recovery action offered to clients must use the same policy as its
   // execution guard. Managed resources stay tracked until cleanup succeeds.
   const forceOrphanEligible =
-    !project.workspaceId && !manifest.runtimes?.some((runtime) => runtime.name === "kubernetes");
+    !project.workspaceId && !manifest.runtimes?.some((runtime) => runtime.supports("clusterStatus"));
   const needsProjectCleanup =
     manifest.projectCleanup && manifest.runtimes?.some((runtime) => !!runtime.cleanupProject);
   if (

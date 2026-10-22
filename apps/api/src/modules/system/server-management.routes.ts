@@ -26,6 +26,8 @@ import {
   UpdateComputeClusterInputSchema,
   ComputeClusterCollectionSchemas,
   ClusterStorageCollectionSchemas,
+  SwarmInspectionInputSchema,
+  ConnectSwarmInputSchema,
 } from "@repo/contracts";
 import { Type } from "@sinclair/typebox";
 import * as serverCheck from "./server-check.controller";
@@ -694,6 +696,25 @@ r.delete(
 
 
 
+r.get(
+  "/servers/:id/swarm",
+  {
+    query: SwarmInspectionInputSchema,
+    tag: "server:admin",
+    authorizationHandledByOperation: true,
+    mcp: {
+      description: "Inspect Docker Swarm membership on a self-hosted server. Set details=true to read stacks, service replica counts, ports, mounts and nodes from a manager. Requires server administration because inventory spans the cluster. Read-only: does not join nodes, adopt stacks or change services. Workers require a manager connection for inventory. No environment values, join tokens or credentials are returned.",
+    },
+  },
+  serversCtrl.inspectSwarm,
+);
+r.post("/servers/:id/swarm/connect", {
+  body: ConnectSwarmInputSchema,
+  tag: "server:admin",
+  authorizationHandledByOperation: true,
+  auditHandledByOperation: true,
+  mcp: {description: "Connect an existing Swarm manager as a project deployment target. Verifies cluster identity without creating, joining, upgrading or adopting nodes or stacks. Requires fleet administration."},
+}, serversCtrl.connectSwarm);
 r.hono.route("/", connectedServerRoutes);
 
 export const serverManagementRoutes = r.hono;

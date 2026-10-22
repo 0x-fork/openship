@@ -19,12 +19,17 @@ import { NetworkSetupConfirmation } from "./NetworkSetupConfirmation";
 import { NetworkStreamNotice } from "./NetworkStreamNotice";
 
 /** Inline, durable setup; reconnecting only reads progress and never restarts installation. */
-export function ClusterRuntimePanel({
+export function ClusterRuntimePanel(props: { cluster: ComputeCluster; canManage: boolean; onReadyChange?: (ready: boolean) => void; }) {
+  if (!props.cluster.network) return null;
+  return <NativeClusterRuntimePanel {...props} cluster={{...props.cluster, network: props.cluster.network}} />;
+}
+
+function NativeClusterRuntimePanel({
   cluster,
   canManage,
   onReadyChange,
 }: {
-  cluster: ComputeCluster;
+  cluster: ComputeCluster & {network: NonNullable<ComputeCluster["network"]>};
   canManage: boolean;
   onReadyChange?: (ready: boolean) => void;
 }) {

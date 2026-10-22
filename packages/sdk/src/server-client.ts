@@ -218,6 +218,8 @@ export function createRemoteServerOperations(http: HttpClient): ServerOperations
     }),
     ...createRemoteResourceOperations(http, ServerResourceSchemas, {
       infrastructure: { method: "GET", path: (id) => path(id) + "/infrastructure" },
+      inspectSwarm: { method: "GET", path: (id) => path(id) + "/swarm", inputLocation: "query" },
+      connectSwarm: { method: "POST", path: (id) => path(id) + "/swarm/connect" },
       inspectNetwork: { method: "POST", path: (id) => path(id) + "/network/inspect" },
       githubStatus: {
         method: "GET",

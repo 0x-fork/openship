@@ -1630,6 +1630,8 @@ async function deployComposeServicesCore(
   const carryProjectResources = resolveRuntimeResources(
     (carryAnchorDep?.meta as { resources?: ResourceConfig | null } | null)?.resources,
   );
+  const previousReplicas = (carryAnchorDep?.meta as { clusterConfig?: { replicas: number } } | null)?.clusterConfig?.replicas;
+  const nextReplicas = (dep.meta as { clusterConfig?: { replicas: number } } | null)?.clusterConfig?.replicas;
   const carryEnvMeta = carryAnchor
     ? await repos.project.listEnvVarChangeMeta(project.id, dep.environment).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/compose/deploy.service"); return []; })
     : [];
@@ -1650,6 +1652,7 @@ async function deployComposeServicesCore(
     if (replaysFrozenDeployment(dep)) return false;
     if (opts?.targetServiceIds) return false; // smart subset already carries non-targets forward
     if (!carryAnchor) return false; // never deployed → deploy it
+    if (previousReplicas !== nextReplicas) return false; // Replica settings are project-level, not service edits.
     if (svc.build || !svc.image) return false; // must be image-only (external); buildables always rebuild
     if (svc.updatedAt > carryAnchor) return false; // image/command/ports/volumes/… changed
     // Project limits are not service edits. Compare effective caps through the
@@ -2208,6 +2211,7 @@ async function deployComposeServicesCore(
     }
     const files = resolveGeneratedConfigFiles(service);
     if (files.length === 0) continue;
+    if (runtime.supports("serviceConfigFiles")) continue;
     await withGeneratedConfigWriter(service, async (writer) => {
       for (const [index, file] of files.entries()) {
         throwIfDeploymentCancelled(opts?.signal);
@@ -3179,7 +3183,12 @@ async function deployComposeServicesCore(
       // selected file above; the stable path is replaced atomically only when this
       // service is about to be activated, so the old container keeps its old inode.
       const generatedConfigFiles = resolveGeneratedConfigFiles(svc);
-      if (generatedConfigFiles.length > 0) {
+      if (generatedConfigFiles.length > 0 && runtime.supports("serviceConfigFiles")) {
+        serviceRuntimeConfig.advanced = {
+          ...serviceRuntimeConfig.advanced,
+          files: generatedConfigFiles.map((file) => ({path: file.containerPath, content: file.content})),
+        };
+      } else if (generatedConfigFiles.length > 0) {
         const generatedConfigBinds = await withGeneratedConfigWriter(svc, async (writer) => {
           const binds: string[] = [];
           for (const file of generatedConfigFiles) {
@@ -3261,6 +3270,7 @@ async function deployComposeServicesCore(
       // the runtime config). The pipeline fans out one upstream per distinct port.
       const proxyRoutes =
         !cloudHosted ? routes.filter((route) => route.targetPort !== undefined) : [];
+      serviceRuntimeConfig.routedPorts = proxyRoutes.map((route) => route.targetPort!);
       if (cloudHosted) {
         serviceRuntimeConfig.cloudEndpoints = routes
           .filter((route) => route.targetPort !== undefined)
@@ -3378,6 +3388,16 @@ async function deployComposeServicesCore(
         const serviceLogger = createServicePipelineLogger(logger, svc.name, svc.id);
         const routeDomains = toRoutedDomainInputs(proxyRoutes);
         const deployEnv: DeployEnvironment = {
+          ...(runtime.prepareServiceWorkload ? {
+            preflight: () => runtime.prepareServiceWorkload!(serviceRuntimeConfig),
+          } : {}),
+          ...(runtime.supports("retainedServiceCutover") ? {
+            canOverlap: false,
+            deactivateRetaining: (id: string) => runtime.stop(id),
+            reactivatePrevious: (id: string) => runtime.start(id),
+            retireRetainedPrevious: (id: string) => runtime.destroy(id),
+            stopActivated: (id: string) => runtime.stop(id),
+          } : {}),
           ...(runtime instanceof DockerRuntime ? {
             preflight: () => runtime.prepareServiceVolumes(serviceRuntimeConfig),
           } : {}),

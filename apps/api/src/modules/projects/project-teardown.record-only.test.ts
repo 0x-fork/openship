@@ -610,7 +610,7 @@ describe("teardownProject — cluster namespace cleanup", () => {
         resources: hasWorkloads
           ? [{ type: "container", ref: "k8s:release", label: "application" }]
           : [],
-        runtimes: [{ name: "kubernetes", cleanupProject: vi.fn() }],
+        runtimes: [{ name: "kubernetes", supports: (cap: string) => cap === "clusterStatus", cleanupProject: vi.fn() }],
       };
       h.collectProjectManifest.mockResolvedValueOnce(manifest as never);
 
@@ -630,7 +630,7 @@ describe("teardownProject — cluster namespace cleanup", () => {
       organizationId: "org1",
       projectCleanup: true,
       resources: [],
-      runtimes: [{ name: "kubernetes", cleanupProject: vi.fn() }],
+      runtimes: [{ name: "kubernetes", supports: (cap: string) => cap === "clusterStatus", cleanupProject: vi.fn() }],
     } as never);
     h.executeCleanup.mockResolvedValueOnce({
       total: 1,

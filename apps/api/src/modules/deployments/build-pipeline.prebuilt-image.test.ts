@@ -375,8 +375,11 @@ function runtime() {
   return {
     name: "docker",
     capabilities: new Set(["prebuiltImage", "deploy", "containerIp", "releaseCommand"]),
-    supports: (capability: string): boolean =>
-      capability === "prebuiltImage" || capability === "deploy" || capability === "containerIp" || capability === "releaseCommand",
+    supports(capability: string): boolean {
+      return capability === "prebuiltImage" || capability === "deploy" || capability === "containerIp" || capability === "releaseCommand" ||
+        (capability === "dockerHost" && this.name === "docker") ||
+        (capability === "clusterStatus" && ["kubernetes", "swarm"].includes(this.name));
+    },
     prepareImage: (...args: unknown[]) => mocks.prepareImage(...args),
     runReleaseCommand: (...args: unknown[]) => mocks.runReleaseCommand(...args),
     build: (...args: unknown[]) => mocks.build(...args),
@@ -759,7 +762,7 @@ describe("single-app prebuilt release-image pipeline", () => {
     }
   });
 
-  it.each(["docker", "kubernetes"].flatMap(runtimeName =>
+  it.each(["docker", "kubernetes", "swarm"].flatMap(runtimeName =>
     ["update", "manual", "redeploy"].map(trigger => ({ runtimeName, trigger })),
   ))("$runtimeName $trigger refreshes the registry image, skips source builds, and freezes the digest", async ({ runtimeName, trigger }) => {
     resolvedRuntime.name = runtimeName;

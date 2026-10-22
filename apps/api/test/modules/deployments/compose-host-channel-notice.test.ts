@@ -123,15 +123,15 @@ vi.mock("@repo/platform/engine/modules/deployments/observed-host-port-claims", (
 vi.mock("@repo/platform/engine/modules/deployments/readiness-probe", () => ({
   probeDeployedReadiness: (...args: unknown[]) => h.probeDeployedReadiness(...args),
 }));
-vi.mock("@repo/platform/engine/modules/domains/routing-apply.service", async (original) => ({
-  ...await original<typeof import("@repo/platform/engine/modules/domains/routing-apply.service")>(),
-  applyProjectRouting: (...args: unknown[]) => h.applyProjectRouting(...args),
-}));
 vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   reapplyProjectLiveRoutes: (...args: unknown[]) => h.reapplyProjectLiveRoutes(...args),
 }));
 
 const { resolveServerExecutor } = await import("@repo/platform/engine/lib/deployment-runtime");
+// Spy after the shared runtime has loaded; an eager partial-module mock would
+// await that same runtime through routing's circular import during collection.
+const routingApply = await import("@repo/platform/engine/modules/domains/routing-apply.service");
+vi.spyOn(routingApply, "applyProjectRouting").mockImplementation((...args) => h.applyProjectRouting(...args));
 const { deployComposeServices } =
   await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
 const { DockerRuntime, CloudDockerRuntime } = await import("@repo/adapters");
@@ -529,6 +529,18 @@ describe("compose deploy — host channel unavailable", () => {
     expect(result.services).toContainEqual(
       expect.objectContaining({ serviceId: "svc-db", carried: true, containerId: "old-db" }),
     );
+  });
+
+  it("applies a project replica change even when service image and configuration are unchanged", async () => {
+    const f = imageRefreshFixture();
+    h.previousDeployment.meta = { clusterConfig: { replicas: 2 } };
+    const result = await deployComposeServices(
+      { ...project, activeDeploymentId: "d-old", routeStrategy: "container-ip" } as Project,
+      { ...dep, meta: { clusterConfig: { replicas: 3 } } }, f.runtime, f.logger,
+    );
+    expect(result.status).toBe("ready");
+    expect(f.activate).toHaveBeenCalledTimes(2);
+    expect(result.services.some(service => service.carried)).toBe(false);
   });
 
   it("recreates only changed image content and deploys the immutable image acquired", async () => {
@@ -2676,4 +2688,22 @@ it("rejects an invalid GPU request before pulling images or replacing any siblin
   expect(fixture.pull).not.toHaveBeenCalled();
   expect(fixture.activate).not.toHaveBeenCalled();
   expect(fixture.runtime.destroy).not.toHaveBeenCalled();
+});
+
+it("passes generated config through scheduler-native files without requiring a host writer", async () => {
+  h.services = [{id: "svc-web", projectId: "p1", name: "web", enabled: true, dependsOn: [],
+    image: "busybox:1.37", ports: [], volumes: [], exposed: false, environment: {GREETING: "${GREETING:-hello}"},
+    advanced: {environmentTemplateKeys: ["GREETING"], files: [{path: "/etc/app.yml", content: "enabled: true"}]},
+  }];
+  h.previousServiceRows = [];
+  const runtime = startingRuntime();
+  Object.assign(runtime, {name: "swarm", supports: (cap: string) => ["clusterStatus", "containerIp", "serviceConfigFiles"].includes(cap)});
+  const {logger} = recordingLogger();
+  const result = await deployComposeServices(project, dep, runtime, logger);
+  expect(result.status, JSON.stringify(result.services)).toBe("ready");
+  expect(runtime.deployServiceWorkload).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    environment: expect.objectContaining({GREETING: "hello"}),
+    advanced: expect.objectContaining({files: [{path: "/etc/app.yml", content: "enabled: true"}]}),
+    volumes: [],
+  }), expect.any(Function));
 });

@@ -99,7 +99,7 @@ describe("project cluster binding", () => {
     expect((await clusters.get("org", cluster.id)).scaling).toBeNull();
     expect((await clusters.list("org"))[0]?.scaling).toBeNull();
     const runtime = await readyRuntime();
-    const expected = { status: "ready", verifiedAt: runtime.verifiedAt };
+    const expected = { provider: "k3s", status: "ready", verifiedAt: runtime.verifiedAt };
     expect((await clusters.get("org", cluster.id)).scaling).toEqual(expected);
     expect((await clusters.list("org"))[0]?.scaling).toEqual(expected);
     expect(await clusters.list("other")).toEqual([]);
