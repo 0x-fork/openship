@@ -564,5 +564,6 @@
       "server_unreachable": "服务器不可达"
     }
   },
-  "migrationAwaitingHint": "迁移正在等待你处理 —— 在项目的「设置 → 高级」中完成切换或回滚"
+  "migrationAwaitingHint": "迁移正在等待你处理 —— 在项目的「设置 → 高级」中完成切换或回滚",
+  "runtimeHealthHint": "当前版本中的服务需要处理，请检查其运行状态和日志"
 }

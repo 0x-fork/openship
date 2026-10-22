@@ -564,5 +564,6 @@
       "server_unreachable": "Server unreachable"
     }
   },
-  "migrationAwaitingHint": "Migration waiting on you — finish the cutover or roll it back in the project's Settings → Advanced"
+  "migrationAwaitingHint": "Migration waiting on you — finish the cutover or roll it back in the project's Settings → Advanced",
+  "runtimeHealthHint": "A service in the active release needs attention — check its health and logs"
 }

@@ -564,5 +564,6 @@
       "server_unreachable": "Serveur inaccessible"
     }
   },
-  "migrationAwaitingHint": "La migration vous attend — terminez le basculement ou annulez-le dans Paramètres → Avancé du projet"
+  "migrationAwaitingHint": "La migration vous attend — terminez le basculement ou annulez-le dans Paramètres → Avancé du projet",
+  "runtimeHealthHint": "Un service de la version active nécessite votre attention : consultez son état et ses journaux"
 }

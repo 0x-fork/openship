@@ -244,7 +244,9 @@ use their installed tools and physical CPU.
 ## Layout and density
 
 Project navigation groups metrics, runtime/request logs and available Health views
-under **Monitoring & Logs**. Reuse the shared project section tabs above the content
+under **Monitoring & Logs**. Runtime-health attention on project cards opens the existing
+Health view and clears from the same incident state when a workload recovers;
+a successful deployment remains a successful deployment. Reuse the shared project section tabs above the content
 on desktop and mobile. Keep existing section URLs so saved links and log shortcuts
 open the same view, and show Health only where the project already supports it.
 
