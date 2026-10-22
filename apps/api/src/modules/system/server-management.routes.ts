@@ -712,6 +712,7 @@ r.post("/servers/:id/swarm/connect", {
   body: ConnectSwarmInputSchema,
   tag: "server:admin",
   authorizationHandledByOperation: true,
+  auditHandledByOperation: true,
   mcp: {description: "Connect an existing Swarm manager as a project deployment target. Verifies cluster identity without creating, joining, upgrading or adopting nodes or stacks. Requires fleet administration."},
 }, serversCtrl.connectSwarm);
 r.hono.route("/", connectedServerRoutes);
