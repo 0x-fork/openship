@@ -209,7 +209,9 @@ export function createCloudDockerTransport(open: () => Promise<Duplex>): DockerT
             .replace(/([?&](?:token|access_token)=)[^&\s]+/gi, "$1[redacted]");
           const knownError = error instanceof OblienError || error instanceof AppError ? error : undefined;
           const candidateStatus = knownError instanceof AppError ? knownError.statusCode : knownError?.status;
-          const status = candidateStatus && Number.isInteger(candidateStatus) && candidateStatus >= 400 && candidateStatus <= 599
+          // Provider connection failures happen before Docker receives a request.
+          // A provider 404 must not imply that a Docker resource is absent.
+          const status = candidateStatus && Number.isInteger(candidateStatus) && [429, 502, 503, 504].includes(candidateStatus)
             ? candidateStatus : 502;
           const code = knownError?.code && /^[a-z0-9_-]{1,128}$/i.test(knownError.code) ? knownError.code : undefined;
           const details = (knownError as { details?: { retryAfterSeconds?: unknown } } | undefined)?.details;
