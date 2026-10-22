@@ -37,6 +37,7 @@ import {
 import { EDGE_NOT_FOUND_HTML } from "./edge-not-found";
 import type { CommandExecutor, RouteConfig } from "../types";
 import type { RootChecked } from "../system/privilege";
+import { renderRouteProtection, type RouteProtection } from "./route-protection";
 
 // L1 — config GENERATION. Proves NginxProvider emits the right nginx directives
 // for each branch, that the injection guard holds, and that a failed
@@ -93,7 +94,7 @@ function makeExecutor(
   opts: FakeOpts,
   calls: string[],
   removed: string[] = [],
-  writes: Array<{ path: string; content: string }> = [],
+  writes: Array<{ path: string; content: string; mode?: number }> = [],
 ): RootChecked {
   let masterGenerationCaptured = false;
   const exec = async (command: string): Promise<string> => {
@@ -257,8 +258,9 @@ function makeExecutor(
   };
   return {
     exec,
-    writeFile: async (p: string, c: string) => {
-      writes.push({ path: p, content: c });
+    writeFile: async (p: string, c: string, mode?: { mode?: number }) => {
+      if (mode?.mode !== undefined && opts.failChmod) throw new Error("chmod failed");
+      writes.push({ path: p, content: c, mode: mode?.mode });
       files.set(p, c);
     },
     readFile: async (p: string) => {
@@ -283,7 +285,7 @@ function setup(opts: FakeOpts = {}) {
   const files = new Map<string, string>();
   const calls: string[] = [];
   const removed: string[] = [];
-  const writes: Array<{ path: string; content: string }> = [];
+  const writes: Array<{ path: string; content: string; mode?: number }> = [];
   const nginx = new NginxProvider({
     ...opts.provider,
     paths: opts.paths ?? PATHS,
@@ -1147,20 +1149,17 @@ describe("NginxProvider config generation", () => {
     expect(configPath).toBeDefined();
     // git-ssh-material layout: the ini lives in its own 0700 directory (locked
     // down BEFORE any secret bytes land, covering even the staged temp file),
-    // the file itself is chmod 600 before the rename publishes it, and cleanup
+    // the file itself is written with mode 600 before rename publishes it, and cleanup
     // removes the whole directory as a unit.
     const secretDir = configPath!.replace(/\/eab\.ini$/, "");
     expect(secretDir).toContain(".openship-eab-");
     const dirChmodIdx = calls.findIndex(
       (c) => c.startsWith("chmod ") && c.includes("'700'") && c.includes(secretDir),
     );
-    const fileChmodIdx = calls.findIndex(
-      (c) => c.startsWith("chmod ") && c.includes("'600'") && c.includes(`${configPath}.tmp-`),
-    );
     const publishIdx = calls.findIndex((c) => c.startsWith("mv ") && c.includes(`'${configPath}'`));
     expect(dirChmodIdx).toBeGreaterThanOrEqual(0);
-    expect(fileChmodIdx).toBeGreaterThan(dirChmodIdx);
-    expect(publishIdx).toBeGreaterThan(fileChmodIdx);
+    expect(secretWrite?.mode).toBe(0o600);
+    expect(publishIdx).toBeGreaterThan(dirChmodIdx);
     expect(removed).toContain(secretDir);
   });
 
@@ -2031,6 +2030,27 @@ describe("provisionCert legacy route recovery", () => {
     },
   );
 
+  test.each(["missing", "invalid JSON", "missing policy"])(
+    "never drops an existing password gate when its sidecar is %s",
+    async (state) => {
+      const { nginx, files, conf } = await legacy();
+      files.set(configPath, conf(slug)!.replace("server {", "server {\nset $openship_route_auth 'private-policy';"));
+      if (state === "invalid JSON") files.set(statePath, "{");
+      if (state === "missing policy") files.set(statePath, JSON.stringify({ domain, tls: true, targetUrl: "http://127.0.0.1:3000" }));
+      const before = conf(slug);
+      await expect(nginx.provisionCert(domain)).rejects.toThrow("Cannot recover this protected route");
+      expect(conf(slug)).toBe(before);
+    },
+  );
+
+  test("does not expose private sidecar data in a parse failure", async () => {
+    const { nginx, files } = await legacy();
+    files.set(statePath, '{"signingKey":"private-key-material"');
+    await expect(nginx.setRouteProtection(domain, null)).rejects.toThrow(
+      "Saved route configuration is invalid.",
+    );
+  });
+
   test("renewal recovers the backend beyond the nested HTTPS redirect", async () => {
     const { nginx, files, conf, issue } = issuing();
     issue();
@@ -2154,25 +2174,14 @@ describe("provisionCert legacy route recovery", () => {
  * the key file is the only thing left protecting it.
  */
 describe("installCert leaves the private key unreadable to other users", () => {
-  /** Drop the two random staging segments so the assertion can be an exact path. */
-  const chmods = (calls: string[]) =>
-    calls
-      .filter((c) => c.startsWith("chmod "))
-      .map((c) => c.replace(/\.staging-[^/]+/, "").replace(/\.tmp-[^']+/, ""));
-
-  test("chmods the key to 0600 on the staged path, before it is published", async () => {
-    const { nginx, calls, files } = setup();
+  test("creates the key with 0600 on the file channel before it is published", async () => {
+    const { nginx, calls, files, writes } = setup();
     await nginx.installCert("app.example.com", makeTestCert(["app.example.com"]));
 
-    // On the STAGED path, because `mv` preserves the mode and a chmod afterwards would
-    // leave a window where the key is already in place and still 0644.
-    expect(chmods(calls)).toEqual([
-      `chmod '600' '/etc/letsencrypt/live/app.example.com/privkey.pem'`,
-    ]);
-    const chmodAt = calls.findIndex((c) => c.startsWith("chmod "));
-    const publishAt = calls.findIndex((c) => c.startsWith("mv -f "));
-    expect(chmodAt).toBeGreaterThanOrEqual(0);
-    expect(chmodAt).toBeLessThan(publishAt);
+    const keyWrite = writes.find(write => write.content.includes("PRIVATE KEY"));
+    expect(keyWrite).toMatchObject({ mode: 0o600 });
+    expect(keyWrite!.path).toContain(".staging-");
+    expect(calls.some(c => c.startsWith("chmod "))).toBe(false);
 
     // The pair still lands as a pair — the mode must not cost the atomic swap.
     expect(files.get("/etc/letsencrypt/live/app.example.com/privkey.pem")).toContain("PRIVATE KEY");
@@ -2180,6 +2189,53 @@ describe("installCert leaves the private key unreadable to other users", () => {
       "CERTIFICATE",
     );
   });
+});
+
+describe("route protection rollback keeps credentials private", () => {
+  test.each(["unlock", "remove"] as const)(
+    "restores private file permissions after a failed %s",
+    async (operation) => {
+      const opts: FakeOpts = { certDomains: ["app.example.com"] };
+      const { nginx, files, writes } = setup(opts);
+      await nginx.registerRoute(OURS);
+      const policy: RouteProtection = {
+        version: "1".repeat(32),
+        salt: "2".repeat(64),
+        verifier: "3".repeat(64),
+        signingKey: "4".repeat(64),
+        iterations: 600_000,
+        sessionSeconds: 86_400,
+      };
+      const configPath = `${SITES}/app-example-com.conf`;
+      const statePath = `${SITES}/app-example-com.route.json`;
+      const config = files
+        .get(configPath)!
+        .replaceAll(
+          "server_name app.example.com;",
+          `server_name app.example.com;\n${renderRouteProtection(policy)}`,
+        );
+      const state = JSON.stringify({ ...OURS, protection: policy });
+      files.set(configPath, config);
+      files.set(statePath, state);
+      writes.length = 0;
+      opts.failReload = true;
+
+      await expect(
+        operation === "unlock"
+          ? nginx.setRouteProtection(OURS.domain, null)
+          : nginx.removeRoute(OURS.domain),
+      ).rejects.toThrow();
+
+      for (const [path, content] of [
+        [configPath, config],
+        [statePath, state],
+      ]) {
+        expect(files.get(path)).toBe(content);
+        const restored = writes.filter((write) => write.content === content).at(-1);
+        expect(restored).toMatchObject({ content, mode: 0o600 });
+      }
+    },
+  );
 });
 
 describe("manual DNS certificate activation", () => {
@@ -2227,7 +2283,7 @@ describe("manual DNS certificate activation", () => {
 
 /**
  * On a CONTAINER edge the two halves of "write it, then tighten it" travel different
- * channels: the write lands on the HOST (bind mount) while `chmod` runs INSIDE the
+ * channels: the write lands on the HOST (bind mount) while publication runs INSIDE the
  * container. Only a mount whose two sides are the same string — `/etc/letsencrypt`,
  * `/opt/openship/static` in `EDGE_CONTAINER_MOUNTS` — makes those the same file, which
  * is why both of today's mode-passing callers happen to work.
@@ -2237,11 +2293,11 @@ describe("manual DNS certificate activation", () => {
  * HMAC key at the default mode with the operation reporting success. So the provider
  * refuses by name instead of writing the secret it cannot protect.
  */
-describe("a container edge refuses a mode it cannot aim at the file it wrote", () => {
+describe("a container edge refuses certificate publication across different namespaces", () => {
   /** A cert store OUTSIDE the same-path mounts — visible on the host, not in the container. */
   const OFF_MOUNT_CERT_DIR = "/var/lib/openship/edge/certs/live";
 
-  test("installCert refuses rather than staging a key it cannot chmod", async () => {
+  test("installCert refuses rather than staging a pair it cannot publish", async () => {
     const { nginx, calls, files, writes } = setup({
       provider: { containerEdge: true, certDir: OFF_MOUNT_CERT_DIR },
     });
@@ -2255,10 +2311,7 @@ describe("a container edge refuses a mode it cannot aim at the file it wrote", (
 
     // Names the path it refused — the STAGED one, which is where the write was aimed —
     // and the mounts that would have been legal.
-    expect(message).toMatch(/^Refusing to write .*privkey\.pem with mode 0600/);
-    expect(message.replace(/\.staging-[^/]+/, "")).toContain(
-      `${OFF_MOUNT_CERT_DIR}/app.example.com/privkey.pem`,
-    );
+    expect(message).toContain(`Refusing to stage certificate files in ${OFF_MOUNT_CERT_DIR}/app.example.com`);
     expect(message).toContain("/etc/letsencrypt");
 
     // Refused BEFORE the key bytes went anywhere: no write, no chmod at a path the
@@ -2292,17 +2345,13 @@ describe("a container edge refuses a mode it cannot aim at the file it wrote", (
     expect(removed.some((p) => p.includes(".openship-eab-"))).toBe(true);
   });
 
-  test("but the mount they actually live on is still tightened", async () => {
+  test("the mounted key is private from creation", async () => {
     // The other half of the guard: refusing must not become "never chmod on a
     // container edge", which would ship the world-readable key this all exists to stop.
-    const { nginx, calls, files } = setup({ provider: { containerEdge: true } });
+    const { nginx, writes, files } = setup({ provider: { containerEdge: true } });
     await nginx.installCert("app.example.com", makeTestCert(["app.example.com"]));
 
-    expect(
-      calls
-        .filter((c) => c.startsWith("chmod "))
-        .map((c) => c.replace(/\.staging-[^/]+/, "").replace(/\.tmp-[^']+/, "")),
-    ).toEqual([`chmod '600' '/etc/letsencrypt/live/app.example.com/privkey.pem'`]);
+    expect(writes.find(write => write.content.includes("PRIVATE KEY"))?.mode).toBe(0o600);
     expect(files.get("/etc/letsencrypt/live/app.example.com/privkey.pem")).toContain("PRIVATE KEY");
   });
 

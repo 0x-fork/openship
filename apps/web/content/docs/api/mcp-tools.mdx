@@ -5,7 +5,7 @@ description: Generated tool descriptions, API mappings, availability, and intent
 
 This catalog is generated from the route metadata used by MCP discovery. Run `tools/list` against your instance for its current input schemas and the tools available to your credential. See [MCP setup](/docs/mcp), [protocol and arguments](/docs/api/mcp), and the [cluster/scaling workflow](/docs/guides/mcp-clusters-and-scaling).
 
-The current API has **517 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
+The current API has **519 unique tools**. Permission tags below describe the route's initial authority; shared operations also enforce workspace, resource, source-access and instance-admin requirements. Self-hosted tools are unavailable on the hosted Cloud controller.
 
 ## Tools
 
@@ -428,6 +428,7 @@ The current API has **517 unique tools**. Permission tags below describe the rou
 | `get_projects_by_id_roles`<br />`GET /api/projects/:id/roles` | Read the active deployment's runtime roles, replicas, live status, and restart counts. | `project:read` |
 | `get_projects_by_id_roles_configuration`<br />`GET /api/projects/:id/roles/configuration` | Read editable runtime role settings from the active Docker release. | `project:read` |
 | `get_projects_by_id_rollback_capacity`<br />`GET /api/projects/:id/rollback-capacity` | Get the rollback retention window in force (explicit or disk-sized), the measured per-release size, and the deploy host's free disk. | `project:read` |
+| `get_projects_by_id_route_protection`<br />`GET /api/projects/:id/route-protection` | List saved hostname password protection and whether the self-hosted edge acknowledged it. Never returns passwords or signing keys. | `project:read`<br />Self-hosted |
 | `get_projects_by_id_route_rules`<br />`GET /api/projects/:id/route-rules` | List project edge rules for rate limits, access restrictions and traffic filtering. | `project:read` |
 | `get_projects_by_id_routing_edge_status`<br />`GET /api/projects/:id/routing/edge-status` | Check whether the project's server edge (OpenResty on 80/443) is already set up. | `project:read` |
 | `get_projects_by_id_server_logs_recent`<br />`GET /api/projects/:id/server-logs/recent` | Fetch recent HTTP request logs for the project. | `project:read` |
@@ -486,6 +487,7 @@ The current API has **517 unique tools**. Permission tags below describe the rou
 | `post_projects_import`<br />`POST /api/projects/import` | Register a project from a source directory accessible to the Openship controller. On desktop, use localPath and an accessible managed serverId to deploy that folder to Cloud without an out-of-band upload. This creates project configuration; deploy the returned projectId separately with buildStrategy:'server' for a managed server. Source location does not choose build location. | `project:write`<br />Self-hosted |
 | `post_projects_scan`<br />`POST /api/projects/scan` | Inspect a source directory accessible to the Openship controller and detect build or Compose configuration. For a folder on the MCP client machine, use the folder-upload workflow. | `project:write`<br />Self-hosted |
 | `put_projects_by_id_release_image_source`<br />`PUT /api/projects/:id/release-image-source` | Atomically configure this single-app project to track and deploy a prebuilt container image from GitHub releases or a version URL. | `project:write` |
+| `put_projects_by_id_route_protection`<br />`PUT /api/projects/:id/route-protection` | Protect a self-hosted HTTPS hostname with a shared password, unlock it, revoke browser sessions, or retry a pending edge update. Cloud is unsupported. Public routes and direct origin ports are separate. | `project:write`<br />Self-hosted |
 
 ### services
 

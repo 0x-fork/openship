@@ -9,6 +9,7 @@
  *   4. Services discover each other by name (hostname = service name)
  */
 
+import { registerProjectRoute, createProjectRouteRegistrar } from "@repo/platform/engine/lib/project-route-registration";
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { findActiveDeployment, findProjectDeployment } from "@repo/platform/engine/lib/active-deployment";
 import { repos, type Deployment, type Domain, type Project, type Service } from "@repo/db";
@@ -2972,7 +2973,7 @@ async function deployComposeServicesCore(
             if (seenRouteDomains.has(routeKey)) continue;
             seenRouteDomains.add(routeKey);
             try {
-              await routeContext.routing.registerRoute({
+              await registerProjectRoute(project, routeContext.routing, {
                 domain: route.hostname,
                 staticRoot,
                 tls: true,
@@ -3533,7 +3534,7 @@ async function deployComposeServicesCore(
             config: serviceDeployConfig,
             previousContainerId: previous?.containerId ?? undefined,
             domains: routeDomains,
-            routing: routeDomains.length ? routeContext?.routing : undefined,
+            routing: routeDomains.length ? createProjectRouteRegistrar(project, routeContext?.routing) : undefined,
             ssl: routeDomains.length ? routeContext?.trackedSsl : undefined,
             routeOptions: routeDomains.length ? routeContext?.routeOptions : undefined,
             signal: opts?.signal,
@@ -4438,7 +4439,7 @@ async function deployComposeServicesCore(
               },
             ],
           });
-          await routeContext.routing.registerRoute({
+          await registerProjectRoute(project, routeContext.routing, {
             domain: route.hostname,
             targetUrl: resolved.url,
             tls: route.tls,
@@ -4593,7 +4594,7 @@ async function deployComposeServicesCore(
       });
       if (composite) {
         const r = composite.register;
-        await routeContext.routing.registerRoute({
+        await registerProjectRoute(project, routeContext.routing, {
           domain: r.hostname,
           tls: true,
           terminatesTlsLocally: hostTerminatesTlsLocally(
@@ -4639,7 +4640,7 @@ async function deployComposeServicesCore(
           ...(reg.proxyLocations ?? []),
           ...(routingFields.proxyLocations ?? []),
         ];
-        await routeContext.routing.registerRoute({
+        await registerProjectRoute(project, routeContext.routing, {
           domain: reg.hostname,
           tls: true,
           terminatesTlsLocally: hostTerminatesTlsLocally(

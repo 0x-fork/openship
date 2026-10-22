@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   updateDeploymentStatus: vi.fn(),
   updateBuildSession: vi.fn(),
   findDeploymentById: vi.fn(),
+  findProjectById: vi.fn(),
   prepareImage: vi.fn(),
   runReleaseCommand: vi.fn(),
   build: vi.fn(),
@@ -60,6 +61,8 @@ vi.mock("@repo/db", () => ({
   runOutsideAdvisoryLock: <T>(work: () => T) => work(),
   schema: {},
   repos: {
+    pullRequestPreview: { findByProject: vi.fn(async () => undefined) },
+  routeProtection: { readPrivate: vi.fn(async () => null) },
     cloudBuildActivity: { cancelReservation: mocks.cancelReservation },
     cloudDockerWorkspace: { find: (...args: unknown[]) => mocks.findCloudDockerBinding(...args) },
     deployment: {
@@ -87,7 +90,7 @@ vi.mock("@repo/db", () => ({
       listByProject: vi.fn(async () => []),
       remove: vi.fn(async () => undefined),
     },
-    project: { update: vi.fn(async () => undefined) },
+    project: { findById: mocks.findProjectById, update: vi.fn(async () => undefined) },
   },
 }));
 
@@ -459,7 +462,9 @@ function deployment(overrides: Record<string, unknown> = {}): Deployment {
 
 async function run(dep = deployment(), projectOverrides: Record<string, unknown> = {}) {
   mocks.findDeploymentById.mockResolvedValue(dep);
-  const sessionId = await kickoffBuild(project(projectOverrides), dep);
+  const currentProject = project(projectOverrides);
+  mocks.findProjectById.mockResolvedValue(currentProject);
+  const sessionId = await kickoffBuild(currentProject, dep);
   expect(sessionId).toBe("build-session-1");
   return dep;
 }

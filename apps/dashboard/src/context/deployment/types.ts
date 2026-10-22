@@ -1,6 +1,7 @@
 import type { IconName } from "@repo/ui/icons";
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
+import type { RouteProtectionDraft } from "@/components/routing/RouteProtectionButton";
 import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
 import {
   getBuildImage,
@@ -193,6 +194,8 @@ export function normalizeComposeService(raw: RawComposeService): ComposeServiceI
 }
 
 export interface PublicEndpoint {
+  /** In-memory only. Persisted through the dedicated write-only route-protection operation. */
+  protectionDraft?: RouteProtectionDraft;
   id: string;
   port: string;
   targetPath: string;
@@ -625,6 +628,7 @@ export { servicesNeedCloud, endpointsNeedCloud as publicEndpointsNeedCloud } fro
 
 export function createPublicEndpoint(overrides: Partial<PublicEndpoint> = {}): PublicEndpoint {
   return {
+    ...(overrides.protectionDraft ? { protectionDraft: overrides.protectionDraft } : {}),
     id: overrides.id ?? randomUUID(),
     port: overrides.port ?? "",
     targetPath: overrides.targetPath ?? "",

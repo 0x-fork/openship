@@ -199,6 +199,7 @@ export type {
   ProvisionCertOptions,
   DnsCertificateProvider,
 } from "./infra/types";
+export { createRouteProtection, revokeRouteSessions, assertRouteProtection, type RouteProtection } from "./infra/route-protection";
 export { NginxProvider, type NginxProviderOptions, type RateLimitConfig } from "./infra/nginx";
 // For the upstream-down e2e in apps/api: it asserts on the real marker rather than a copy of
 // the string, which could drift from the page it is checking for.

@@ -8,7 +8,8 @@
 
 import { PRICING } from "@repo/core";
 import type { BaseImageReceipt, BuildStrategy, ProxySettings, BuildStep, LogEntry } from "@repo/core";
-import type { Readable, Duplex } from "node:stream";
+import type { Readable, Writable, Duplex } from "node:stream";
+import type { RouteProtection } from "./infra/route-protection";
 export type { BuildStrategy } from "@repo/core";
 
 /**
@@ -595,6 +596,8 @@ export interface RouteHostRedirect {
 }
 
 interface BaseRouteConfig {
+  /** Private edge material. null explicitly unlocks; omission preserves an existing lock. */
+  protection?: RouteProtection | null;
   /** External domain (e.g. "my-app.example.com") */
   domain: string;
   /** Whether TLS is enabled */
@@ -1066,11 +1069,11 @@ export interface ShellOptions {
  */
 export interface ShellSession {
   /** Writable stream for keystrokes / commands. */
-  stdin: import("node:stream").Writable;
+  stdin: Writable;
   /** Readable byte stream of shell stdout (already interleaved with stderr by the PTY). */
-  stdout: import("node:stream").Readable;
+  stdout: Readable;
   /** Readable byte stream of stderr (typically empty when a PTY is allocated). */
-  stderr: import("node:stream").Readable;
+  stderr: Readable;
   /** Resize the remote PTY window. Safe to call any number of times. */
   setWindow(cols: number, rows: number): void;
   /** Close the session. Best-effort: the underlying channel may already be gone. */

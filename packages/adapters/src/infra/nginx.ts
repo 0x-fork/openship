@@ -15,6 +15,7 @@
  * ```
  */
 
+import { renderRouteProtection, assertRouteProtection, withRouteProtectionRuntime, ROUTE_AUTH_STATE, type RouteProtection } from "./route-protection";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
   access as fsAccess,
@@ -536,7 +537,11 @@ function headerEntries(
   const prefix = `osh_hdr_${slug.replace(/[^A-Za-z0-9]+/g, "_")}`;
   let n = 0;
   return (route.headerRules ?? []).flatMap((rule) =>
-    rule.headers.map((header) => ({
+    // nginx's add_header filter runs after Lua. A private route must not append
+    // cache directives that contradict the authentication filter's no-store.
+    rule.headers.filter(header => !route.protection ||
+      !/^(cache-control|cdn-cache-control|cloudflare-cdn-cache-control|surrogate-control|expires|etag)$/i.test(header.key)
+    ).map((header) => ({
       rule,
       header,
       variable: rule.path === "/" && !rule.exact ? null : `${prefix}_${n++}`,
@@ -1359,19 +1364,11 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     const tmpPath = `${path}.tmp-${process.pid}-${Date.now()}-${randomBytes(4).toString("hex")}`;
 
     if (this.executor) {
-      // Refused BEFORE the content lands, not after: if the tightening cannot reach
-      // the file, a secret payload must never be on disk in the clear at all — not
-      // even for the width of the catch below.
-      if (mode !== undefined) this._assertChmodReaches(path, mode);
       try {
-        await this.executor.writeFile(tmpPath, content);
-        // Tighten perms on the TEMP file, before the rename publishes it — rename
-        // preserves the source's mode, so the final path never exists more open
-        // than requested. (executor.writeFile has no mode parameter.)
-        if (mode !== undefined) {
-          // Sibling of `path`, so the assertion above already covers it.
-          await this._chmod(tmpPath, mode);
-        }
+        // Permissions belong to the FILE channel too. On a container edge the
+        // host pathname need not exist where exec runs. Executors apply mode
+        // before writing any secret payload bytes.
+        await this.executor.writeFile(tmpPath, content, mode === undefined ? undefined : { mode });
         // `rename` (a FILE op), not `exec("mv")`. On a container edge, commands run
         // INSIDE the container while file ops land on the HOST — so the mv renamed a
         // path the container can't see and failed with ENOENT on the file we had just
@@ -1503,6 +1500,9 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     dir: string,
     cert: ManualCert | { lineageDir: string },
   ): Promise<void> {
+    // Publication below uses exec to move the pair; both channels must name
+    // the same files even though writeFile now sets permissions itself.
+    this._assertOneNamespace(dir, `stage certificate files in ${dir}`);
     const staging = `${dir}.staging-${process.pid}-${randomBytes(4).toString("hex")}`;
     const names = ["fullchain.pem", "privkey.pem"];
     if ("lineageDir" in cert) {
@@ -1887,14 +1887,14 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     try {
       for (const { path, content } of changes) {
         if (content === null) await this._rm(path);
-        else await this._writeFile(path, content);
+        else await this._writeFile(path, content, 0o600);
       }
       await this.reload();
     } catch (error) {
       const failures: string[] = [];
       // One failed restore must not prevent restoration of the other files.
       for (const { path, snapshot } of snapshots) {
-        await this._restoreFile(path, snapshot).catch((err) => {
+        await this._restoreFile(path, snapshot, 0o600).catch((err) => {
           observeCaughtError(err, "adapters/infra/nginx");
           failures.push(`${path}: ${safeErrorMessage(err)}`);
         });
@@ -1929,12 +1929,72 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     return this.withConfigLock(() => this.writeRoute(route));
   }
 
+  async setRouteProtection(domain: string, protection: RouteProtection | null): Promise<boolean> {
+    assertValidDomain(domain);
+    if (protection) assertRouteProtection(protection);
+    return this.withConfigLock(async () => {
+      const statePath = this.routeStatePath(await this.resolveSlug(domain));
+      if (!(await this._exists(statePath))) return false;
+      const route = this.parseRouteState(await this._readFile(statePath));
+      if (route.domain !== domain) throw new Error("Stored route hostname does not match.");
+      await this.writeRoute({ ...route, protection });
+      return true;
+    });
+  }
+
   private async writeRoute(route: RouteConfig): Promise<void> {
     assertValidDomain(route.domain);
     await this._mkdir(this.sitesDir);
 
     const slug = await this.resolveSlug(route.domain);
     const configPath = join(this.sitesDir, `${slug}.conf`);
+    const statePath = this.routeStatePath(slug);
+    if (route.protection === undefined) {
+      let saved: RouteConfig | undefined;
+      if (await this._exists(statePath)) {
+        const state = await this._readFile(statePath);
+        try { saved = this.parseRouteState(state); }
+        catch (error) {
+          // A legacy public vhost can recover a corrupt sidecar, as certificate
+          // activation already does. A protected vhost must never lose its gate.
+          if (!(error instanceof SyntaxError)) throw error;
+        }
+      }
+      if (saved && saved.domain !== route.domain) throw new Error("Stored route hostname does not match.");
+      if (saved?.protection) route = { ...route, protection: saved.protection };
+      if (!saved?.protection && await this._exists(configPath) &&
+          (await this._readFile(configPath)).includes("$openship_route_auth")) {
+        throw new Error("Cannot recover this protected route's policy. Reapply its saved password protection before updating the route.");
+      }
+    }
+    const runtimeChanges: { path: string; content: string }[] = [];
+    if (route.protection) {
+      assertRouteProtection(route.protection);
+      if (!route.tls || !route.terminatesTlsLocally || route.domain.startsWith("*."))
+        throw new Error("Password protection requires an exact hostname with HTTPS terminating on this edge.");
+      if (!luaSourceAvailable()) throw new Error("Password protection requires the OpenResty Lua bundle.");
+      // Check the edge namespace without printing credential-bearing nginx config.
+      // Public route writes do none of this work.
+      const scripts = ["route_auth", "route_auth_crypto", "route_auth_headers", "route_auth_login"];
+      const checks = scripts.map(name => `test -r '/usr/local/openresty/site/lualib/openship/${name}.lua'`);
+      checks.push(`test "$(uname -s)" = Linux`, `${sq(this.paths.bin)} -V 2>&1 | grep -q -- --with-threads`);
+      if (this.containerEdge) {
+        checks.push(`grep -Fq 'thread_pool openship_password ' ${sq(this.paths.confPath)}`,
+          `grep -Fq 'lua_worker_thread_vm_pool_size' ${sq(this.paths.confPath)}`,
+          `grep -Fq 'lua_shared_dict route_auth_limits ' ${sq(this.paths.confPath)}`,
+          `grep -Fq ${sq(ROUTE_AUTH_STATE)} ${sq(this.paths.confPath)}`);
+      }
+      try { await this._exec("sh", ["-c", checks.join(" && ")]); }
+      catch (error) {
+        observeCaughtError(error, "adapters/infra/nginx");
+        throw new Error("Update the Openship edge before enabling password protection; the required Lua and worker runtime is unavailable.");
+      }
+      if (!this.containerEdge) {
+        const current = await this._readFile(this.paths.confPath);
+        const next = withRouteProtectionRuntime(current);
+        if (next !== current) runtimeChanges.push({ path: this.paths.confPath, content: next });
+      }
+    }
     if ("staticRoot" in route && route.staticRoot) {
       assertValidStaticRoot(route.staticRoot, { adopted: route.staticRootAdopted });
     } else if (!route.notFound) {
@@ -2076,12 +2136,12 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     }${slashFallback}${upstreamDown}`;
 
     // Everything both server blocks share, after the per-block preamble.
-    const sharedBody = `${serverHeaders}${proxyOpts}
+    const sharedBody = `${route.protection ? renderRouteProtection(route.protection) : ""}${serverHeaders}${proxyOpts}
 ${webhookLocation}${extraLocations}`;
     // Same, for the :80 block that pairs with `redirectOrServeLocation`: every location
     // that serves project traffic upgrades, not just `/`. The webhook location is the one
     // exemption — a 30x there drops the delivery's POST body.
-    const httpsUpgradeBody = `${serverHeaders}${proxyOpts}
+    const httpsUpgradeBody = `${route.protection ? renderRouteProtection(route.protection) : ""}${serverHeaders}${proxyOpts}
 ${webhookLocation}${upgradingExtraLocations}`;
 
     // No TLS listener: either TLS isn't ours to terminate for this host, or a
@@ -2211,6 +2271,7 @@ ${serveLocation}
     // block(s) — one file may hold both the :80 and :443 blocks, and a map may
     // appear only once for the pair.
     await this.updateConfig([
+      ...runtimeChanges,
       { path: configPath, content: `${prelude}${serverBlock}` },
       { path: this.routeStatePath(slug), content: JSON.stringify(route) },
       ...challenges.map((path) => ({ path, content: null })),
@@ -2235,6 +2296,16 @@ ${serveLocation}
 
   private routeStatePath(slug: string): string {
     return join(this.sitesDir, `${slug}.route.json`);
+  }
+
+  private parseRouteState(state: string): RouteConfig {
+    try {
+      return JSON.parse(state) as RouteConfig;
+    } catch {
+      // JSON parser errors can quote source text containing a signing key.
+      // Keep SyntaxError for legacy recovery, without leaking that text.
+      throw new SyntaxError("Saved route configuration is invalid.");
+    }
   }
 
   /**
@@ -2305,7 +2376,7 @@ ${serveLocation}
         const gen = readVhostGeneration(conf);
         if (gen !== null && gen >= VHOST_GENERATION) continue;
 
-        const saved = JSON.parse(await this._readFile(this.routeStatePath(slug))) as RouteConfig;
+        const saved = this.parseRouteState(await this._readFile(this.routeStatePath(slug)));
         if (!saved?.domain) {
           failed.push({ slug, reason: "sidecar has no domain" });
           continue;
@@ -2428,8 +2499,8 @@ ${serveLocation}
       // reliably abortable, so re-check between each rollback step and remove
       // anything restored if the signal arrives while one is in progress.
       try {
-        if (!opts?.signal?.aborted) await this._restoreFile(configPath, confSnapshot);
-        if (!opts?.signal?.aborted) await this._restoreFile(statePath, stateSnapshot);
+        if (!opts?.signal?.aborted) await this._restoreFile(configPath, confSnapshot, 0o600);
+        if (!opts?.signal?.aborted) await this._restoreFile(statePath, stateSnapshot, 0o600);
         if (!opts?.signal?.aborted && !(err instanceof ConfigRollbackError)) {
           await this.reloadConfig({ allowStopped: true }).catch((diagnosticFailure) => {
             observeCaughtError(diagnosticFailure, "adapters/infra/nginx");
@@ -2776,7 +2847,7 @@ ${serveLocation}
     if (await this._exists(this.routeStatePath(slug))) {
       const state = await this._readFile(this.routeStatePath(slug));
       try {
-        saved = JSON.parse(state) as RouteConfig;
+        saved = this.parseRouteState(state);
       } catch (error) {
         // A corrupt legacy sidecar can still be recovered from its vhost.
         // Transport and reload errors must never enter this fallback.

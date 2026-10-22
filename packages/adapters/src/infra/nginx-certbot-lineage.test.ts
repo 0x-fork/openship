@@ -54,7 +54,8 @@ async function setup(local = false) {
         () => false,
       ),
     readFile: (path: string) => readFile(path, "utf8"),
-    writeFile: (path: string, content: string) => writeFile(path, content),
+    writeFile: (path: string, content: string, options?: { mode?: number }) =>
+      writeFile(path, content, options),
     mkdir: (path: string) => mkdir(path, { recursive: true }),
     rm: (path: string) => rm(path, { recursive: true, force: true }),
   } as unknown as RootChecked;

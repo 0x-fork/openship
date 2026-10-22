@@ -1,5 +1,7 @@
 "use client";
 
+import { persistRouteProtectionDrafts, clearRouteProtectionDrafts } from "./route-protection-drafts";
+
 import { actionsApi } from "@/lib/api/actions";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { IconName } from "@repo/ui/icons";
@@ -778,6 +780,8 @@ export function useDeploymentBuild(
           return null;
         }
         try {
+          const savedProtection = await persistRouteProtectionDrafts(projectId, config);
+          if (savedProtection.size) setConfig(prev => syncActiveModeSnapshot(clearRouteProtectionDrafts(prev, savedProtection)));
           await projectsApi.setOptions(projectId, {
             ...(!isSourceless ? { gitBranch: config.branch } : {}),
             framework: config.framework,
@@ -926,6 +930,8 @@ export function useDeploymentBuild(
       ensuredDraftRef.current = { key: draftKey, id: projectData.project_id };
       // Configure automation before any build is started. A failed setup keeps
       // the draft project recoverable through the existing deployment error path.
+      const savedProtection = await persistRouteProtectionDrafts(projectData.project_id!, config);
+      if (savedProtection.size) setConfig(prev => syncActiveModeSnapshot(clearRouteProtectionDrafts(prev, savedProtection)));
       if (config.actions) await actionsApi.updateProjectPolicy({ ...config.actions, projectId: projectData.project_id! });
 
       let resolvedEnvPlan = envPlan;
