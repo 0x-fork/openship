@@ -610,7 +610,8 @@ export interface MultiServiceDeployConfig {
    *  Every entry is a live name on the project network; loopback publish
    *  unchanged. Already normalized (DNS-safe) by the caller. */
   extraAliases?: string[];
-  resources?: { cpuCores?: number; memoryMb?: number };
+  /** Per-service caps; `swapDisabled` is honored by Docker (MemorySwap=Memory). */
+  resources?: { cpuCores?: number; memoryMb?: number; swapDisabled?: boolean };
   publicPort?: number;
   publicSlug?: string;
   customDomain?: string;
@@ -848,8 +849,9 @@ export interface DockerContainerDetail {
   };
   /** Live cpu/memory caps read off HostConfig, so adopting a container keeps the
    *  limits it was actually running with — including one set by hand with
-   *  `docker update --memory`. Omitted fields mean the container had no cap. */
-  resources?: { cpuCores?: number; memoryMb?: number };
+   *  `docker update --memory`. Omitted fields mean the container had no cap.
+   *  `swapDisabled` is derived from the live HostConfig (`MemorySwap === Memory`). */
+  resources?: { cpuCores?: number; memoryMb?: number; swapDisabled?: boolean };
   /** Live GPU configuration, including an empty object when no GPU was requested. */
   gpu?: import("@repo/core").ComposeGpuConfig;
   /** Inspection still succeeds; adoption refuses a GPU configuration it cannot replay. */

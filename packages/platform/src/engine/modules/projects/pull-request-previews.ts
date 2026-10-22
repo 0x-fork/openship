@@ -447,7 +447,7 @@ async function reconcile(row: PullRequestPreview, token: string) {
     const services = await repos.service.listByProject(source.id);
     const input = previewEnvironmentInput(source, services, row.number, pr.head.ref);
     child = await withProjectCreationLock(source.organizationId, async () => {
-      await assertProjectQuota(source.organizationId, source.workspaceId);
+      await assertProjectQuota(source.organizationId, source.workspaceId, source.serverId);
       return repos.pullRequestPreview.createEnvironment(row.id, token, input);
     });
     row = { ...row, projectId: child.id, headSha: null, deploymentId: null };

@@ -37,6 +37,10 @@ the existing compact recommendation notice and direct redeploy action; unknown b
 reported current. Record image identities in deployment metadata without executing interpreter
 probes. Cache clearing only clears cache; it never schedules a future runtime update. Restart and
 environment refresh do not imply an image update or automatic security coverage.
+The failed deployment page offers **Retry deployment** only when the server reports a retained
+completed image. It replays that attempt's saved configuration with no build or replacement image
+pull. Keep ordinary **Redeploy** available for a new build. Routing-only warnings use the existing
+Domains retry action; do not turn those into image rebuilds.
 Borderless cards do not remove those functional indicators. Menus should use the shared dropdown
 component's existing positioning, keyboard behavior, and menu surface.
 
@@ -240,7 +244,9 @@ use their installed tools and physical CPU.
 ## Layout and density
 
 Project navigation groups metrics, runtime/request logs and available Health views
-under **Monitoring & Logs**. Reuse the shared project section tabs above the content
+under **Monitoring & Logs**. Runtime-health attention on project cards opens the existing
+Health view and clears from the same incident state when a workload recovers;
+a successful deployment remains a successful deployment. Reuse the shared project section tabs above the content
 on desktop and mobile. Keep existing section URLs so saved links and log shortcuts
 open the same view, and show Health only where the project already supports it.
 
@@ -799,3 +805,5 @@ private dialogs on account/organization switches, discard late results, and guar
 backdrop, Escape and close buttons while a write is in flight.
 
 Webhook delivery rows show a short, localized explanation below the repository when change analysis records a decision. Reuse the existing feed; keep unknown reason codes out of user-facing text.
+
+Fine-grained token capability hints describe the enforced operation scope. Deployment trigger access does not promise cancellation, rollback, or deletion; those keep their project admin requirement.

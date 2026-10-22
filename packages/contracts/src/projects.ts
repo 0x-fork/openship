@@ -32,6 +32,8 @@ export const ProjectSchema = Type.Object({
   workspaceId: Type.Optional(nullableString()),
   clusterId: Type.Optional(nullableString()),
   activeDeploymentId: Type.Optional(nullableString()),
+  /** Current open workload incident on the active release; not a live health probe. */
+  runtimeUnhealthy: Type.Optional(Type.Boolean()),
   deletionInProgress: Type.Optional(Type.Boolean()),
   lifecycleOperation: Type.Optional(
     Type.Union([

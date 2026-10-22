@@ -747,7 +747,7 @@ re-read on every deploy, and `build:` contexts resolve relative to it, exactly a
     resources: {
       type: "object",
       description:
-        "Per-service cpu/memory caps, overriding the top-level resources field by field. Same shape; 0 = no limit. Parity with compose mem_limit / deploy.resources.limits.",
+        "Per-service cpu/memory caps, overriding the top-level resources field by field. Same shape; 0 = no limit. Parity with compose mem_limit / deploy.resources.limits. swapDisabled runs the container without swap and requires a positive memory limit.",
     },
   }}
 />
@@ -765,6 +765,15 @@ arguments are not a secret-storage mechanism and can be retained in image metada
 A compose file's own limits are honored too — Openship reads `mem_limit` / `cpus` and
 `deploy.resources.limits.{memory,cpus}` off each service and applies them over the project-wide
 setting.
+
+Set a service's `resources.swapDisabled` to `true` to disable swap for its Docker container.
+It needs a positive `memoryMb` on that service or inherited from the project. Openship
+rejects edits that remove a required memory limit and refuses hosts whose swap-limit
+support cannot be verified before replacing the running container. This does not change
+the host's swap configuration or build-container limits. An explicit `false` enables
+normal Docker swap behavior on the next deployment; an omitted setting preserves a
+saved service override during Compose sync.
+
 
 ## Monorepo
 

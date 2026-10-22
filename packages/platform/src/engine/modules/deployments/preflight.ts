@@ -13,6 +13,7 @@
 
 import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { DeploymentConfigSnapshot } from "./build.service";
+import { env } from "../../config/env";
 import { platform } from "../../lib/platform-config";
 import {
   resolveEffectiveTarget,
@@ -1601,6 +1602,7 @@ export async function runPreflightChecks(
       )
     : null;
   const clonePlan = resolveClonePlan({
+    isHosted: env.CLOUD_MODE,
     effectiveTarget,
     serverId: plannedTarget?.serverId ?? snapshot.serverId,
     runtimeIsBare: runtimeMode === "bare",

@@ -516,7 +516,7 @@ function ServerDetail({ serverId }: { serverId: string }) {
     // Check for active install session (page reload recovery)
     void (async () => {
       try {
-        const session = await systemApi.getInstallSession();
+        const session = await systemApi.getInstallSession(undefined, serverId);
         if (
           session.active &&
           session.status === "running" &&

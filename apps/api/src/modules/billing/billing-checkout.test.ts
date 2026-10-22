@@ -134,19 +134,9 @@ describe("Cloud customer checkout", () => {
       concurrentBuilds: 4,
     });
   });
-  it("sells the new Hobby offer as a namespace contract with finite capacity", async () => {
-    expect(parseInput(CreateSubscriptionBody, { planTierId: "hobby", interval: "monthly" })).toMatchObject({ planTierId: "hobby" });
-    await createCheckoutSession(ctx(), "hobby", "monthly", "hobby-attempt-001");
-    expect(h.checkout).toHaveBeenCalledWith(expect.objectContaining({
-      namespace: "ns-org-a",
-      offer: expect.objectContaining({
-        reference: "openship:hobby:v11", unitAmount: 500, credits: 0, billingMode: "monthly",
-        resourceLimits: { max_workspaces: 1, max_vcpus: 1, max_ram_mb: 2048, max_disk_gb: 40,
-          max_total_vcpus: 1, max_total_ram_mb: 2048, max_total_disk_gb: 40 },
-      }),
-    }));
-    expect(h.checkout.mock.calls[0]![0]).not.toHaveProperty("planTierId");
-    expect(h.quota).not.toHaveBeenCalled();
+  it("refuses retired Hobby for new purchases without changing existing contracts", async () => {
+    await expect(createCheckoutSession(ctx(), "hobby", "monthly", "hobby-attempt-001")).rejects.toMatchObject({ code: "BILLING_PLAN_RETIRED" });
+    expect(h.checkout).not.toHaveBeenCalled();
   });
   it("keeps an old provider Hobby subscription mapped to its original Openship Starter tier", () => {
     expect(subscriptionPlan(subscription, "org-a", "ns-org-a").tier).toBe("starter");
@@ -196,12 +186,12 @@ describe("Cloud customer checkout", () => {
   });
   it("does not start a purchase when monthly capacity is unavailable at the provider", async () => {
     h.monthlySupport.mockRejectedValue(new Error("Monthly purchases unavailable"));
-    await expect(createCheckoutSession(ctx(), "hobby", "monthly")).rejects.toThrow("Monthly purchases unavailable");
+    await expect(createCheckoutSession(ctx(), "starter", "monthly")).rejects.toThrow("Monthly purchases unavailable");
     expect(h.checkout).not.toHaveBeenCalled();
     expect(h.pending.size).toBe(0);
   });
   it("does not start a competing checkout when the customer selects another plan", async () => {
-    await createCheckoutSession(ctx(), "hobby", "monthly", "attempt-hobby-001");
+    await createCheckoutSession(ctx(), "starter", "monthly", "attempt-starter-001");
     await expect(createCheckoutSession(ctx(), "pro", "monthly", "attempt-pro-001"))
       .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_CHECKOUT_PENDING" });
     expect(h.checkout).toHaveBeenCalledOnce();
@@ -248,7 +238,7 @@ describe("Cloud customer checkout", () => {
   });
   it("does not replace a subscription that is scheduled to cancel at renewal", async () => {
     h.subscription.mockImplementation(async namespace => ({ success: true, namespace, subscription: { ...subscription, cancelAtPeriodEnd: true } }));
-    await expect(createCheckoutSession(ctx(), "hobby", "monthly")).rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_UNAVAILABLE" });
+    await expect(createCheckoutSession(ctx(), "starter", "monthly")).rejects.toMatchObject({ code: "BILLING_PLAN_CHANGE_UNAVAILABLE" });
     expect(h.checkout).not.toHaveBeenCalled();
     expect(h.cancel).not.toHaveBeenCalled();
   });

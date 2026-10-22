@@ -197,7 +197,8 @@
           "max_total_disk_gb": 40
         },
         "mode": "monthly"
-      }
+      },
+      "availableForPurchase": false
     },
     {
       "id": "starter",
@@ -518,5 +519,14 @@
       "selfHostedFreeSubdomains",
       "communitySupport"
     ]
+  },
+  "management": {
+    "version": 1,
+    "monthlyCents": 500,
+    "includedServers": 2,
+    "extraServerMonthlyCents": 300,
+    "maxServers": 100,
+    "includedWithCloud": true,
+    "dedicatedContact": "sales@openship.io"
   }
 }

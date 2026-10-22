@@ -106,3 +106,5 @@ export * from "./instance";
 export * from "./action-routes";
 
 export * from "./ingress";
+
+export * from "./management-billing";

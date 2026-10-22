@@ -734,6 +734,8 @@ export function useDeploymentBuild(
         deploymentFailed: false,
         deploymentCanceled: false,
         cancellationPending: false,
+        completionPending: false,
+        canRetryDeployment: false,
         failureMessage: "",
         warningMessage: "",
         decisionPending: false,
@@ -1095,9 +1097,11 @@ export function useDeploymentBuild(
       !state.deploymentCanceled;
     const waitingCancellation = state.deploymentCanceled && state.cancellationPending;
     const terminal = state.deploymentSuccess || state.deploymentFailed || state.deploymentCanceled;
+    const waitingCompletion = terminal && state.completionPending;
     const needsTerminalStatus = terminal && settledBuildStatusRef.current !== deploymentId;
     const needsStatus =
       waitingCancellation ||
+      waitingCompletion ||
       needsTerminalStatus ||
       (active && (!buildStream.isConnected || !!state.queue || !state.buildStartedAt || !!state.pendingPrompt));
     if (!deploymentId || !needsStatus) return;
@@ -1148,6 +1152,8 @@ export function useDeploymentBuild(
             deploymentFailed: !isLive && status === "failed",
             deploymentCanceled: !isLive && status === "cancelled",
             cancellationPending: !!data.cancellationPending,
+            completionPending: !!data.completionPending,
+            canRetryDeployment: !!data.canRetryDeployment,
             pendingPrompt: isLive
               ? data.pendingPrompt?.promptId === prev.pendingPrompt?.promptId
                 ? prev.pendingPrompt
@@ -1175,7 +1181,7 @@ export function useDeploymentBuild(
         // Deploy settled while the stream was detached — stop reconnect churn.
         if (!isLive) {
           buildStream.disconnect();
-          if (!data.cancellationPending) clearInterval(interval);
+          if (!data.cancellationPending && !data.completionPending) clearInterval(interval);
         }
       } catch (diagnosticFailure) {
         observeCaughtError(diagnosticFailure, "dashboard/context/deployment/useDeploymentBuild");
@@ -1204,6 +1210,7 @@ export function useDeploymentBuild(
     state.deploymentFailed,
     state.deploymentCanceled,
     state.cancellationPending,
+    state.completionPending,
     state.pendingPrompt,
     state.buildStartedAt,
     state.queue,
@@ -1383,6 +1390,8 @@ export function useDeploymentBuild(
           deploymentFailed: !isActive && status === "failed",
           deploymentCanceled: !isActive && status === "cancelled",
           cancellationPending: !!data.cancellationPending,
+          completionPending: !!data.completionPending,
+          canRetryDeployment: !!data.canRetryDeployment,
           pendingPrompt: isActive ? (data.pendingPrompt ?? null) : null,
           isDeploying: isLive,
           queue: status === "queued" ? (data.queue ?? null) : null,
@@ -1526,7 +1535,7 @@ export function useDeploymentBuild(
   ]);
 
   const redeploy = useCallback(
-    async (deploymentId: string): Promise<string | null> => {
+    async (deploymentId: string, options?: { reuseBuild?: boolean }): Promise<string | null> => {
       if (!deploymentId) {
         showToast("Deployment ID not provided", "error", "Error");
         return null;
@@ -1537,7 +1546,7 @@ export function useDeploymentBuild(
 
       try {
         const localBuildStartedAt = new Date().toISOString();
-        const response = await deployApi.buildRedeploy(deploymentId);
+        const response = await deployApi.buildRedeploy(deploymentId, options);
         if (generation !== buildViewGenerationRef.current) return null;
         if (!response.success || !response.deployment_id) {
           showToast(response.error || "Failed to redeploy", "error", "Error");
@@ -1582,7 +1591,7 @@ export function useDeploymentBuild(
         // wizard (never a bare toast) — one shared handler, one source of truth.
         const openedModal =
           showCloudPricing(error, async () => {
-            const id = await redeploy(deploymentId);
+            const id = await redeploy(deploymentId, options);
             if (id) window.location.assign(`/build/${encodeURIComponent(id)}`);
           }) || maybeOpenCredentialModal(extractErrorCode(error) ?? undefined);
         if (!openedModal) showToast(msg, "error", "Error");

@@ -37,6 +37,45 @@ it("keeps provider credentials server-side, rejects redirects and releases the r
   expect(new Headers(request.headers).get("Authorization")).toBe("Bearer scoped-token");
   expect(request.signal?.aborted).toBe(true);
 });
+it("renews rejected stream credentials only when the caller explicitly reconnects", async () => {
+  const refresh = vi.fn(async () => ({
+    token: "renewed-token",
+    expiresAt: new Date(Date.now() + 1800_000).toISOString(),
+  }));
+  const invalidate = vi.fn(async () => {});
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(new Response("", { status: 401 }))
+    .mockResolvedValueOnce(
+      new Response(frame({ cpuUsage: 7 }), {
+        headers: { "content-type": "text/event-stream" },
+      }),
+    );
+  vi.stubGlobal("fetch", fetcher);
+  const client = new Oblien({
+    token: "rejected-token",
+    tokenRefresh: {
+      expiresAt: new Date(Date.now() + 1800_000).toISOString(),
+      refresh,
+      invalidate,
+    },
+  });
+  await expect(
+    client.streamWorkspaceMetrics("owned")[Symbol.asyncIterator]().next(),
+  ).rejects.toThrow("Live resource usage is unavailable");
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(refresh).not.toHaveBeenCalled();
+  for await (const sample of client.streamWorkspaceMetrics("owned")) {
+    expect(sample).toEqual({ cpuUsage: 7 });
+    break;
+  }
+  expect(new Headers(fetcher.mock.calls[1]![1].headers).get("authorization")).toBe(
+    "Bearer renewed-token",
+  );
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(invalidate).toHaveBeenCalledExactlyOnceWith("rejected-token");
+});
+
 it("aborts a real provider socket while waiting for the next frame", async () => {
   let closed!: () => void;
   const closure = new Promise<void>((resolve) => {

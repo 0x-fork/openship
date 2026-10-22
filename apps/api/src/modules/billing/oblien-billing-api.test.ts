@@ -325,6 +325,55 @@ describe("Oblien billing SDK and transport contract", () => {
     expect(error.message).not.toMatch(/enterprise|upgrade/i);
     expect(fetcher).toHaveBeenCalledOnce();
   });
+  it.each([
+    [409, "capacity_checkout_pending", "complete or cancel it"],
+    [429, "capacity_checkout_limit", "complete or cancel an existing purchase"],
+    [409, "capacity_resource_update_pending", "Wait for the current operation to finish"],
+    [409, "billing_payment_mismatch", "Contact Openship support before making another payment"],
+    [409, "checkout_cancellation_pending", "Refresh its status before starting another checkout"],
+  ] as const)(
+    "explains %s/%s without discarding pending payments or exposing provider data",
+    async (status, code, message) => {
+      const { api, fetcher } = setup(
+        {
+          success: false,
+          code,
+          message: "private provider detail",
+          details: {
+            customer: "cus_private",
+            namespace: "other-customer",
+            clientSecret: "test-secret",
+          },
+        },
+        status,
+      );
+      const error = await api
+        .createCheckout({
+          namespace: "os-one",
+          kind: "subscription",
+          offer,
+          metadata,
+          billingInterval: "monthly",
+          successUrl: "https://app.openship.io",
+          cancelUrl: "https://app.openship.io",
+          idempotencyKey: "same-attempt",
+        })
+        .catch((error) => error);
+      expect(error).toMatchObject({
+        statusCode: status,
+        code:
+          code === "capacity_checkout_pending"
+            ? "CLOUD_WORKSPACE_CHECKOUT_PENDING"
+            : "OBLIEN_BILLING_ERROR",
+        details: { providerCode: code },
+      });
+      expect(error.message).toContain(message);
+      expect(error.details).not.toHaveProperty("checkoutRejected");
+      expect(error.details).not.toHaveProperty("checkoutExpired");
+      expect(JSON.stringify(error)).not.toMatch(/private|other-customer|test-secret/);
+      expect(fetcher).toHaveBeenCalledOnce();
+    },
+  );
   it("reports the live checkout collation failure as unavailable and keeps safe diagnostics in server logs", async () => {
     const { api, fetcher } = setup({ success: false, error: "ER_CANT_AGGREGATE_NCOLLATIONS", code: "ER_CANT_AGGREGATE_NCOLLATIONS",
       message: "Failed to create subscription checkout", details: { sql: "private query", customer: "cus_private" } }, 400);

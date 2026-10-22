@@ -303,7 +303,7 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
   const { BareRuntime } = await import("./runtime/bare");
   const { CloudServerConnection } = await import("./runtime/cloud/server-connection");
   const { CloudProcessSupervisor } = await import("./runtime/cloud/process-supervisor");
-  const { prepareManagedSource } = await import("./runtime/cloud/source");
+  const { prepareRemoteSource } = await import("./runtime/remote-source");
   const { managedProjectRoutingScope } = await import("./runtime/cloud/routing-scope");
   const connection = new CloudServerConnection(client, {
     ...config.cloudServer,
@@ -325,7 +325,7 @@ async function createCloudPlatform(config: PlatformConfig): Promise<Platform> {
     beforeWork: () => connection.resume(),
     supervisorFactory: async () => supervisor,
     prepareSource: (build, directory, logger) =>
-      prepareManagedSource(connection, build, directory, logger),
+      prepareRemoteSource(connection, build, directory, logger),
   });
   // One routing scope handles host processes, static releases and Docker
   // sidecars. Open its Docker transport only if this platform changes routes.

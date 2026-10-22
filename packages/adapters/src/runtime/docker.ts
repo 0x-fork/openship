@@ -44,7 +44,10 @@ import {
   assertBuildStorage, buildKitCacheConfig,
   ensureProjectBuildCache, pruneManagedBuildCaches, touchProjectBuildCache,
 } from "./docker-build-cache";
-import { AppError, withKeyedMutex } from "@repo/core";
+import { AppError, withKeyedMutex, parseVolumeMount, formatVolumeMount } from "@repo/core";
+import { readServerStats } from "../system/server-stats";
+import { CUTOVER_SHARED_VOLUMES_ENV, decideCutover, newcomerName, parseSharedVolumeOptIn } from "./cutover";
+import { dockerServiceCutover, type DockerServiceCutover } from "./docker-service-cutover";
 import { generatedBuildIgnore } from "./docker-recipes/cache";
 import { createGzip } from "node:zlib";
 import { prepareProtectedBuildKitImage, requireProtectedBuildHost, PROTECTED_BUILDKIT_DRIVER_OPTIONS } from "./docker-buildkit-image";
@@ -64,6 +67,7 @@ import type {
   ContainerInfo,
   ContainerStatus,
   ResourceUsage,
+  ResourceConfig,
   ShellOptions,
   ShellSession,
   ProvisionLock,
@@ -217,6 +221,7 @@ import {
   dockerBuildResourceLimits,
   describeResourceLimits,
   inspectResourceLimits,
+  validateSwapDisabled,
 } from "./resource-limits";
 import {
   type DockerConnectionOptions as DockerTransportOptions,
@@ -1220,6 +1225,8 @@ export class DockerRuntime implements RuntimeAdapter {
   readonly unsupportedComposeKeys: ReadonlySet<keyof ComposeAdvanced> = new Set();
 
   private _docker!: Dockerode;
+  /** Memoized `Docker /info.SwapLimit`. Undefined = this daemon did not report it. */
+  private swapLimitSupport?: Promise<boolean | undefined>;
   /** Underlying dockerode instance - exposed for advanced usage */
   get docker(): Dockerode {
     return this._docker;
@@ -1328,6 +1335,44 @@ export class DockerRuntime implements RuntimeAdapter {
   /** Get Docker daemon info (version, platform, etc.) */
   async info(): Promise<Record<string, unknown>> {
     return this.docker.info();
+  }
+
+  /**
+   * Fail before touching the live container when a saved swap-disabled setting
+   * cannot be applied. `dockerResourceLimits` enforces the memory-limit
+   * requirement; this adds the daemon capability check (`/info.SwapLimit`),
+   * which is false on hosts built without swap accounting.
+   */
+  private async assertSwapSupported(
+    resources?: Partial<ResourceConfig> | null,
+  ): Promise<void> {
+    validateSwapDisabled(resources);
+    if (resources?.swapDisabled !== true) return;
+
+    let supported: boolean | undefined;
+    try {
+      supported = await (this.swapLimitSupport ??= this.docker
+        .info()
+        .then((info) => (typeof info.SwapLimit === "boolean" ? info.SwapLimit : undefined)));
+    } catch (error) {
+      // A transient probe failure must not be remembered as "unsupported".
+      this.swapLimitSupport = undefined;
+      throw new AppError(
+        `Could not verify this Docker host's swap support before deploying: ${safeErrorMessage(error)}`,
+        503,
+        "SWAP_DISABLED_HOST_PROBE_FAILED",
+      );
+    }
+
+    if (supported !== true) {
+      throw new AppError(
+        supported === false
+          ? 'This Docker host cannot disable container swap (swap accounting is disabled). Enable swap accounting on the host or turn off "Disable swap" for this service.'
+          : 'This Docker host did not report swap-limit support. Verify its swap accounting or turn off "Disable swap" for this service.',
+        422,
+        "SWAP_DISABLED_UNSUPPORTED_HOST",
+      );
+    }
   }
 
   // ── Image naming ────────────────────────────────────────────────────────
@@ -2069,6 +2114,13 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     const executor = this.connectionOptions?.executor;
     if (!executor) throw new Error("Clone-on-server requires an SSH executor on connectionOptions");
 
+    if (config.inlineSourceFiles || config.sourceTransfer) {
+      const { prepareRemoteSource } = await import("./remote-source");
+      await executor.mkdir(remoteContextDir);
+      await prepareRemoteSource({ executor }, config, remoteContextDir, log);
+      signal?.throwIfAborted();
+      return;
+    }
     const useHelper = !!config.gitCredentialHelperPath;
 
     // Prefer a direct GitHub tarball download on the server (no git, no history,
@@ -2137,6 +2189,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     const gitInvocation = assembleGitClone({
       repoUrl: config.repoUrl,
       gitToken: config.gitToken,
+      gitTokenRepositories: config.gitTokenRepositories,
       gitCredentialHelperPath: config.gitCredentialHelperPath,
       ssh: sshMaterial,
       ambient: config.gitAmbient,
@@ -3873,7 +3926,142 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
   // remove the outgoing service before activation, so keep its verified binds
   // on this exact configuration object until the handover completes.
   private readonly preparedVolumes = new WeakMap<DeployConfig | MultiServiceDeployConfig, string[]>();
+  /** Only server-created, validated plans may bypass the ordinary replacement. */
+  private readonly stagedServices = new WeakSet<MultiServiceDeployConfig>();
 
+  /** Plan optional overlap without changing the incumbent or imposing new caps. */
+  async prepareServiceCutover(
+    group: MultiServiceGroupHandle,
+    config: MultiServiceDeployConfig,
+    options: { executor?: CommandExecutor | null; onLog?: LogCallback } = {},
+  ): Promise<DockerServiceCutover | null> {
+    const fallback = (reason: string) => {
+      options.onLog?.({
+        timestamp: new Date().toISOString(),
+        level: "info",
+        message: `Keeping normal service replacement: ${reason}.\n`,
+      });
+      return null;
+    };
+    // Managed ingress publishes fixed workspace ports inside its provisioning
+    // lock. It keeps that existing replacement path; never nest that lock here.
+    if (this.transport.kind === "cloud") return fallback("managed ingress uses fixed host ports");
+    const previousContainerId = config.previousContainerId;
+    if (!previousContainerId) return null;
+    const executor = options.executor ?? this.connectionOptions?.executor;
+    if (!executor) return fallback("deployment-host headroom cannot be verified");
+    if (!config.resources?.cpuCores || !config.resources?.memoryMb)
+      return fallback("overlap demand is unknown without saved CPU and memory limits");
+    if (!config.publicPort) return fallback("this service has no readiness probe port");
+    try {
+      return await withTimeout(
+        (async () => {
+          await this.assertContainerAccess(previousContainerId);
+          const previous = await this.docker.getContainer(previousContainerId).inspect();
+          const labels = previous.Config?.Labels ?? {};
+          if (
+            labels[OPENSHIP_LABEL.project] !== config.projectId ||
+            labels[OPENSHIP_LABEL.service] !== config.serviceName
+          )
+            return fallback("the outgoing service ownership is unverified");
+          const networks = Object.entries(previous.NetworkSettings?.Networks ?? {});
+          if (
+            networks.length !== 1 ||
+            !networks.some(
+              ([name, endpoint]) => name === group.id || endpoint.NetworkID === group.id,
+            )
+          )
+            return fallback("the outgoing service has additional or shared networks");
+          if (
+            networks.some(
+              ([, endpoint]) =>
+                endpoint.IPAMConfig?.IPv4Address || endpoint.IPAMConfig?.IPv6Address,
+            )
+          )
+            return fallback("the service has a fixed network address");
+          const image = await this.inspectDeploymentImage(config.image);
+          const health =
+            toDockerHealthcheck(config.advanced?.healthcheck) ?? image.Config?.Healthcheck;
+          if (health?.Test?.[0] && health.Test[0] !== "NONE")
+            return fallback("the service uses its own Docker health-check lifecycle");
+          const resolved =
+            this.preparedVolumes.get(config) ?? (await this.serviceVolumeBinds(config));
+          // Compare canonical host paths. A symlink to the same data must not bypass
+          // the shared-writer guard just because its spelling differs.
+          const canonical = async (source: string) => {
+            if (!source.startsWith("/")) return source;
+            const path = (
+              await executor.exec(`readlink -f -- ${sq(source)}`, { timeout: 5_000 })
+            ).trim();
+            if (!path.startsWith("/") || path.includes("\n"))
+              throw new Error("Cannot verify the shared storage path");
+            return path;
+          };
+          const volumes = await Promise.all(
+            resolved.map(async (bind) => {
+              const mount = parseVolumeMount(bind);
+              return formatVolumeMount({ ...mount, source: await canonical(mount.source) });
+            }),
+          );
+          const incumbentMounts = await Promise.all(
+            (previous.Mounts ?? []).map(async (mount) => ({
+              ...mount,
+              Source: mount.Source ? await canonical(mount.Source) : mount.Source,
+            })),
+          );
+          const [host, daemon] = await withTimeout(
+            Promise.all([readServerStats(executor), this.docker.info()]),
+            15_000,
+            "Deployment-host headroom measurement timed out",
+          );
+          // A Desktop VM's daemon is not the API machine. Never spend the API host's
+          // free RAM/CPU as if it belonged to that daemon.
+          if (
+            daemon.OSType !== "linux" ||
+            !daemon.NCPU ||
+            !daemon.MemTotal ||
+            /docker desktop|colima|rancher desktop/i.test(daemon.OperatingSystem ?? "") ||
+            Math.abs(host.memTotal - daemon.MemTotal) > daemon.MemTotal * 0.05
+          )
+            return fallback("the measurements do not identify the deployment daemon's host");
+          const decision = decideCutover({
+            incumbentRunning: previous.State.Running === true && !previous.State.Restarting,
+            incumbentMounts,
+            ports: config.ports,
+            volumes,
+            slug: config.slug,
+            serviceName: config.serviceName,
+            sharedOptIn: parseSharedVolumeOptIn(process.env[CUTOVER_SHARED_VOLUMES_ENV]),
+            networkMode: config.namespaces?.network,
+            pidMode: config.namespaces?.pid,
+            hasDevices: Boolean(config.advanced?.gpus || config.advanced?.runtime),
+            resources: config.resources,
+            capacity: {
+              availableCpuCores: daemon.NCPU * Math.max(0, 1 - host.cpu / 100),
+              availableMemoryMb: host.memAvail / 1024 / 1024,
+            },
+          });
+          if (decision.mode !== "overlap") return fallback(decision.reason);
+          const staged = { ...config };
+          this.stagedServices.add(staged);
+          this.preparedVolumes.set(staged, resolved);
+          return dockerServiceCutover(
+            this.docker,
+            group,
+            staged,
+            previous,
+            buildNetworkAliases(config.serviceName, config.extraAliases),
+            (id) => this.destroy(id),
+          );
+        })(),
+        20_000,
+        "Optional service overlap preflight timed out",
+      );
+    } catch (error) {
+      observeCaughtError(error, "adapters/runtime/docker");
+      return fallback("optional overlap prerequisites could not be verified");
+    }
+  }
   async prepareDeploymentVolumes(config: DeployConfig): Promise<void> {
     this.preparedVolumes.set(config, await this.deploymentVolumeBinds(config));
   }
@@ -3958,6 +4146,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     if (!imageRef) {
       throw new Error("Docker deploy requires an imageRef (built image tag)");
     }
+    await this.assertSwapSupported(config.resources);
 
     const containerName = DockerRuntime.deploymentContainerName(config);
 
@@ -4134,6 +4323,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     if (!imageRef) {
       throw new Error("Docker role containers require an imageRef (built image tag)");
     }
+    await this.assertSwapSupported(config.resources);
     if (!Number.isInteger(replica) || replica < 1) {
       throw new Error(`Role replica must be an integer >= 1, got ${replica}`);
     }
@@ -4292,6 +4482,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
     try {
       deadline.signal.throwIfAborted();
+      await this.assertSwapSupported(config.resources);
       const { env, dropped } = deploymentContainerEnv(config);
       if (dropped.length > 0) onLog({
         timestamp: new Date().toISOString(), level: "warn",
@@ -5218,7 +5409,11 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       hostPort,
       ...(hostPortByContainerPort ? { hostPortByContainerPort } : {}),
       uptimeSeconds: uptimeSeconds && uptimeSeconds > 0 ? uptimeSeconds : undefined,
-      resources: { cpuCores: limits?.cpuCores ?? 0, memoryMb: limits?.memoryMb ?? 0 },
+      resources: {
+        cpuCores: limits?.cpuCores ?? 0,
+        memoryMb: limits?.memoryMb ?? 0,
+        ...(limits?.swapDisabled && { swapDisabled: true }),
+      },
     };
   }
 
@@ -6129,7 +6324,12 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     onLog?: LogCallback,
   ): Promise<MultiServiceDeployResult> {
     const log = onLog ?? (() => {});
-    const containerName = `openship-${config.slug}-${config.serviceName}`;
+    const staged = this.stagedServices.has(config);
+    const containerName = staged ? newcomerName(config) : `openship-${config.slug}-${config.serviceName}`;
+
+    // Validate the swap setting against the daemon BEFORE pulling the image or
+    // removing the currently-serving container.
+    await this.assertSwapSupported(config.resources);
 
     // Resolve and validate the complete create payload before any irreversible
     // action. A malformed later port/volume/health setting must not be discovered
@@ -6213,13 +6413,15 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
     // Flush the existing service before removing it, using Docker's normal
     // shutdown semantics even without an explicit Compose grace period.
-    try {
-      const existing = this.docker.getContainer(containerName);
-      await this.assertContainerAccess(containerName);
-      await gracefulStopBeforeRemoval(existing);
-      await existing.remove({ force: true });
-    } catch (error) {
-      if (!isDockerNotFoundError(error)) throw error;
+    if (!staged) {
+      try {
+        const existing = this.docker.getContainer(containerName);
+        await this.assertContainerAccess(containerName);
+        await gracefulStopBeforeRemoval(existing);
+        await existing.remove({ force: true });
+      } catch (error) {
+        if (!isDockerNotFoundError(error)) throw error;
+      }
     }
 
     // Environment variables. Inject PORT=<service port> (like the single-app
@@ -6279,7 +6481,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       Env: env,
       // Docker rejects an explicit hostname when the network namespace is another
       // container's — that container owns the UTS identity too.
-      ...(sharesNetns ? {} : { Hostname: config.serviceName }),
+      ...(sharesNetns ? {} : { Hostname: staged ? containerName : config.serviceName }),
       Labels: {
         ...this.labels({
           deploymentId: config.deploymentId,
@@ -6317,7 +6519,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
                 [group.id]: {
                   // Default service name plus any operator-chosen aliases; both
                   // resolve to this container on the project network.
-                  Aliases: buildNetworkAliases(config.serviceName, config.extraAliases),
+                  Aliases: staged ? [] : buildNetworkAliases(config.serviceName, config.extraAliases),
                 },
               },
             },

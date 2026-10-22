@@ -120,21 +120,21 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-it("keeps the API image and package manager on the release's tested Bun version", async () => {
+it("pins the API installer and its patched Node runtime", async () => {
   const repoDir = fileURLToPath(new URL("../../../../", import.meta.url));
   const version = (await readFile(join(repoDir, ".bun-version"), "utf8")).trim();
   const dockerfile = await readFile(join(apiDir, "Dockerfile"), "utf8");
-  const stages = [...dockerfile.matchAll(/^FROM oven\/bun:(\S+) AS (builder|runner)$/gm)];
-  expect(stages.map((match) => [match[2], match[1]])).toEqual([
-    ["builder", version],
-    ["runner", version],
+  const stages = [...dockerfile.matchAll(/^FROM (oven\/bun|node):(\S+) AS (builder|runner)$/gm)];
+  expect(stages.map((match) => [match[3], match[1], match[2]])).toEqual([
+    ["builder", "oven/bun", version],
+    ["runner", "node", "22.23.4-bookworm-slim"],
   ]);
   const manifest = JSON.parse(await readFile(join(repoDir, "package.json"), "utf8"));
   expect(manifest.packageManager).toBe(`bun@${version}`);
 });
 
 // Vitest runs on Node even when invoked with `bun run test`. Separate processes
-// exercise the actual production Bun transport as well as the desktop/dev Node path.
+// exercise the production Node transport and the Bun development path.
 describe.each(["node", "bun"])("API network transport under %s", (runtime) => {
   async function probe(mode: "tls" | "untrusted-ca" | "websocket") {
     const env = {
