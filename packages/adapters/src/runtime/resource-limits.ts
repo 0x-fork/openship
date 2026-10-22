@@ -14,7 +14,7 @@
  *     NanoCpus is the real quota (the `--cpus` flag).
  */
 
-import { AppError, hasCpuLimit, hasMemoryLimit, formatCpuCores, formatMemoryMb } from "@repo/core";
+import { validateSwapDisabled, hasCpuLimit, hasMemoryLimit, formatCpuCores, formatMemoryMb } from "@repo/core";
 import type { ResourceConfig } from "../types";
 
 export interface DockerResourceLimits {
@@ -24,20 +24,7 @@ export interface DockerResourceLimits {
   MemorySwap?: number;
 }
 
-/**
- * Reject a swap-disabled request Docker cannot satisfy. Called by the HostConfig
- * mapping below AND early in each container-create path, so a bad saved config
- * fails BEFORE the currently-serving container is removed.
- */
-export function validateSwapDisabled(resources?: Partial<ResourceConfig> | null): void {
-  if (resources?.swapDisabled === true && !hasMemoryLimit(resources)) {
-    throw new AppError(
-      "Disabling swap requires a positive memory limit. Set a memory limit on the service or its project, then try again.",
-      400,
-      "SWAP_DISABLED_REQUIRES_MEMORY_LIMIT",
-    );
-  }
-}
+export { validateSwapDisabled } from "@repo/core";
 
 export function dockerResourceLimits(
   resources?: Partial<ResourceConfig> | null,

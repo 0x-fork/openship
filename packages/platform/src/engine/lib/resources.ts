@@ -120,7 +120,7 @@ export function withDefaults(
   config?: ResourceConfig | Record<string, unknown> | null,
   defaults = UNLIMITED_RESOURCES,
 ): ResourceConfig {
-  if (!config) return { ...defaults };
+  if (!config) return { cpuCores: defaults.cpuCores, memoryMb: defaults.memoryMb, diskMb: defaults.diskMb };
 
   const raw = config as Record<string, unknown>;
   const cpuCores = extractCpuCores(raw) ?? defaults.cpuCores;

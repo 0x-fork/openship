@@ -112,6 +112,14 @@ describe("parseOpenshipConfig", () => {
     expect(config?.services?.[0]?.resources?.swapDisabled).toBe(true);
   });
 
+  it("preserves an explicit swap opt-out without requiring memory", () => {
+    const { errors, config } = parseOpenshipConfig({
+      services: [{ name: "api", image: "x", resources: { swapDisabled: false } }],
+    });
+    expect(errors).toEqual([]);
+    expect(config?.services?.[0]?.resources?.swapDisabled).toBe(false);
+  });
+
   it("rejects swap-disabled services with an explicit zero memory limit", () => {
     const { errors } = parseOpenshipConfig({
       services: [{ name: "api", image: "x", resources: { memoryMb: 0, swapDisabled: true } }],

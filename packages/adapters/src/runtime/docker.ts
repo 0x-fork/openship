@@ -1364,9 +1364,11 @@ export class DockerRuntime implements RuntimeAdapter {
       );
     }
 
-    if (supported === false) {
+    if (supported !== true) {
       throw new AppError(
-        'This Docker host cannot disable container swap (swap accounting is disabled). Enable swap accounting on the host or turn off "Disable swap" for this service.',
+        supported === false
+          ? 'This Docker host cannot disable container swap (swap accounting is disabled). Enable swap accounting on the host or turn off "Disable swap" for this service.'
+          : 'This Docker host did not report swap-limit support. Verify its swap accounting or turn off "Disable swap" for this service.',
         422,
         "SWAP_DISABLED_UNSUPPORTED_HOST",
       );

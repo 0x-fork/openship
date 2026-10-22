@@ -311,11 +311,12 @@ function parseResources(
   if (opts?.allowSwapDisabled) {
     // Docker can only disable swap by pinning MemorySwap to a real Memory cap,
     // so an explicit 0 is a configuration error rather than "inherit".
-    if (ctx.bool(v.swapDisabled, `${path}.swapDisabled`) === true) {
-      if (r.memoryMb === 0) {
+    const swapDisabled = ctx.bool(v.swapDisabled, `${path}.swapDisabled`);
+    if (swapDisabled !== undefined) {
+      if (swapDisabled && r.memoryMb === 0) {
         ctx.err(`${path}.swapDisabled`, "requires a positive memoryMb");
       }
-      r.swapDisabled = true;
+      r.swapDisabled = swapDisabled;
     }
   } else if (v.swapDisabled !== undefined) {
     ctx.err(`${path}.swapDisabled`, "is only supported on services[].resources");

@@ -548,7 +548,13 @@ export function toDiscoveredService(
   const declaredResources = declared?.advanced?.resources;
   const resources =
     declaredResources && detail.resources?.swapDisabled && declaredResources.swapDisabled === undefined
-      ? { ...declaredResources, swapDisabled: true }
+      ? {
+          ...declaredResources,
+          // The live swap guarantee needs its memory cap too. A Compose CPU-only
+          // declaration must not drop that prerequisite during adoption.
+          memoryMb: declaredResources.memoryMb ?? detail.resources.memoryMb,
+          swapDisabled: true,
+        }
       : declaredResources ?? detail.resources;
 
   const name = discoveredServiceName(detail, declared);

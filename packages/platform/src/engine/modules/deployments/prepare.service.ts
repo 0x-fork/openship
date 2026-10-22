@@ -503,14 +503,14 @@ function toAdvancedResources(
   const base = r.tier ? resolveTierResources(r.tier) : undefined;
   const cpuCores = r.cpuCores ?? base?.cpuCores;
   const memoryMb = r.memoryMb ?? base?.memoryMb;
-  const swapDisabled = r.swapDisabled === true ? true : undefined;
+  const swapDisabled = r.swapDisabled;
   if (cpuCores === undefined && memoryMb === undefined && swapDisabled === undefined) {
     return undefined;
   }
   return {
     ...(cpuCores !== undefined && { cpuCores }),
     ...(memoryMb !== undefined && { memoryMb }),
-    ...(swapDisabled && { swapDisabled }),
+    ...(swapDisabled !== undefined && { swapDisabled }),
   };
 }
 

@@ -766,6 +766,15 @@ A compose file's own limits are honored too — Openship reads `mem_limit` / `cp
 `deploy.resources.limits.{memory,cpus}` off each service and applies them over the project-wide
 setting.
 
+Set a service's `resources.swapDisabled` to `true` to disable swap for its Docker container.
+It needs a positive `memoryMb` on that service or inherited from the project. Openship
+rejects edits that remove a required memory limit and refuses hosts whose swap-limit
+support cannot be verified before replacing the running container. This does not change
+the host's swap configuration or build-container limits. An explicit `false` enables
+normal Docker swap behavior on the next deployment; an omitted setting preserves a
+saved service override during Compose sync.
+
+
 ## Monorepo
 
 `monorepo` overrides Openship's detected sub-apps. Entries in `apps[]` are matched to detected

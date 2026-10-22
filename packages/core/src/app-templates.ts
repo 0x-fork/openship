@@ -78,7 +78,7 @@ export interface TemplateServiceSpec {
   /** Advisory sizing recommendation; CPU/disk are never copied into installed
    *  container limits. `swapDisabled` is the exception: install copies it along
    *  with the memory limit it requires. */
-  resources?: Readonly<ResourceValues>;
+  resources?: Readonly<ResourceValues & { swapDisabled?: boolean }>;
   /** NVIDIA requests applied when the install chooses GPU mode. */
   gpus?: ComposeGpu | ComposeGpu[];
   /** Private container shared memory in bytes; never host IPC. */

@@ -631,10 +631,9 @@ export async function processWorkspaceOperation(id: string): Promise<void> {
             throw new Error("The Cloud space capacity change target is unavailable");
           const allowed = await cloudSubscriptionWorkspaceResources(row.organizationId, id);
           if (
-            Object.entries(op.resources).some(([key, value]) => {
-              const limit = allowed[key as keyof typeof allowed];
-              return typeof value === "number" && typeof limit === "number" && value > limit;
-            })
+            (["cpuCores", "memoryMb", "diskMb"] as const).some(
+              key => op.resources![key] > allowed[key],
+            )
           )
             throw new Error(
               "The Cloud space plan changed. Review its capacity before retrying the change.",
