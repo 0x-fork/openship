@@ -1158,6 +1158,7 @@ function certbotDiagnosis(output: string, domain: string): string | undefined {
   // the remediation for an identical 404, so it is read before the branches.
   const challengeUrl = pick(/https?:\/\/\S*\.well-known\/acme-challenge\/\S*/i);
   const redirectedToHttps = /^https:/i.test(challengeUrl ?? "");
+  const challengeStatus = text.match(/invalid response from https?:\/\/\S+:\s*(\d{3})\b/i)?.[1];
 
   let diagnosis: string | undefined;
   if (isAcmePortBindFailure(text)) {
@@ -1183,6 +1184,13 @@ function certbotDiagnosis(output: string, domain: string): string | undefined {
       `hasn't exited — retry, and if it persists find the holder with ` +
       `\`ss -ltnp | grep ${ACME_HTTP01_PORT}\` and stop it. Nothing was requested from ` +
       `Let's Encrypt, so this is not a DNS or routing problem.`;
+  } else if (challengeStatus === "502" || challengeStatus === "504") {
+    diagnosis =
+      `The certificate challenge for ${domain} returned HTTP ${challengeStatus}` +
+      (redirectedToHttps ? " after being redirected to HTTPS. " : ". ") +
+      `A gateway could not reach its challenge responder. Check forwarding for ` +
+      `/.well-known/acme-challenge/ and that Openship's temporary listener on port ${ACME_HTTP01_PORT} ` +
+      `is reachable from the edge, then retry. This response alone does not establish a port-80 conflict.`;
   } else if (/timeout during connect|connection refused|failed to connect|Timeout/i.test(text)) {
     diagnosis =
       `Port 80 for ${domain} isn't reachable from the internet — a firewall / cloud security group ` +
