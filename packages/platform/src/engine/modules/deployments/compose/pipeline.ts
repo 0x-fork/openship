@@ -35,6 +35,9 @@ import { recordRuntimeImageReceipts } from "../../../lib/runtime-image-receipts"
 import type { BuildConfigSnapshotLike } from "../build-config";
 import {
   cleanupBuildArtifact,
+  beginBuildTiming,
+  completeBuildTiming,
+  finishServiceDeploymentTimings,
   collectLogs,
   onCancelled,
   onFailure,
@@ -299,6 +302,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   throwIfDeploymentCancelled(opts.signal);
   const keepProvisionedOnCancel = () => deploymentCancellationKeepsProvisioned(opts.signal);
 
+  beginBuildTiming(ctx);
   const composeBuild = await buildComposeImages({
     project,
     dep,
@@ -318,11 +322,14 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     targetServiceIds,
     refreshServiceIds,
     signal: opts.signal,
+    onBuildMeasured: (durationMs) => completeBuildTiming(ctx, durationMs),
   });
+  completeBuildTiming(ctx, composeBuild.durationMs);
 
   try {
     await opts.onBuildFinished?.();
   } catch (error) {
+    await finishServiceDeploymentTimings(ctx);
     await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
     throw error;
   }
@@ -331,6 +338,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // terminal-state guard, so without this the cancelled row would be flipped back
   // to "deploying" and the services the user cancelled would start anyway.
   if (composeBuild.cancelled || opts.signal?.aborted) {
+    await finishServiceDeploymentTimings(ctx);
     if (!keepProvisionedOnCancel()) {
       await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
     }
@@ -343,6 +351,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   const capacityFailure = composeBuild.buildErrorCauses
     ?.map(cause => cloudCapacityFailure(cause, project.id, buildResources)).find(Boolean);
   if (capacityFailure) {
+    await finishServiceDeploymentTimings(ctx);
     await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger);
     throw capacityFailure;
   }
@@ -351,6 +360,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // image failed to build, stop before the first service cutover instead of
   // updating only the successful half of the requested cohort.
   if (strictScope && composeBuild.buildFailures.size > 0) {
+    await finishServiceDeploymentTimings(ctx);
     const detail = [...composeBuild.buildFailures.values()].join("; ");
     const message = `Coordinated service deployment aborted before cutover because image preparation failed: ${detail}`;
     logger.log(`${message}\n`, "error");
@@ -433,6 +443,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
       signal: opts.signal,
     });
   } catch (err) {
+    await finishServiceDeploymentTimings(ctx);
     if (err instanceof ServiceCutoverRecoveryError) {
       if (opts.signal?.aborted) {
         await onCancelled(ctx, composeBuild.durationMs, { keepProvisioned: true });
@@ -492,6 +503,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
     await onCancelled(ctx, composeBuild.durationMs, { keepProvisioned: preserved });
   };
   if (opts.signal?.aborted) {
+    await finishServiceDeploymentTimings(ctx);
     await cancelAfterCutover();
     return;
   }
@@ -523,6 +535,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   );
 
   if (composeResult.status === "failed") {
+    await finishServiceDeploymentTimings(ctx);
     if (!deploymentArtifacts(dep.meta)) await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger, publishedServiceIds);
     await onFailure(ctx, composeResult.error ?? "Compose deploy failed", composeBuild.durationMs,
       deploymentResourceFailure({ project, message: composeResult.error ?? "", causes: composeBuild.buildErrorCauses }));

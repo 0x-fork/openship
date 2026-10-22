@@ -1488,6 +1488,9 @@ async function deployComposeServicesCore(
   const isNewerThanRelease = newerThanRestoredRelease(dep);
   type PreparedImage = Awaited<ReturnType<DockerRuntime["prepareDeploymentImage"]>> & { requestedRef: string };
   const preparedImages = new Map<string, PreparedImage>();
+  // Preparation can precede the carry decision. Keep starts local until a
+  // service actually deploys, so a refreshed but unchanged image has no clock.
+  const imagePreparationStartedAt = new Map<string, Date>();
   // Freeze the entire replacement cohort before activation. First capture
   // retained artifacts, so refreshing a shared tag cannot change a pinned
   // service's image. Then acquire registry images, including missing digests.
@@ -1532,28 +1535,49 @@ async function deployComposeServicesCore(
         refresh: !outsideScope });
     }
     const byRef = new Map<string, Awaited<ReturnType<DockerRuntime["prepareDeploymentImage"]>>>();
+    const startedAtByRef = new Map<string, Date>();
     for (const { service, image, requestedRef, retained, refresh } of candidates.sort((a, b) => Number(b.retained) - Number(a.retained))) {
       throwIfDeploymentCancelled(opts?.signal);
       const key = `${retained ? "retained" : refresh ? "registry" : "existing"}\0${image}`;
+      const startedAt = startedAtByRef.get(key) ?? new Date();
+      startedAtByRef.set(key, startedAt);
+      imagePreparationStartedAt.set(service.id, startedAt);
       let prepared = byRef.get(key);
-      if (!prepared) {
-        logger.log(`Preparing image ${image} before service cutover...\n`);
-        const started = Date.now();
-        const heartbeat = setInterval(() => logger.log(`Still preparing ${image} (${Math.floor((Date.now() - started) / 1000)}s)...\n`), 15_000);
-        heartbeat.unref?.();
-        const policy = refresh ? deploymentImagePullPolicy(dep, opts?.forcePullImages, image)
-          : { force: false, refreshMutableTag: false };
-        try {
-          prepared = await runtime.prepareDeploymentImage(image, {
-            ...policy, requirePresent: retained, signal: opts?.signal, logger,
-          });
-          logger.log(`Image ${image} is ready (${Math.floor((Date.now() - started) / 1000)}s).\n`);
-        } finally {
-          clearInterval(heartbeat);
+      try {
+        if (!prepared) {
+          logger.log(`Preparing image ${image} before service cutover...\n`);
+          const started = Date.now();
+          const heartbeat = setInterval(() => logger.log(`Still preparing ${image} (${Math.floor((Date.now() - started) / 1000)}s)...\n`), 15_000);
+          heartbeat.unref?.();
+          const policy = refresh ? deploymentImagePullPolicy(dep, opts?.forcePullImages, image)
+            : { force: false, refreshMutableTag: false };
+          try {
+            prepared = await runtime.prepareDeploymentImage(image, {
+              ...policy, requirePresent: retained, signal: opts?.signal, logger,
+            });
+            logger.log(`Image ${image} is ready (${Math.floor((Date.now() - started) / 1000)}s).\n`);
+          } finally {
+            clearInterval(heartbeat);
+          }
+          byRef.set(key, prepared);
         }
-        byRef.set(key, prepared);
+        throwIfDeploymentCancelled(opts?.signal);
+        preparedImages.set(service.id, { ...prepared, requestedRef });
+      } catch (error) {
+        // A preparation refusal aborts the cohort before activation. Start only
+        // this attempted service and freeze measured clocks before cleanup;
+        // preserve the original error and every runtime/outcome field.
+        const finishedAt = new Date();
+        try {
+          await repos.service.startServiceDeploymentTiming({
+            deploymentId: dep.id, serviceId: service.id, serviceName: service.name, startedAt,
+          });
+          await repos.service.finishStartedServiceDeploymentTimings(dep.id, finishedAt);
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "platform/engine/modules/deployments/compose/deploy.service");
+        }
+        throw error;
       }
-      preparedImages.set(service.id, { ...prepared, requestedRef });
     }
     throwIfDeploymentCancelled(opts?.signal);
   }
@@ -2709,6 +2733,18 @@ async function deployComposeServicesCore(
         unavailableServiceNames.add(svc.name);
         await releasePendingPreparedHostPorts(svc.id);
         continue;
+      }
+
+      // Image-only deployments start here. Built services retain the clock
+      // already started during image preparation; untouched services skipped
+      // above never receive an invented elapsed duration.
+      try {
+        await repos.service.startServiceDeploymentTiming({
+          deploymentId: dep.id, serviceId: svc.id, serviceName: svc.name,
+          startedAt: imagePreparationStartedAt.get(svc.id),
+        });
+      } catch (error) {
+        observeCaughtError(error, "platform/engine/modules/deployments/compose/deploy.service");
       }
 
       // Layer service env, resolve required Compose templates, then expand

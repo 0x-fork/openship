@@ -161,6 +161,9 @@ describeDockerE2E("retry completed Docker artifacts without rebuilding", () => {
     }
     expect(latest?.status, latest?.errorMessage ?? "Retry did not settle").toBe("ready");
     expect(result.deployment_id).not.toBe(failed.id);
+    expect(latest?.buildDurationMs).toBe(0);
+    expect((await repos.deployment.findBuildSessionByDeploymentId(result.deployment_id))?.durationMs).toBe(0);
+    expect((await repos.deployment.findById(failed.id))?.buildDurationMs).toBe(123);
     const container = await runtime.docker.getContainer(latest!.containerId!).inspect();
     expect(container.State.Running).toBe(true);
     expect(container.Image).toBe(

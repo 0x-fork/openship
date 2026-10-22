@@ -456,6 +456,8 @@ export async function buildComposeImages(opts: {
    *  their existing image, so they're excluded from the build here. */
   refreshServiceIds?: Set<string>;
   signal?: AbortSignal;
+  /** Freeze the image phase before temporary build-context cleanup, including throws. */
+  onBuildMeasured?: (durationMs: number) => void;
 }): Promise<ComposeBuildImagesResult> {
   const services = await repos.service.listByProject(opts.project.id);
   const enabled = services.filter((service) => service.enabled);
@@ -475,6 +477,7 @@ export async function buildComposeImages(opts: {
   const buildErrorCauses: unknown[] = [];
   const cancelledServices = new Set<string>();
   const startedAt = Date.now();
+  let durationMs = 0;
 
   // Buildable = anything that needs a per-service image build.
   //   - Compose rows with a Dockerfile context (service.build set).
@@ -563,6 +566,17 @@ export async function buildComposeImages(opts: {
   const contextServices = cloudDocker
     ? [...new Map([...buildable, ...mountedInlineSources].map(service => [service.id, service])).values()]
     : buildable;
+  // A service's total lifecycle includes image preparation. Runtime outcome
+  // writers finish this same clock; carried/unchanged services never start one.
+  await Promise.all(buildable.map(async (service) => {
+    try {
+      await repos.service.startServiceDeploymentTiming({
+        deploymentId: opts.dep.id, serviceId: service.id, serviceName: service.name,
+      });
+    } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/deployments/compose/build.service");
+    }
+  }));
   const inlineBuilds = await materializeInlineBuildContexts(contextServices, Boolean(cloudDocker));
 
   try {
@@ -994,6 +1008,8 @@ export async function buildComposeImages(opts: {
       }
     }
   } finally {
+    durationMs = Math.max(0, Date.now() - startedAt);
+    opts.onBuildMeasured?.(durationMs);
     await inlineBuilds.cleanup();
   }
 
@@ -1008,6 +1024,6 @@ export async function buildComposeImages(opts: {
     buildErrorCauses,
     externalCount: external.length,
     cancelled: cancelledServices.size > 0,
-    durationMs: Date.now() - startedAt,
+    durationMs,
   };
 }
