@@ -46,6 +46,10 @@ it("recognizes only one inherited primary source app with private image infrastr
 it.each([
   ["second app", [app, database, { ...app, id: "second", name: "other" }]],
   ["built infrastructure", [app, { ...database, build: "." }]],
+  [
+    "inline-built infrastructure",
+    [app, { ...database, advanced: { build: { dockerfile: "FROM postgres:16-alpine" } } }],
+  ],
   ["public infrastructure", [app, { ...database, exposed: true }]],
   ["custom app environment", [{ ...app, environment: { SECRET: "must-not-drop" } }, database]],
   ["custom app command", [{ ...app, startCommand: "php artisan serve" }, database]],

@@ -3107,6 +3107,21 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
     refreshServiceIds = target.length > 0 ? target : undefined;
   }
 
+  // Changed-file routing may name the inherited app's service row. That is a
+  // normal application release, not a general Compose service action: retain
+  // the release/role engine and let it carry unchanged infrastructure. Exact
+  // hooks and explicit manual service selections retain their requested scope.
+  if (
+    !data.refresh && !reuse && serviceMode.primaryApp &&
+    finalServiceIds?.includes(serviceMode.primaryApp.app.id) &&
+    ((data.smartRoute && !data.serviceIds?.length) ||
+      (data.trigger === "webhook" && !data.strictServiceScope))
+  ) {
+    finalForceAll = true;
+    finalServiceIds = undefined;
+    refreshServiceIds = undefined;
+  }
+
   const dep = await createQueuedDeployment({
     analyticsActor: { userId: ctx.userId, source: ctx.source },
     projectId: project.id,

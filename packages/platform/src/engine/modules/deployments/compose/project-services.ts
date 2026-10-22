@@ -231,6 +231,7 @@ export function primaryAppWithInfrastructure(
         service.exposed ||
         service.build ||
         service.dockerfile ||
+        service.advanced?.build ||
         service.dependsOn?.includes(app.name) ||
         composeNamespaceDependencies(service.advanced).includes(app.name),
     )
