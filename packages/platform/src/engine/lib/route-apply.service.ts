@@ -144,6 +144,8 @@ export async function reconcileProjectRoutes(
     hostPortTarget?: HostPortTargetIdentity | null;
     /** Strict inventory for a pre-resolved routing target. */
     edgeProxy?: Pick<EdgeProxyApi, "listLoopbackUpstreamPortsStrict">;
+    /** The control plane's dashboard port; set only for the self-app's own routes. */
+    controlPlanePort?: number;
     registers?: RouteRegister[];
     removes?: RouteRemove[];
     /** Repair actions surface best-effort failures without rolling back saved routes. */
@@ -318,6 +320,7 @@ export async function reconcileProjectRoutes(
           projectId: project.id,
           runtime: resolved?.platform.runtime ?? opts.runtime,
           publishes: loopbackGuard.publishes,
+          controlPlanePort: opts.controlPlanePort,
         });
       }
 
