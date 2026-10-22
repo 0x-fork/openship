@@ -123,15 +123,15 @@ vi.mock("@repo/platform/engine/modules/deployments/observed-host-port-claims", (
 vi.mock("@repo/platform/engine/modules/deployments/readiness-probe", () => ({
   probeDeployedReadiness: (...args: unknown[]) => h.probeDeployedReadiness(...args),
 }));
-vi.mock("@repo/platform/engine/modules/domains/routing-apply.service", async (original) => ({
-  ...await original<typeof import("@repo/platform/engine/modules/domains/routing-apply.service")>(),
-  applyProjectRouting: (...args: unknown[]) => h.applyProjectRouting(...args),
-}));
 vi.mock("@repo/platform/engine/modules/domains/project-route.service", () => ({
   reapplyProjectLiveRoutes: (...args: unknown[]) => h.reapplyProjectLiveRoutes(...args),
 }));
 
 const { resolveServerExecutor } = await import("@repo/platform/engine/lib/deployment-runtime");
+// Spy after the shared runtime has loaded; an eager partial-module mock would
+// await that same runtime through routing's circular import during collection.
+const routingApply = await import("@repo/platform/engine/modules/domains/routing-apply.service");
+vi.spyOn(routingApply, "applyProjectRouting").mockImplementation((...args) => h.applyProjectRouting(...args));
 const { deployComposeServices } =
   await import("@repo/platform/engine/modules/deployments/compose/deploy.service");
 const { DockerRuntime, CloudDockerRuntime } = await import("@repo/adapters");
