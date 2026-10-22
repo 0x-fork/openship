@@ -33,7 +33,10 @@ function hostnameOf(input: string): string {
   return hostname;
 }
 
-async function selfHostedProject(ctx: ExecutionContext, id: string): Promise<Project> {
+async function selfHostedProject(
+  ctx: Pick<ExecutionContext, "organizationId">,
+  id: string,
+): Promise<Project> {
   const project = await repos.project.findById(id);
   assertResourceInOrg(project, "Project", ctx.organizationId, id);
   const target = await resolveProjectDeployTarget(project);
@@ -95,7 +98,7 @@ function privatePolicy(row: { enabled: boolean; secret: string | null }): RouteP
 
 /** Preview settings contain only a reference to an existing encrypted policy. */
 export async function readPreviewRouteProtection(
-  ctx: ExecutionContext,
+  ctx: Pick<ExecutionContext, "organizationId">,
   source: Project,
   settings = source.previewSettings,
 ) {
@@ -120,13 +123,13 @@ export async function readPreviewRouteProtection(
     );
   const row = await repos.routeProtection.readPrivate(source.id, hostname);
   const policy = row && privatePolicy(row);
-  if (!policy)
+  if (!row || !policy)
     throw new AppError(
       "Save a password for the selected source hostname before enabling protected previews.",
       409,
       "PREVIEW_ROUTE_PROTECTION_REQUIRED",
     );
-  return { row: row!, policy };
+  return { row, policy };
 }
 
 /** No plaintext password or source session key is copied into a preview. A
@@ -150,11 +153,17 @@ export async function inheritPreviewRouteProtection(projectId: string, hostname:
   const child = await repos.project.findByIdInOrganization(projectId, intent.organizationId);
   if (!child || child.environmentType !== "preview")
     throw new AppError("Preview ownership is invalid.", 409, "PREVIEW_ROUTE_PROTECTION_REQUIRED");
-  await selfHostedProject({ organizationId: intent.organizationId } as ExecutionContext, child.id);
-  const inherited = (await readPreviewRouteProtection(
-    { organizationId: intent.organizationId } as ExecutionContext,
+  await selfHostedProject({ organizationId: intent.organizationId }, child.id);
+  const inherited = await readPreviewRouteProtection(
+    { organizationId: intent.organizationId },
     source,
-  ))!;
+  );
+  if (!inherited)
+    throw new AppError(
+      "Preview password protection is unavailable.",
+      409,
+      "PREVIEW_ROUTE_PROTECTION_REQUIRED",
+    );
   const domain = hostnameOf(hostname);
   const scope = JSON.stringify([source.id, inherited.row.revision, child.id, domain]);
   const revision = createHash("sha256").update(scope).digest("hex");

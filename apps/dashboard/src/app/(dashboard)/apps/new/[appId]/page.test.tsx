@@ -639,6 +639,7 @@ it("applies the confirmed port-only choice to an adopted draft without recreatin
 it.each([
   { cloud: true, deployTarget: "cloud", serverId: "managed-host", workspaceId: "paid-workspace" },
   { cloud: false, deployTarget: "server", serverId: "saved-host", workspaceId: undefined },
+  { cloud: true, deployTarget: "server", serverId: "customer-host", workspaceId: undefined },
 ])("restores the saved $deployTarget host when installing a draft", async ({ cloud, ...placement }) => {
   h.info.mockResolvedValue({ data: { project: { slug: "saved-app", ...placement } } });
   await renderApp({ cloud, draft: true });
@@ -860,6 +861,7 @@ it.each(["install", "advanced"])(
   "checks the renamed instance instead of an unrelated draft: %s",
   async (action) => {
     h.cloud = true;
+    h.info.mockResolvedValue({ data: { project: { slug: "supabase", serverId: "managed-server", workspaceId: "managed-workspace", deployTarget: "cloud" } } });
     h.appId = "supabase";
     h.query = "";
     h.template.mockResolvedValue({

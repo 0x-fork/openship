@@ -34,6 +34,9 @@ vi.mock("@repo/platform/engine/modules/deployments/compose/deploy.service", () =
   composeDeployMadeNoChanges: () => false,
 }));
 vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
+  beginBuildTiming: vi.fn(),
+  completeBuildTiming: vi.fn(),
+  finishServiceDeploymentTimings: vi.fn(),
   cleanupBuildArtifact: vi.fn(),
   collectLogs: vi.fn(),
   onCancelled: vi.fn(),
@@ -47,6 +50,7 @@ vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => 
 
 import { executeComposePipeline } from "@repo/platform/engine/modules/deployments/compose/pipeline";
 import { encrypt } from "@repo/platform/engine/lib/encryption";
+import { loadServiceDeployEnvironment } from "@repo/platform/engine/modules/deployments/compose/required-env-preflight";
 
 function service(
   name: string,
@@ -111,6 +115,19 @@ beforeEach(() => {
 });
 
 describe("required Compose environment before image preparation", () => {
+  it("retries the built image with the normal service-scoped secret loader", async () => {
+    state.env.api = sealed({ SERVICE_TOKEN: "fixed-runtime-token" });
+    const resolved = await loadServiceDeployEnvironment({
+      projectId: "project",
+      dep: { trigger: "retry", environment: "production", meta: { retryBuildFromDeploymentId: "old" } },
+      service: service("api", {}) as never,
+      projectEnv: { PROJECT_TOKEN: "current-project-value" },
+      frozenEnv: { PROJECT_TOKEN: "saved-build-value" },
+      logger: new BuildLogger(() => {}),
+    });
+    expect(resolved.env).toMatchObject({ PROJECT_TOKEN: "saved-build-value", SERVICE_TOKEN: "fixed-runtime-token" });
+  });
+
   it("reports every missing key across source/image services before any build, pull or cutover", async () => {
     state.services = [
       service("api", { MAIL: "${MAIL:?private-custom-message}", BILLING: "${BILLING:?required}" }),

@@ -5,7 +5,7 @@ import { Value } from "@sinclair/typebox/value";
 vi.mock("@repo/platform/engine/lib/oblien-client", () => ({ getOblienClient() { throw new Error("Capacity must be provider-enforced, not computed from owner resources"); } }));
 import { cloudPlan, presentCloudPlans, subscriptionMetadata, subscriptionOffer, subscriptionPlan, topupOffer } from "@repo/platform/engine/modules/billing/billing-catalog";
 import type { OblienSubscription } from "@repo/platform/engine/lib/oblien-billing-api";
-import { savedOffer, savedMetadata } from "../../../test/helpers/saved-cloud-offer";
+import { savedOffer, savedMetadata, savedMonthlyHobby } from "../../../test/helpers/saved-cloud-offer";
 import capacityFixture from "../../../test/fixtures/oblien-capacity-catalog.json";
 import { oblienCapacityCatalogSchema } from "@repo/platform/engine/lib/oblien-capacity";
 
@@ -38,7 +38,7 @@ describe("funded Cloud offers and isolated capacity", () => {
     expect(presentCloudPlans().computePricing).toBeUndefined();
   });
   it("sells the approved monthly prices with explicit pools and no credit policy", () => {
-    for (const tier of ["hobby", "starter", "pro", "team"] as const) {
+    for (const tier of ["starter", "pro", "team"] as const) {
       const offer = subscriptionOffer(tier, "monthly");
       expect(offer.credits).toBe(0);
       expect(offer.billingMode).toBe("monthly");
@@ -57,7 +57,7 @@ describe("funded Cloud offers and isolated capacity", () => {
   it.each([
     ["hobby", 1, 4096, 25], ["starter", 2, 8192, 32], ["pro", 4, 16384, 128], ["team", 8, 32768, 256],
   ] as const)("retains the saved monthly v9 %s allocation after publishing v11", async (tier, vcpus, memoryMb, diskGb) => {
-    const offer = subscriptionOffer(tier, "monthly");
+    const offer = tier === "hobby" ? savedMonthlyHobby() : subscriptionOffer(tier, "monthly");
     const metadata = subscriptionMetadata(tier, "org-a", "ns-a");
     offer.reference = `openship:${tier}:v9`;
     offer.capacity = { vcpus, memoryMb, diskGb, workspaces: 1 };
@@ -75,7 +75,8 @@ describe("funded Cloud offers and isolated capacity", () => {
       price: { monthly: offer.unitAmount }, billingMode: "monthly", resourceLimits: offer.resourceLimits,
     });
     expect(subscription).toEqual(before);
-    expect(subscriptionOffer(tier, "monthly").reference).not.toBe(offer.reference);
+    if (tier === "hobby") expect(() => subscriptionOffer(tier, "monthly")).toThrow(/existing subscriptions/);
+    else expect(subscriptionOffer(tier, "monthly").reference).not.toBe(offer.reference);
     expect(() => subscriptionPlan(subscription, "org-b", "ns-a")).toThrow(/could not be verified/);
   });
   it.each(["9", "10"])("rejects metered terms under a monthly v%s reference", version => {
@@ -217,7 +218,7 @@ describe("funded Cloud offers and isolated capacity", () => {
     expect(() => subscriptionPlan(savedPro(), "org-a", "ns-b")).toThrow(/could not be verified/);
   });
   it("publishes Hobby with 40 GB while preserving the paid v5 storage and credits", async () => {
-    const offer = subscriptionOffer("hobby", "monthly");
+    const offer = savedMonthlyHobby();
     expect(offer).toMatchObject({ reference: "openship:hobby:v11", unitAmount: 500, credits: 0, billingMode: "monthly",
       resourceLimits: { max_disk_gb: 40, max_total_disk_gb: 40 } });
     const subscription = { ...savedPro(), offer: savedOffer("hobby", "monthly"), metadata: savedMetadata("hobby", "org-a", "ns-a") };

@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
+    "test:metadata": "node ../../scripts/check-web-social-metadata.mjs",
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {

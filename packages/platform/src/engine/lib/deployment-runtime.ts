@@ -1,3 +1,4 @@
+import { assertManagementAccess } from "../modules/billing/management.service";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import {
   createPlatform,
@@ -286,6 +287,7 @@ async function serverTargetTopology(server: OrgServer, organizationId?: string) 
     "Resolve this managed server through its deployment destination", 409, "MANAGED_SERVER_CONTEXT_REQUIRED");
   if (!server.sshHost) throw new AppError("Server connection is missing", 409, "SERVER_CONNECTION_MISSING");
   const isLocal = await isLocalHostRow(server);
+  if (env.CLOUD_MODE && !isLocal) await assertManagementAccess(organizationId!, server.id);
   if (isLocal) await assertLocalDeploymentAccess(organizationId);
   return { server, isLocal };
 }
@@ -374,7 +376,7 @@ export function resolveEffectiveTarget(
   // (base "cloud") reaches its workloads via the cloud API instead of SSH. This
   // is what makes a desktop→remote-server deploy's edge/SSL run on the SERVER
   // (over SSH), not silently fall back to the laptop's noop provider.
-  if (base !== "cloud" && snapshot.serverId) return "server";
+  if (snapshot.serverId) return "server";
   if (base === "desktop") return snapshot.deployTarget ?? "cloud";
   if (base === "selfhosted") {
     // UI chose "server" target but serverId may be missing → still route to SSH
@@ -439,12 +441,13 @@ export async function resolveExecutionDestination(
       server,
     };
   }
-  if (snapshot.managedWorkspaceId || snapshot.managedServer || snapshot.deployTarget === "cloud" || env.CLOUD_MODE)
+  if (snapshot.managedWorkspaceId || snapshot.managedServer || snapshot.deployTarget === "cloud")
     throw new AppError(
       "This server is not owned by the selected Cloud workspace",
       409,
       "CLOUD_WORKSPACE_TARGET_CONFLICT",
     );
+  if (env.CLOUD_MODE) await assertManagementAccess(organizationId, server.id);
   return { snapshot, server };
 }
 
@@ -458,7 +461,7 @@ export function usesManagedRouting(
   // pages/edge, not the local proxy.
   return (
     (effectiveTarget === "server" || effectiveTarget === "local" || effectiveTarget === "cluster") &&
-    (base === "selfhosted" || base === "desktop")
+    (effectiveTarget === "server" || base === "selfhosted" || base === "desktop")
   );
 }
 
@@ -680,6 +683,10 @@ async function createPlatformForResolvedServer(
     runtime: runtimeMode,
     executor,
     ssh: ssh!,
+    bare: { allowHostBuild: !env.CLOUD_MODE, ...(env.CLOUD_MODE ? { prepareSource: async (build, directory, logger) => {
+      const { prepareRemoteSource } = await import("@repo/adapters");
+      return prepareRemoteSource({ executor }, build, directory, logger);
+    } } : {}) },
     docker:
       runtimeMode === "docker"
         ? { ...toDockerSshTransport(ssh!, executor), resolveRegistryAuth }

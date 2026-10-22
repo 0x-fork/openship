@@ -36,6 +36,9 @@ export interface ResourceConfig {
   memoryMb: number;
   /** Writable disk in megabytes */
   diskMb: number;
+  /** Docker-only opt-in: run the container with no swap (MemorySwap = Memory).
+   *  Requires a positive `memoryMb`. */
+  swapDisabled?: boolean;
 }
 
 /** CLOUD-ONLY production default (the metered free tier). Deliberately small: a
@@ -224,6 +227,8 @@ export interface BuildConfig {
   resources: ResourceConfig;
   /** Ephemeral token for cloning private repos - never persisted */
   gitToken?: string;
+  /** Server-authorized expanded App repository grant, never persisted. */
+  gitTokenRepositories?: string[];
   /**
    * Desktop-only: absolute path to a git credential-helper script on the
    * REMOTE build host (written by the deploy git-credential relay). When set,
@@ -503,7 +508,7 @@ export interface ContainerInfo {
   usage?: ResourceUsage;
   /** Applied limits, independent of usage or the next deployment's settings.
    * Zero means unlimited; undefined means the runtime could not report them. */
-  resources?: { cpuCores: number; memoryMb: number };
+  resources?: { cpuCores: number; memoryMb: number; swapDisabled?: boolean };
 }
 
 export interface ResourceUsage {

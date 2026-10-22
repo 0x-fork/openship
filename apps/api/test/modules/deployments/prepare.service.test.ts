@@ -37,6 +37,18 @@ describe("resolveProjectInfo", () => {
     return path;
   }
 
+  it.each([true, false])("retains service swapDisabled=%s through source detection", async swapDisabled => {
+    const path = await mkdtemp(join(tmpdir(), "openship-swap-source-"));
+    tempDirs.push(path);
+    await writeFile(join(path, "openship.json"), JSON.stringify({
+      services: [{ name: "vault", image: "example/vault:1", resources: {
+        ...(swapDisabled ? { memoryMb: 1024 } : {}), swapDisabled,
+      } }],
+    }));
+    const detected = await resolveProjectInfo({ source: "local", path });
+    expect(detected.services?.[0]?.advanced?.resources?.swapDisabled).toBe(swapDisabled);
+  });
+
   it("suggests framework roles without enabling them and respects an explicit opt-out", async () => {
     const path = await mkdtemp(join(tmpdir(), "openship-role-suggestions-"));
     tempDirs.push(path);

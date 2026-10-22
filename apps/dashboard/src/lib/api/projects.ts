@@ -10,7 +10,13 @@ import type {
   WorkloadType,
   DeploymentHistoryQuery,
 } from "@repo/core";
-import type { DeploymentPage, ProjectControlOperations, RollbackCapacity } from "@repo/contracts";
+import type {
+  DeploymentPage,
+  ProjectControlOperations,
+  RollbackCapacity,
+  RouteProtectionInput,
+  RouteProtectionStatus,
+} from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type { ReleaseImageSource } from "../release-image-source";
 import {
@@ -46,6 +52,7 @@ export interface PendingAction {
     | "prompt"
     | "partial_decision"
     | "routing_unsynced"
+    | "runtime_health"
     | "domain_unverified"
     | "ssl_error"
     | "port_advisory";
@@ -565,9 +572,9 @@ export const projectsApi = {
 
   /* ── Route rules (self-hosted edge: rate-limit / ban / allow-deny) ── */
   listRouteProtection: (id: string | number) =>
-    api.get<{ data: import("@repo/contracts").RouteProtectionStatus[] }>(`/projects/${id}/route-protection`),
-  changeRouteProtection: (id: string | number, body: import("@repo/contracts").RouteProtectionInput) =>
-    api.put<{ data: import("@repo/contracts").RouteProtectionStatus }>(`/projects/${id}/route-protection`, body),
+    api.get<{ data: RouteProtectionStatus[] }>(`/projects/${id}/route-protection`),
+  changeRouteProtection: (id: string | number, body: RouteProtectionInput) =>
+    api.put<{ data: RouteProtectionStatus }>(`/projects/${id}/route-protection`, body),
   listRouteRules: (id: string | number) =>
     api.get<{ rules: RouteRuleRow[] }>(endpoints.projects.routeRules(id)),
   createRouteRule: (id: string | number, body: RouteRuleInput) =>

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import Docker from "dockerode";
 import { request as httpsRequest, Agent } from "node:https";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { PassThrough } from "node:stream";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -61,7 +61,7 @@ async function write(path: string, contents: string, mode = 0o644) {
     `mkdir -p ${sq(path.substring(0, path.lastIndexOf("/")))} && (umask 077; printf %s ${sq(Buffer.from(contents).toString("base64"))} | base64 -d > ${sq(path)}) && chmod ${mode.toString(8)} ${sq(path)}`,
   );
 }
-type Answer = { status: number; headers: import("node:http").IncomingHttpHeaders; body: string };
+type Answer = { status: number; headers: IncomingHttpHeaders; body: string };
 function ask(
   path = "/",
   options: {

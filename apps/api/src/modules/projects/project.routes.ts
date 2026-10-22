@@ -144,7 +144,6 @@ r.get(
   "/:id/route-rules",
   {
     tag: "project:read",
-    localOnly: true,
     mcp: {
       description:
         "List project edge rules for rate limits, access restrictions and traffic filtering.",
@@ -156,7 +155,6 @@ r.post(
   "/:id/route-rules",
   {
     tag: "project:write",
-    localOnly: true,
     body: RouteRuleInputSchema,
     auditHandledByOperation: true,
     mcp: {
@@ -170,7 +168,6 @@ r.patch(
   "/:id/route-rules/:ruleId",
   {
     tag: "project:write",
-    localOnly: true,
     auditHandledByOperation: true,
     mcp: {
       description:
@@ -184,7 +181,6 @@ r.delete(
   "/:id/route-rules/:ruleId",
   {
     tag: "project:write",
-    localOnly: true,
     auditHandledByOperation: true,
     mcp: {
       description:
@@ -199,10 +195,9 @@ r.get(
   "/:id/incidents",
   {
     tag: "project:read",
-    localOnly: true,
     mcp: {
       description:
-        "Container runtime health for this project: OPEN incidents (a workload the health watch found `unhealthy`, `crash_loop`, or `down`, each with its reason, exit code, restart count, OOM flag and a log excerpt) plus recently-resolved ones. Two fields decide whether an empty list means anything, so always read them: `watching` is false when health monitoring is turned OFF — with it off, the absence of incidents is NOT evidence of health; `serverUnreachable` is non-null when the box itself is unreachable, in which case this project's rows are frozen and stale (nothing is being observed). Read this whenever a project looks unhealthy, or a deploy that reported success still isn't serving — it reports the RUNTIME state and complements the pending-actions tool (which covers deploy/domain/routing items that each carry a concrete fix). Incidents auto-resolve when the workload recovers; the usual move for an open one is to redeploy or inspect its `logExcerpt`. Self-hosted only.",
+        "Container runtime health for this project: OPEN incidents (a workload the health watch found `unhealthy`, `crash_loop`, or `down`, each with its reason, exit code, restart count, OOM flag and a log excerpt) plus recently-resolved ones. Two fields decide whether an empty list means anything, so always read them: `watching` is false when health monitoring is turned OFF — with it off, the absence of incidents is NOT evidence of health; `serverUnreachable` is non-null when the box itself is unreachable, in which case this project's rows are frozen and stale (nothing is being observed). Read this whenever a project looks unhealthy, or a deploy that reported success still isn't serving — it reports the RUNTIME state and complements the pending-actions tool (which covers deploy/domain/routing items that each carry a concrete fix). Incidents auto-resolve when the workload recovers; the usual move for an open one is to redeploy or inspect its `logExcerpt`. For customer-owned servers, including hosted Manage.",
     },
   },
   incidents.listProjectIncidents,

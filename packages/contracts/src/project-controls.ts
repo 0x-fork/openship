@@ -254,6 +254,7 @@ export const ProjectPendingActionSchema = Type.Object({
         "prompt",
         "partial_decision",
         "routing_unsynced",
+        "runtime_health",
         "domain_unverified",
         "ssl_error",
         "port_advisory",
@@ -376,6 +377,7 @@ export const ProjectControlSchemas = {
   },
   listDeployments: {
     action: "read",
+    capability: "deployments:read",
     input: Type.Object({
       ...DeploymentHistoryFilters,
       page: Type.Optional(Type.Integer({ minimum: 1 })),

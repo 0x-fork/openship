@@ -244,3 +244,5 @@ export async function getSubscription(ctx: ExecutionContext, input: BillingScope
     };
 }
 function invalidInput(message: string): never { throw new ValidationError(message); }
+
+export { resumeManagementCheckout, cancelManagementChange, getManagement, purchaseManagement, confirmManagementChange, cancelManagementCheckout, cancelManagementSubscription, resumeManagementSubscription, createManagementPortal } from "./management.service";

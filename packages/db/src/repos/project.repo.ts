@@ -13,6 +13,7 @@ import { personalAccessTokenGrant } from "../schema/personal-access-token-grant"
 import { personalAccessToken } from "../schema/personal-access-token";
 import { assertCloudWorkspacePlacement } from "./cloud-workspace.repo";
 import { projectWorkspaceScope } from "./workspace-scope";
+import { assertProjectSwapResources } from "./service-swap-resources";
 import { assertProjectConfigurationWritable, withProjectConfigurationWrite } from "./project-work-admission";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -512,6 +513,9 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
 
     async update(id: string, data: Partial<NewProject>) {
       await withProjectConfigurationWrite(db, eq(project.id, id), async (tx) => {
+        if (data.resources !== undefined) {
+          await assertProjectSwapResources(tx, eq(project.id, id), data.resources, codec);
+        }
         if (data.workspaceId !== undefined) {
           const current = await tx.query.project.findFirst({ where: eq(project.id, id) });
           if (current && data.workspaceId !== current.workspaceId) throw new Error("Changing a project's Cloud workspace requires an explicit migration");
@@ -540,10 +544,12 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
 
     async updateByApp(groupId: string, data: Partial<NewProject>) {
       const predicate = and(eq(project.groupId, groupId), isNull(project.deletedAt))!;
-      await withProjectConfigurationWrite(db, predicate, async (tx) => tx
-        .update(project)
-        .set({ ...data, updatedAt: new Date() })
-        .where(predicate));
+      await withProjectConfigurationWrite(db, predicate, async (tx) => {
+        if (data.resources !== undefined) {
+          await assertProjectSwapResources(tx, predicate, data.resources, codec);
+        }
+        await tx.update(project).set({ ...data, updatedAt: new Date() }).where(predicate);
+      });
     },
 
     /** Update a source identity shared by every environment and its project_app
@@ -557,7 +563,11 @@ export function createProjectRepo(db: Database, encryption: ConfigurationEncrypt
     ) {
       const updatedAt = new Date();
       await db.transaction(async (tx) => {
-        await assertProjectConfigurationWritable(tx, and(eq(project.groupId, groupId), isNull(project.deletedAt))!);
+        const predicate = and(eq(project.groupId, groupId), isNull(project.deletedAt))!;
+        await assertProjectConfigurationWritable(tx, predicate);
+        if (projectData.resources !== undefined) {
+          await assertProjectSwapResources(tx, predicate, projectData.resources, codec);
+        }
         await tx
           .update(project)
           .set({ ...projectData, updatedAt })

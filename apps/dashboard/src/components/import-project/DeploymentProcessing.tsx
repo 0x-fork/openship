@@ -19,7 +19,7 @@ import { useI18n } from "@/components/i18n-provider";
 
 interface DeploymentProcessingProps {
   // Resolves to the new deployment id (navigates on success) or null on failure.
-  onRedeploy: () => void | Promise<string | null>;
+  onRedeploy: (options?: { reuseBuild?: boolean }) => void | Promise<string | null>;
 }
 
 const DeploymentProcessing: React.FC<DeploymentProcessingProps> = ({ onRedeploy }) => {
