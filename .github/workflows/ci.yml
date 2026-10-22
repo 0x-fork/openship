@@ -246,6 +246,9 @@ jobs:
       - name: Build documentation website
         run: bun run --cwd apps/web build
 
+      - name: Verify social preview images on public pages
+        run: bun run --cwd apps/web test:metadata
+
   # The webmail server's own suite, which nothing else runs.
   #
   # GH-220: apps/email/server/test/{sanitize,from-header,list-snippet}.test.ts had no
