@@ -521,7 +521,17 @@
     "authHmacDesc": "Callers sign the body with a shared secret (X-Signature-256).",
     "authNone": "Open",
     "authNoneDesc": "No auth — anyone with the URL can trigger it. Use with care.",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "changeReasons": {
+      "unrelated": "Only unrelated workspaces changed.",
+      "application": "Application files changed.",
+      "shared": "Shared build inputs changed.",
+      "included": "A configured include path changed.",
+      "excluded": "Changes do not match the configured path rules.",
+      "unknown": "Changes could not be verified; deployment kept enabled.",
+      "initial": "Initial deployment.",
+      "forced": "A full deployment was requested."
+    }
   },
   "health": {
     "title": "Health",

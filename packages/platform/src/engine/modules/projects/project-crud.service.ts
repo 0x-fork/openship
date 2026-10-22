@@ -66,7 +66,7 @@ import {
   getWebhookStrategy,
   resolveWebhookStrategy,
 } from "../github/github.service";
-import { projectMatchesChanges } from "../github/webhook-changed-files";
+import { resolveProjectChangeImpact } from "../github/project-change-impact";
 import { getInstallationIdByOrg, resolveInstallUrl } from "../github/github.auth";
 import { hasActiveGitHubSource, resolveGitHubWebBaseUrl } from "../github/github-source.service";
 import { domainWebhookUrl } from "../../lib/public-url";
@@ -2531,7 +2531,7 @@ export async function evaluateDrift(
     if (behind && ctx && root) {
       const compare = await compareCommits(ctx, p.gitOwner!, p.gitRepo!, deployedSha!, latestSha!);
       if (compare && !compare.truncated) {
-        behind = projectMatchesChanges(root, compare.files, p.monorepoSharedPaths);
+        behind = (await resolveProjectChangeImpact(ctx, p, compare.files, latestSha)).affected;
       }
     }
     const latestInProgress = Boolean(

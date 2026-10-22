@@ -35,6 +35,7 @@ import {
   type OpenshipService,
   type ParseResult,
 } from "./schema";
+import { normalizeRepoPattern } from "../source-access";
 import { validateImageReference } from "../project-source";
 import { isValidEnvKey, normalizeProjectRootDirectory } from "../utils";
 import { isRuntimeVersion, runtimeVersionError } from "../runtime-version";
@@ -46,6 +47,7 @@ const TOP_LEVEL_KEYS = new Set([
   "framework",
   "packageManager",
   "rootDirectory",
+  "autoDeployPaths",
   "composePath",
   "installCommand",
   "buildCommand",
@@ -664,6 +666,39 @@ function parseRuntimeVersion(ctx: Ctx, raw: unknown): string | undefined {
   return raw;
 }
 
+function parseAutoDeployPaths(ctx: Ctx, raw: unknown): OpenshipConfig["autoDeployPaths"] {
+  if (raw === undefined) return undefined;
+  if (!ctx.isObj(raw)) {
+    ctx.err("autoDeployPaths", "must be an object");
+    return undefined;
+  }
+  const result: NonNullable<OpenshipConfig["autoDeployPaths"]> = {};
+  for (const key of Object.keys(raw))
+    if (key !== "include" && key !== "exclude")
+      ctx.err(`autoDeployPaths.${key}`, "is not supported");
+  for (const key of ["include", "exclude"] as const) {
+    const patterns = ctx.strArray(raw[key], `autoDeployPaths.${key}`);
+    if (!patterns) continue;
+    if (patterns.length > 50) ctx.err(`autoDeployPaths.${key}`, "must have at most 50 patterns");
+    result[key] = [];
+    for (const pattern of patterns) {
+      const normalized = normalizeRepoPattern(pattern);
+      if (
+        !normalized ||
+        pattern.length > 200 ||
+        pattern.startsWith("/") ||
+        /[?!\[\]{}]/.test(pattern)
+      )
+        ctx.err(
+          `autoDeployPaths.${key}`,
+          "use repo-relative paths with * or **, without traversal or other glob operators",
+        );
+      else result[key]!.push(normalized);
+    }
+  }
+  return result;
+}
+
 /** Parse + validate raw `openship.json` JSON (already `JSON.parse`d) into a config. */
 export function parseOpenshipConfig(raw: unknown): ParseResult {
   const ctx = new Ctx();
@@ -679,6 +714,7 @@ export function parseOpenshipConfig(raw: unknown): ParseResult {
     framework: ctx.enumOf(raw.framework, "framework", STACK_IDS),
     packageManager: parsePackageManager(ctx, raw.packageManager, "packageManager"),
     rootDirectory: ctx.str(raw.rootDirectory, "rootDirectory"),
+    autoDeployPaths: parseAutoDeployPaths(ctx, raw.autoDeployPaths),
     composePath: ctx.str(raw.composePath, "composePath"),
     installCommand: ctx.str(raw.installCommand, "installCommand"),
     buildCommand: ctx.str(raw.buildCommand, "buildCommand"),

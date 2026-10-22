@@ -3727,3 +3727,261 @@ describe("operator-trusted proxies on a container edge", () => {
     expect(files.has(INCLUDE)).toBe(false);
   });
 });
+
+
+describe("inherited TLS certificate read safety", () => {
+  const parent = "/etc/letsencrypt/live/*.example.com";
+  const child = "/etc/letsencrypt/live/app.example.com";
+  const certificate = `ssl_certificate ${parent}/fullchain.pem;`;
+
+  function installParent(files: Map<string, string>, days = 2) {
+    const pair = makeTestCert(["*.example.com"], { days });
+    files.set(`${parent}/fullchain.pem`, pair.certPem);
+    files.set(`${parent}/privkey.pem`, pair.keyPem);
+    return pair;
+  }
+
+  function executorOf(nginx: NginxProvider) {
+    return (nginx as unknown as { executor: RootChecked }).executor;
+  }
+
+  function interruptRead(nginx: NginxProvider, name: string) {
+    const executor = executorOf(nginx);
+    const read = executor.readFile.bind(executor);
+    let failed = false;
+    return vi.spyOn(executor, "readFile").mockImplementation(async (path) => {
+      if (!failed && path === `${parent}/${name}`) {
+        failed = true;
+        throw new Error("Temporary SFTP read failure");
+      }
+      return read(path);
+    });
+  }
+
+  test.each(["fullchain.pem", "privkey.pem"])(
+    "keeps a temporary %s read failure distinct from a missing certificate",
+    async (name) => {
+      const { nginx, files } = setup();
+      installParent(files);
+      expect((await nginx.verifyCert(PROXY.domain)).verified).toBe(true);
+      const read = interruptRead(nginx, name);
+      try {
+        expect(await nginx.verifyCert(PROXY.domain)).toMatchObject({
+          verified: false,
+          reason: "read_error",
+        });
+        expect((await nginx.verifyCert(PROXY.domain)).verified).toBe(true);
+      } finally {
+        read.mockRestore();
+      }
+    },
+  );
+
+  test.each(["fullchain.pem", "privkey.pem"])(
+    "preserves the vhost and sidecar without reloading after a temporary %s read failure",
+    async (name) => {
+      const { nginx, files, conf, writes, calls } = setup();
+      installParent(files);
+      await nginx.registerRoute(OURS);
+      const previous = new Map(files);
+      const writeCount = writes.length;
+      const callCount = calls.length;
+      const read = interruptRead(nginx, name);
+      try {
+        await expect(
+          nginx.registerRoute({ ...OURS, targetUrl: "http://127.0.0.1:3010" }),
+        ).rejects.toThrow("Routing was not changed");
+        expect(files).toEqual(previous);
+        expect(writes).toHaveLength(writeCount);
+        expect(
+          calls
+            .slice(callCount)
+            .some((command) => /openssl|certbot|-s reload/.test(command)),
+        ).toBe(false);
+        expect(conf("app-example-com")).toContain(certificate);
+        await nginx.registerRoute({
+          ...OURS,
+          targetUrl: "http://127.0.0.1:3010",
+        });
+        expect(conf("app-example-com")).toContain(certificate);
+        expect(conf("app-example-com")).toContain(
+          "proxy_pass http://127.0.0.1:3010;",
+        );
+      } finally {
+        read.mockRestore();
+      }
+    },
+  );
+
+  test("validates inherited material once per verification and never copies the key to the child", async () => {
+    const { nginx, files } = setup();
+    installParent(files);
+    const read = vi.spyOn(executorOf(nginx), "readFile");
+    try {
+      expect((await nginx.verifyCert(PROXY.domain)).verified).toBe(true);
+      expect(read.mock.calls.map(([path]) => path)).toEqual([
+        `${parent}/fullchain.pem`,
+        `${parent}/privkey.pem`,
+      ]);
+      expect(files.has(`${child}/fullchain.pem`)).toBe(false);
+      expect(files.has(`${child}/privkey.pem`)).toBe(false);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  test("keeps an exact certificate authoritative without reading the parent pair", async () => {
+    const { nginx, files } = setup();
+    installParent(files);
+    const pair = makeTestCert([PROXY.domain]);
+    files.set(`${child}/fullchain.pem`, pair.certPem);
+    files.set(`${child}/privkey.pem`, pair.keyPem);
+    const read = vi.spyOn(executorOf(nginx), "readFile");
+    try {
+      expect((await nginx.verifyCert(PROXY.domain)).verified).toBe(true);
+      expect(read.mock.calls.map(([path]) => path)).toEqual([
+        `${child}/fullchain.pem`,
+        `${child}/privkey.pem`,
+      ]);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
+  test.each(["provision", "renew"])(
+    "does not issue a replacement on uncertain reads during %s",
+    async (action) => {
+      const { nginx, files, calls } = setup();
+      installParent(files);
+      const previous = new Map(files);
+      const read = interruptRead(nginx, "privkey.pem");
+      try {
+        const result =
+          action === "provision"
+            ? await nginx.provisionCert(PROXY.domain)
+            : await nginx.renewCert(PROXY.domain);
+        expect(result).toMatchObject({ verified: false, reason: "read_error" });
+        expect(
+          calls.some((command) => /certbot|openssl|-s reload/.test(command)),
+        ).toBe(false);
+        expect(files).toEqual(previous);
+      } finally {
+        read.mockRestore();
+      }
+    },
+  );
+
+  test.each([`${child}/fullchain.pem`, `${parent}/fullchain.pem`])(
+    "preserves read uncertainty when the existence probe rejects for %s",
+    async (path) => {
+      const { nginx, files, writes } = setup();
+      installParent(files);
+      await nginx.registerRoute(OURS);
+      const previous = new Map(files);
+      const writeCount = writes.length;
+      const executor = executorOf(nginx);
+      const exists = executor.exists.bind(executor);
+      const probe = vi
+        .spyOn(executor, "exists")
+        .mockImplementation(async (requested) => {
+          if (requested === path) throw new Error("SSH connection lost");
+          return exists(requested);
+        });
+      try {
+        expect(await nginx.verifyCert(PROXY.domain)).toMatchObject({
+          verified: false,
+          reason: "read_error",
+        });
+        await expect(nginx.registerRoute(OURS)).rejects.toThrow(
+          "Routing was not changed",
+        );
+        expect(files).toEqual(previous);
+        expect(writes).toHaveLength(writeCount);
+      } finally {
+        probe.mockRestore();
+      }
+    },
+  );
+
+  test("reuses a valid parent without ACME and permits an explicitly forced child certificate", async () => {
+    let issued!: () => void;
+    const { nginx, files, conf, calls } = setup({ onCertbot: () => issued() });
+    const original = installParent(files);
+    const replacement = makeTestCert([PROXY.domain]);
+    issued = () => {
+      files.set(`${child}/fullchain.pem`, replacement.certPem);
+      files.set(`${child}/privkey.pem`, replacement.keyPem);
+    };
+    await nginx.registerRoute(OURS);
+    expect((await nginx.provisionCert(PROXY.domain)).verified).toBe(true);
+    expect(calls.some((command) => /^certbot\b/.test(command))).toBe(false);
+    expect(files.has(`${child}/privkey.pem`)).toBe(false);
+    expect(
+      (await nginx.provisionCert(PROXY.domain, { force: true })).verified,
+    ).toBe(true);
+    expect(
+      calls.some((command) => /^certbot\b.*\bcertonly\b/.test(command)),
+    ).toBe(true);
+    expect(conf("app-example-com")).toContain(
+      `ssl_certificate ${child}/fullchain.pem;`,
+    );
+    expect(files.get(`${parent}/fullchain.pem`)).toBe(original.certPem);
+    expect(files.get(`${parent}/privkey.pem`)).toBe(original.keyPem);
+  });
+
+  test("serializes a parent rotation with inherited reads using the existing configuration lock", async () => {
+    const { nginx, files, conf } = setup();
+    const original = installParent(files);
+    const replacement = makeTestCert(["*.example.com"], { days: 20 });
+    await nginx.registerRoute({ ...OURS, domain: "*.example.com" });
+    await nginx.registerRoute(OURS);
+    const before = await nginx.verifyCert(PROXY.domain);
+    const executor = executorOf(nginx);
+    const readFile = executor.readFile.bind(executor);
+    let release!: () => void;
+    let entered!: () => void;
+    const paused = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let first = true;
+    const read = vi
+      .spyOn(executor, "readFile")
+      .mockImplementation(async (path) => {
+        if (first && path === `${parent}/privkey.pem`) {
+          first = false;
+          entered();
+          await paused;
+        }
+        return readFile(path);
+      });
+    const verification = nginx.verifyCert(PROXY.domain);
+    let rotation: Promise<unknown> | undefined;
+    try {
+      await started;
+      rotation = nginx.installCert("*.example.com", replacement);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(files.get(`${parent}/fullchain.pem`)).toBe(original.certPem);
+      release();
+      expect(await verification).toMatchObject({
+        verified: true,
+        expiresAt: before.expiresAt,
+      });
+      expect(await rotation).toMatchObject({ verified: true });
+      const after = await nginx.verifyCert(PROXY.domain);
+      expect(after.verified).toBe(true);
+      expect(new Date(after.expiresAt).getTime()).toBeGreaterThan(
+        new Date(before.expiresAt).getTime(),
+      );
+      expect(conf("app-example-com")).toContain(certificate);
+      expect(files.has(`${child}/privkey.pem`)).toBe(false);
+    } finally {
+      release();
+      await Promise.allSettled([verification, ...(rotation ? [rotation] : [])]);
+      read.mockRestore();
+    }
+  });
+});

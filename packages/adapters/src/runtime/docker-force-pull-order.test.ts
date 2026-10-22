@@ -82,10 +82,10 @@ describe("Docker service replacement ordering", () => {
       }),
     ).rejects.toThrow("stop after proving ordering");
 
-    expect(inspectImage).toHaveBeenCalledOnce();
+    expect(inspectImage).toHaveBeenCalled();
     expect(stop).toHaveBeenCalledExactlyOnceWith();
     expect(remove).toHaveBeenCalledOnce();
-    expect(inspectImage.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(inspectImage.mock.invocationCallOrder.at(-1)).toBeLessThan(
       stop.mock.invocationCallOrder[0]!,
     );
     expect(stop.mock.invocationCallOrder[0]).toBeLessThan(remove.mock.invocationCallOrder[0]!);
@@ -161,6 +161,7 @@ describe("Docker service replacement ordering", () => {
   it("skips a second pull only when the orchestrator explicitly prepared the image", async () => {
     const remove = vi.fn(async () => undefined);
     const docker = {
+      getImage: () => ({ inspect: async () => ({ Config: {} }) }),
       getContainer: vi.fn(() => ({ stop: vi.fn(async () => undefined), remove })),
       createContainer: vi.fn().mockRejectedValue(new Error("stop after proving no pull")),
     };
@@ -185,6 +186,7 @@ describe("Docker service replacement ordering", () => {
       const stop = vi.fn().mockRejectedValue(error);
       const remove = vi.fn(async () => undefined);
       const docker = {
+        getImage: () => ({ inspect: async () => ({ Config: {} }) }),
         getContainer: vi.fn(() => ({
           stop,
           remove,
@@ -210,6 +212,7 @@ describe("Docker service replacement ordering", () => {
   it("does not try to create a duplicate after removal fails", async () => {
     const error = Object.assign(new Error("daemon refused removal"), { statusCode: 403 });
     const docker = {
+      getImage: () => ({ inspect: async () => ({ Config: {} }) }),
       getContainer: vi.fn(() => ({
         stop: vi.fn(async () => undefined),
         remove: vi.fn().mockRejectedValue(error),

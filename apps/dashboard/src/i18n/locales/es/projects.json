@@ -521,7 +521,17 @@
     "authHmacDesc": "Los llamantes firman el cuerpo con un secreto compartido (X-Signature-256).",
     "authNone": "Abierto",
     "authNoneDesc": "Sin auth: cualquiera con la URL puede dispararlo. Úsalo con cuidado.",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "changeReasons": {
+      "unrelated": "Solo cambiaron espacios de trabajo no relacionados.",
+      "application": "Cambiaron archivos de la aplicación.",
+      "shared": "Cambiaron entradas de compilación compartidas.",
+      "included": "Cambió una ruta incluida en la configuración.",
+      "excluded": "Los cambios no coinciden con las reglas de rutas.",
+      "unknown": "No se pudieron verificar los cambios; se mantiene el despliegue.",
+      "initial": "Primer despliegue.",
+      "forced": "Se solicitó un despliegue completo."
+    }
   },
   "health": {
     "title": "Estado",

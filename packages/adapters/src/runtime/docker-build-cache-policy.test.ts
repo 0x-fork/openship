@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertBuildStorage,
+  buildKitCacheConfig,
   DOCKER_BUILD_STORAGE_COMMAND,
   ensureProjectBuildCache,
   managedBuildCaches,
@@ -175,6 +176,25 @@ fi
     });
     expect(result).toEqual({ cachesDeleted: [], spaceReclaimed: 0 });
     expect(h.removed).toEqual([]);
+  });
+
+  it("scales the automatic cache ceiling to a small host and leaves active state alone", async () => {
+    const h = fixture([volume("a"), volume("b"), volume("c")]);
+    const exec = h.exec.getMockImplementation()!;
+    h.exec.mockImplementation(command => command.includes("df -Pk")
+      ? Promise.resolve("26214400 18874368\n200000 100000\n") : exec(command));
+    h.docker.listContainers.mockResolvedValue([
+      { Mounts: [{ Name: projectBuildCacheVolume("c"), Source: "/cache/c" }] },
+    ]);
+    await pruneManagedBuildCaches(h.docker as never, h.executor, { now: 2000000200000 });
+    expect(h.removed).toEqual([]);
+    h.docker.listContainers.mockResolvedValue([]);
+    await pruneManagedBuildCaches(h.docker as never, h.executor, { now: 2000000200000 });
+    expect(h.removed).toEqual([projectBuildCacheVolume("a")]);
+    expect(buildKitCacheConfig({ totalBytes: 25 * GIB, freeBytes: 18 * GIB, freeInodes: 100 }))
+      .toContain(`maxUsedSpace = ${2.5 * GIB}`);
+    expect(buildKitCacheConfig({ totalBytes: 25 * GIB, freeBytes: 18 * GIB, freeInodes: 100 }))
+      .toContain('minFreeSpace = "20%"');
   });
 
   it("protects attached state even when the host is over budget", async () => {

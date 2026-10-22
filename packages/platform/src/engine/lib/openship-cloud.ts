@@ -114,7 +114,32 @@ export async function issueNamespaceToken(organizationId: string, workspaceId?: 
   }
 }
 
-export async function getNamespaceClient(organizationId: string, workspaceId?: CloudWorkspaceScope): Promise<NamespaceClientResult> {
-  const { token, namespace, providerApiUrl } = await issueNamespaceToken(organizationId, workspaceId);
-  return { client: new Oblien({ token, baseUrl: providerApiUrl }), namespace };
+export async function getNamespaceClient(
+  organizationId: string,
+  workspaceId?: CloudWorkspaceScope,
+  initialCredentials?: NamespaceTokenResult,
+): Promise<NamespaceClientResult> {
+  const credentials =
+    initialCredentials ?? (await issueNamespaceToken(organizationId, workspaceId));
+  const { namespace, providerApiUrl } = credentials;
+  return {
+    client: new Oblien({
+      token: credentials.token,
+      baseUrl: credentials.providerApiUrl,
+      tokenRefresh: {
+        expiresAt: credentials.expiresAt,
+        refresh: async () => {
+          const next = await issueNamespaceToken(organizationId, workspaceId);
+          if (next.namespace !== namespace || next.providerApiUrl !== providerApiUrl)
+            throw new AppError(
+              "Cloud execution ownership changed",
+              409,
+              "CLOUD_NAMESPACE_MISMATCH",
+            );
+          return next;
+        },
+      },
+    }),
+    namespace,
+  };
 }

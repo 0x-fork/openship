@@ -7,6 +7,33 @@
   "additionalProperties": false,
   "properties": {
     "$schema": { "type": "string" },
+    "autoDeployPaths": {
+      "type": "object",
+      "description": "Push-only repo-relative path overrides. include replaces automatic workspace selection; exclude removes matching changes. Root build configuration and forced deploys always run.",
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": "Repo-relative paths supporting * and **."
+        },
+        "exclude": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": "Repo-relative paths supporting * and **."
+        }
+      }
+    },
 
     "framework": {
       "description": "Stack/framework slug. Overrides auto-detection.",
