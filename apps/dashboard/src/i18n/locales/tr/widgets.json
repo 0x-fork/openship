@@ -302,7 +302,7 @@
         "domains:write": "Alan adı ekle, doğrula, yenile ve DNS doğrulamalarını çalıştır",
         "domains:delete": "Alan adlarını sil",
         "deployments:read": "Dağıtımları, günlükleri ve derleme durumunu oku",
-        "deployments:trigger": "Dağıtımları başlat, yeniden dağıt, yeniden başlat, iptal et ve geri al"
+        "deployments:trigger": "Dağıtım başlatma, yeniden dağıtma, yeniden başlatma, sabitleme ve dağıtım kararlarını yönetme. İptal, geri alma ve silme proje yönetici yetkisi gerektirir."
       },
       "capabilityImplied": "Bu kaynağın erişim düzeyine dahil"
     },

@@ -302,7 +302,7 @@
         "domains:write": "Add, verify and renew domains, run DNS challenges",
         "domains:delete": "Delete domains",
         "deployments:read": "Read deployments, logs and build status",
-        "deployments:trigger": "Start, redeploy, restart, cancel and roll back deployments"
+        "deployments:trigger": "Start, redeploy, restart and pin deployments; handle deployment decisions. Cancel, rollback and deletion require project admin."
       },
       "capabilityImplied": "Included in this resource's access level"
     },

@@ -367,8 +367,10 @@ export interface PermissionSpec {
    *   2. The handler asserts on that id before doing any work.
    * Use `"query"` for GET collections: this middleware requires and authorizes
    * the `projectId` query parameter itself before the handler runs.
+   * `"optional-query"` also permits an org-wide list without a projectId, using
+   * the existing wildcard authority; a project grant never authorizes that list.
    */
-  collectionProject?: boolean | "query";
+  collectionProject?: boolean | "query" | "optional-query";
   /** The shared application operation emits this mutation's audit event for every transport. */
   auditHandledByOperation?: boolean;
   /**
@@ -591,15 +593,19 @@ export function requirePermission(spec: PermissionSpec): MiddlewareHandler {
 
       leafId = ghTarget.key;
     } else if (spec.collectionProject) {
-      if (spec.collectionProject === "query") {
+      if (spec.collectionProject === "query" || spec.collectionProject === "optional-query") {
         // GET collections carry the same explicit project scope in the query.
         // Enforce it here; a missing id must never become a wildcard list.
         const projectId = c.req.query("projectId");
-        if (!projectId?.trim()) return c.json({ error: "projectId query parameter required" }, 400);
+        if ((projectId !== undefined && !projectId.trim()) ||
+            (projectId === undefined && spec.collectionProject === "query"))
+          return c.json({ error: "projectId query parameter required" }, 400);
         const action = parsed.isList ? "read" : parsed.action as Action;
-        await permission.assert(getRequestContext(c), {
+        await permission.assert(getRequestContext(c), projectId ? {
           resourceType: "project", resourceId: projectId, action,
           ...withCapability("project", parsed.leaf, action),
+        } : {
+          resourceType: parsed.leaf, resourceId: "*", action, scope: "list",
         });
       }
       // A body names the target project and the handler asserts on it — see

@@ -302,7 +302,7 @@
         "domains:write": "Ajouter, vérifier et renouveler des domaines, lancer des challenges DNS",
         "domains:delete": "Supprimer des domaines",
         "deployments:read": "Lire les déploiements, les journaux et l'état des builds",
-        "deployments:trigger": "Lancer, redéployer, redémarrer, annuler et restaurer des déploiements"
+        "deployments:trigger": "Démarrer, redéployer, redémarrer, épingler les déploiements et gérer leurs décisions. Annuler, restaurer et supprimer nécessitent les droits administrateur du projet."
       },
       "capabilityImplied": "Inclus dans le niveau d'accès de cette ressource"
     },

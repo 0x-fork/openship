@@ -302,7 +302,7 @@
         "domains:write": "Añadir, verificar y renovar dominios, ejecutar desafíos DNS",
         "domains:delete": "Eliminar dominios",
         "deployments:read": "Leer despliegues, registros y estado de compilación",
-        "deployments:trigger": "Iniciar, redesplegar, reiniciar, cancelar y revertir despliegues"
+        "deployments:trigger": "Iniciar, volver a desplegar, reiniciar y fijar despliegues; resolver decisiones. Cancelar, revertir y eliminar requieren administración del proyecto."
       },
       "capabilityImplied": "Incluido en el nivel de acceso de este recurso"
     },

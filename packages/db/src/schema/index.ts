@@ -123,3 +123,5 @@ export * from "./ingress-connection";
 export * from "./ingress-hostname";
 
 export * from "./pull-request-preview";
+
+export * from "./management-billing";

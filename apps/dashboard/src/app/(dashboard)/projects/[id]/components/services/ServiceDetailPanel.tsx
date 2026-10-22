@@ -43,6 +43,9 @@ import { ServiceDomainsPanel } from "./ServiceDomainsPanel";
 import { ServiceLocalhostAction } from "./ServiceLocalhostAction";
 import type { ServiceDomainIntent } from "./ServicePortsCard";
 import { configuredServiceEndpoints } from "@/lib/service-endpoints";
+import { useRuntimeUpdate } from "@/hooks/useRuntimeUpdate";
+import { RuntimeRedeployMenu } from "@/components/project-settings/RuntimeRedeployMenu";
+import { RuntimeImageUpdateNotice } from "@/components/project-settings/RuntimeImageUpdateNotice";
 
 type ServiceTab = "overview" | "terminal" | "logs" | "env" | "domains" | "volumes" | "settings" | "backup";
 const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
@@ -116,6 +119,8 @@ export function ServiceDetailPanel({
   const { showToast } = useToast();
   const showCloudPricing = useCloudDeployPricing(workspaceId);
   const environmentApply = useServiceEnvironmentApply(projectId, onRefresh, workspaceId);
+  const runtimeUpdate = useRuntimeUpdate(projectId, service.id, workspaceId,
+    JSON.stringify([activeDeploymentId, service.image, service.build, service.buildImage]));
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
   const router = useRouter();
@@ -126,8 +131,10 @@ export function ServiceDetailPanel({
   const [deleting, setDeleting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
+  const [resettingStorage, setResettingStorage] = useState(false);
+  const storageResetPending = useRef(false);
   const applyingEnvironment = environmentApply.applyingServiceId !== null;
-  const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment;
+  const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment || resettingStorage || runtimeUpdate.updating;
   const status = getServiceStatus(service, container, containerChecking);
 
   // Backup only applies to compose services (stateful containers) — never
@@ -422,16 +429,16 @@ export function ServiceDetailPanel({
   /**
    * PIPELINE services only (compose stack / monorepo sub-app / source-built):
    * rebuild + redeploy ONLY this service and land on the build screen. Image
-   * apps don't get this — they Start/Stop.
+   * apps use the shared image refresh operation when redeploying.
    */
   const handleRedeployService = async () => {
     if (!activeDeploymentId) {
       showToast(t.projectDetail.services.detail.toast.deployFirstRedeploy, "error", service.name);
-      return;
+      return false;
     }
     if (!service.enabled) {
       showToast(t.projectDetail.services.detail.toast.enableBeforeRedeploy, "error", service.name);
-      return;
+      return false;
     }
     setRedeploying(true);
     try {
@@ -443,18 +450,20 @@ export function ServiceDetailPanel({
           "error",
           service.name,
         );
-        return;
+        return false;
       }
       const newId = res?.data?.deployment?.id;
       router.push(newId ? `/build/${newId}` : `/projects/${projectId}/deployments`);
+      return true;
     } catch (err) {
       setRedeploying(false);
-      if (showCloudPricing(err)) return;
+      if (showCloudPricing(err)) return false;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.redeployFailed),
         "error",
         service.name,
       );
+      return false;
     }
   };
 
@@ -588,6 +597,16 @@ export function ServiceDetailPanel({
           </div>
         </div>
         <div className="ms-auto flex max-w-full flex-wrap items-center gap-2">
+          {service.enabled && activeDeploymentId && (
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="secondary" className="h-9" disabled={serviceOperationBusy}
+                onClick={() => void (usesDeployPipeline ? handleRedeployService() : runtimeUpdate.update())}>
+                <UiIcon name="rocket" className="size-3.5" />
+                {redeploying || runtimeUpdate.updating ? t.projectDetail.services.detail.redeploying : t.projectDetail.services.detail.redeploy}
+              </Button>
+              <RuntimeRedeployMenu runtime={runtimeUpdate} disabled={serviceOperationBusy} />
+            </div>
+          )}
           {resolvedUrl && (
             <Button asChild variant="secondary" size="sm" className="h-9">
               <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" title={resolvedUrl}>
@@ -639,6 +658,7 @@ export function ServiceDetailPanel({
       </div>
 
       {/* ── Tab strip ──────────────────────────────────────────── */}
+      <RuntimeImageUpdateNotice result={runtimeUpdate.checkResult} busy={serviceOperationBusy} onRefresh={runtimeUpdate.update} />
       <Tabs
         className="border-b-0"
         size="md"
@@ -694,6 +714,19 @@ export function ServiceDetailPanel({
           projectId={projectId}
           deployTarget={deployTarget}
           onSave={(volumes) => handleUpdateService({ volumes })}
+          operationBusy={serviceOperationBusy}
+          onResetVolumes={activeDeploymentId && service.enabled ? async (volumes, configured) => {
+            if (storageResetPending.current) return { configured, started: false };
+            storageResetPending.current = true;
+            setResettingStorage(true);
+            try {
+              if (!configured) await handleUpdateService({ volumes });
+              return { configured: true, started: await handleRedeployService() };
+            } finally {
+              storageResetPending.current = false;
+              setResettingStorage(false);
+            }
+          } : undefined}
           onBackup={supportsBackup ? handleVolumeBackup : undefined}
           backupBusy={backupLoading || backupRunning || !!backupError}
           backupFeedback={supportsBackup ? backupFeedback : undefined}
@@ -741,6 +774,12 @@ export function ServiceDetailPanel({
             operationBusy={serviceOperationBusy}
             onDirtyChange={setEnvDirty}
             onApply={() => environmentApply.apply(service)}
+            onDeploy={usesDeployPipeline ? (activeDeploymentId ? handleRedeployService : undefined) : handleDeployStart}
+            deployLabel={
+              usesDeployPipeline
+                ? t.projectDetail.services.detail.redeploy
+                : t.projectDetail.services.detail.start
+            }
           />
         </div>
       )}
@@ -809,22 +848,6 @@ export function ServiceDetailPanel({
                       variant="success"
                     />
                   )
-                )}
-                {/* Pipeline services (compose / monorepo / source-built) keep the
-                    per-service Redeploy → build page. Image apps never show it. */}
-                {usesDeployPipeline && service.enabled && activeDeploymentId && (
-                  <ActionButton
-                    icon={"rocket"}
-                    label={
-                      redeploying
-                        ? t.projectDetail.services.detail.redeploying
-                        : t.projectDetail.services.detail.redeploy
-                    }
-                    loading={redeploying}
-                    disabled={serviceOperationBusy}
-                    onClick={handleRedeployService}
-                    variant="primary"
-                  />
                 )}
               </div>
 

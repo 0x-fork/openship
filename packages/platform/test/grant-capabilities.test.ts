@@ -233,3 +233,10 @@ describe("deployments use the same model", () => {
     expect(await check("read")).toBe(false);
   });
 });
+
+describe("explicit parent capability invariants", () => {
+  it("never lets a read capability stand in for an admin action or another resource tree", () => {
+    expect(grantPermits(["domains:read"], { resourceType: "project", resourceId: "project-a", action: "admin", capability: "domains:read" })).toBe(false);
+    expect(grantPermits(["domains:read"], { resourceType: "server", resourceId: "server-a", action: "read", capability: "domains:read" })).toBe(false);
+  });
+});

@@ -868,3 +868,15 @@ prevent stale edits. CLI equivalents are `openship project role-config <id>` and
 `openship project configure-roles <id> <file>`. The JSON file contains the same
 three fields. These controls do not enable runtime roles on Cloud, bare, cluster,
 static or multi-service deployments.
+
+
+## Automatic deploy paths
+
+`autoDeployPaths` optionally contains `include` and `exclude` arrays of repository-relative paths, with
+at most 50 patterns per array. Patterns support `*` and `**`; traversal, absolute paths and other glob
+operators are rejected. The selected app's file takes precedence over the repository-root file.
+
+This is a push-impact policy rather than a runtime setting. `include` replaces inferred workspace paths;
+`exclude` removes matching changes. Root build configuration, explicit shared paths and force-deploy
+requests still deploy. Omit `include` to keep automatic workspace dependency detection.
+See [Auto-deploy on push](/docs/guides/auto-deploy#monorepos-deploy-the-app-that-changed) for behavior and examples.

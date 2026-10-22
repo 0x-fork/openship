@@ -22,21 +22,21 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
   private readonly shells = new Set<ShellSession>();
   private disposed = false;
 
-  constructor(private readonly runtime: () => Promise<Runtime>, private readonly workspaceId?: string) {}
+  constructor(private readonly runtime: (options?: { force?: boolean }) => Promise<Runtime>, private readonly workspaceId?: string) {}
 
   async recoverCommand(command: ManagedCommandRef) {
     if (command.workspaceId !== this.workspaceId) throw new Error("Command belongs to another server");
-    await recoverManagedCommand(await this.rt(), command);
+    await recoverManagedCommand(await this.rt({ force: true }), command);
   }
 
   runWithAbortSignal<T>(signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
     return this.abortScope.run(signal, fn);
   }
 
-  private async rt(): Promise<Runtime> {
+  private async rt(options?: { force?: boolean }): Promise<Runtime> {
     if (this.disposed) throw new Error("Cloud workspace connection is closed");
     this.abortScope.getStore()?.throwIfAborted();
-    return this.runtime();
+    return this.runtime(options);
   }
 
   async exec(command: string, opts?: { timeout?: number }): Promise<string> {
@@ -258,7 +258,8 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     await transferLocalDirectory(localPath, { kind: "cloud-runtime", runtime: await this.rt(), path: remotePath }, logger, options);
   }
   async openShell(options?: ShellOptions): Promise<ShellSession> {
-    const shell = await openCloudShell(await this.rt(), options, this.workspaceId);
+    // Teardown must still acquire credentials after dispose or caller abort.
+    const shell = await openCloudShell(await this.rt(), options, this.workspaceId, () => this.runtime({ force: true }));
     if (this.disposed) { await shell.close(); throw new Error("Cloud workspace connection is closed"); }
     this.shells.add(shell);
     shell.onClose(() => this.shells.delete(shell));

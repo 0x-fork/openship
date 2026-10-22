@@ -2,6 +2,7 @@ import { eq, and, asc, inArray, or, sql } from "drizzle-orm";
 import {
   commandToArgv,
   generateId,
+  redactUrlCredentials,
   sortJsonKeys,
   mergeAdvanced,
   normalizeCustomHostname,
@@ -15,6 +16,7 @@ import { assertProjectConfigurationWritable, withProjectConfigurationWrite } fro
 import { deployment, envVar, project, service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
 import { liveBuildExecutionCondition } from "./deployment.repo";
+import { serviceDeploymentFinishPatch } from "./service-deployment-timing";
 
 /** A public route as it arrives on the wire (port may be a string) before
  *  normalization into a {@link ServicePublicEndpoint}. */
@@ -1207,6 +1209,38 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       });
     },
 
+    /** Start one service's unfinished build/deploy clock without changing any
+     * existing runtime or outcome fields (including pre-created carried rows). */
+    async startServiceDeploymentTiming(data: {
+      deploymentId: string;
+      serviceId: string;
+      serviceName: string;
+      startedAt?: Date;
+    }) {
+      const startedAt = data.startedAt ?? new Date();
+      await db
+        .insert(serviceDeployment)
+        .values({ id: generateId("sd"), ...data, status: "pending", startedAt })
+        .onConflictDoUpdate({
+          target: [serviceDeployment.deploymentId, serviceDeployment.serviceId],
+          set: { startedAt },
+          setWhere: sql`${serviceDeployment.startedAt} is null and ${serviceDeployment.finishedAt} is null`,
+        });
+    },
+
+    /** Settle only unfinished measured attempts when their parent stops. This
+     * records elapsed time without changing the service's runtime or outcome. */
+    async finishStartedServiceDeploymentTimings(deploymentId: string, finishedAt = new Date()) {
+      await db
+        .update(serviceDeployment)
+        .set(serviceDeploymentFinishPatch("failure", finishedAt))
+        .where(and(
+          eq(serviceDeployment.deploymentId, deploymentId),
+          sql`${serviceDeployment.startedAt} is not null`,
+          sql`${serviceDeployment.finishedAt} is null`,
+        ));
+    },
+
     /**
      * Insert-or-update a service_deployment row keyed by (deploymentId,
      * serviceId) — respects the uq_service_deployment_dep_svc unique index.
@@ -1225,6 +1259,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
      */
     async upsertServiceDeployment(data: Omit<NewServiceDeployment, "id">) {
       const id = generateId("sd");
+      const now = new Date();
       await db
         .insert(serviceDeployment)
         .values({ id, ...data })
@@ -1242,7 +1277,8 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
             ip: data.ip ?? null,
             reason: data.reason ?? null,
             reasonSkipped: data.reasonSkipped ?? null,
-            updatedAt: new Date(),
+            ...serviceDeploymentFinishPatch(data.status, data.finishedAt ?? now, data.finishedAt != null),
+            updatedAt: now,
           },
         });
     },
@@ -1282,16 +1318,18 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
     }) {
       const now = new Date();
       const status = data.status ?? "failure";
+      // Raw build/clone output can echo a credentialed clone URL; never persist it.
+      data = { ...data, errorMessage: redactUrlCredentials(data.errorMessage) };
 
-      const set: Partial<NewServiceDeployment> = {
+      const set = {
         serviceName: data.serviceName,
         status,
-        finishedAt: now,
+        ...serviceDeploymentFinishPatch(status, now, true),
         updatedAt: now,
+        ...(data.errorMessage !== undefined ? { errorMessage: data.errorMessage } : {}),
+        ...(data.reason !== undefined ? { reason: data.reason } : {}),
+        ...(data.imageRef ? { imageRef: data.imageRef } : {}),
       };
-      if (data.errorMessage !== undefined) set.errorMessage = data.errorMessage;
-      if (data.reason !== undefined) set.reason = data.reason;
-      if (data.imageRef) set.imageRef = data.imageRef;
 
       await db
         .insert(serviceDeployment)
@@ -1332,6 +1370,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       /** Why it was skipped — see the `reason` docblock on the schema for the vocabulary. */
       reason: string;
     }) {
+      const now = new Date();
       await db
         .insert(serviceDeployment)
         .values({
@@ -1350,15 +1389,21 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
             status: "skipped",
             reason: data.reason,
             reasonSkipped: data.reason,
-            updatedAt: new Date(),
+            ...serviceDeploymentFinishPatch("skipped", now),
+            updatedAt: now,
           },
         });
     },
 
     async updateServiceDeployment(id: string, data: Partial<NewServiceDeployment>) {
+      const now = new Date();
       await db
         .update(serviceDeployment)
-        .set({ ...data, updatedAt: new Date() })
+        .set({
+          ...data,
+          ...serviceDeploymentFinishPatch(data.status, data.finishedAt ?? now, data.finishedAt != null),
+          updatedAt: now,
+        })
         .where(eq(serviceDeployment.id, id));
     },
 
@@ -1379,17 +1424,65 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
     }) {
       await db.transaction(async tx => {
         await assertProjectConfigurationWritable(tx, eq(project.id, input.projectId));
-        const [parent] = await tx.select().from(deployment).where(and(
-          eq(deployment.id, input.deploymentId),
-          eq(deployment.projectId, input.projectId),
-          eq(deployment.organizationId, input.organizationId),
-        )).for("update");
-        const [row] = await tx.select().from(serviceDeployment).where(and(
-          eq(serviceDeployment.deploymentId, input.deploymentId),
-          eq(serviceDeployment.serviceId, input.serviceId),
-        )).for("update");
-        if (!parent || !row || row.containerId !== input.expectedContainerId) {
-          throw new Error("The service changed while its environment was being applied. Try again.");
+        const [parent] = await tx
+          .select()
+          .from(deployment)
+          .where(
+            and(
+              eq(deployment.id, input.deploymentId),
+              eq(deployment.projectId, input.projectId),
+              eq(deployment.organizationId, input.organizationId),
+            ),
+          )
+          .for("update");
+        let [row] = await tx
+          .select()
+          .from(serviceDeployment)
+          .where(
+            and(
+              eq(serviceDeployment.deploymentId, input.deploymentId),
+              eq(serviceDeployment.serviceId, input.serviceId),
+            ),
+          )
+          .for("update");
+        if (!parent || (row?.containerId ?? null) !== input.expectedContainerId) {
+          throw new Error(
+            "The service changed while its environment was being applied. Try again.",
+          );
+        }
+        // Repair legacy bookkeeping only after the replacement is ready. The
+        // project lock and scoped parent/service checks keep another release or
+        // project from being adopted by this write.
+        const [owner] = await tx
+          .select({ id: project.id })
+          .from(project)
+          .where(
+            and(
+              eq(project.id, input.projectId),
+              eq(project.organizationId, input.organizationId),
+              eq(project.activeDeploymentId, input.deploymentId),
+            ),
+          );
+        const [target] = await tx
+          .select({ name: service.name })
+          .from(service)
+          .where(and(eq(service.id, input.serviceId), eq(service.projectId, input.projectId)));
+        if (!owner || !target) {
+          throw new Error(
+            "The service changed while its environment was being applied. Try again.",
+          );
+        }
+        if (!row) {
+          [row] = await tx
+            .insert(serviceDeployment)
+            .values({
+              id: generateId("sd"),
+              deploymentId: input.deploymentId,
+              serviceId: input.serviceId,
+              serviceName: target.name,
+              status: "success",
+            })
+            .returning();
         }
         const now = new Date();
         await tx.update(serviceDeployment).set({
@@ -1410,7 +1503,7 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
         const oldIds = new Set([input.expectedContainerId, input.previousContainerId]);
         const composeServices = Array.isArray(meta.composeServices)
           ? meta.composeServices.map((item: Record<string, unknown>) =>
-              item.name === row.serviceName
+              item.name === target.name
                 ? { ...item, containerId: input.containerId, ...(input.ip ? { ip: input.ip } : {}) }
                 : item)
           : undefined;

@@ -139,3 +139,26 @@ vi.mock("@repo/platform/engine/lib/audit-emitter", () => ({
   audit: vi.fn(async () => {}),
   auditContextFrom: vi.fn(() => ({})),
 }));
+
+describe("project-filtered deployment collections", () => {
+  it("accepts deployment-read on a selected project and keeps unfiltered lists on the wildcard", async () => {
+    const c = context({});
+    const check = requirePermission({ tag: "deployment:list", collectionProject: "optional-query" });
+    const next = vi.fn(async () => {});
+    assertPermission.mockClear();
+    c.req.query.mockImplementation((name: string) => name === "projectId" ? "project-1" : undefined);
+    await check(c as never, next);
+    expect(assertPermission).toHaveBeenLastCalledWith(expect.anything(), { resourceType: "project", resourceId: "project-1", action: "read", capability: "deployments:read" });
+    c.req.query.mockReturnValue(undefined);
+    await check(c as never, next);
+    expect(assertPermission).toHaveBeenLastCalledWith(expect.anything(), { resourceType: "deployment", resourceId: "*", action: "read", scope: "list" });
+  });
+  it("rejects an explicitly empty project selector before dispatch", async () => {
+    const c = context({});
+    c.req.query.mockReturnValue(" ");
+    const next = vi.fn(async () => {});
+    const result = await requirePermission({ tag: "deployment:list", collectionProject: "optional-query" })(c as never, next);
+    expect(result).toMatchObject({ status: 400 });
+    expect(next).not.toHaveBeenCalled();
+  });
+});

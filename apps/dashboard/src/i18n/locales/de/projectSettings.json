@@ -666,13 +666,15 @@
       "increaseAria": "Rollback-Verlauf erhöhen",
       "sizeEach": "~{size} pro Image, einschließlich gemeinsam genutzter Schichten",
       "diskFree": "{size} frei",
-      "autoBadge": "automatisch bemessen",
+      "autoBadge": "Automatisch",
       "manualBadge": "manuell gesetzt",
       "kindFiles": "gebaute Dateien auf der Platte",
       "kindImages": "Images auf dem Host",
       "descGitFiles": "Die Dateien aktueller Versionen bleiben ohnehin erhalten, sodass ein Rollback den Build überspringen kann.",
       "retentionHint": "Artefakte neuerer Bereitstellungen für ein schnelles Rollback aufbewahren.",
       "retentionDescription": "Maximale Anzahl aufzubewahrender früherer Versionen. Aktive und angeheftete Versionen zählen zusätzlich. Ältere Artefakte werden entfernt; der Bereitstellungsverlauf bleibt verfügbar. Bei 0 bleiben nur aktive und angeheftete Versionen erhalten.",
+      "automaticValue": "Bis zu {count} Versionen",
+      "automaticDescription": "Behält höchstens die standardmäßig festgelegte Anzahl früherer Versionen. Bei wenig Speicherplatz können wiederherstellbare Artefakte früher entfernt werden. Aktive und angeheftete Versionen zählen zusätzlich. Commit- und Konfigurationsverlauf bleiben erhalten; ein Rollback kann einen erneuten Build erfordern.",
       "defaultBadge": "Instanzstandard",
       "loadFailed": "Rollback-Einstellungen konnten nicht geladen werden."
     },
@@ -1231,5 +1233,19 @@
     "saved": "Regel gespeichert",
     "saveFailed": "Regel konnte nicht gespeichert werden",
     "loadFailed": "Regeln konnten nicht geladen werden"
+  },
+  "runtimeUpdates": {
+    "options": "Optionen zur erneuten Bereitstellung",
+    "refresh": "Images aktualisieren und erneut bereitstellen",
+    "refreshing": "Images werden aktualisiert…",
+    "check": "Image-Updates prüfen",
+    "title": "Image-Updates",
+    "failed": "Die Image-Aktualisierung konnte nicht gestartet werden.",
+    "uncertain": "Die Anfrage hat das Zeitlimit überschritten. Prüfe vor einem erneuten Versuch den Bereitstellungsverlauf.",
+    "available": "Image-Updates verfügbar",
+    "current": "Die Image-Digests entsprechen den zuletzt beobachteten Registry-Digests.",
+    "checkUnavailable": "Für den Image-Vergleich sind erfasste Digests und Zugriff auf die Registry erforderlich.",
+    "checkFailed": "Image-Updates konnten nicht geprüft werden.",
+    "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
   }
 }

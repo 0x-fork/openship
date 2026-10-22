@@ -198,7 +198,9 @@ export class Oblien extends OblienSdk {
     return [...ips.values()];
   }
 
-  constructor(options: OblienOptions) {
+  constructor(options: OblienOptions & {
+    tokenRefresh?: { expiresAt: string; refresh(): Promise<{ token: string; expiresAt: string }> };
+  }) {
     const base = new URL(options.baseUrl ?? "https://api.oblien.com");
     if (base.username || base.password || base.search || base.hash ||
         (base.protocol !== "https:" && !(base.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)))) {
@@ -211,13 +213,28 @@ export class Oblien extends OblienSdk {
     let auth = new Headers(original);
     const setToken = this._http.setToken.bind(this._http);
     const restoreAuth = this._http.restoreAuth.bind(this._http);
+    let expiresAt = Date.parse(options.tokenRefresh?.expiresAt ?? "");
+    let refreshing: Promise<void> | undefined;
+    const ensureAuth = () => {
+      if (!options.tokenRefresh || expiresAt - Date.now() > 60_000) return;
+      return (refreshing ??= Promise.resolve().then(() => options.tokenRefresh!.refresh()).then(next => {
+        const expiry = Date.parse(next.expiresAt);
+        if (!next.token || !Number.isFinite(expiry) || expiry <= Date.now())
+          throw new Error("Cloud returned invalid execution credentials");
+        this._http.setToken(next.token);
+        expiresAt = expiry;
+      }).finally(() => { refreshing = undefined; }));
+    };
     this._http.setToken = token => {
       auth = new Headers({ Authorization: `Bearer ${token}` });
       setToken(token);
     };
-    this._http.restoreAuth = () => { auth = new Headers(original); restoreAuth(); };
+    this._http.restoreAuth = () => { auth = new Headers(original); restoreAuth(); expiresAt = 0; };
     this.streamWorkspaceMetrics = (workspaceId, signal) => workspaceMetricsStream(async (subscriptionSignal) => {
       if (!/^[a-zA-Z0-9_-]{1,128}$/.test(workspaceId)) throw new Error("Invalid Cloud workspace identity");
+      const renewal = ensureAuth();
+      if (renewal) await renewal;
+      subscriptionSignal.throwIfAborted();
       const url = new URL(`/workspace/${encodeURIComponent(workspaceId)}/stats/stream`, base);
       const headers = new Headers(auth);
       headers.set("Accept", "text/event-stream");
@@ -227,6 +244,9 @@ export class Oblien extends OblienSdk {
       request.signal?.throwIfAborted();
       const url = new URL(request.path, base);
       if (url.origin !== base.origin || url.username || url.password) throw new Error("Oblien request escaped its API origin");
+      const renewal = ensureAuth();
+      if (renewal) await renewal;
+      request.signal?.throwIfAborted();
       for (const [key, value] of Object.entries(request.query ?? {})) if (value !== undefined) url.searchParams.set(key, String(value));
       const headers = new Headers(request.headers);
       for (const key of ["Authorization", "X-Client-ID", "X-Client-Secret"]) headers.delete(key);

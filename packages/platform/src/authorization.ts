@@ -7,6 +7,9 @@ import {
   UnauthorizedError,
   ORG_SINGLETON_RESOURCE_TYPES,
   capabilityFor,
+  capabilityAction,
+  capabilityRoot,
+  isCapability,
   type Capability,
   type GrantPermission,
   type Permission,
@@ -153,6 +156,11 @@ function membershipRole(member: PermissionMembership): ContextRole | null {
  * `domains:delete`). A capability never satisfies a different check.
  */
 export function grantPermits(permissions: readonly GrantPermission[], input: PermissionInput): boolean {
+  // Explicit capabilities are only for checks on their parent, at their own
+  // action. A mistaken read capability must never satisfy an admin operation.
+  if (input.capability && (!isCapability(input.capability) ||
+    capabilityRoot(input.capability) !== input.resourceType ||
+    capabilityAction(input.capability) !== input.action)) return false;
   if (permitsAction(permissions, input.action)) return true;
   const capability = input.capability ?? capabilityFor(input.resourceType, input.action);
   return !!capability && permissions.includes(capability);

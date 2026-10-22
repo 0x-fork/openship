@@ -709,6 +709,8 @@
       "title": "Rollback history",
       "retentionHint": "Keep recent deployment artifacts for quick rollback.",
       "retentionDescription": "Maximum number of past releases to keep. Active and pinned releases are extra. Older artifacts are removed; deployment history stays available. Set to 0 to keep only active and pinned releases.",
+      "automaticValue": "Up to {count} versions",
+      "automaticDescription": "Keeps up to the default history limit. Under disk pressure, recoverable artifacts may be removed earlier. Active and pinned releases are extra. Commit and configuration history stays available; rollback may require a rebuild.",
       "defaultBadge": "instance default",
       "loadFailed": "Could not load rollback settings.",
       "valueOne": "{count} version",
@@ -719,7 +721,7 @@
       "increaseAria": "Increase rollback history",
       "sizeEach": "~{size} per image, including shared layers",
       "diskFree": "{size} free",
-      "autoBadge": "sized automatically",
+      "autoBadge": "Automatic",
       "manualBadge": "set manually",
       "kindFiles": "built files on disk",
       "kindImages": "images on the host",
@@ -1231,5 +1233,19 @@
     "connection": "GitHub connection",
     "deliveryFailed": "Checks could not be delivered",
     "saveFailed": "Could not save GitHub check settings."
+  },
+  "runtimeUpdates": {
+    "options": "Redeploy options",
+    "refresh": "Refresh images & redeploy",
+    "refreshing": "Refreshing images…",
+    "check": "Check image updates",
+    "title": "Image updates",
+    "failed": "Could not start image refresh.",
+    "uncertain": "The request timed out. Check deployment history before trying again.",
+    "available": "Image updates available",
+    "current": "Image digests match the latest observed registry digests.",
+    "checkUnavailable": "Image comparison needs recorded digests and registry access.",
+    "checkFailed": "Could not check image updates.",
+    "pinned": "Images are pinned by digest. Edit the configured reference to update them."
   }
 }

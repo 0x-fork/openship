@@ -1,3 +1,4 @@
+import { ManagementBillingOperationSchemas, ManagementPricingSchema } from "./management-billing";
 import { Type, type Static } from "@sinclair/typebox";
 import { PLAN_IDS, RESOURCE_TIER_ORDER, WORKLOAD_TYPES } from "@repo/core";
 import { BillingScopeSchema, CreateSubscriptionBody, CreateTopupBody, CustomServerResourcesSchema, PreviewSubscriptionChangeBody, ConfirmSubscriptionChangeBody, SubscriptionChangeScopeSchema } from "./billing-inputs";
@@ -53,6 +54,7 @@ export const BillingCustomQuoteSchema = Type.Object({
 });
 export const BillingPlansSchema = Type.Object({
   provider: Type.Optional(Type.Literal("oblien")),
+  management: Type.Optional(ManagementPricingSchema),
   locale: Type.String(), annual: Type.Object({ enabled: Type.Boolean(), monthsFree: Type.Number() }),
   ui: Type.Record(Type.String(), Type.String()),
   computePricing: Type.Optional(Type.Object({
@@ -80,7 +82,7 @@ export const BillingPlansSchema = Type.Object({
     }, { additionalProperties: false }), { minItems: 1 }),
   }, { additionalProperties: false })),
   plans: Type.Array(Type.Object({
-    id: tier, name: Type.String(), description: Type.String(), popular: Type.Boolean(),
+    id: tier, availableForPurchase: Type.Optional(Type.Boolean()), name: Type.String(), description: Type.String(), popular: Type.Boolean(),
     billingMode: Type.Optional(Type.Union([Type.Literal("monthly"), Type.Literal("metered")])),
     configuration: planConfiguration,
     offerReference: Type.Optional(Type.String()),
@@ -225,6 +227,7 @@ export const BillingPublicSchemas = {
   listPlans: { action: "read", input: Type.Object({ locale: Type.Optional(Type.String({ maxLength: 512 })) }), optionalInput: true, output: BillingPlansSchema },
 } as const satisfies Record<string, ResourceOperationSchema>;
 export const BillingOperationSchemas = {
+  ...ManagementBillingOperationSchemas,
   ...ActionBillingOperationSchemas,
   quoteCustomPlan: { action: "read", input: CustomServerResourcesSchema, output: BillingCustomQuoteSchema },
   listCheckouts: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingPendingCheckoutsSchema },

@@ -180,7 +180,7 @@ to get valid IDs.
 | Select the project’s primary domain. | `domains.setPrimary(id)` | `POST /api/domains/:id/primary`<br />`domain:write` |
 | Request certificate renewal for a domain record. | `domains.renewSsl(id)` | `POST /api/domains/:id/renew`<br />`domain:write` |
 | Check the domain’s current certificate. | `domains.verifySsl(id)` | `POST /api/domains/:id/verify-ssl`<br />`domain:write` |
-| Install a supplied certificate and private key. | `domains.uploadCert(id, input)` | `POST /api/domains/:id/certificate`<br />`domain:write` · Self-hosted |
+| Install a supplied certificate and private key. | `domains.uploadCert(id, input)` | `POST /api/domains/:id/certificate`<br />`domain:write` |
 | Preview domain connection requirements. | `domains.preview(input)` | `POST /api/domains/preview`<br />`domain:read` |
 | Request renewal for eligible certificates. | `domains.renewAllSsl()` | `POST /api/domains/renew-all`<br />`domain:write` |
 | Verify pending domains visible to the caller. | `domains.verifyPending(input?)` | `POST /api/domains/verify-pending`<br />`domain:write` |

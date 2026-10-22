@@ -302,7 +302,7 @@
         "domains:write": "添加、验证和续期域名，执行 DNS 质询",
         "domains:delete": "删除域名",
         "deployments:read": "查看部署、日志和构建状态",
-        "deployments:trigger": "启动、重新部署、重启、取消和回滚部署"
+        "deployments:trigger": "启动、重新部署、重启和固定部署，以及处理部署决策。取消、回滚和删除需要项目管理权限。"
       },
       "capabilityImplied": "已包含在此资源的访问级别中"
     },

@@ -5,6 +5,8 @@ import { projectBuildKitWorker } from "./docker-buildkit-worker";
 import { sq } from "./build-pipeline";
 
 export const DEFAULT_BUILD_CACHE_KEEP_BYTES = 5 * 1024 ** 3;
+/** Cleanup headroom target; does not raise build admission limits. */
+export const BUILD_STORAGE_GC_FREE_FRACTION = 0.2;
 const CACHE_LABEL = "openship.build-cache";
 const PROJECT_LABEL = "openship.build-cache.project";
 const CACHE_AGE_MS = 7 * 24 * 60 * 60_000;
@@ -16,12 +18,19 @@ export interface BuildStorage {
   freeInodes: number | null;
 }
 
-/** Measure Docker's filesystem, never the control plane's filesystem. */
-export const DOCKER_BUILD_STORAGE_COMMAND =
-  'root="$(docker info --format "{{.DockerRootDir}}")"; ' +
+const BUILD_STORAGE_READ =
   '[ -d "$root" ] || exit 1; ' +
-  'df -Pk "$root" | awk \'NR==2{print "OPENSHIP_STORAGE",$2,$4}\'; ' +
-  'df -Pi "$root" 2>/dev/null | awk \'NR==2{print "OPENSHIP_INODES",$2,$4}\'';
+  `df -Pk "$root" | awk 'NR==2{print "OPENSHIP_STORAGE",$2,$4}'; ` +
+  `df -Pi "$root" 2>/dev/null | awk 'NR==2{print "OPENSHIP_INODES",$2,$4}'`;
+
+/** Measure the selected daemon's filesystem, never the control plane's. */
+export const DOCKER_BUILD_STORAGE_COMMAND =
+  'root="$(docker info --format "{{.DockerRootDir}}")"; ' + BUILD_STORAGE_READ;
+
+/** The caller resolved this path through its Docker client before elevation. */
+export function dockerBuildStorageCommand(root: string): string {
+  return `root=${sq(root)}; ` + BUILD_STORAGE_READ;
+}
 
 export function parseBuildStorage(raw: string): BuildStorage {
   const lines = raw.trim().split(/\r?\n/);
@@ -60,6 +69,11 @@ export function parseBuildStorage(raw: string): BuildStorage {
 
 export function buildStorageReserve(storage: BuildStorage): number {
   return Math.min(2 * 1024 ** 3, Math.ceil(storage.totalBytes / 10));
+}
+
+/** Automatic cache ceiling scales down on small Docker filesystems. */
+export function buildCacheKeepBytes(storage: BuildStorage): number {
+  return Math.min(DEFAULT_BUILD_CACHE_KEEP_BYTES, Math.floor(storage.totalBytes / 10));
 }
 
 export function assertBuildStorage(storage: BuildStorage): void {
@@ -181,8 +195,8 @@ export async function pruneManagedBuildCaches(
     protectAll?: boolean;
   } = {},
 ): Promise<{ cachesDeleted: string[]; spaceReclaimed: number }> {
-  const keepBytes = options.keepBytes ?? DEFAULT_BUILD_CACHE_KEEP_BYTES;
-  if (!Number.isSafeInteger(keepBytes) || keepBytes < 0)
+  const requestedKeepBytes = options.keepBytes ?? DEFAULT_BUILD_CACHE_KEEP_BYTES;
+  if (!Number.isSafeInteger(requestedKeepBytes) || requestedKeepBytes < 0)
     throw new RangeError("Invalid build-cache budget");
   // A full /system/df also scans application/database volumes. Measure ONLY
   // recognized cache volumes so GC never walks a user's database to size caches.
@@ -222,6 +236,7 @@ export async function pruneManagedBuildCaches(
     throw new AppError("The project's build cache is still in use", 409, "BUILD_CACHE_IN_USE");
   let total = caches.reduce((sum, cache) => sum + cache.bytes, 0);
   let storage = parseBuildStorage(await executor.exec(DOCKER_BUILD_STORAGE_COMMAND));
+  const keepBytes = Math.min(requestedKeepBytes, buildCacheKeepBytes(storage));
   const idle = caches.filter(
     (cache) =>
       cache.references === 0 &&
@@ -294,5 +309,5 @@ export async function touchProjectBuildCache(
 }
 
 export function buildKitCacheConfig(storage: BuildStorage): string {
-  return `[worker.oci]\ngc = true\nreservedSpace = 0\nmaxUsedSpace = ${DEFAULT_BUILD_CACHE_KEEP_BYTES}\nminFreeSpace = ${buildStorageReserve(storage)}\n`;
+  return `insecure-entitlements = []\n[worker.oci]\nnetworkMode = "bridge"\ngc = true\nreservedSpace = 0\nmaxUsedSpace = ${buildCacheKeepBytes(storage)}\nminFreeSpace = "${BUILD_STORAGE_GC_FREE_FRACTION * 100}%"\n`;
 }

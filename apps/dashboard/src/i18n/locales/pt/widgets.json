@@ -302,7 +302,7 @@
         "domains:write": "Adicionar, verificar e renovar domínios, executar desafios DNS",
         "domains:delete": "Excluir domínios",
         "deployments:read": "Ler implantações, logs e status de build",
-        "deployments:trigger": "Iniciar, reimplantar, reiniciar, cancelar e reverter implantações"
+        "deployments:trigger": "Iniciar, reimplantar, reiniciar e fixar implantações; resolver decisões. Cancelar, reverter e excluir exigem administração do projeto."
       },
       "capabilityImplied": "Incluído no nível de acesso deste recurso"
     },

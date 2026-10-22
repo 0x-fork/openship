@@ -101,9 +101,9 @@ A **scoped access token** can also carry **capabilities** in a grant's `permissi
 | `domains:write` | a project | Add domains, verify them, set the primary domain, renew certificates, run DNS challenges and DNS auto-configure. |
 | `domains:delete` | a project | Delete the project's domains. |
 | `deployments:read` | a project | Read the project's deployments, their logs and build status, and list them. |
-| `deployments:trigger` | a project | Start a deploy, and redeploy, restart, cancel, pin or roll back the project's deployments. |
+| `deployments:trigger` | a project | Start, redeploy, restart or pin deployments and handle deployment decisions. Cancel, rollback and deletion require project `admin`. |
 
-Capabilities don't stack: `domains:delete` alone allows deleting domains, not adding them. The levels keep their meaning and are the presets: project `read` includes every `:read` capability above, `write` adds `domains:write` and `deployments:trigger`, and `admin` adds `domains:delete`. Deleting a deployment, and every route outside these areas, still needs the level. Capabilities are granted on a specific project id; the project `"*"` grant stays create-only.
+Capabilities don't stack: `domains:delete` alone allows deleting domains, not adding them. The levels keep their meaning and are the presets: project `read` includes every `:read` capability above, `write` adds `domains:write` and `deployments:trigger`, and `admin` adds `domains:delete`. Cancelling, rolling back or deleting a deployment, and every route outside these areas, still needs the level. Capabilities are granted on a specific project id; the project `"*"` grant stays create-only.
 
 In the token editor, each project row shows a toggle per capability under its level. Toggles the level already includes show as on and locked.
 

@@ -5,11 +5,46 @@ import { operationContext, operationData } from "../../lib/operation-context";
 import { param } from "../../lib/controller-helpers";
 export async function listUpdates(c: Context) {
   const behindOnly = ["1", "true"].includes((c.req.query("behind") ?? "").toLowerCase());
-  return c.json({ data: await operationData(c, getPlatformKernel().updates.list(operationContext(c), { behindOnly })) });
+  return c.json({
+    data: await operationData(
+      c,
+      getPlatformKernel().updates.list(operationContext(c), { behindOnly }),
+    ),
+  });
 }
 export async function triggerScan(c: Context) {
-  return c.json({ data: await operationData(c, getPlatformKernel().updates.scan(operationContext(c))) });
+  return c.json({
+    data: await operationData(c, getPlatformKernel().updates.scan(operationContext(c))),
+  });
 }
 export async function applyUpdate(c: Context) {
-  return c.json({ data: await operationData(c, getPlatformKernel().updates.apply(operationContext(c), param(c, "projectId"))) });
+  return c.json({
+    data: await operationData(
+      c,
+      getPlatformKernel().updates.apply(operationContext(c), param(c, "projectId")),
+    ),
+  });
+}
+export async function updateRuntime(c: Context) {
+  const data = await operationData(
+    c,
+    getPlatformKernel().updates.updateRuntime(
+      operationContext(c),
+      param(c, "projectId"),
+      await c.req.json(),
+    ),
+  );
+  return c.json({ data }, data.awaiting_actions ? 202 : 200);
+}
+export async function checkRuntime(c: Context) {
+  return c.json({
+    data: await operationData(
+      c,
+      getPlatformKernel().updates.checkRuntime(
+        operationContext(c),
+        param(c, "projectId"),
+        await c.req.json(),
+      ),
+    ),
+  });
 }

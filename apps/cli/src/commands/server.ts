@@ -11,7 +11,8 @@ import { exitCommand, rethrowCommandExit } from "../lib/command-exit";
  *   monitor           → GET  /system/monitor/stream    (SSE stats)
  *   ssh / terminal    → single-use terminal ticket + WebSocket PTY
  *
- * SSH installation and native-module commands remain self-hosted only.
+ * The API authorizes the selected server, including paid customer-owned hosts
+ * managed by Openship Cloud. Operator-host access remains unavailable in SaaS.
  */
 import { Command, Option } from "commander";
 import chalk from "chalk";
@@ -19,7 +20,6 @@ import ora from "ora";
 import { getShipClient, ApiError, hasShipCredentials } from "../lib/ship-client";
 import type { CreateServerInput } from "@repo/sdk";
 import { AgentExecBody, ServerResourceSchemas, ServerInstallerConfigSchema, UpdateServerInputSchema, parseInput, type DeploymentEvent } from "@repo/contracts";
-import { fetchCaps, requireSelfHost } from "../lib/caps";
 import { isJsonMode, printJson, printJsonLine, printTable, ok, err, info } from "../lib/output";
 import { managedServerCommand } from "./server-managed";
 import { networkCommand, clusterCommand } from "./server-infrastructure";
@@ -30,19 +30,18 @@ import { timeoutMilliseconds } from "../lib/command-input";
 import { openTerminal } from "../lib/terminal";
 
 /**
- * Wrap a subcommand action: require a token, enforce self-host, and turn any
+ * Wrap a subcommand action: require a token and turn any
  * ApiError / network failure into a clean stderr message + exit(1) rather than
  * an unhandled rejection stack trace. Commander's own args (operands, options,
  * command) pass straight through to `fn`.
  */
-function guard<A extends unknown[]>(fn: (...args: A) => Promise<void>, selfHosted = true): (...args: A) => Promise<void> {
+function guard<A extends unknown[]>(fn: (...args: A) => Promise<void>): (...args: A) => Promise<void> {
   return async (...args: A) => {
     if (!hasShipCredentials()) {
       err("Not logged in. Run `openship login` first.");
       exitCommand(1);
     }
     try {
-      if (selfHosted) requireSelfHost(await fetchCaps());
       await fn(...args);
     } catch (e) {
       rethrowCommandExit(e);
@@ -160,7 +159,7 @@ server
         })),
         ["id", "name", "connection", "host", "plan", "state"],
       );
-    }, false),
+    }),
   );
 
 /* ── add ────────────────────────────────────────────────────────── */
@@ -403,14 +402,16 @@ server
 
 server.command("install-session [sessionId]")
   .description("Inspect a server installation session")
-  .action(guard(async (sessionId?: string) => {
-    printJson(await getShipClient().servers.getInstallSession({ sessionId }));
+  .option("--server <serverId>", "Select the server's current installation")
+  .action(guard(async (sessionId: string | undefined, opts: { server?: string }) => {
+    printJson(await getShipClient().servers.getInstallSession({ sessionId, serverId: opts.server }));
   }));
 
 server.command("install-events [sessionId]")
   .description("Reattach to installation logs and prompts without starting another install")
-  .action(guard(async (sessionId?: string) => {
-    await followInstall(getShipClient().servers.installEvents({ sessionId }));
+  .option("--server <serverId>", "Select the server's current installation")
+  .action(guard(async (sessionId: string | undefined, opts: { server?: string }) => {
+    await followInstall(getShipClient().servers.installEvents({ sessionId, serverId: opts.server }));
   }));
 
 server.command("uninstall <serverId> <component>")
@@ -506,7 +507,7 @@ server
   .description("Open a Cloud or self-hosted server terminal through the selected controller")
   .option("--origin <url>", "Trusted dashboard origin (defaults to the saved context dashboard)")
   .option("--timeout <ms>", "Maximum time to open the terminal", timeoutMilliseconds, 30_000)
-  .action(guard(async (id: string, opts) => openTerminal({ kind: "server", id }, opts), false));
+  .action(guard(async (id: string, opts) => openTerminal({ kind: "server", id }, opts)));
 
 // ── helpers ──────────────────────────────────────────────────────
 function safeParse(data: string): Record<string, unknown> {

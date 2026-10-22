@@ -7,7 +7,6 @@ import {
   cloudDockerProjectPaths,
   cloudWorkspaceStatus,
   dockerProjectStorage,
-  Oblien,
   sq,
   type ResourceConfig,
 } from "@repo/adapters";
@@ -32,7 +31,7 @@ export async function readCloudWorkspaceHost(organizationId: string, id: string)
   const owner = await requireCloudWorkspace(organizationId, id);
   if (!env.CLOUD_MODE) {
     const connection = await remoteServerConnection(organizationId, id);
-    const client = new Oblien({ token: connection.token, baseUrl: connection.providerApiUrl });
+    const { client } = await getNamespaceClient(organizationId, id, connection);
     const workspace = await client.workspaces.get(connection.workspaceId);
     if (workspace.namespace !== connection.namespace) throw new AppError("Cloud space ownership changed", 409, "CLOUD_NAMESPACE_MISMATCH");
     if (workspace.id !== connection.workspaceId)
@@ -77,7 +76,7 @@ async function runningConnection(organizationId: string, id: string) {
  * a host or installing the Docker API bridge just to read metrics/open a shell. */
 export async function openCloudWorkspaceExecutor(organizationId: string, id: string) {
   const { client, binding } = await runningConnection(organizationId, id);
-  return new CloudWorkspaceExecutor(() => client.workspace(binding.workspaceId!).runtime(), binding.workspaceId!);
+  return new CloudWorkspaceExecutor(options => client.workspace(binding.workspaceId!).runtime(options), binding.workspaceId!);
 }
 
 /** Server-authorized Docker operations (inventory and migration). Applications
@@ -127,7 +126,7 @@ async function measuredHost(organizationId: string, id: string) {
 export async function sampleCloudWorkspaceResources(organizationId: string, id: string, sampleUsage = true) {
   const { client, binding, provider } = await runningConnection(organizationId, id);
   if (!sampleUsage) return { capacity: provider.allocation, usage: unavailableServerUsage("Not sampled for an uncapped build") };
-  const executor = new CloudWorkspaceExecutor(() => client.workspace(binding.workspaceId!).runtime(), binding.workspaceId!);
+  const executor = new CloudWorkspaceExecutor(options => client.workspace(binding.workspaceId!).runtime(options), binding.workspaceId!);
   try {
     return { capacity: provider.allocation, usage: await sampleServerUsage(executor) };
   } finally {
@@ -154,7 +153,21 @@ export async function measureCloudWorkspace(
   try {
     const [sample, storage, localProjects] = await Promise.all([
       sampleServerUsage(runtime.executor),
-      withTimeout(runtime.docker.df(), 15_000, "Storage inventory timed out").catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/lib/cloud-workspace-host"); return null; }),
+      (async () => {
+        const info = await withTimeout(
+          runtime.docker.info(),
+          5_000,
+          "Storage driver inspection timed out",
+        );
+        // fuse-overlayfs sizes writable layers by walking both full directory
+        // trees in daemon memory. A caller timeout does not stop that work.
+        // Keep host totals available; detailed attribution stays unknown.
+        if (info.Driver === "fuse-overlayfs") return null;
+        return withTimeout(runtime.docker.df(), 15_000, "Storage inventory timed out");
+      })().catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "platform/engine/lib/cloud-workspace-host");
+        return null;
+      }),
       repos.project.listByWorkspace(id, organizationId),
     ]);
     const projects = [...new Map([
@@ -162,7 +175,7 @@ export async function measureCloudWorkspace(
       ...localProjects,
     ].map(project => [project.id, project])).values()];
     const disk = storage ? dockerProjectStorage(storage, projects) : [];
-    const paths = projects.map((project) => cloudDockerProjectPaths(project.id).mounts);
+    const paths = storage ? projects.map((project) => cloudDockerProjectPaths(project.id).mounts) : [];
     const bindSizes = paths.length
       ? await runtime.executor
           .exec(
