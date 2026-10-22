@@ -52,6 +52,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   repos: {
+    routeProtection: { readPrivate: async () => null },
+    pullRequestPreview: { findByProject: async () => null },
     server: {
       get: async () => h.localRow,
       getInOrganization: async () => h.localRow,

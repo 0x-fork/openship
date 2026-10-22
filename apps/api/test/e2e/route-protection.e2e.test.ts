@@ -435,6 +435,13 @@ describeDockerE2E("password-protected routes through the real edge", () => {
     // Syntactically invalid extra file makes the REAL nginx -t fail.
     await write(`${paths.sitesDir}/invalid.conf`, "not_an_nginx_directive;");
     await expect(nginx.setRouteProtection("private.test", null)).rejects.toThrow();
+    const protectedFiles = ["private-test.conf", "private-test.route.json"]
+      .map((name) => sq(join(paths.sitesDir, name)))
+      .join(" ");
+    expect((await exec(`stat -c '%a' ${protectedFiles}`)).trim().split("\n")).toEqual([
+      "600",
+      "600",
+    ]);
     await exec(`rm ${sq(`${paths.sitesDir}/invalid.conf`)}`);
     await exec("openresty -t; openresty -s reload");
     expect((await ask("/asset.js")).status).toBe(401);
