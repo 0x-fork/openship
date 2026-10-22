@@ -76,7 +76,7 @@ export async function onboardingTestConnection(c: Context) {
     return c.json({ ok: false, message: "This host is not allowed.", code: "blocked_host" }, 400);
   }
 
-  return connectionResponse(c, await runEphemeralConnectionTest(parseInput(CreateServerInputSchema, body)));
+  return connectionResponse(c, await runEphemeralConnectionTest(parseInput(CreateServerInputSchema, body), { localBootstrap: true }));
 }
 
 /** Literal loopback / link-local / cloud-metadata / wildcard SSH targets. */

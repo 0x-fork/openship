@@ -47,6 +47,7 @@ import { formatDuration, systemDebug } from "./system-debug";
 import { decryptSecretField } from "./credential-encryption";
 import { operatorSshKeyRoots, resolveSafeSshKeyPath } from "./ssh-key-path";
 import { isLocalHostRow } from "./box-org";
+import { assertOperatorSshAccess } from "./operator-ssh-access";
 import { assertSshDestination, normalizeSshTransport, parseSshTuningArgs, safeErrorMessage } from "@repo/core";
 import { assertNativeSshSettings } from "../native/execution-policy";
 import { resolvePinnedHost } from "./ssrf-guard";
@@ -56,6 +57,7 @@ import { AppError } from "@repo/core";
 
 /** Settings shape accepted by `buildSshConfig`. */
 export interface SshSettingsInput {
+  organizationId?: string | null;
   purpose?: string;
   sshHostKey?: string | null;
   sshHost: string | null;
@@ -81,10 +83,11 @@ export interface SshSettingsInput {
  */
 export async function buildSshConfig(
   settings: SshSettingsInput,
-  options?: { trustOnFirstUse: (key: Buffer) => boolean },
+  options?: { trustOnFirstUse?: (key: Buffer) => boolean; localBootstrap?: boolean },
 ): Promise<SshConfig | null> {
   if (!settings.sshHost) return null;
   assertNativeSshSettings(settings);
+  await assertOperatorSshAccess(settings, settings.organizationId, options?.localBootstrap);
 
   const config: SshConfig = {
     host: settings.sshHost,
