@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, HOST_PORT_QUARANTINE_OWNER, repos, schema, type HostPortClaim } from "@repo/db";
 import type { Platform, RuntimeAdapter } from "@repo/adapters";
 import type { HostPortTargetIdentity } from "@repo/platform/engine/lib/host-port-target";
@@ -68,6 +68,14 @@ function routeOptions(hostPortTarget = localTarget) {
 }
 
 describe("live route host-port recovery (#915)", () => {
+  beforeAll(async () => {
+    await db.insert(schema.organization).values({ id: project.organizationId, name: "Routing" });
+    const group = await repos.projectGroup.create({
+      organizationId: project.organizationId, name: "Routing", slug: "routing",
+    });
+    await db.insert(schema.project).values({ ...project, groupId: group.id, name: "App" });
+  });
+
   beforeEach(async () => {
     await db.delete(schema.hostPortClaim);
   });

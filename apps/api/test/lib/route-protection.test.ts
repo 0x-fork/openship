@@ -27,6 +27,7 @@ const state = vi.hoisted(() => ({
   enqueue: vi.fn(),
 }));
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
     project: {
       findById: async (id: string) => (id === "source" ? state.source : state.project),
@@ -64,8 +65,6 @@ vi.mock("@repo/platform/engine/lib/project-runtime-lock", async () => {
   const { withKeyedMutex } = await import("@repo/core");
   return {
     withProjectRuntimeLock: (id: string, fn: () => Promise<unknown>) =>
-      withKeyedMutex(`test:project-runtime:${id}`, fn),
-    withLiveProjectRuntimeMutation: (id: string, fn: () => Promise<unknown>) =>
       withKeyedMutex(`test:project-runtime:${id}`, fn),
   };
 });

@@ -1,11 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@repo/platform/engine/lib/project-runtime-lock", () => ({
-  withLiveProjectRuntimeMutation: async (_id: string, work: () => Promise<unknown>) => work(),
-}));
-
 vi.mock("@repo/db", () => ({
+  withAdvisoryLock: async (_key: string, work: () => Promise<unknown>) => work(),
   repos: {
+    project: { findById: vi.fn(async (id: string) => ({ id, workspaceId: null })) },
     pullRequestPreview: { findByProject: vi.fn(async () => undefined) },
   routeProtection: { readPrivate: vi.fn(async () => null) },
     domain: { listByProject: vi.fn(async () => []) },

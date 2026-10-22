@@ -10,6 +10,7 @@ import { repos, type Project } from "@repo/db";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { assertResourceInOrg } from "./resource-access";
 import { withProjectRuntimeLock } from "./project-runtime-lock";
+import { createProvisionLock } from "./provision-lock";
 import { findActiveDeployment } from "./active-deployment";
 import {
   disposePlatform,
@@ -21,6 +22,11 @@ import { domainExecution } from "../modules/domains/domain-execution";
 import { env } from "../config";
 import type { ExecutionContext } from "../../context";
 import type { RouteProtectionInput, RouteProtectionStatus } from "@repo/contracts";
+
+/** Policy edits and publication share ownership without upgrading host/build admission. */
+export function withRouteProtectionLock<T>(projectId: string, work: () => Promise<T>): Promise<T> {
+  return createProvisionLock(`route-protection:${projectId}`).run(work);
+}
 
 function hostnameOf(input: string): string {
   const hostname = normalizeCustomHostname(input);
@@ -254,82 +260,92 @@ export async function changeRouteProtection(
   await selfHostedProject(ctx, projectId);
   const prepared =
     input.action === "protect" ? await createRouteProtection(input.password) : undefined;
-  return withProjectRuntimeLock(projectId, async () => {
-    const project = await selfHostedProject(ctx, projectId);
-    const intent = await repos.pullRequestPreview.findByProject(projectId);
-    if (intent) {
-      const source = await repos.project.findByIdInOrganization(
-        intent.sourceProjectId,
-        ctx.organizationId,
-      );
-      if (source?.previewSettings?.protectionHostname && input.action !== "retry")
+  return withProjectRuntimeLock(projectId, () =>
+    withRouteProtectionLock(projectId, async () => {
+      const project = await selfHostedProject(ctx, projectId);
+      const intent = await repos.pullRequestPreview.findByProject(projectId);
+      if (intent) {
+        const source = await repos.project.findByIdInOrganization(
+          intent.sourceProjectId,
+          ctx.organizationId,
+        );
+        if (source?.previewSettings?.protectionHostname && input.action !== "retry")
+          throw new AppError(
+            "Manage inherited preview passwords and sessions on the source hostname.",
+            409,
+            "PREVIEW_ROUTE_PROTECTION_MANAGED",
+          );
+      }
+      if (input.action === "unlock" && project.previewSettings?.protectionHostname === hostname)
         throw new AppError(
-          "Manage inherited preview passwords and sessions on the source hostname.",
+          "Remove the preview protection reference after cleaning up its previews before unlocking this hostname.",
           409,
           "PREVIEW_ROUTE_PROTECTION_MANAGED",
         );
-    }
-    if (input.action === "unlock" && project.previewSettings?.protectionHostname === hostname)
-      throw new AppError(
-        "Remove the preview protection reference after cleaning up its previews before unlocking this hostname.",
-        409,
-        "PREVIEW_ROUTE_PROTECTION_MANAGED",
-      );
-    const domain = await repos.domain.findByHostname(hostname);
-    if (domain && domain.projectId !== projectId)
-      throw new NotFoundError("Project domain", hostname);
-    if (domain && (domain.externalIngress || domain.domainType === "free"))
-      throw new AppError(
-        "This hostname must terminate HTTPS on your own edge to use a password.",
-        400,
-        "ROUTE_PROTECTION_HTTPS_REQUIRED",
-      );
-    if (domain) await domainExecution(ctx, domain.id);
-    const prior = await repos.routeProtection.readPrivate(projectId, hostname);
-    if (input.action === "revoke" && !prior?.secret)
-      throw new AppError("This route has no saved password.", 400, "ROUTE_PROTECTION_NOT_ENABLED");
-    if (input.action === "retry" && !prior) throw new NotFoundError("Route protection", hostname);
-    const policy =
-      prepared ??
-      (input.action === "unlock"
-        ? null
-        : input.action === "revoke"
-          ? revokeRouteSessions(privatePolicy(prior!)!)
-          : privatePolicy(prior!));
-    const revision = input.action === "retry" ? prior!.revision : randomBytes(16).toString("hex");
-    if (input.action !== "retry")
-      await repos.routeProtection.save(
-        projectId,
-        hostname,
-        revision,
-        policy === null ? null : JSON.stringify(policy),
-      );
-    if (project.previewSettings?.protectionHostname === hostname)
-      for (const preview of await repos.pullRequestPreview.list(project.id, ctx.organizationId))
-        if (preview.projectId) await repos.pullRequestPreview.enqueue(preview);
-    const result: RouteProtectionStatus = { hostname, enabled: policy !== null, status: "pending" };
-    const deployment = await findActiveDeployment(project);
-    if (!domain || !deployment) return result;
-    const resolved = await resolveDeploymentPlatform((deployment.meta ?? {}) as DeploymentMeta, {
-      organizationId: ctx.organizationId,
-    });
-    try {
-      const routing = resolved.platform.routing;
-      if (!routing?.setRouteProtection)
+      const domain = await repos.domain.findByHostname(hostname);
+      if (domain && domain.projectId !== projectId)
+        throw new NotFoundError("Project domain", hostname);
+      if (domain && (domain.externalIngress || domain.domainType === "free"))
         throw new AppError(
-          "This edge does not support password protection.",
+          "This hostname must terminate HTTPS on your own edge to use a password.",
           400,
-          "ROUTE_PROTECTION_UNSUPPORTED",
+          "ROUTE_PROTECTION_HTTPS_REQUIRED",
         );
-      if (await routing.setRouteProtection(hostname, policy)) {
-        await repos.routeProtection.markApplied(projectId, hostname, revision);
-        return { ...result, status: "applied" };
+      if (domain) await domainExecution(ctx, domain.id);
+      const prior = await repos.routeProtection.readPrivate(projectId, hostname);
+      if (input.action === "revoke" && !prior?.secret)
+        throw new AppError(
+          "This route has no saved password.",
+          400,
+          "ROUTE_PROTECTION_NOT_ENABLED",
+        );
+      if (input.action === "retry" && !prior) throw new NotFoundError("Route protection", hostname);
+      const policy =
+        prepared ??
+        (input.action === "unlock"
+          ? null
+          : input.action === "revoke"
+            ? revokeRouteSessions(privatePolicy(prior!)!)
+            : privatePolicy(prior!));
+      const revision = input.action === "retry" ? prior!.revision : randomBytes(16).toString("hex");
+      if (input.action !== "retry")
+        await repos.routeProtection.save(
+          projectId,
+          hostname,
+          revision,
+          policy === null ? null : JSON.stringify(policy),
+        );
+      if (project.previewSettings?.protectionHostname === hostname)
+        for (const preview of await repos.pullRequestPreview.list(project.id, ctx.organizationId))
+          if (preview.projectId) await repos.pullRequestPreview.enqueue(preview);
+      const result: RouteProtectionStatus = {
+        hostname,
+        enabled: policy !== null,
+        status: "pending",
+      };
+      const deployment = await findActiveDeployment(project);
+      if (!domain || !deployment) return result;
+      const resolved = await resolveDeploymentPlatform((deployment.meta ?? {}) as DeploymentMeta, {
+        organizationId: ctx.organizationId,
+      });
+      try {
+        const routing = resolved.platform.routing;
+        if (!routing?.setRouteProtection)
+          throw new AppError(
+            "This edge does not support password protection.",
+            400,
+            "ROUTE_PROTECTION_UNSUPPORTED",
+          );
+        if (await routing.setRouteProtection(hostname, policy)) {
+          await repos.routeProtection.markApplied(projectId, hostname, revision);
+          return { ...result, status: "applied" };
+        }
+        return result;
+      } finally {
+        await disposePlatform(resolved);
       }
-      return result;
-    } finally {
-      await disposePlatform(resolved);
-    }
-  });
+    }),
+  );
 }
 
 /** Admission guard for target changes: never move a private site to an edge that

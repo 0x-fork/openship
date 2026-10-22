@@ -1,8 +1,7 @@
 import type { RouteConfig, RoutingProvider } from "@repo/adapters";
-import type { Project } from "@repo/db";
-import { resolveProjectRouteProtection } from "./route-protection";
+import { repos, type Project } from "@repo/db";
+import { resolveProjectRouteProtection, withRouteProtectionLock } from "./route-protection";
 import { AppError } from "@repo/core";
-import { withLiveProjectRuntimeMutation } from "./project-runtime-lock";
 
 /** Project-owned routes apply saved policies on deploy, retry, and live edits. */
 export async function registerProjectRoute(
@@ -10,23 +9,23 @@ export async function registerProjectRoute(
   routing: Pick<RoutingProvider, "registerRoute">,
   route: RouteConfig,
 ): Promise<void> {
-  const published = await withLiveProjectRuntimeMutation(project.id, async () => {
-    // Use the same lock as policy edits and teardown: an older deployment must
-    // not publish a policy read before a concurrent rotation or revocation.
+  await withRouteProtectionLock(project.id, async () => {
+    // Deployment callers may already hold host-port ownership. Keep the policy
+    // lock inside that scope instead of acquiring the outer runtime lock here.
+    const current = await repos.project.findById(project.id);
+    if (!current || current.deletionInProgress)
+      throw new AppError(
+        "Project cleanup is pending; its route was not published.",
+        409,
+        "PROJECT_DELETION_PENDING",
+      );
     const { routeOptions, onApplied } = await resolveProjectRouteProtection(
       project.id,
       route.domain,
     );
     await routing.registerRoute({ ...route, ...routeOptions });
     await onApplied?.();
-    return true;
   });
-  if (!published)
-    throw new AppError(
-      "Project cleanup is pending; its route was not published.",
-      409,
-      "PROJECT_DELETION_PENDING",
-    );
 }
 
 /** Adapt project registration to consumers that only need to publish routes. */
