@@ -1,3 +1,4 @@
+import { savedMonthlyHobby } from "../../helpers/saved-cloud-offer";
 import capacityCatalog from "../../fixtures/oblien-capacity-catalog.json";
 import { monthlyCloudBilling } from "../../helpers/monthly-cloud-offer";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
@@ -158,7 +159,7 @@ function subscribe(tier: "hobby" | "starter" = "hobby") {
     periodEnd: "2026-11-01T00:00:00Z",
     cancelAtPeriodEnd: false,
     canceledAt: null,
-    offer: subscriptionOffer(tier, "monthly"),
+    offer: tier === "hobby" ? savedMonthlyHobby() : subscriptionOffer(tier, "monthly"),
     metadata: subscriptionMetadata(tier, owner.orgId, namespace),
   });
 }
@@ -894,7 +895,7 @@ describe("workspace payment and deletion races", () => {
       namespace: workspace.namespace!,
       kind: "subscription" as const,
       billingInterval: "monthly" as const,
-      offer: subscriptionOffer("hobby", "monthly"),
+      offer: savedMonthlyHobby(),
       metadata: subscriptionMetadata("hobby", owner.orgId, workspace.namespace!),
       successUrl: "https://app.openship.io/billing",
       cancelUrl: "https://app.openship.io/billing",
@@ -1536,7 +1537,7 @@ describe("provider subscription changes through billing and the shared server wo
     subscribe("starter"); await provision();
     const client = await billingClient();
     await expect(client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "hobby", idempotencyKey: randomUUID() }))
-      .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_DISK_SHRINK" });
+      .rejects.toMatchObject({ code: "BILLING_PLAN_RETIRED" });
     expect(h.billing.previewPlanChange).not.toHaveBeenCalled();
     const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 4096, diskGb: 128 }).quote;
     const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: custom.basePlanTierId,

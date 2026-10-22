@@ -561,6 +561,8 @@ export interface MultiServiceGroupHandle {
 
 export interface MultiServiceDeployConfig {
   deploymentId: string;
+  /** Exact outgoing service container, before the deployment pipeline removes it. */
+  previousContainerId?: string;
   projectId: string;
   slug: string;
   serviceName: string;

@@ -2,8 +2,8 @@ name: Docker images
 
 # Publishes the official pull-based images to GHCR: the control plane
 # (openship-api + openship-dashboard + openship-edge) and the two products that
-# ship as images of their own (openship-mail, the iRedMail engine; and
-# openship-webmail, the Zero client that the app catalog installs). Deliberately
+# ship as images of their own (mail, webmail, cluster tasks and the protected
+# BuildKit worker). Deliberately
 # SEPARATE from release.yml (the bun binary / npm CLI / desktop installers /
 # GitHub release) so image publishing can be iterated + tested on its own.
 #
@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, dashboard, edge, mail, webmail, cluster-tasks]
+        image: [api, dashboard, edge, mail, webmail, cluster-tasks, buildkit]
         platform: [amd64, arm64]
         # Two independent axes of `include`, both merged into every matching
         # combination: platform → runner (native builds, no QEMU), and image →
@@ -73,6 +73,8 @@ jobs:
             dockerfile: apps/email/Dockerfile.webmail
           - image: cluster-tasks
             dockerfile: packages/adapters/Dockerfile.cluster-tasks
+          - image: buildkit
+            dockerfile: packages/adapters/Dockerfile.buildkit
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -275,6 +277,19 @@ jobs:
       - name: Every src/app page must be in the image
         run: node apps/dashboard/scripts/check-routes.mjs /tmp/image-routes.json
 
+  # The worker must be publicly usable before any API tag can require it.
+  publish-buildkit:
+    name: Publish buildkit (manifest)
+    needs: [gate, build-images, update-e2e, dashboard-routes]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/publish-image
+        with:
+          image: buildkit
+          token: ${{ secrets.GITHUB_TOKEN }}
+
   merge-images:
     name: Publish ${{ matrix.image }} (manifest)
     # `gate` as well as the builds: this job is where images become PULLABLE (the
@@ -286,58 +301,15 @@ jobs:
     # Gated on the manual path too. That path never moves `:latest`, but it does
     # publish tags a box can be pointed at, and the wiring stays simpler than a
     # conditional that has to be right about which publishes are "only tests".
-    needs: [gate, build-images, update-e2e, dashboard-routes]
+    needs: [gate, build-images, update-e2e, dashboard-routes, publish-buildkit]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         image: [api, dashboard, edge, mail, webmail, cluster-tasks]
     steps:
-      - name: Download digests
-        uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/publish-image
         with:
-          pattern: digests-${{ matrix.image }}-*
-          path: /tmp/digests
-          merge-multiple: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Tag push → semver + :latest (auto: RCs like v1.2.3-rc.1 skip :latest).
-      # Manual dispatch → the input tag (or short SHA), and NEVER :latest.
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}
-          tags: |
-            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' }}
-            type=semver,pattern={{major}},enable=${{ github.event_name == 'push' }}
-            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
-            type=sha,format=short,enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag == '' }}
-          flavor: |
-            latest=${{ github.event_name == 'push' && 'auto' || 'false' }}
-
-      - name: Create manifest list + push
-        working-directory: /tmp/digests
-        env:
-          METADATA_JSON: ${{ steps.meta.outputs.json }}
-          SRC: ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}
-        run: |
-          set -euo pipefail
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$METADATA_JSON") \
-            $(printf "${SRC}@sha256:%s " *)
-
-      - name: Inspect
-        run: |
-          docker buildx imagetools inspect \
-            "ghcr.io/${{ github.repository_owner }}/openship-${{ matrix.image }}:${{ steps.meta.outputs.version }}" || true
+          image: ${{ matrix.image }}
+          token: ${{ secrets.GITHUB_TOKEN }}

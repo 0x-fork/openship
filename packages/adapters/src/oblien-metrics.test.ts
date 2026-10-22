@@ -90,3 +90,65 @@ it("bounds a provider connection that never responds", async () => {
   await waiting;
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("reconnects a cut-off provider stream and releases each reader before reopening", async () => {
+  vi.useFakeTimers();
+  const cancel = vi.fn();
+  const streams: ReadableStreamDefaultController<Uint8Array>[] = [];
+  const open = vi.fn(
+    async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            streams.push(controller);
+          },
+          cancel,
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      ),
+  );
+  const abort = new AbortController();
+  const source = workspaceMetricsStream(open, abort.signal);
+  const first = source.next();
+  await vi.advanceTimersByTimeAsync(0);
+  streams[0]!.enqueue(frame({ cpuUsage: 1 }));
+  expect((await first).value).toEqual({ cpuUsage: 1 });
+  const next = source.next();
+  streams[0]!.enqueue(
+    new TextEncoder().encode('event: error\ndata: {"error":"private provider detail"}\n\n'),
+  );
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(open).toHaveBeenCalledTimes(2);
+  streams[1]!.enqueue(frame({ cpuUsage: 2 }));
+  expect((await next).value).toEqual({ cpuUsage: 2 });
+  await source.return(undefined);
+  expect(cancel).toHaveBeenCalledTimes(2);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("bounds repeated failures and never retries an authorization refusal", async () => {
+  vi.useFakeTimers();
+  const failing = vi.fn(async () => new Response("private", { status: 503 }));
+  const failed = expect(workspaceMetricsStream(failing).next()).rejects.toThrow("unavailable");
+  await vi.advanceTimersByTimeAsync(7000);
+  await failed;
+  expect(failing).toHaveBeenCalledTimes(4);
+  const forbidden = vi.fn(async () => new Response("private", { status: 403 }));
+  await expect(workspaceMetricsStream(forbidden).next()).rejects.toThrow("unavailable");
+  expect(forbidden).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("cancels a pending retry without reopening or retaining its timer", async () => {
+  vi.useFakeTimers();
+  const abort = new AbortController();
+  const open = vi.fn(async () => new Response("", { status: 503 }));
+  const failed = expect(workspaceMetricsStream(open, abort.signal).next()).rejects.toThrow("gone");
+  await vi.advanceTimersByTimeAsync(0);
+  abort.abort(new Error("gone"));
+  await failed;
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(open).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});

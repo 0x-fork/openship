@@ -17,7 +17,7 @@ import {
   StartServerTunnelResultSchema,
 } from "./server-tunnels";
 import { AgentExecResultSchema } from "./services";
-import type { DeploymentEvent } from "./deployment-resources";
+import { ResourceIdSchema, type DeploymentEvent } from "./deployment-resources";
 import type {
   ResourceOperationSchema,
   ResourceOperations,
@@ -420,7 +420,10 @@ export const ServerPortScanSchema = Type.Object({
 });
 
 export const ServerInstallSessionInputSchema = Type.Object(
-  { sessionId: Type.Optional(Type.String({ minLength: 1 })) },
+  {
+    sessionId: Type.Optional(Type.String({ minLength: 1 })),
+    serverId: Type.Optional(ResourceIdSchema),
+  },
   { additionalProperties: false },
 );
 export type ServerInstallSessionInput = Static<typeof ServerInstallSessionInputSchema>;

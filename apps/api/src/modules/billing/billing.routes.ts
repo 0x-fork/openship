@@ -1,3 +1,4 @@
+import { managementBillingRoutes } from "./management-billing.routes";
 import { Hono } from "hono";
 import { BillingOperationSchemas, CreateSubscriptionBody, CreateTopupBody } from "@repo/contracts";
 import { authMiddleware } from "../../middleware";
@@ -39,7 +40,7 @@ plansR.public(
  * regardless of mount order. The secureRouter permission middleware
  * runs AFTER authMiddleware on every route, layered automatically.
  */
-export const billingSaasRoutes = new Hono().route("/", billingPlanChangeRoutes).route("/", billingCheckoutRoutes).route("/", actionsBillingRoutes);
+export const billingSaasRoutes = new Hono().route("/", managementBillingRoutes).route("/", billingPlanChangeRoutes).route("/", billingCheckoutRoutes).route("/", actionsBillingRoutes);
 const r = secureRouter(billingSaasRoutes, {
   module: "billing",
   basePath: "/api/billing",

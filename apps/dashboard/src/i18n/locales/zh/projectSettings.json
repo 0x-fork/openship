@@ -666,13 +666,15 @@
       "increaseAria": "增加回滚历史",
       "sizeEach": "每个镜像约 {size}，包含共享层",
       "diskFree": "剩余 {size}",
-      "autoBadge": "自动计算",
+      "autoBadge": "自动",
       "manualBadge": "手动设置",
       "kindFiles": "磁盘上的构建文件",
       "kindImages": "主机上的镜像",
       "descGitFiles": "最近版本的文件无论如何都会保留，因此回滚可以跳过构建。",
       "retentionHint": "保留最近部署的构建产物，以便快速回滚。",
       "retentionDescription": "保留的历史版本数量上限。当前运行和已固定的版本不计入此限制。旧的构建产物会被删除，但部署历史仍然保留。设为 0 时，仅保留当前运行和已固定的版本。",
+      "automaticValue": "最多 {count} 个版本",
+      "automaticDescription": "最多保留默认历史上限数量的版本。磁盘空间不足时，可恢复的构建产物可能提前被清理。正在运行和已固定的版本不计入上限。提交和配置历史仍然保留；回滚可能需要重新构建。",
       "defaultBadge": "实例默认值",
       "loadFailed": "无法加载回滚设置。"
     },
@@ -1231,5 +1233,19 @@
     "saved": "规则已保存",
     "saveFailed": "保存规则失败",
     "loadFailed": "加载规则失败"
+  },
+  "runtimeUpdates": {
+    "options": "重新部署选项",
+    "refresh": "刷新镜像并重新部署",
+    "refreshing": "正在刷新镜像…",
+    "check": "检查镜像更新",
+    "title": "镜像更新",
+    "failed": "无法启动镜像刷新。",
+    "uncertain": "请求超时。请先检查部署历史，再重试。",
+    "available": "有可用的镜像更新",
+    "current": "镜像摘要与最近观测到的仓库摘要一致。",
+    "checkUnavailable": "比较需要已记录的摘要和镜像仓库访问权限。",
+    "checkFailed": "无法检查镜像更新。",
+    "pinned": "镜像已通过摘要固定。请编辑配置的引用以更新镜像。"
   }
 }

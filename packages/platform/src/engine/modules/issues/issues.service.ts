@@ -416,7 +416,6 @@ function updateIssue(row: UpdateRow): SystemIssue {
  * domain and update rows and no hint that servers exist.
  */
 async function canSeeInfra(ctx: RequestContext): Promise<boolean> {
-  if (env.CLOUD_MODE) return false;
   return checkPermissionOnResource(ctx, {
     resourceType: "server",
     resourceId: "*",

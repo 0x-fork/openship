@@ -94,7 +94,7 @@ import {
   assertCloudDeploymentLimits,
 } from "../../lib/plan-guard";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
-import { type PortCheckResult } from "../../lib/deployment-runtime";
+import { resolveEffectiveTarget, type PortCheckResult } from "../../lib/deployment-runtime";
 import { requireOrgServer } from "../../lib/server-target";
 import * as sessionManager from "./session-manager";
 import {
@@ -213,6 +213,9 @@ export async function runDeploymentPreflight(
 
 /** Config snapshot stored in deployment.meta - self-contained build+deploy config. */
 export interface DeploymentConfigSnapshot {
+  /** Worker-authored completed-image receipt and one-shot retry provenance. */
+  completedBuildArtifacts?: import("./deployment-artifacts").DeploymentArtifacts;
+  retryBuildFromDeploymentId?: string;
   /** Set by lifecycle persistence after encrypted configuration bypasses log redaction. */
   configurationSecretsPreserved?: boolean;
   /** Idempotency for an explicit capacity adjustment; never accepted over HTTP. */
@@ -1418,6 +1421,7 @@ async function createQueuedDeploymentUnlocked(opts: {
   // triggerDeployment (webhook push, incoming webhooks, service-connection
   // auto-redeploy). Both gates no-op unless CLOUD_MODE.
   await assertPlanAllowsDeployShape(opts.organizationId, {
+    serverId: meta.serverId,
     workload: snapshotToClass(meta).workload,
     targetServiceIds: meta.targetServiceIds ?? null,
     // Workload alone is not enough: a compose/services project deploying ALL its
@@ -1436,9 +1440,9 @@ async function createQueuedDeploymentUnlocked(opts: {
   const needsBuild = meta.composeServices?.length
     ? cloudDockerNeedsBuild(meta.composeServices, strictRefreshImages(meta))
     : !meta.refreshAppDeploymentId && !meta.releaseImageRef;
-  if (needsBuild) await assertBuildMinutesAvailable(opts.organizationId, meta.managedWorkspaceId ?? null);
+  if (needsBuild) await assertBuildMinutesAvailable(opts.organizationId, meta.managedWorkspaceId ?? null, meta.serverId);
   const insertDeployment = async () => {
-    if (env.CLOUD_MODE) {
+    if (env.CLOUD_MODE && resolveEffectiveTarget("cloud", meta) === "cloud") {
       const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
       if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
       const mode = await resolveServicePipelineMode(project, meta);
@@ -2153,7 +2157,7 @@ export async function requestBuildAccess(
       throw new ValidationError(error instanceof Error ? error.message : "Invalid resource limits");
     }
     await assertPlanAllowsResourceTier(ctx.organizationId, snapshot.resources,
-      snapshot.managedWorkspaceId ?? project.workspaceId ?? null);
+      snapshot.managedWorkspaceId ?? project.workspaceId ?? null, snapshot.serverId);
   }
 
   // ── Preflight: validate config + domain before creating any resources ──
@@ -2386,9 +2390,10 @@ export async function cancelBuildSession(
 export async function redeployBuildSession(
   ctx: RequestContext,
   deploymentId: string,
-  opts?: { useExistingCommit?: boolean; trigger?: string },
+  opts?: { useExistingCommit?: boolean; reuseBuild?: boolean; trigger?: string },
 ) {
   const { dep: oldDep, project } = await loadDeployment(deploymentId);
+  if (ctx.organizationId !== project.organizationId) throw new NotFoundError("Deployment", deploymentId);
   resolveDeploymentEnvironment(project, oldDep.environment);
   // The Openship control plane updates itself via the CLI — never a redeploy.
   // The apply-update endpoint (updates.service) reaches redeploy directly, and
@@ -2397,6 +2402,11 @@ export async function redeployBuildSession(
   // triggerDeployment. Otherwise "Apply update" no-ops on the adopt deployment
   // and fakes success while the running control plane is untouched.
   assertNotControlPlane(project);
+  if (opts?.reuseBuild) {
+    if (opts.useExistingCommit) throw new AppError("Choose either a deployment-only retry or a rebuild of the same commit.", 400);
+    const { retryBuiltDeployment } = await import("./retry-built-deployment");
+    return retryBuiltDeployment(ctx, oldDep, project);
+  }
   // GitHub access gate (default-deny): a member can redeploy a
   // GitHub-backed project only when granted this repo.
   await assertGitHubRepoAccess(ctx, {
@@ -2502,13 +2512,16 @@ export async function redeployBuildSession(
   // materialize compose rows as a side effect of redeploying it.
   await (await import("../projects/project-connection.service")).refreshConnectionEnv(ctx, project.id, oldDep.environment);
   let currentProjectEnv = await repos.project.getEnvMap(project.id, oldDep.environment, null);
+  // Configuration and code must come from the same selected revision. A branch
+  // may have moved or removed Compose since an exact-commit retry was requested.
+  const sourceRef = commitSha ?? branch;
   let currentSourceInfo: SourceEnvInfo | undefined;
   if (meta.serviceDeploymentMode !== "single") {
-    currentSourceInfo = await reconcileComposeSource(ctx, project, branch, {
+    currentSourceInfo = await reconcileComposeSource(ctx, project, sourceRef, {
       interpolationEnv: decryptEnvMap(currentProjectEnv),
     });
   }
-  currentSourceInfo ??= await resolveLifecycleSourceEnv(ctx, project, branch);
+  currentSourceInfo ??= await resolveLifecycleSourceEnv(ctx, project, sourceRef);
   const sourceEnv = mergeSourceEnvDefaults(currentProjectEnv, currentSourceInfo);
   currentProjectEnv = sourceEnv.encrypted ?? {};
   if (sourceEnv.additions.length > 0) {
@@ -2839,9 +2852,9 @@ export async function triggerDeployment(ctx: RequestContext, data: DeploymentTri
   }
 
   if (!data.reuseSnapshot && data.trigger !== "rollback") {
-    // Required checks approve the entire source tree at this commit, including
-    // Compose and lifecycle configuration. Do not re-read those files at HEAD.
-    const sourceRef = (data.actionRequestId || data.previewAdmission) ? requestedCommitSha! : branch;
+    // A pinned commit selects configuration as well as code, including for
+    // manual deployments, required checks, and admitted previews.
+    const sourceRef = requestedCommitSha ?? branch;
     let sourceInfo: SourceEnvInfo | undefined = await reconcileComposeSource(ctx, project, sourceRef, {
       changedPaths: data.changedPaths,
       interpolationEnv: decryptEnvMap(encryptedEnvVars ?? {}),

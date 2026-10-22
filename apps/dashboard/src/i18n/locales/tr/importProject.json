@@ -116,7 +116,16 @@
     "addReleaseCommand": "Komut ekle",
     "removeReleaseCommand": "{number}. komutu kaldır",
     "runtimeImageLabel": "Çalışma zamanı imajı",
-    "runtimeImageDesc": "Docker için isteğe bağlı üretim temel imajı. Çalışma zamanı ve oluşturulan tarifle uyumlu olmalıdır; varsayılan için boş bırakın."
+    "runtimeImageDesc": "Docker için isteğe bağlı üretim temel imajı. Çalışma zamanı ve oluşturulan tarifle uyumlu olmalıdır; varsayılan için boş bırakın.",
+    "runtimeTitle": "Çalışma ortamı",
+    "runtimeDesc": "Uygulamanızı çalıştıran imajı seçin. İmajları yenilemek seçili sürümü ve sabitlenmiş özetleri korur.",
+    "runtimeBareDesc": "Bu uygulama doğrudan sunucuda çalışır. Yüklü çalışma ortamını sunucuda yönetin.",
+    "runtimeStaticDesc": "Derleme imajı statik dosyalarınızı hazırlar. Dağıtımdan sonra uygulama çalışma ortamı çalışmaz.",
+    "runtimeDockerfileDesc": "Çalışma ortamı imajını Dockerfile dosyanız belirler.",
+    "runtimeServicesDesc": "Her hizmetin çalışma ortamı imajını Hizmetler bölümünden seçin.",
+    "runtimePrebuiltDesc": "Seçilen uygulama imajı kendi çalışma ortamını içerir.",
+    "runtimeOverrideUnused": "Bu kayıtlı geçersiz kılmalar bu dağıtım için geçerli değil. Kaydetmeden önce temizleyin.",
+    "clearRuntimeOverrides": "Kayıtlı geçersiz kılmaları temizle"
   },
   "projectSettings": {
     "framework": "Framework",
