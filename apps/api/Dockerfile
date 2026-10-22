@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM golang:1.26.4-bookworm AS actions-runner
+FROM --platform=$BUILDPLATFORM golang:1.26.9-bookworm AS actions-runner
 WORKDIR /runner
 COPY packages/actions-runner/go.mod packages/actions-runner/go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download

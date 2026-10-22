@@ -34,7 +34,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/db", () => ({ repos: {} }));
+
 vi.mock("@repo/platform/engine/modules/deployments/compose/build.service", () => ({ buildComposeImages: mocks.buildComposeImages }));
+vi.mock("@repo/platform/engine/modules/deployments/compose/required-env-preflight", () => ({
+  assertRequiredServiceEnvironment: async () => {},
+}));
 vi.mock("@repo/platform/engine/modules/deployments/compose/deploy.service", () => ({
   deployComposeServices: mocks.deployComposeServices,
   // The no-changes settle is a separate branch that runs AFTER the cleanup loop

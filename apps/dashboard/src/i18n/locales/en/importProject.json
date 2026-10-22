@@ -116,7 +116,16 @@
     "addReleaseCommand": "Add command",
     "removeReleaseCommand": "Remove command {number}",
     "runtimeImageLabel": "Runtime image",
-    "runtimeImageDesc": "Optional production base image for Docker builds. It must match the selected runtime and generated recipe; leave blank for the managed default."
+    "runtimeImageDesc": "Optional production base image for Docker builds. It must match the selected runtime and generated recipe; leave blank for the managed default.",
+    "runtimeTitle": "Runtime",
+    "runtimeDesc": "Choose the image that runs your app. Refreshing images keeps your selected version and digest pins.",
+    "runtimeBareDesc": "This app runs directly on its server. Manage the installed runtime there.",
+    "runtimeStaticDesc": "The build image prepares your static files. No application runtime runs after deployment.",
+    "runtimeDockerfileDesc": "Your Dockerfile chooses the runtime image.",
+    "runtimeServicesDesc": "Choose runtime images for each service in Services.",
+    "runtimePrebuiltDesc": "The selected application image includes its runtime.",
+    "runtimeOverrideUnused": "These saved overrides do not apply to this deployment. Clear them before saving.",
+    "clearRuntimeOverrides": "Clear saved overrides"
   },
   "projectSettings": {
     "framework": "Framework",

@@ -1233,5 +1233,19 @@
     "saved": "Regel gespeichert",
     "saveFailed": "Regel konnte nicht gespeichert werden",
     "loadFailed": "Regeln konnten nicht geladen werden"
+  },
+  "runtimeUpdates": {
+    "options": "Optionen zur erneuten Bereitstellung",
+    "refresh": "Images aktualisieren und erneut bereitstellen",
+    "refreshing": "Images werden aktualisiert…",
+    "check": "Image-Updates prüfen",
+    "title": "Image-Updates",
+    "failed": "Die Image-Aktualisierung konnte nicht gestartet werden.",
+    "uncertain": "Die Anfrage hat das Zeitlimit überschritten. Prüfe vor einem erneuten Versuch den Bereitstellungsverlauf.",
+    "available": "Image-Updates verfügbar",
+    "current": "Die Image-Digests entsprechen den zuletzt beobachteten Registry-Digests.",
+    "checkUnavailable": "Für den Image-Vergleich sind erfasste Digests und Zugriff auf die Registry erforderlich.",
+    "checkFailed": "Image-Updates konnten nicht geprüft werden.",
+    "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
   }
 }

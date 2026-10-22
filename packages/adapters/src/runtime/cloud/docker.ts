@@ -891,7 +891,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       await super.destroy(owned.Id);
     });
   }
-  async cleanupProject(
+  override async cleanupProject(
     projectId: string,
     options?: {
       wipeVolumes?: boolean;
@@ -900,7 +900,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     this.assertProject(projectId);
     if ((await this.listProjectContainerIds(projectId)).length)
       throw new Error("Remove the project's containers before cleaning its storage");
-    await this.clearManagedProjectBuildCache(projectId);
+    await super.cleanupProject(projectId, options);
     if (options?.wipeVolumes) {
       // Include detached volumes left by interrupted deployments. Inventory is
       // label-scoped; retained data is removed only on the explicit wipe path.
