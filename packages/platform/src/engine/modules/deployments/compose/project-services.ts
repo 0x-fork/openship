@@ -17,6 +17,7 @@ import { getProjectType, composeNamespaceDependencies, type ComposeAdvanced, typ
 import { hasSourceBuildRecipe, serviceKind, type DeployableService } from "../../../lib/deployable-service";
 import { resolveServicePublicEndpoints } from "../../../lib/public-endpoints";
 import { isMaterializedAppRow } from "../../services/materialized-app-row";
+import { replaysFrozenDeployment } from "../deployment-artifacts";
 export { serviceKind } from "../../../lib/deployable-service";
 
 export function isMultiServiceProject(
@@ -125,7 +126,7 @@ export function newerThanRestoredRelease(dep: {
   trigger?: string | null;
   meta?: unknown;
 }): (service: { name: string }) => boolean {
-  if (dep.trigger !== "rollback") return () => false;
+  if (!replaysFrozenDeployment(dep)) return () => false;
   const frozen = (dep.meta as { composeServices?: Array<{ name?: string }> } | null)
     ?.composeServices;
   const names = new Set((frozen ?? []).map((s) => s.name).filter((n): n is string => !!n));

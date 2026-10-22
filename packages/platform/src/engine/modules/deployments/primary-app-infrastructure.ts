@@ -7,6 +7,7 @@ import { findActiveDeployment, findProjectDeployment } from "../../lib/active-de
 import { throwIfDeploymentCancelled } from "./deployment-cancellation";
 import { deployComposeServices } from "./compose/deploy.service";
 import { primaryAppWithInfrastructure } from "./compose/project-services";
+import { replaysFrozenDeployment } from "./deployment-artifacts";
 import type { DeploymentConfigSnapshot } from "./build.service";
 import type { DeployPhaseInputs } from "./build-pipeline";
 
@@ -70,7 +71,16 @@ async function copyRows(rows: ServiceDeployment[], deploymentId: string) {
 /** Roles-only edits and app rollbacks carry infrastructure; they do not replay
  * old database configuration, credentials, commands or data. */
 export async function carryAttachedInfrastructure(phase: InfrastructurePhase) {
-  const active = await findActiveDeployment(phase.project);
+  const retryFrom = phase.snapshot.retryBuildFromDeploymentId;
+  const active =
+    (await findActiveDeployment(phase.project)) ??
+    (retryFrom ? await findProjectDeployment(phase.project, retryFrom) : null);
+  if (
+    active &&
+    ((active.meta as DeploymentConfigSnapshot | null)?.serverId ?? null) !==
+      (phase.snapshot.serverId ?? null)
+  )
+    throw new Error("Use migration to move attached services to another server.");
   const ids = new Set(phase.primaryApp!.infrastructure.map((service) => service.id));
   const rows = active
     ? (await repos.service.listByDeployment(active.id)).filter((row) => ids.has(row.serviceId))
@@ -99,7 +109,7 @@ export async function prepareAttachedInfrastructure(phase: InfrastructurePhase) 
   if (!phase.primaryApp || !isMultiServiceRuntime(runtime))
     throw new Error("Attached services require Docker.");
   if (
-    dep.trigger === "rollback" ||
+    replaysFrozenDeployment(dep) ||
     (snapshot.roleConfiguration && !snapshot.targetServiceIds?.length)
   ) {
     await carryAttachedInfrastructure(phase);

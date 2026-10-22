@@ -1,5 +1,6 @@
 "use client";
 
+import { RouteProtectionButton } from "@/components/routing/RouteProtectionButton";
 import { DomainIngressMenu, IngressDestinationNotice } from "@/components/ingress/DomainIngressSettings";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
@@ -1992,6 +1993,8 @@ export const DomainSettings = ({ serviceScope, onRoutesChanged }: DomainSettings
       <DomainOverviewCard
         key={item.id}
         domain={item}
+        protectionControl={<RouteProtectionButton hostname={item.hostname} projectId={String(id)}
+          unsupported={isCloudProject || projectData.deployTarget === "cluster" || !selfHosted || !!item.externalIngress || item.hostname.endsWith(`.${baseDomain}`) || item.hostname.startsWith("*.")} />}
         menuActions={menuActions}
         sslActionBusy={isRenewing || isRechecking}
         sslActionLabel={
@@ -3117,6 +3120,7 @@ function DiagnosablePill({
 
 function DomainOverviewCard({
   domain,
+  protectionControl,
   menuActions = [],
   sslActionBusy = false,
   sslActionLabel,
@@ -3135,6 +3139,7 @@ function DomainOverviewCard({
   ingressSettings,
 }: {
   domain: DomainSummaryItem;
+  protectionControl?: React.ReactNode;
   /** Secondary actions (edit, renew, …) collapsed into a ⋯ menu. Visit is a
    *  plain icon; Verify is a direct inline button below, not a menu item. */
   menuActions?: MenuAction[];
@@ -3227,6 +3232,7 @@ function DomainOverviewCard({
           <p className="mt-1 text-[12px] text-muted-foreground">{domain.typeLabel}</p>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
+          {protectionControl}
           {domain.liveUrl && !domain.hostname.startsWith("*.") ? (
             <a
               href={domain.liveUrl}

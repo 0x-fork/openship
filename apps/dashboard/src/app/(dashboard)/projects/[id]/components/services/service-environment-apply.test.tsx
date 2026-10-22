@@ -20,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   invalidate: vi.fn(),
   pricing: vi.fn(),
   refresh: vi.fn(),
+  update: vi.fn(),
+  trigger: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: mocks.toast }) }));
@@ -41,10 +43,15 @@ vi.mock("@/lib/api/services", async (original) => {
       getEnvironment: mocks.getEnvironment,
       mergeEnv: mocks.mergeEnv,
       restart: mocks.restart,
+      update: mocks.update,
     },
   };
 });
 vi.mock("@/lib/api/projects", () => ({ projectsApi: { getEnv: async () => ({ data: [] }) } }));
+vi.mock("@/lib/api/deploy", async (original) => {
+  const actual = await original<typeof import("@/lib/api/deploy")>();
+  return { ...actual, deployApi: { ...actual.deployApi, trigger: mocks.trigger } };
+});
 vi.mock("@/lib/api", async (original) => {
   const actual = await original<typeof import("@/lib/api")>();
   return { ...actual, backupsApi: { ...actual.backupsApi, listPolicies: async () => ({ data: [] }) } };
@@ -112,6 +119,8 @@ beforeEach(() => {
   mocks.restart.mockResolvedValue({ success: true });
   mocks.post.mockResolvedValue(applied);
   mocks.pricing.mockReturnValue(false);
+  mocks.update.mockResolvedValue({ success: true });
+  mocks.trigger.mockResolvedValue({ success: true, data: { deployment: { id: "dep-empty" } } });
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -631,5 +640,44 @@ describe("service environment apply", () => {
     expect(button(copy.environmentApply.title).title).toBe(copy.environmentApply.hint);
     await click(copy.environmentApply.title);
     expectServiceApply();
+  });
+});
+
+
+describe("empty storage through the service deployment flow", () => {
+  async function prepare() {
+    await render("volumes", { service: { ...service, volumes: ["original:/data", "shared:/shared:ro"] }, deployTarget: "cloud" });
+    await click(copy.storage.emptyVolume.menu);
+    await click(copy.storage.emptyVolume.title);
+    const input = document.querySelector<HTMLInputElement>("[data-modal-layer] input")!;
+    expect(input).not.toBeNull();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "api");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+  it("saves a fresh named volume before deploying only this service", async () => {
+    await prepare(); await click(copy.storage.emptyVolume.action);
+    expect(mocks.update).toHaveBeenCalledExactlyOnceWith("project-stack", "svc-api", {
+      volumes: [expect.stringMatching(/^openship-fresh-[a-f0-9-]+:\/data$/), "shared:/shared:ro"],
+    });
+    expect(mocks.trigger).toHaveBeenCalledExactlyOnceWith({ projectId: "project-stack", serviceIds: ["svc-api"] });
+    expect(mocks.update.mock.invocationCallOrder[0]).toBeLessThan(mocks.trigger.mock.invocationCallOrder[0]!);
+    expect(mocks.push).toHaveBeenCalledWith("/build/dep-empty");
+  });
+  it("does not deploy if saving the new mount fails", async () => {
+    mocks.update.mockRejectedValueOnce(new Error("Save rejected"));
+    await prepare(); await click(copy.storage.emptyVolume.action);
+    expect(mocks.trigger).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Save rejected");
+  });
+  it("retries a refused deployment without replacing the volume configuration again", async () => {
+    mocks.trigger.mockRejectedValueOnce(new Error("Build already in progress"));
+    await prepare(); await click(copy.storage.emptyVolume.action);
+    expect(document.body.textContent).toContain(copy.storage.emptyVolume.retryHint);
+    await click(copy.storage.emptyVolume.retry);
+    expect(mocks.update).toHaveBeenCalledOnce();
+    expect(mocks.trigger).toHaveBeenCalledTimes(2);
+    expect(mocks.push).toHaveBeenCalledWith("/build/dep-empty");
   });
 });

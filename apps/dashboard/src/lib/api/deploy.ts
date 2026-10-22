@@ -4,6 +4,7 @@ import { endpoints } from "./endpoints";
 import type {
   StackId,
   ComposeAdvanced,
+  ComposeEnvironmentMeta,
   RoutingConfig,
   OpenshipResourceTier,
   OpenshipReadiness,
@@ -90,21 +91,9 @@ export interface PrepareComposeService {
   ports: string[];
   dependsOn: string[];
   environment: Record<string, string>;
-  environmentMeta?: Record<
-    string,
-    {
-      source: "env-file" | "default" | "missing" | "interpolated";
-      variable?: string;
-      defaultValue?: string;
-      resolvedValue: string;
-      expression?: string;
-      /** The compose file marks this row mandatory (`${VAR:?…}`) and at least
-       *  one referenced variable is unresolved. */
-      required?: boolean;
-      /** Names referenced by an embedded expression that still need a value. */
-      unresolvedVariables?: string[];
-    }
-  >;
+  /** Parser-owned expressions; preview values are not a replacement for their source. */
+  environmentTemplates?: Record<string, string>;
+  environmentMeta?: Record<string, ComposeEnvironmentMeta>;
   volumes: string[];
   command?: string;
   restart?: string;
@@ -397,8 +386,8 @@ export const deployApi = {
   buildStart: (deployment_id: string) => api.post<any>(endpoints.deploy.buildStart(deployment_id)),
 
   /** Re-deploy an existing deployment */
-  buildRedeploy: (deployment_id: string) =>
-    api.post<any>(endpoints.deploy.buildRedeploy(deployment_id)),
+  buildRedeploy: (deployment_id: string, options?: { reuseBuild?: boolean }) =>
+    api.post<any>(endpoints.deploy.buildRedeploy(deployment_id), options),
 
   /** Check SSL certificate status for a domain */
   sslStatus: (domain: string) => api.post<any>(endpoints.deploy.sslStatus, { domain }),

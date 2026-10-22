@@ -1,7 +1,8 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LOCAL_HOST_PORT_TARGET } from "@repo/platform/engine/lib/host-port-target";
+import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { DockerRuntime, NoopInfraProvider, createHostExecutor } from "@repo/adapters";
 import { parseOpenshipConfig, SYSTEM } from "@repo/core";
@@ -19,6 +20,8 @@ let image = "";
 let dbId = "";
 let appId = "";
 let hostname = "";
+let owner: Awaited<ReturnType<typeof seedOrg>>;
+let firstFailed: Deployment;
 let registrations: ReturnType<typeof vi.spyOn>;
 let loopbackRouting = false;
 const attempts = new Set<string>();
@@ -84,6 +87,9 @@ async function deploy(
     status: "queued",
   });
   await pipeline.kickoffBuild(await current(), dep);
+  return settle(dep, cancelWhen);
+}
+async function settle(dep: Pick<Deployment, "id">, cancelWhen?: string) {
   if (cancelWhen) {
     const sessions = await import("@repo/platform/engine/modules/deployments/session-manager");
     await expect
@@ -127,7 +133,7 @@ describeDockerE2E("primary source app with attached infrastructure (#1312)", () 
     await requireDocker();
     runtime = await DockerRuntime.create({ transport: "socket" });
     await runtime.pullImage(databaseImage);
-    const owner = await seedOrg({ ownsHost: true });
+    owner = await seedOrg({ ownsHost: true });
     source = await mkdtemp(join(tmpdir(), "openship-primary-infra-"));
     await writeFile(
       join(source, "Dockerfile"),
@@ -262,16 +268,88 @@ describeDockerE2E("primary source app with attached infrastructure (#1312)", () 
       await runtime.removeNetwork(project.slug).catch(() => {});
       await runtime.removeVolume(`openship-${project.slug}-pgdata`).catch(() => {});
       await runtime.removeImage(image).catch(() => {});
+      for (const built of await runtime.listProjectImages(project.id))
+        for (const tag of built.repoTags) await runtime.removeImage(tag).catch(() => {});
     }
     await runtime?.dispose();
     if (source) await rm(source, { force: true, recursive: true });
   }, 120_000);
   it("retains initially prepared infrastructure when the first app migration fails", async () => {
-    const failed = await deploy([`${sql} -c 'SELECT 1'`, "exit 7"]);
+    const { mergeEnvVars } =
+      await import("@repo/platform/engine/modules/projects/project-env.service");
+    await mergeEnvVars(project.id, owner.organizationId, {
+      environment: "production",
+      deletes: [],
+      upserts: [{ key: "PGPASSWORD", value: "test-only", isSecret: true }],
+    });
+    await repos.project.update(project.id, {
+      startCommand:
+        "mkdir -p /tmp/www; echo live > /tmp/www/index.html; exec /usr/local/bin/busybox httpd -f -p 8080 -h /tmp/www",
+      releaseCommands: [
+        `${sql} -c 'CREATE TABLE IF NOT EXISTS retry_attempts (value integer); INSERT INTO retry_attempts VALUES (1)'`,
+        `test "$(${sql} -At -c 'SELECT count(*) FROM retry_attempts')" -ge 2`,
+      ],
+      roles,
+    });
+    const { triggerDeployment } =
+      await import("@repo/platform/engine/modules/deployments/build.service");
+    const result = await triggerDeployment(buildBackgroundContext(owner), {
+      projectId: project.id,
+      trigger: "manual",
+    });
+    expect(result.deployment).toBeDefined();
+    attempts.add(result.deployment!.id);
+    const failed = (firstFailed = await settle(result.deployment!));
     expect(failed.status).toBe("failed");
     expect((await current()).activeDeploymentId).toBeNull();
     firstDatabaseId = (await dbRow(failed)).containerId!;
     expect((await runtime.getContainerInfo(firstDatabaseId)).status).toBe("running");
+    expect(failed.meta).toMatchObject({
+      primaryAppServiceName: project.slug,
+      composeServices: expect.arrayContaining([
+        expect.objectContaining({ name: project.slug, kind: "monorepo" }),
+      ]),
+      completedBuildArtifacts: {
+        version: 1,
+        images: [expect.objectContaining({ imageId: expect.stringMatching(/^sha256:/) })],
+      },
+    });
+  });
+  it("retries the completed app through the public entry point with no source, rebuild or pull and retains its database and roles", async () => {
+    const { redeployBuildSession } =
+      await import("@repo/platform/engine/modules/deployments/build.service");
+    const build = vi
+      .spyOn(runtime, "build")
+      .mockRejectedValue(new Error("A completed-image retry must not build"));
+    const pull = vi
+      .spyOn(runtime, "pullImage")
+      .mockRejectedValue(new Error("A completed-image retry must not pull"));
+    const hiddenSource = `${source}-retry-without-source`;
+    await rename(source, hiddenSource);
+    try {
+      const result = await redeployBuildSession(buildBackgroundContext(owner), firstFailed.id, {
+        reuseBuild: true,
+      });
+      attempts.add(result.deployment_id);
+      live = await settle({ id: result.deployment_id });
+      expect(live.status, live.errorMessage ?? "").toBe("ready");
+      expect(live.buildDurationMs).toBe(0);
+      expect(live.roleContainers).toHaveLength(2);
+      const receipt = firstFailed.meta as {
+        completedBuildArtifacts: { images: Array<{ imageId: string }> };
+      };
+      expect((await runtime.docker.getContainer(live.containerId!).inspect()).Image).toBe(
+        receipt.completedBuildArtifacts.images[0]!.imageId,
+      );
+      expect((await dbRow(live)).containerId).toBe(firstDatabaseId);
+      expect(await query(live.containerId!, "SELECT count(*) FROM retry_attempts")).toBe("2");
+      expect(build).not.toHaveBeenCalled();
+      expect(pull).not.toHaveBeenCalled();
+    } finally {
+      await rename(hiddenSource, source);
+      build.mockRestore();
+      pull.mockRestore();
+    }
   });
   it("authenticates to PostgreSQL from the candidate before web and role activation", async () => {
     live = await deploy([

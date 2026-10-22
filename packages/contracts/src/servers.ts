@@ -1,9 +1,11 @@
 import {
   NetworkCollectionSchemas,
   ComputeClusterCollectionSchemas,
+  ComputeClusterSchema,
   ServerInfrastructureSchema,
 } from "./infrastructure-resources";
 import { ClusterRuntimeCollectionSchemas } from "./cluster-runtime";
+import { SwarmInspectionInputSchema, SwarmInspectionSchema, ConnectSwarmInputSchema } from "./server-swarm";
 import { ClusterStorageCollectionSchemas } from "./cluster-storage";
 import { ManagedServerResourceSchemas } from "./server-managed";
 import { Type, type Static } from "@sinclair/typebox";
@@ -17,7 +19,7 @@ import {
   StartServerTunnelResultSchema,
 } from "./server-tunnels";
 import { AgentExecResultSchema } from "./services";
-import type { DeploymentEvent } from "./deployment-resources";
+import { ResourceIdSchema, type DeploymentEvent } from "./deployment-resources";
 import type {
   ResourceOperationSchema,
   ResourceOperations,
@@ -420,7 +422,10 @@ export const ServerPortScanSchema = Type.Object({
 });
 
 export const ServerInstallSessionInputSchema = Type.Object(
-  { sessionId: Type.Optional(Type.String({ minLength: 1 })) },
+  {
+    sessionId: Type.Optional(Type.String({ minLength: 1 })),
+    serverId: Type.Optional(ResourceIdSchema),
+  },
   { additionalProperties: false },
 );
 export type ServerInstallSessionInput = Static<typeof ServerInstallSessionInputSchema>;
@@ -533,6 +538,8 @@ export const ServerResourceSchemas = {
   retry: { action: "admin", output: CloudWorkspaceSchema },
   removeManaged: { action: "admin", input: RemoveManagedServerInputSchema, output: CloudWorkspaceSchema },
   infrastructure: { action: "read", output: ServerInfrastructureSchema },
+  inspectSwarm: { action: "admin", input: SwarmInspectionInputSchema, optionalInput: true, output: SwarmInspectionSchema },
+  connectSwarm: { action: "admin", input: ConnectSwarmInputSchema, output: ComputeClusterSchema },
   inspectNetwork: { action: "admin", output: NetworkHostObservationSchema },
   githubStatus: {
     action: "read",

@@ -54,6 +54,7 @@ const SCHEME_BY_KEY: Record<string, { table: AnyTable; scheme: SecretScheme }> =
   "incoming_webhook.tokenEncrypted": { table: schema.incomingWebhook, scheme: "scalar" },
   "incoming_webhook.hmacSecretEncrypted": { table: schema.incomingWebhook, scheme: "scalar" },
   "env_var.value": { table: schema.envVar, scheme: "scalar" },
+  "route_protection.secret": { table: schema.routeProtection, scheme: "scalar" },
   "backup_destination.accessKeyIdEnc": { table: schema.backupDestination, scheme: "enc1" },
   "backup_destination.secretAccessKeyEnc": { table: schema.backupDestination, scheme: "enc1" },
   "backup_destination.sftpPasswordEnc": { table: schema.backupDestination, scheme: "enc1" },

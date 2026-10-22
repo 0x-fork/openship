@@ -13,7 +13,12 @@ import { snapshotToClass } from "../deployments/deployment-class";
 import { findActiveDeployment } from "../../lib/active-deployment";
 import { assertResourceInOrg, assertNotControlPlane } from "../../lib/resource-access";
 import { withLiveProjectRuntimeMutation } from "../../lib/project-runtime-lock";
-import { withDeploymentRuntime } from "../../lib/deployment-runtime";
+import {
+  resolveEffectiveTarget,
+  resolveSnapshotRuntimeMode,
+  withDeploymentRuntime,
+} from "../../lib/deployment-runtime";
+import { platform } from "../../lib/platform-config";
 import { assertGitHubRepoAccess } from "../github/github-access";
 import {
   checkNoActiveBuild,
@@ -29,19 +34,25 @@ async function unsupported(
   const meta = active?.meta as DeploymentConfigSnapshot | null;
   if (!active?.containerId || !meta) return "Deploy this app before configuring runtime roles.";
   if (project.disabledAt) return "Resume this app before configuring runtime roles.";
+  const unsupportedRuntime = "Runtime role configuration requires a single-app Docker deployment.";
+  // Cluster releases are unsupported even when their target metadata conflicts.
+  if (meta.clusterId || meta.deployTarget === "cluster") return unsupportedRuntime;
+  const base = platform();
+  const target = resolveEffectiveTarget(base.target, meta);
   if (
-    meta.runtimeMode !== "docker" ||
-    meta.deployTarget === "cloud" || project.workspaceId ||
-    meta.clusterId ||
+    project.workspaceId ||
+    target === "cloud" ||
+    target === "cluster" ||
+    resolveSnapshotRuntimeMode(meta, target, base) !== "docker" ||
     snapshotToClass(meta).workload === "static"
   )
-    return "Runtime role configuration requires a single-app Docker deployment.";
+    return unsupportedRuntime;
   const services = await listProjectComposeServices(project.id);
   if (
     (await shouldUseProjectServicePipeline(project, meta.composeServices, services)) &&
     !primaryAppWithInfrastructure(project, services)
   )
-    return "Runtime role configuration requires a single-app Docker deployment.";
+    return unsupportedRuntime;
   return null;
 }
 
