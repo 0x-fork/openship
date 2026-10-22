@@ -159,6 +159,68 @@ describe("current workload incidents", () => {
     expect(await repo.listOpenForActiveProjects([current])).toEqual([]);
   });
 
+  it.each(["stored", "missing"] as const)(
+    "keeps recreated service incidents current with a %s container hint and retires replaced bindings",
+    async (hint) => {
+      const { project, incident } = await workload();
+      const trackedContainerId = hint === "stored" ? incident.containerId : null;
+      if (hint === "missing")
+        await db
+          .update(schema.serviceDeployment)
+          .set({ containerId: null })
+          .where(eq(schema.serviceDeployment.serviceId, incident.serviceId!));
+      // The watcher discovers the replacement by labels/name/Compose, without
+      // mutating the deployment's identity hint. Its durable observation binds
+      // the actual container back to the release and hint it was watching.
+      await repo.touch(incident.id, {
+        containerId: `recreated-${project.id}`,
+        deploymentId: project.activeDeploymentId,
+        trackedContainerId,
+      });
+      expect((await repo.listOpenForActiveProjects([project])).map((row) => row.id)).toEqual([
+        incident.id,
+      ]);
+
+      // A service replacement can update the hint within the SAME release.
+      await db
+        .update(schema.serviceDeployment)
+        .set({ containerId: `replacement-${project.id}` })
+        .where(eq(schema.serviceDeployment.serviceId, incident.serviceId!));
+      expect(await repo.listOpenForActiveProjects([project])).toEqual([]);
+
+      // A later release can also carry the old hint forward. It must be observed
+      // again before attributing the recreated container's fault to that release.
+      const nextDeployment = `${project.activeDeploymentId}-next`;
+      await db.insert(schema.deployment).values({
+        id: nextDeployment,
+        projectId: project.id,
+        organizationId: project.organizationId,
+        branch: "main",
+        status: "ready",
+      });
+      await db.insert(schema.serviceDeployment).values({
+        id: `next-${project.id}`,
+        deploymentId: nextDeployment,
+        serviceId: incident.serviceId!,
+        containerId: trackedContainerId,
+        status: "success",
+      });
+      await db
+        .update(schema.project)
+        .set({ activeDeploymentId: nextDeployment })
+        .where(eq(schema.project.id, project.id));
+      const current = { ...project, activeDeploymentId: nextDeployment };
+      expect(await repo.listOpenForActiveProjects([current])).toEqual([]);
+      await repo.escalate(incident.id, "crash_loop", "down", {
+        deploymentId: nextDeployment,
+        trackedContainerId,
+      });
+      expect((await repo.listOpenForActiveProjects([current])).map((row) => row.id)).toEqual([
+        incident.id,
+      ]);
+    },
+  );
+
   it("excludes deliberate service/project stops and monitoring opt-outs", async () => {
     for (const mode of [
       "stopped",

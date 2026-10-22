@@ -123,7 +123,16 @@ export function createServiceIncidentRepo(db: Database) {
                 eq(service.enabled, true),
                 sql`coalesce(${service.advanced}->>'monitoringEnabled', 'true') <> 'false'`,
                 ne(serviceDeployment.status, "stopped"),
-                eq(serviceIncident.containerId, serviceDeployment.containerId),
+                // A live name/label match can replace the stored identity hint.
+                // Accept that observation only while its release AND hint still
+                // match; a new release or service replacement retires it.
+                or(
+                  eq(serviceIncident.containerId, serviceDeployment.containerId),
+                  and(
+                    eq(serviceIncident.deploymentId, deployment.id),
+                    sql`${serviceIncident.trackedContainerId} is not distinct from ${serviceDeployment.containerId}`,
+                  ),
+                ),
               ),
               and(
                 isNull(serviceIncident.serviceId),
@@ -221,7 +230,13 @@ export function createServiceIncidentRepo(db: Database) {
       patch: Partial<
         Pick<
           ServiceIncident,
-          "containerId" | "reason" | "exitCode" | "restartCount" | "oomKilled"
+          | "containerId"
+          | "deploymentId"
+          | "trackedContainerId"
+          | "reason"
+          | "exitCode"
+          | "restartCount"
+          | "oomKilled"
         >
       > = {},
     ): Promise<void> {
@@ -252,7 +267,14 @@ export function createServiceIncidentRepo(db: Database) {
       patch: Partial<
         Pick<
           ServiceIncident,
-          "reason" | "exitCode" | "restartCount" | "oomKilled" | "logExcerpt" | "containerId"
+          | "reason"
+          | "exitCode"
+          | "restartCount"
+          | "oomKilled"
+          | "logExcerpt"
+          | "containerId"
+          | "deploymentId"
+          | "trackedContainerId"
         >
       > = {},
     ): Promise<boolean> {
