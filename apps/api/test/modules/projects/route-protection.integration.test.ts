@@ -81,6 +81,22 @@ it("shares pending protection through real native/HTTP operations without leakin
   expect(await native.projects.listRouteProtection(project.id)).toEqual([
     { hostname: input.hostname, enabled: false, status: "pending" },
   ]);
+
+  // A queued writer can retain an old project snapshot after teardown finishes.
+  await db.delete(schema.project).where(eq(schema.project.id, project.id));
+  let published = false;
+  await expect(
+    registerProjectRoute(
+      project,
+      {
+        registerRoute: async () => {
+          published = true;
+        },
+      },
+      { domain: input.hostname, tls: true, targetUrl: "http://127.0.0.1:3000" },
+    ),
+  ).rejects.toMatchObject({ code: "PROJECT_DELETION_PENDING" });
+  expect(published).toBe(false);
 });
 
 it("protects two native preview identities before first publication and cascades their private policy on cleanup", async () => {

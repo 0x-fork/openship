@@ -69,9 +69,11 @@ vi.mock("@repo/db", () => ({
       markServiceDeploymentFailed: async () => undefined,
     },
     deployment: {
+      listPendingRoleHandovers: async () => [],
       findById: async (id: string) => h.deploymentById.get(id) ?? h.previousDeployment,
     },
     project: {
+      findById: async (id: string) => ({ id, workspaceId: null }),
       getEnvMap: async () => ({}),
       listEnvVarChangeMeta: async () => [],
     },
