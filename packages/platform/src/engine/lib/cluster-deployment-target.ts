@@ -75,9 +75,13 @@ export async function assertClusterWorkloadSupported(input: {
   imageRepository?: string;
   provider?: "k3s" | "swarm";
 }) {
-  const reason = clusterWorkloadUnsupportedReason(input);
-  if (reason) throw new AppError(reason, 422, "CLUSTER_WORKLOAD_UNSUPPORTED");
   if (input.provider === "swarm") {
+    if (input.workload === "static")
+      throw new AppError(
+        "Use a web container image to serve static files on Swarm.",
+        422,
+        "CLUSTER_WORKLOAD_UNSUPPORTED",
+      );
     const services = (input.services ?? []) as Array<{
       image?: string | null;
       advanced?: ComposeAdvanced;
@@ -99,6 +103,8 @@ export async function assertClusterWorkloadSupported(input: {
         "CLUSTER_REGISTRY_REQUIRED",
       );
   } else {
+    const reason = clusterWorkloadUnsupportedReason(input);
+    if (reason) throw new AppError(reason, 422, "CLUSTER_WORKLOAD_UNSUPPORTED");
     if (!input.image && !input.imageRepository)
       throw new AppError(
         "Choose a registry repository for this project's source builds. Cluster nodes need a shared image to pull.",

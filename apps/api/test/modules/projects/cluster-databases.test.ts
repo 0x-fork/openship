@@ -51,6 +51,32 @@ async function clients(owner: SeededOwner) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("project databases through real HTTP and native operations", () => {
+  it("preserves ordinary Swarm database placement without advertising it as managed replication", async () => {
+    const owner = await seedOwner();
+    const target = await seedClusterProject(owner);
+    await db
+      .update(schema.clusterRuntime)
+      .set({ provider: "swarm" })
+      .where(eq(schema.clusterRuntime.id, target.runtime.id));
+    await db
+      .update(schema.project)
+      .set({
+        framework: "postgres",
+        releaseSource: { mode: "url", artifactKind: "image", imageTemplate: "postgres:17" },
+      })
+      .where(eq(schema.project.id, target.id));
+    const project = (await repos.project.findById(target.id))!;
+    const { native } = await clients(owner);
+    const result = await native.setClusterTarget(target.id, {
+      clusterId: target.clusterId,
+      config: { replicas: 1 },
+      expectedUpdatedAt: project.updatedAt.toISOString(),
+      acknowledgePlacement: true,
+    });
+    expect(result).toMatchObject({ clusterId: target.clusterId, config: { replicas: 1 } });
+    expect(result.unavailableReason).toContain("Database replication");
+    expect(await repos.clusterDatabase.list(owner.orgId, target.id)).toEqual([]);
+  });
   it("rejects operator databases on Swarm before saving or scheduling an operation", async () => {
     const worker = vi.spyOn(lifecycle, "deferNetworkSetupWork").mockResolvedValue(undefined);
     const owner = await seedOwner();
