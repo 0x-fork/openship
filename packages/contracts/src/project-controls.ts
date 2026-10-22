@@ -376,6 +376,7 @@ export const ProjectControlSchemas = {
   },
   listDeployments: {
     action: "read",
+    capability: "deployments:read",
     input: Type.Object({
       ...DeploymentHistoryFilters,
       page: Type.Optional(Type.Integer({ minimum: 1 })),

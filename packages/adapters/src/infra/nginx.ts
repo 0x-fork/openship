@@ -1268,6 +1268,7 @@ function certbotDiagnosis(output: string, domain: string): string | undefined {
 interface FileSnapshot {
   exists: boolean;
   content?: string;
+  linkTarget?: string;
 }
 
 // A shared config file could not be restored. Callers may restore their own
@@ -1846,7 +1847,11 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     };
   }
 
-  private async _captureFile(path: string): Promise<FileSnapshot> {
+  private async _captureFile(path: string, preserveLink = false): Promise<FileSnapshot> {
+    if (preserveLink) {
+      const linkTarget = await this._readlink(path);
+      if (linkTarget) return { exists: true, linkTarget };
+    }
     if (!(await this._exists(path))) {
       return { exists: false };
     }
@@ -1857,13 +1862,20 @@ export class NginxProvider implements RoutingProvider, SslProvider {
     };
   }
 
-  private async _restoreFile(path: string, snapshot: FileSnapshot): Promise<void> {
+  private async _restoreFile(path: string, snapshot: FileSnapshot, mode?: number): Promise<void> {
     if (!snapshot.exists) {
       await this._rm(path);
       return;
     }
 
-    await this._writeFile(path, snapshot.content ?? "");
+    if (snapshot.linkTarget) {
+      this._assertOneNamespace(path, `restore certificate link ${path}`);
+      await this._rm(path);
+      if (this.executor) await this.executor.exec(`ln -s ${sq(snapshot.linkTarget)} ${sq(path)}`);
+      else await fsSymlink(snapshot.linkTarget, path);
+      return;
+    }
+    await this._writeFile(path, snapshot.content ?? "", mode);
   }
 
   /** Called under the edge config lock. Publish all files before one validation
@@ -3079,11 +3091,43 @@ ${serveLocation}
     if (!candidate.cert) throw new Error(`Invalid certificate: ${candidate.reason}`);
     const { expiresAt } = candidate.cert;
 
-    // Stage both PEMs before replacing the served files and reloading the edge.
+    // A manual certificate also takes over Certbot's renewal ownership. Keep the
+    // original links (not copies of their archive targets) until every step has
+    // succeeded, so cleanup, publication or reload failures preserve renewal.
     const dir = join(this.certDir, domain);
-    await this.stageCertDir(dir, cert);
-
-    await this.activateCert(domain);
+    const renewalPath = this.renewalConfPath(domain);
+    const snapshots = await Promise.all([
+      { path: join(dir, "fullchain.pem"), mode: undefined },
+      { path: join(dir, "privkey.pem"), mode: 0o600 },
+      { path: renewalPath, mode: 0o600 },
+    ].map(async (file) => ({ ...file, snapshot: await this._captureFile(file.path, true) })));
+    let activationStarted = false;
+    try {
+      await this.stageCertDir(dir, cert);
+      // Only this hostname's obsolete record is removed. An inherited/suffixed
+      // lineage may still serve another hostname; its record and archive stay.
+      await this._rm(renewalPath);
+      activationStarted = true;
+      await this.activateCert(domain);
+    } catch (error) {
+      const failures: string[] = [];
+      for (const { path, snapshot, mode } of snapshots) {
+        await this._restoreFile(path, snapshot, mode).catch((restoreError) => {
+          observeCaughtError(restoreError, "adapters/infra/nginx");
+          failures.push(`${path}: ${safeErrorMessage(restoreError)}`);
+        });
+      }
+      // Route registration restores its own vhost. Reload only after the old
+      // pair and renewal record are back, and never after an incomplete rollback.
+      if (activationStarted && !failures.length && !(error instanceof ConfigRollbackError)) {
+        await this.reload().catch((restoreError) => {
+          observeCaughtError(restoreError, "adapters/infra/nginx");
+          failures.push(safeErrorMessage(restoreError));
+        });
+      }
+      if (failures.length) throw new Error(`${safeErrorMessage(error)}; rollback failed: ${failures.join("; ")}`, { cause: error });
+      throw error;
+    }
 
     return {
       domain,

@@ -332,6 +332,13 @@ curl -X POST "$OPENSHIP_URL/api/deployments/ssl/status" \
   }}
 />
 
+## Access
+
+A project grant covers its deployments: `read` for the `deployment:read` routes, `write` for
+`deployment:write` and starting a deploy, `admin` for cancel, rollback and deletion. A token can instead hold
+`deployments:read` and `deployments:trigger` on the project; cancelling, rolling back or deleting a deployment still needs `admin`. See
+[Capabilities](/docs/security/permissions#capabilities-finer-than-read--write--admin).
+
 ## Errors
 
 <Callout title="400 — bad request / failed operation" type="warn">
@@ -382,9 +389,9 @@ valid IDs.
 
 | Operation | SDK | REST API |
 | --- | --- | --- |
-| Request cancellation and return whether settlement is pending. | `deployments.cancel(id)` | `POST /api/deployments/:id/cancel`<br />`deployment:write` |
+| Request cancellation and return whether settlement is pending. | `deployments.cancel(id)` | `POST /api/deployments/:id/cancel`<br />`deployment:admin` |
 | Answer a pending deployment prompt with an offered action ID. | `deployments.respond(id, input)` | `POST /api/deployments/:id/build/respond`<br />`deployment:write` |
-| Restore the selected deployment through the rollback workflow. | `deployments.rollback(id)` | `POST /api/deployments/:id/rollback`<br />`deployment:write` |
+| Restore the selected deployment through the rollback workflow. | `deployments.rollback(id)` | `POST /api/deployments/:id/rollback`<br />`deployment:admin` |
 | Pin or unpin retained rollback artifacts. | `deployments.pin(id, input?)` | `POST /api/deployments/:id/pin`<br />`deployment:write` |
 | Accept a release waiting for a keep/reject decision. | `deployments.keep(id)` | `POST /api/deployments/:id/keep`<br />`deployment:write` |
 | Reject a held release and restore the prior deployment when possible. | `deployments.reject(id)` | `POST /api/deployments/:id/reject`<br />`deployment:write` |
