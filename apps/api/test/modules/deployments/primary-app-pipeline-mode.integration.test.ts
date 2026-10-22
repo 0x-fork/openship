@@ -135,6 +135,14 @@ it("uses one service topology per decision and observes later edits on the next 
     ]),
   });
   expect(next).not.toHaveProperty("primaryApp");
+  await expect(
+    resolveServicePipelineMode(project, {
+      ...snapshot,
+      primaryAppServiceName: app.name,
+      retryBuildFromDeploymentId: "completed-build",
+      handoverAppImage: `sha256:${"a".repeat(64)}`,
+    }),
+  ).rejects.toMatchObject({ code: "DEPLOYMENT_RETRY_TOPOLOGY_CHANGED" });
 });
 
 it("keeps frozen Cloud services independent of a live topology read", async () => {

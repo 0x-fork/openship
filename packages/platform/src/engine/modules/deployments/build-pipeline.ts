@@ -277,6 +277,13 @@ export async function resolveServicePipelineMode(
     ? primaryAppWithInfrastructure({ ...project, ...snapshot }, services) : null;
   const eligible = primaryApp && (!targetsSpecificServices ||
     snapshot.targetServiceIds!.every(id => primaryApp.infrastructure.some(service => service.id === id)));
+  if (snapshot.retryBuildFromDeploymentId && snapshot.primaryAppServiceName &&
+      (!eligible || primaryApp?.app.name !== snapshot.primaryAppServiceName))
+    throw new AppError(
+      "The primary app's service configuration changed. Use Redeploy with the current configuration.",
+      409,
+      "DEPLOYMENT_RETRY_TOPOLOGY_CHANGED",
+    );
   return { useSingleAppPipeline: false, useServicePipeline: useServicePipeline && !eligible,
     servicePreflightServices, ...(eligible ? { primaryApp: primaryApp! } : {}) };
 }

@@ -141,6 +141,7 @@ describeDockerE2E("primary source app with attached infrastructure (#1312)", () 
     );
     project = await seedProject(owner.organizationId, {
       framework: "docker",
+      gitProvider: "local",
       localPath: source,
       rootDirectory: ".",
       hasBuild: true,
@@ -187,6 +188,8 @@ describeDockerE2E("primary source app with attached infrastructure (#1312)", () 
       enabled: true,
       exposed: true,
       exposedPort: "8080",
+      customDomain: `${project.slug}.example.test`,
+      domainType: "custom",
       publicEndpoints: [
         { port: 8080, domainType: "custom", customDomain: `${project.slug}.example.test` },
       ],
@@ -235,6 +238,11 @@ describeDockerE2E("primary source app with attached infrastructure (#1312)", () 
       ...(await original<Record<string, unknown>>()),
       resolveDeploymentPlatform: async () => ({ ...located, usesManagedRouting: loopbackRouting }),
       resolveDeploymentRuntime: async () => ({ runtime, serverId: null }),
+      resolveDeploymentRuntimeForRead: async () => ({
+        runtime: await DockerRuntime.create({ transport: "socket" }),
+        serverId: null,
+        hostPortTarget: LOCAL_HOST_PORT_TARGET,
+      }),
       withDeploymentRuntime: async (_dep: unknown, run: (r: DockerRuntime) => Promise<unknown>) =>
         run(runtime),
     }));
