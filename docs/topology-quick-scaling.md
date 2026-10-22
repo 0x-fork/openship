@@ -18,6 +18,19 @@ state. Database replicas and migration clones remain different actions.
 - Revision/sequence guards, organization isolation and reader-consumer protection
   during downscale. Existing operations own retry, cancellation and recovery.
 
+## Runtime support
+
+Application scaling reuses the existing Kubernetes and connected Swarm runtimes.
+Swarm Compose workloads keep their existing stateless-service scaling and
+manager-pinned, single-instance placement for named-volume services. The active
+project replica setting, not the sum of all service tasks, is the review baseline.
+
+Managed PostgreSQL and Redis replication require Kubernetes operators. Swarm
+targets are rejected before saving or scheduling database creation; the topology
+does not offer them as database destinations. Replicating a container never
+substitutes for database replication or failover coordination. Existing Docker
+and bare databases require the explicit migration described below.
+
 ## Subsequent delivery
 
 These are backend features, not switches to reveal in the current UI:
@@ -26,10 +39,12 @@ These are backend features, not switches to reveal in the current UI:
    and data transfer, final catch-up and write fencing, verify the destination,
    then switch consumers explicitly. Track the writer generation so recovery
    never reactivates a stale primary. Keep source data until verified cleanup.
-2. **Per-service Compose replication:** define a persistent per-service scaling
+2. **Independent per-service Compose settings:** extend the existing Swarm release
+   flow with a persistent per-service scaling
    target and immutable artifact delivery, preserve service/environment secrets,
    storage and private links, and use the current release/cutover pipeline. Do not
-   apply a project-level replica count to an entire Compose stack.
+   apply application copies to database services. The existing Swarm flow keeps
+   named-volume services at one instance.
 3. **Cloud cluster execution:** implement private control-plane transport and
    verified machine identity for provider-managed execution endpoints. Reuse the
    same operation contracts and capability checks. Resource placement uses an

@@ -159,7 +159,7 @@ export function TopologyInspector({
   onNavigate: (href: string) => void;
   onSave: (service: Service, patch: Partial<ServiceInput>) => Promise<void>;
   onResources: (
-    values: { cpuCores: number; memoryMb: number },
+    values: { cpuCores: number; memoryMb: number; swapDisabled?: boolean },
     before: ProjectResources,
     service?: Service,
   ) => void;

@@ -5,6 +5,7 @@ import type { ComputeCluster } from "@repo/contracts";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/button";
 import { ClusterRuntimePanel } from "@/components/servers/clusters/ClusterRuntimePanel";
+import { ServerSwarm } from "@/components/servers/ServerSwarm";
 import { privateNetworksApi } from "@/lib/api/private-networks";
 import { computeClustersApi } from "@/lib/api/compute-clusters";
 import { useI18n } from "@/components/i18n-provider";
@@ -39,6 +40,7 @@ export function TopologyScalingSetup({
         if (!capabilities.available) throw new Error("Scaling is unavailable on this instance.");
         setCanManage(capabilities.canManage);
         setCurrent(fresh);
+        setReady(fresh.scaling?.provider === "swarm" && fresh.scaling.status === "ready");
       })
       .catch((reason) => {
         if (active) setError(getApiErrorMessage(reason));
@@ -101,14 +103,27 @@ export function TopologyScalingSetup({
             {text.loadingSetup}
           </p>
         )}
-        {current && (
-          <ClusterRuntimePanel
-            key={`${current.id}:${attempt}`}
-            cluster={current}
-            canManage={canManage}
-            embedded
-            onReadyChange={setReady}
-          />
+        {current?.scaling?.provider === "swarm" ? (
+          <div className="space-y-3">
+            <ServerSwarm serverId={current.serverIds[0]} connected />
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              {text.refreshSetup}
+            </Button>
+          </div>
+        ) : (
+          current && (
+            <ClusterRuntimePanel
+              key={`${current.id}:${attempt}`}
+              cluster={current}
+              canManage={canManage}
+              embedded
+              onReadyChange={setReady}
+            />
+          )
         )}
         {current && !canManage && (
           <p className="text-sm text-muted-foreground">{text.adminSetup}</p>

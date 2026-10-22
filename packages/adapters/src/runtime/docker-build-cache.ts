@@ -18,12 +18,19 @@ export interface BuildStorage {
   freeInodes: number | null;
 }
 
-/** Measure Docker's filesystem, never the control plane's filesystem. */
-export const DOCKER_BUILD_STORAGE_COMMAND =
-  'root="$(docker info --format "{{.DockerRootDir}}")"; ' +
+const BUILD_STORAGE_READ =
   '[ -d "$root" ] || exit 1; ' +
-  'df -Pk "$root" | awk \'NR==2{print "OPENSHIP_STORAGE",$2,$4}\'; ' +
-  'df -Pi "$root" 2>/dev/null | awk \'NR==2{print "OPENSHIP_INODES",$2,$4}\'';
+  `df -Pk "$root" | awk 'NR==2{print "OPENSHIP_STORAGE",$2,$4}'; ` +
+  `df -Pi "$root" 2>/dev/null | awk 'NR==2{print "OPENSHIP_INODES",$2,$4}'`;
+
+/** Measure the selected daemon's filesystem, never the control plane's. */
+export const DOCKER_BUILD_STORAGE_COMMAND =
+  'root="$(docker info --format "{{.DockerRootDir}}")"; ' + BUILD_STORAGE_READ;
+
+/** The caller resolved this path through its Docker client before elevation. */
+export function dockerBuildStorageCommand(root: string): string {
+  return `root=${sq(root)}; ` + BUILD_STORAGE_READ;
+}
 
 export function parseBuildStorage(raw: string): BuildStorage {
   const lines = raw.trim().split(/\r?\n/);
@@ -302,5 +309,5 @@ export async function touchProjectBuildCache(
 }
 
 export function buildKitCacheConfig(storage: BuildStorage): string {
-  return `[worker.oci]\ngc = true\nreservedSpace = 0\nmaxUsedSpace = ${buildCacheKeepBytes(storage)}\nminFreeSpace = "${BUILD_STORAGE_GC_FREE_FRACTION * 100}%"\n`;
+  return `insecure-entitlements = []\n[worker.oci]\nnetworkMode = "bridge"\ngc = true\nreservedSpace = 0\nmaxUsedSpace = ${buildCacheKeepBytes(storage)}\nminFreeSpace = "${BUILD_STORAGE_GC_FREE_FRACTION * 100}%"\n`;
 }

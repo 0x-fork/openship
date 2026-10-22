@@ -29,6 +29,15 @@ export const CLUSTER_DATABASE_TEMPLATES = [
   },
 ] as const;
 
+/** Operator-managed databases require the Kubernetes control and storage APIs. */
+export function clusterDatabaseUnsupportedReason(
+  provider: "k3s" | "swarm" | undefined,
+): string | null {
+  return provider === "swarm"
+    ? "Managed database replication requires Kubernetes. Swarm application replicas do not synchronize database data. Choose a Kubernetes cluster for this database."
+    : null;
+}
+
 export type ClusterDatabaseEngine = "postgres" | "redis";
 export interface ClusterDatabaseConfig {
   engine: ClusterDatabaseEngine;

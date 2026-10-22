@@ -116,7 +116,16 @@
     "removeReleaseCommand": "コマンド {number} を削除",
     "runtimeImageLabel": "実行イメージ",
     "runtimeImageDesc": "Docker ビルド用の任意の本番ベースイメージです。ランタイムと生成レシピに対応する必要があります。空欄で既定値を使用します。",
-    "staticPathHint": "エッジから静的ファイルとして配信されます。プロセスとしては何も実行されません。"
+    "staticPathHint": "エッジから静的ファイルとして配信されます。プロセスとしては何も実行されません。",
+    "runtimeTitle": "ランタイム",
+    "runtimeDesc": "アプリを実行するイメージを選択します。イメージを更新しても、選択したバージョンと固定ダイジェストは保持されます。",
+    "runtimeBareDesc": "このアプリはサーバーで直接実行されます。インストール済みランタイムはサーバーで管理してください。",
+    "runtimeStaticDesc": "ビルドイメージが静的ファイルを準備します。デプロイ後にアプリのランタイムは実行されません。",
+    "runtimeDockerfileDesc": "ランタイムのイメージは Dockerfile で指定します。",
+    "runtimeServicesDesc": "各サービスのランタイムイメージは「サービス」で選択します。",
+    "runtimePrebuiltDesc": "選択したアプリのイメージにはランタイムが含まれています。",
+    "runtimeOverrideUnused": "これらの保存済み設定は、このデプロイには適用されません。保存する前にクリアしてください。",
+    "clearRuntimeOverrides": "保存済みの上書き設定をクリア"
   },
   "projectSettings": {
     "framework": "フレームワーク",

@@ -50,6 +50,7 @@ export const ProjectClusterSchema = Type.Object({
   updatedAt: Type.String(),
   activeDeploymentId: nullableString,
   activeClusterId: nullableString,
+  activeReplicas: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
   internalHost: nullableString,
   observedAt: Type.Optional(nullableString),
   status: Type.Union([ClusterWorkloadStatusSchema, Type.Null()]),
@@ -60,7 +61,8 @@ export const SetProjectClusterSchema = Type.Object(
     clusterId: nullableString,
     config: Type.Optional(ClusterWorkloadConfigSchema),
     expectedUpdatedAt: Type.String(),
-    stateless: Type.Literal(true),
+    stateless: Type.Optional(Type.Literal(true)),
+    acknowledgePlacement: Type.Optional(Type.Literal(true)),
   },
   { additionalProperties: false },
 );

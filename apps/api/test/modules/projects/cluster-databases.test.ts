@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
-import { repos, seedOwner, type SeededOwner } from "../jobs/_harness";
+import { eq } from "drizzle-orm";
+import { db, schema, repos, seedOwner, type SeededOwner } from "../jobs/_harness";
 import { createShip } from "@repo/sdk/native";
 import { OpenshipClient } from "@repo/sdk/client";
 import { getPlatformKernel } from "@repo/platform/engine/lib/platform";
@@ -50,6 +51,36 @@ async function clients(owner: SeededOwner) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("project databases through real HTTP and native operations", () => {
+  it("rejects operator databases on Swarm before saving or scheduling an operation", async () => {
+    const worker = vi.spyOn(lifecycle, "deferNetworkSetupWork").mockResolvedValue(undefined);
+    const owner = await seedOwner();
+    const target = await seedClusterProject(owner);
+    await db
+      .update(schema.clusterRuntime)
+      .set({ provider: "swarm" })
+      .where(eq(schema.clusterRuntime.id, target.runtime.id));
+    const { native, remote } = await clients(owner);
+    for (const api of [native, remote]) {
+      await expect(
+        api.createClusterDatabase(target.id, {
+          requestId: crypto.randomUUID(),
+          name: "postgres",
+          config: {
+            engine: "postgres",
+            mode: "standalone",
+            instances: 1,
+            storageClass: "openship-local",
+            storageGiB: 5,
+            cpuMillis: 250,
+            memoryMiB: 256,
+            databaseName: "app",
+          },
+        }),
+      ).rejects.toMatchObject({ code: "CLUSTER_PROVIDER_UNSUPPORTED" });
+    }
+    expect(await repos.clusterDatabase.list(owner.orgId, target.id)).toEqual([]);
+    expect(worker).not.toHaveBeenCalled();
+  });
   it("scales PostgreSQL in place and atomically binds separate write and reader endpoints", async () => {
     vi.spyOn(lifecycle, "deferNetworkSetupWork").mockResolvedValue(undefined);
     const owner = await seedOwner(),

@@ -33,6 +33,7 @@ const {
   kickoffBuild: vi.fn(),
   queueActionDeployment: vi.fn(),
   repos: {
+    routeProtection: { list: vi.fn(async () => []) },
     actions: { deploymentForActionRequest: vi.fn() },
     projectConnection: { listByTarget: vi.fn(async () => []) },
     project: {

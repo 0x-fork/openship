@@ -4,6 +4,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   AppError,
   clusterDatabasePodCount,
+  clusterDatabaseUnsupportedReason,
   validateClusterDatabase,
   clusterPostgresVersion,
   type ClusterDatabaseStep,
@@ -518,6 +519,8 @@ export function createClusterDatabaseOperations(
             );
           }
           const { runtime } = await requireClusterDeploymentTarget(ctx.organizationId, clusterId);
+          const unavailable = clusterDatabaseUnsupportedReason(runtime.provider);
+          if (unavailable) throw new AppError(unavailable, 422, "CLUSTER_PROVIDER_UNSUPPORTED");
           for (const host of runtime.plan.hosts) await authorizeMember(ctx, host.serverId);
           const count = clusterDatabasePodCount(input.config);
           if (runtime.plan.hosts.length < count)

@@ -8,6 +8,7 @@ import {
   CLUSTER_DATABASE_STEPS,
   MANAGED_STORAGE_CLASS,
   clusterDatabasePodCount,
+  clusterDatabaseUnsupportedReason,
   clusterDatabaseRunning,
   validateClusterDatabase,
   type ClusterDatabaseConfig,
@@ -104,7 +105,7 @@ function ClusterDatabasePanelContent({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [clusterClient, setClusterClient] = useState(false);
-  const [selectedCluster, setSelectedCluster] = useState(clusterId ?? database?.clusterId ?? "");
+  const [selectedCluster, setSelectedCluster] = useState(database?.clusterId ?? "");
   const [clusters, setClusters] = useState<ComputeCluster[]>([]);
   const [clustersLoading, setClustersLoading] = useState(!clusterId && !database);
   const [importFrom, setImportFrom] = useState<{ runId: string; artifactName: string }>();
@@ -127,18 +128,34 @@ function ClusterDatabasePanelContent({
     !!database && !["openship-local", MANAGED_STORAGE_CLASS].includes(database.config.storageClass),
   );
   useEffect(() => {
-    if (clusterId || database) return;
+    if (database) return;
     let active = true;
-    void computeClustersApi
-      .list()
+    setClustersLoading(true);
+    const load = clusterId
+      ? computeClustersApi.get(clusterId).then((row) => [row])
+      : computeClustersApi.list();
+    void load
       .then((rows) => {
         if (!active) return;
-        const ready = rows.filter((row) => clusterScalingState(row) === "ready");
+        const ready = rows.filter(
+          (row) =>
+            clusterScalingState(row) === "ready" &&
+            !clusterDatabaseUnsupportedReason(row.scaling?.provider),
+        );
         setClusters(ready);
-        if (ready.length === 1) setSelectedCluster(ready[0].id);
+        if (clusterId) {
+          setSelectedCluster(ready[0]?.id ?? "");
+          const unavailable = clusterDatabaseUnsupportedReason(rows[0]?.scaling?.provider);
+          if (unavailable) setError(unavailable);
+          else if (!ready.length)
+            setError("Finish preparing this Kubernetes cluster before adding a database.");
+        } else if (ready.length === 1) setSelectedCluster(ready[0].id);
       })
       .catch((reason) => {
-        if (active) setError(getApiErrorMessage(reason));
+        if (active) {
+          setSelectedCluster("");
+          setError(getApiErrorMessage(reason));
+        }
       })
       .finally(() => {
         if (active) setClustersLoading(false);
@@ -148,7 +165,10 @@ function ClusterDatabasePanelContent({
     };
   }, [clusterId, database]);
   useEffect(() => {
-    if (!selectedCluster || database) return;
+    if (!selectedCluster || database) {
+      setStorageLoading(false);
+      return;
+    }
     let active = true;
     setStorageLoading(true);
     setSharedStorage(false);

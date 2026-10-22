@@ -42,7 +42,7 @@ const PREPARE_TAB = "__prepare__";
 
 interface Props {
   // Resolves to the new deployment id (navigates on success) or null on failure.
-  onRedeploy: () => void | Promise<string | null>;
+  onRedeploy: (options?: { reuseBuild?: boolean }) => void | Promise<string | null>;
 }
 
 const ComposeDeploymentProcessing: React.FC<Props> = ({ onRedeploy }) => {

@@ -6,6 +6,19 @@ describe("workload replication eligibility", () => {
     expect(clusterWorkloadUnsupportedReason({ workload: "web", framework: "express" })).toBeNull();
     expect(clusterWorkloadUnsupportedReason({ workload: "worker" })).toBeNull();
   });
+  it("defers Swarm service and named-volume placement to its existing runtime policy", () => {
+    expect(
+      clusterWorkloadUnsupportedReason({
+        workload: "web",
+        provider: "swarm",
+        services: [{}],
+        volumes: ["data:/data"],
+      }),
+    ).toBeNull();
+    expect(
+      clusterWorkloadUnsupportedReason({ workload: "web", provider: "swarm", image: "redis:7" }),
+    ).toContain("Database replication");
+  });
   it.each([
     { workload: "static" },
     { workload: "web", services: [{}] },

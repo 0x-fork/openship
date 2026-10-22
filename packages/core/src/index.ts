@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./docker-swarm";
 export * from "./actions";
 export * from "./action-capabilities";
 export * from "./stacks";
@@ -22,6 +23,9 @@ export * from "./mail-image-ref";
 // that matches it at pull time must derive the registry from the SAME functions.
 export {
   buildImageRef,
+  isMutableImageRef,
+  type BaseImageReceipt,
+  type RuntimeImageReceipts,
   DOCKER_HUB_REGISTRY,
   normalizeRegistryHost,
   registryConfigKeys,
@@ -48,6 +52,7 @@ export * from "./rollback-window";
 export * from "./deployment-history";
 export * from "./secret-keys";
 export * from "./credentials";
+export * from "./url-credentials";
 export * from "./workspaces";
 export * from "./connectivity";
 export * from "./cloud-capability";
@@ -84,6 +89,7 @@ export * from "./updates";
 export * from "./proxy-settings";
 export * from "./audit-taxonomy";
 export * from "./access-grants";
+export * from "./access-capabilities";
 export * from "./answer";
 export * from "./host-profile";
 export * from "./host-firewall";

@@ -20,6 +20,11 @@ const h = vi.hoisted(() => ({
   candidates: vi.fn(),
   bundle: vi.fn(),
   scope: "account:org:instance",
+  cluster: vi.fn(),
+  clusters: vi.fn(),
+}));
+vi.mock("@/lib/api/compute-clusters", () => ({
+  computeClustersApi: { get: h.cluster, list: h.clusters },
 }));
 vi.mock("@/hooks/use-scoped-resource", () => ({ useResourceScope: () => h.scope }));
 vi.mock("@/lib/api/apps", () => ({ appsApi: { getConnection: h.getConnection } }));
@@ -79,6 +84,12 @@ beforeEach(() => {
   root = createRoot(host);
   h.create.mockResolvedValue(row({ status: "provisioning" }));
   h.scope = "account:org:instance";
+  h.cluster.mockResolvedValue({
+    id: "cluster",
+    name: "Kubernetes",
+    scaling: { status: "ready", provider: "k3s" },
+  });
+  h.clusters.mockResolvedValue([]);
   h.remove.mockResolvedValue(row({ status: "deleting", intent: "remove" }));
   h.getConnection.mockResolvedValue({
     data: {
@@ -147,6 +158,21 @@ async function input(element: HTMLInputElement, value: string) {
 }
 
 describe("project database controls", () => {
+  it("refuses a fixed Swarm target before creating a misleading database operation", async () => {
+    h.cluster.mockResolvedValue({
+      id: "cluster",
+      name: "Swarm",
+      scaling: { status: "ready", provider: "swarm" },
+    });
+    await render();
+    expect(host.textContent).toContain("Managed database replication requires Kubernetes");
+    const postgres = [...host.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("PostgreSQL"),
+    )!;
+    await click(postgres);
+    expect(button("Create database").disabled).toBe(true);
+    expect(h.create).not.toHaveBeenCalled();
+  });
   it("does not submit an old settings draft against a newer database sequence", async () => {
     await render(row());
     await click(button("Database settings"));

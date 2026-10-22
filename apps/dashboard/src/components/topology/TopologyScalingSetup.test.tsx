@@ -11,6 +11,13 @@ const h = vi.hoisted(() => ({
   received: vi.fn(),
   ready: vi.fn(),
   close: vi.fn(),
+  swarm: vi.fn(),
+}));
+vi.mock("@/components/servers/ServerSwarm", () => ({
+  ServerSwarm: (props: unknown) => {
+    h.swarm(props);
+    return <div>Connected Swarm</div>;
+  },
 }));
 vi.mock("@/lib/api/compute-clusters", () => ({ computeClustersApi: { get: h.get } }));
 vi.mock("@/lib/api/private-networks", () => ({
@@ -56,6 +63,20 @@ const render = () =>
     root.render(<TopologyScalingSetup cluster={cluster} onReady={h.ready} onClose={h.close} />),
   );
 describe("inline scaling preparation", () => {
+  it("reuses connected Swarm inspection without opening Kubernetes installation", async () => {
+    const swarm = {
+      ...cluster,
+      serverIds: ["manager"],
+      scaling: { provider: "swarm", status: "ready", verifiedAt: null },
+    };
+    h.get.mockResolvedValue(swarm);
+    await render();
+    expect(h.received).not.toHaveBeenCalled();
+    expect(h.swarm).toHaveBeenCalledWith({ serverId: "manager", connected: true });
+    expect(h.ready).not.toHaveBeenCalled();
+    await act(async () => button("Continue with this cluster").click());
+    expect(h.ready).toHaveBeenCalledWith(swarm);
+  });
   it("opens the existing setup read-only and returns to the draft only after explicit continuation", async () => {
     await render();
     expect(h.get).toHaveBeenCalledOnce();

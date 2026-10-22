@@ -1,6 +1,7 @@
 import type { IconName } from "@repo/ui/icons";
 import type { Terminal } from "@xterm/xterm";
 import type { FrameworkId, EnvironmentVariable } from "@/components/import-project/types";
+import type { RouteProtectionDraft } from "@/components/routing/RouteProtectionButton";
 import type { PrepareComposeService, PrepareSingleAppCandidate } from "@/lib/api/deploy";
 import {
   getBuildImage,
@@ -193,6 +194,8 @@ export function normalizeComposeService(raw: RawComposeService): ComposeServiceI
 }
 
 export interface PublicEndpoint {
+  /** In-memory only. Persisted through the dedicated write-only route-protection operation. */
+  protectionDraft?: RouteProtectionDraft;
   id: string;
   port: string;
   targetPath: string;
@@ -625,6 +628,7 @@ export { servicesNeedCloud, endpointsNeedCloud as publicEndpointsNeedCloud } fro
 
 export function createPublicEndpoint(overrides: Partial<PublicEndpoint> = {}): PublicEndpoint {
   return {
+    ...(overrides.protectionDraft ? { protectionDraft: overrides.protectionDraft } : {}),
     id: overrides.id ?? randomUUID(),
     port: overrides.port ?? "",
     targetPath: overrides.targetPath ?? "",
@@ -806,6 +810,9 @@ export interface DeploymentState {
   deploymentCanceled: boolean;
   /** A cancelled row whose worker lease has not acknowledged completion yet. */
   cancellationPending: boolean;
+  /** A terminal outcome whose worker is still completing cleanup. */
+  completionPending: boolean;
+  canRetryDeployment: boolean;
   failureMessage: string;
   warningMessage: string;
   /**
@@ -876,6 +883,8 @@ export const INITIAL_STATE: DeploymentState = {
   deploymentFailed: false,
   deploymentCanceled: false,
   cancellationPending: false,
+  completionPending: false,
+  canRetryDeployment: false,
   failureMessage: "",
   warningMessage: "",
   decisionPending: false,
@@ -1003,7 +1012,7 @@ export interface DeploymentContextType {
   connectToBuild: (deploymentId?: string, startBuild?: boolean) => Promise<void>;
   loadBuildSession: (deploymentId: string) => Promise<BuildSessionLoadResult>;
   stopDeployment: () => Promise<void>;
-  redeploy: (deploymentId: string) => Promise<string | null>;
+  redeploy: (deploymentId: string, options?: { reuseBuild?: boolean }) => Promise<string | null>;
   respondToPrompt: (action: string) => Promise<void>;
   /** Reflect a successful port edit/dismissal only in the deployment it belongs to. */
   resolvePortCheck: (deploymentId: string, target: number | string) => void;

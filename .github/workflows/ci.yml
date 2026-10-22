@@ -129,16 +129,27 @@ jobs:
           - suite: Compose cutover and rollback
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/deployment-artifact-retry.e2e.test.ts
               test/e2e/compose-port-preflight-atomic.e2e.test.ts
               test/e2e/rollback-compose-cycle.e2e.test.ts
               test/e2e/runtime-roles.e2e.test.ts
+              test/e2e/image-volume-persistence.e2e.test.ts
+              test/e2e/image-refresh.e2e.test.ts
+              test/e2e/service-swap.e2e.test.ts
+              test/e2e/compose-overlap-cutover.e2e.test.ts
+              test/e2e/compose-engine-overlap.e2e.test.ts
           # Run routing, certificate selection and the rule guard with real HTTP on
           # every PR. A missing daemon must fail, not silently skip this gate.
           - suite: Edge routing
             command: >-
               RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
               test/e2e/routing-rules.e2e.test.ts
+              test/e2e/route-protection.e2e.test.ts
               test/e2e/edge-not-found-page.e2e.test.ts
+          - suite: Swarm inspection and deployment
+            command: >-
+              RUN_DOCKER_E2E=1 bun run --cwd apps/api test:e2e
+              test/e2e/swarm-inspection.e2e.test.ts
           # Both suites rebuild the same native bundle. Keep them sequential on
           # their own runner; the other packages do not share that filesystem.
           - suite: SDK and CLI
@@ -173,6 +184,11 @@ jobs:
       - name: Prepare execution assets used by installed-package tests
         if: matrix.suite == 'SDK and CLI' || matrix.suite == 'Other packages'
         uses: ./.github/actions/actions-runner
+
+      - name: Install composer dependencies for the real browser compatibility test
+        if: matrix.suite == 'Other packages'
+        working-directory: apps/email/client
+        run: bun install --frozen-lockfile --ignore-scripts
 
       # Run every workspace test, with the large API suite split across runners.
       # Direct Vitest runs and Turbo's stream mode expose progress immediately.
@@ -236,6 +252,9 @@ jobs:
 
       - name: Build documentation website
         run: bun run --cwd apps/web build
+
+      - name: Verify social preview images on public pages
+        run: bun run --cwd apps/web test:metadata
 
   # The webmail server's own suite, which nothing else runs.
   #

@@ -106,6 +106,12 @@ async function selectCluster(id: string) {
 }
 
 describe("topology cluster scaling", () => {
+  it("does not offer scaling just because a Compose stack has multiple services", async () => {
+    h.get.mockResolvedValue({ ...state(), activeReplicas: 3, status: { ...state().status, desired: 7, ready: 7 } });
+    await render();
+    expect(host.textContent).toContain("7 / 7");
+    expect(button("Apply scaling")).toBeUndefined();
+  });
   it("shows observed replicas and holds the action lock until deployment navigation", async () => {
     let resolve!: (value: { deploymentId: string }) => void;
     h.scale.mockReturnValue(
@@ -338,8 +344,8 @@ describe("topology cluster scaling", () => {
       await render("server", framework);
       expect(host.textContent).toContain("Database scaling");
       expect(host.querySelector('input[type="number"]')).toBeNull();
-      expect(h.get).not.toHaveBeenCalled();
-      expect(h.list).not.toHaveBeenCalled();
+      expect(h.set).not.toHaveBeenCalled();
+      expect(h.scale).not.toHaveBeenCalled();
     },
   );
 });
