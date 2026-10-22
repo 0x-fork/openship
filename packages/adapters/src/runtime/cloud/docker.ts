@@ -38,7 +38,7 @@ import {
 } from "./workspace-ready";
 import { cloudDockerProjectPaths } from "./docker-paths";
 import { ensureCloudProjectVolume, resolveCloudProjectVolumeName } from "./docker-volume";
-import { prepareManagedSource } from "./source";
+import { prepareRemoteSource } from "../remote-source";
 import { pickHostPort } from "../host-port";
 import { scanPorts } from "../../system/port-scan";
 export { CLOUD_SERVER_IMAGE as CLOUD_DOCKER_IMAGE } from "./server-connection";
@@ -387,7 +387,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       const source = `/tmp/openship-cloud-source-${createHash("sha256").update(config.sessionId).digest("hex").slice(0, 24)}`;
       await this.executor.mkdir(source);
       try {
-        if (await prepareManagedSource(this.connection, config, source, logger)) {
+        if (await prepareRemoteSource(this.connection, config, source, logger)) {
           // The source capability supplies already-authorized uploaded bytes.
         } else if (config.localPath) {
           await this.executor.transferIn(config.localPath, source, logger.callback);
@@ -891,7 +891,7 @@ export class CloudDockerRuntime extends DockerRuntime {
       await super.destroy(owned.Id);
     });
   }
-  async cleanupProject(
+  override async cleanupProject(
     projectId: string,
     options?: {
       wipeVolumes?: boolean;
@@ -900,7 +900,7 @@ export class CloudDockerRuntime extends DockerRuntime {
     this.assertProject(projectId);
     if ((await this.listProjectContainerIds(projectId)).length)
       throw new Error("Remove the project's containers before cleaning its storage");
-    await this.clearManagedProjectBuildCache(projectId);
+    await super.cleanupProject(projectId, options);
     if (options?.wipeVolumes) {
       // Include detached volumes left by interrupted deployments. Inventory is
       // label-scoped; retained data is removed only on the explicit wipe path.

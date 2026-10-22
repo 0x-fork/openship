@@ -68,8 +68,8 @@ export async function applyServiceEnvironment(
     const tracked = await containerIdForService(deployment, service);
 
     if (env.CLOUD_MODE) {
-      await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
-      await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId], project.workspaceId ?? null);
+      await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null, project.serverId);
+      await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId], project.workspaceId ?? null, project.serverId);
     }
     const { runtime, serverId } = await resolveDeploymentRuntimeForRead({ ...deployment, meta: { ...(deployment.meta as Record<string, unknown>), runtimeMode: "docker" } });
     const cloudRuntime = runtime instanceof CloudDockerRuntime;
@@ -106,6 +106,7 @@ export async function applyServiceEnvironment(
           runtime,
           [{ containerId, allocatedResources: row?.allocatedResources ?? null }],
           project.workspaceId ?? null,
+          project.serverId,
         );
       }
 

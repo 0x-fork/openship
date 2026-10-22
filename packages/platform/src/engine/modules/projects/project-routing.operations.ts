@@ -13,9 +13,10 @@ import { sanitizeSpec, normalizePathPrefix } from "../route-rules/rule-inputs";
 import { domainDependencies } from "../domains/domain.operations";
 import type { AddDomainResult } from "../domains/domain.service";
 import { HEALTH_WATCH_JOB, healthWatchActive } from "../monitoring/health-watch-policy";
+import { isCustomerProject } from "../billing/management.service";
 
 async function localProject(ctx: ExecutionContext, id: string) {
-  if (env.CLOUD_MODE) throw new NotFoundError("Operation");
+  if (env.CLOUD_MODE && !await isCustomerProject(ctx.organizationId, id)) throw new NotFoundError("Operation");
   const project = await repos.project.findById(id);
   assertResourceInOrg(project, "Project", ctx.organizationId, id);
   return project;

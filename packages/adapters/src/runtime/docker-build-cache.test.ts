@@ -74,7 +74,7 @@ describe("DockerRuntime.pruneBuildCache", () => {
 });
 
 describe("managed project cache cleanup", () => {
-  function cacheRuntime() {
+  function cacheRuntime(transport: "cloud" | "ssh" = "cloud") {
     const runtime = Object.create(DockerRuntime.prototype) as DockerRuntime & {
       clearManagedProjectBuildCache(projectId: string): Promise<void>;
     };
@@ -117,8 +117,9 @@ describe("managed project cache cleanup", () => {
       Labels: { "openship.build-cache": "1", "openship.build-cache.project": "p1" },
     };
     Object.assign(runtime, {
+      buildCacheHostExecutor: vi.fn(async () => ({ exec })),
       connectionOptions: {
-        transport: "cloud",
+        transport,
         executor: { exec },
         buildCacheProtection: async () => ({ projectIds: protectedIds, all: pending > 0 }),
       },
@@ -229,4 +230,51 @@ describe("managed project cache cleanup", () => {
     expect(h.exec).not.toHaveBeenCalled();
     expect(h.remove).not.toHaveBeenCalled();
   });
+  it("clears SSH worker state through the same collector without native pruning", async () => {
+    const h = cacheRuntime("ssh");
+    h.idle();
+    await expect(h.runtime.pruneBuildCache({ all: true, keepStorageBytes: 0 })).resolves.toMatchObject({
+      cachesDeleted: [projectBuildCacheVolume("p1")],
+    });
+    expect(h.remove).toHaveBeenCalledOnce();
+    expect(h.dial).not.toHaveBeenCalled();
+  });
+
+  it("keeps attached SSH state protected and rejects filters for the wrong collector", async () => {
+    const h = cacheRuntime("ssh");
+    await expect(h.runtime.pruneBuildCache()).resolves.toEqual({ cachesDeleted: [], spaceReclaimed: 0 });
+    await expect(h.runtime.pruneBuildCache({ filters: { until: ["24h"] } })).rejects.toMatchObject({ code: "BUILD_CACHE_FILTER_UNSUPPORTED" });
+    expect(h.remove).not.toHaveBeenCalled();
+    expect(h.dial).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("deletes SSH project build cache independently of application-volume wipe=%s", async wipeVolumes => {
+    const h = cacheRuntime("ssh");
+    await h.runtime.cleanupProject("p1", { wipeVolumes });
+    expect(h.remove).toHaveBeenCalledOnce();
+    expect(h.dial).not.toHaveBeenCalled();
+  });
+
+  it("preserves an SSH project's worker/cache while its command remains protected", async () => {
+    const h = cacheRuntime("ssh");
+    h.protect();
+    await expect(h.runtime.cleanupProject("p1")).rejects.toMatchObject({ code: "CLOUD_COMMAND_EXIT_UNCONFIRMED" });
+    expect(h.exec).not.toHaveBeenCalled();
+    expect(h.remove).not.toHaveBeenCalled();
+  });
+
+  it("refuses missing SSH execution access instead of pruning native caches or claiming project cleanup", async () => {
+    const h = cacheRuntime("ssh");
+    Object.assign(h.runtime.connectionOptions!, { executor: undefined });
+    await expect(h.runtime.pruneBuildCache()).rejects.toMatchObject({ code: "BUILD_METADATA_PROTECTION_UNAVAILABLE" });
+    await expect(h.runtime.cleanupProject("p1")).rejects.toMatchObject({ code: "BUILD_METADATA_PROTECTION_UNAVAILABLE" });
+    expect(h.dial).not.toHaveBeenCalled();
+  });
+
+  it("leaves local native cache cleanup to its existing host policy during project teardown", async () => {
+    const dial = vi.fn();
+    await runtimeWithDial(dial).cleanupProject("p1", { wipeVolumes: true });
+    expect(dial).not.toHaveBeenCalled();
+  });
+
 });

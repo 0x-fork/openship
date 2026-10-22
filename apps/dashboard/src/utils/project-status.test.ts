@@ -16,6 +16,7 @@ import { baseDictionary as en } from "@/i18n";
 import {
   calculateDeploymentStats,
   filterDeployments,
+  formatBuildTime,
   getStatusConfig,
   mapRowToDeployment,
 } from "@/app/(dashboard)/deployments/utils";
@@ -231,6 +232,18 @@ describe("projectDisplayDomain — only a persisted route", () => {
 });
 
 describe("deployments list — a blocked deploy is visible and counted", () => {
+  it("keeps an explicit zero build duration distinct from an unknown measurement", () => {
+    const known = mapRowToDeployment({ id: "reused-image", status: "ready", buildDurationMs: 0 });
+    const measured = mapRowToDeployment({ id: "built-image", status: "ready", buildDurationMs: 4250 });
+    expect(known.buildTime).toBe(0);
+    expect(formatBuildTime(known.buildTime)).toBe("0s");
+    expect(formatBuildTime(measured.buildTime)).toBe("4s");
+    for (const buildDurationMs of [null, undefined, NaN, -1]) {
+      const unknown = mapRowToDeployment({ id: "unknown", status: "failed", buildDurationMs });
+      expect(unknown.buildTime).toBeNull();
+      expect(formatBuildTime(unknown.buildTime)).toBeNull();
+    }
+  });
   it("uses the API's groups for every filter and page statistic", () => {
     for (const [group, statuses] of Object.entries(DEPLOYMENT_HISTORY_STATUSES)) {
       const rows = statuses.map((status) => mapRowToDeployment({ id: status, status }));

@@ -116,7 +116,16 @@
     "removeReleaseCommand": "Befehl {number} entfernen",
     "runtimeImageLabel": "Runtime-Image",
     "runtimeImageDesc": "Optionales Produktions-Basisimage für Docker-Builds. Muss zur Runtime und zum generierten Rezept passen; leer lassen für den verwalteten Standard.",
-    "staticPathHint": "Wird als statische Dateien vom Edge bereitgestellt — es läuft kein Hintergrundprozess."
+    "staticPathHint": "Wird als statische Dateien vom Edge bereitgestellt — es läuft kein Hintergrundprozess.",
+    "runtimeTitle": "Laufzeit",
+    "runtimeDesc": "Wähle das Image für deine App. Beim Aktualisieren bleiben die gewählte Version und festgelegte Digests erhalten.",
+    "runtimeBareDesc": "Diese App läuft direkt auf dem Server. Verwalte die installierte Laufzeit dort.",
+    "runtimeStaticDesc": "Das Build-Image bereitet deine statischen Dateien vor. Nach dem Deployment läuft keine App-Laufzeit.",
+    "runtimeDockerfileDesc": "Dein Dockerfile legt das Laufzeit-Image fest.",
+    "runtimeServicesDesc": "Wähle die Laufzeit-Images der einzelnen Dienste unter Dienste.",
+    "runtimePrebuiltDesc": "Das gewählte Anwendungs-Image enthält seine Laufzeit.",
+    "runtimeOverrideUnused": "Diese gespeicherten Überschreibungen gelten nicht für dieses Deployment. Entferne sie vor dem Speichern.",
+    "clearRuntimeOverrides": "Gespeicherte Überschreibungen entfernen"
   },
   "projectSettings": {
     "framework": "Framework",

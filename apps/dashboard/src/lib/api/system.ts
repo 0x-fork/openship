@@ -711,9 +711,9 @@ export const systemApi = {
     }, { timeout: 120_000 }),
 
   /** Get the current install session status (or check if one is running) */
-  getInstallSession: (sessionId?: string) =>
+  getInstallSession: (sessionId?: string, serverId?: string) =>
     api.get<SetupSessionInfo>(endpoints.system.installSession, {
-      params: sessionId ? { id: sessionId } : undefined,
+      params: { ...(sessionId ? { sessionId } : {}), ...(serverId ? { serverId } : {}) },
     }),
 
   /** Is a container image swap (edge/mail) running for this server? (re-attach) */
