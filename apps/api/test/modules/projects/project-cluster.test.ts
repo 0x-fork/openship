@@ -5,6 +5,7 @@ import { AppError } from "@repo/core";
 const h = vi.hoisted(() => ({
   find: vi.fn(),
   active: vi.fn(),
+  latest: vi.fn(),
   lock: vi.fn(),
   fleet: vi.fn(),
   authorize: vi.fn(),
@@ -21,6 +22,7 @@ const h = vi.hoisted(() => ({
 vi.mock("@repo/db", () => ({
   repos: {
     project: { findById: h.find },
+    deployment: { findLatestByProject: h.latest },
     clusterRuntime: { bindProject: h.bind },
     clusterDatabase: { list: vi.fn(async () => []) },
     service: { listByProject: vi.fn(async () => []), listByDeployment: h.serviceRows },
@@ -263,12 +265,21 @@ describe("Swarm target admission", () => {
     });
     expect(h.bind).not.toHaveBeenCalled();
   });
-  it("refuses to silently migrate a running project before changing its target", async () => {
-    h.active.mockResolvedValue({ id: "existing", containerId: "docker-container" });
+  it.each(["ready", "failed", "cancelled"])("requires migration for a previously deployed project (%s), even without an active pointer", async (status) => {
+    h.find.mockResolvedValue({ ...project(), clusterId: null, activeDeploymentId: null });
+    h.latest.mockResolvedValue({ id: "existing", status, containerId: "docker-container" });
     await expect(operations.setClusterTarget(ctx, "project", input)).rejects.toMatchObject({
       code: "CLUSTER_MIGRATION_REQUIRED",
     });
     expect(h.bind).not.toHaveBeenCalled();
     expect(h.trigger).not.toHaveBeenCalled();
   });
+  it("keeps replica edits on the already-selected Swarm available", async () => {
+    h.find.mockResolvedValue({ ...project(), clusterId: "swarm" });
+    h.latest.mockResolvedValue({ id: "existing", status: "ready" });
+    await operations.setClusterTarget(ctx, "project", { ...input, config: { replicas: 3 } });
+    expect(h.latest).not.toHaveBeenCalled();
+    expect(h.bind).toHaveBeenCalledWith("org", "project", "swarm", { replicas: 3 }, now.toISOString());
+  });
+
 });

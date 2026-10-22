@@ -160,10 +160,11 @@ export function createProjectClusterOperations(
           if (
             runtime.provider === "swarm" &&
             project.clusterId !== input.clusterId &&
-            (await findActiveDeployment(project))
+            // Failed/cancelled attempts can retain containers, images and data too.
+            (await repos.deployment.findLatestByProject(project.id))
           )
             throw new AppError(
-              "Create a new project on this Swarm. Moving a running project requires an explicit data and routing migration.",
+              "Create a new project on this Swarm. Moving a previously deployed project requires an explicit data and routing migration.",
               422,
               "CLUSTER_MIGRATION_REQUIRED",
             );
