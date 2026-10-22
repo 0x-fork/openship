@@ -3721,6 +3721,60 @@
       "section": "Operations",
       "description": "Atomically move literal command variables into the selected environment without overwriting conflicting values.",
       "route": "POST /api/projects/:id/env/migrate-commands"
+    },
+    "billing.getManagement": {
+      "page": "billing",
+      "section": "Hosted management",
+      "description": "Read hosted management pricing, paid access and the connected-server allowance.",
+      "route": "GET /api/billing/manage"
+    },
+    "billing.purchaseManagement": {
+      "page": "billing",
+      "section": "Hosted management",
+      "description": "Create or recover a Manage checkout, or quote an allowance change, using an idempotency key.",
+      "route": "POST /api/billing/manage/checkout"
+    },
+    "billing.confirmManagementChange": {
+      "page": "billing",
+      "section": "Hosted management",
+      "description": "Confirm the reviewed allowance quote; paid upgrades activate only after settlement.",
+      "route": "POST /api/billing/manage/change"
+    },
+    "billing.resumeManagementCheckout": {
+      "page": "billing",
+      "section": "Hosted management",
+      "description": "Resume the saved Manage checkout without creating another payment.",
+      "route": "POST /api/billing/manage/checkout/resume"
+    },
+    "billing.cancelManagementChange": {
+      "page": "billing",
+      "section": "Hosted management",
+      "description": "Cancel a pending allowance change without ending the current paid period.",
+      "route": "POST /api/billing/manage/change/cancel"
+    },
+    "billing.cancelManagementCheckout": {
+      "page": "billing",
+      "section": "Hosted management",
+      "description": "Cancel the saved unpaid Manage checkout.",
+      "route": "POST /api/billing/manage/checkout/cancel"
+    },
+    "billing.cancelManagementSubscription": {
+      "page": "billing",
+      "section": "Hosted management",
+      "description": "Stop Manage renewal; customer workloads and data remain on their infrastructure.",
+      "route": "POST /api/billing/manage/cancel"
+    },
+    "billing.resumeManagementSubscription": {
+      "page": "billing",
+      "section": "Hosted management",
+      "description": "Resume renewal at the verified saved price while its coverage terms still apply.",
+      "route": "POST /api/billing/manage/resume"
+    },
+    "billing.createManagementPortal": {
+      "page": "billing",
+      "section": "Hosted management",
+      "description": "Open payment details and invoices for the Manage subscription.",
+      "route": "POST /api/billing/manage/portal"
     }
   },
   "http": {

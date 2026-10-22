@@ -94,7 +94,7 @@ import {
   assertCloudDeploymentLimits,
 } from "../../lib/plan-guard";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
-import { type PortCheckResult } from "../../lib/deployment-runtime";
+import { resolveEffectiveTarget, type PortCheckResult } from "../../lib/deployment-runtime";
 import { requireOrgServer } from "../../lib/server-target";
 import * as sessionManager from "./session-manager";
 import {
@@ -1421,6 +1421,7 @@ async function createQueuedDeploymentUnlocked(opts: {
   // triggerDeployment (webhook push, incoming webhooks, service-connection
   // auto-redeploy). Both gates no-op unless CLOUD_MODE.
   await assertPlanAllowsDeployShape(opts.organizationId, {
+    serverId: meta.serverId,
     workload: snapshotToClass(meta).workload,
     targetServiceIds: meta.targetServiceIds ?? null,
     // Workload alone is not enough: a compose/services project deploying ALL its
@@ -1439,9 +1440,9 @@ async function createQueuedDeploymentUnlocked(opts: {
   const needsBuild = meta.composeServices?.length
     ? cloudDockerNeedsBuild(meta.composeServices, strictRefreshImages(meta))
     : !meta.refreshAppDeploymentId && !meta.releaseImageRef;
-  if (needsBuild) await assertBuildMinutesAvailable(opts.organizationId, meta.managedWorkspaceId ?? null);
+  if (needsBuild) await assertBuildMinutesAvailable(opts.organizationId, meta.managedWorkspaceId ?? null, meta.serverId);
   const insertDeployment = async () => {
-    if (env.CLOUD_MODE) {
+    if (env.CLOUD_MODE && resolveEffectiveTarget("cloud", meta) === "cloud") {
       const project = await repos.project.findByIdInOrganization(opts.projectId, opts.organizationId);
       if (!project) throw new AppError("Project not found", 404, "PROJECT_NOT_FOUND");
       const mode = await resolveServicePipelineMode(project, meta);
@@ -2156,7 +2157,7 @@ export async function requestBuildAccess(
       throw new ValidationError(error instanceof Error ? error.message : "Invalid resource limits");
     }
     await assertPlanAllowsResourceTier(ctx.organizationId, snapshot.resources,
-      snapshot.managedWorkspaceId ?? project.workspaceId ?? null);
+      snapshot.managedWorkspaceId ?? project.workspaceId ?? null, snapshot.serverId);
   }
 
   // ── Preflight: validate config + domain before creating any resources ──

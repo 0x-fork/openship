@@ -1,3 +1,4 @@
+import { infrastructureServers } from "./server-access";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { refreshMailCertificate } from "../mail/mail-certificate.service";
 /**
@@ -554,7 +555,7 @@ const SCAN_CONCURRENCY = 4;
 export async function scanOrgContainers(organizationId: string, beforeScan?: (server: Server) => Promise<void>): Promise<
   { server: Server; views: ServerContainerView[] }[]
 > {
-  const servers = await repos.server.listByOrganization(organizationId);
+  const servers = await infrastructureServers(organizationId);
   // Pre-seeded so the fan-out fills slots in place and the caller still gets the
   // servers in list order (mapWithLimit resolves void, not results).
   const out = servers.map((server) => ({ server, views: [] as ServerContainerView[] }));
@@ -626,7 +627,7 @@ export async function applyAllContainers(
 ): Promise<{ started: BulkApplyStarted[]; skipped: BulkApplySkipped[] }> {
   const wants = new Set(intents);
   const [servers, rows] = await Promise.all([
-    repos.server.listByOrganization(organizationId),
+    infrastructureServers(organizationId),
     repos.serverContainerStatus.listByOrg(organizationId),
   ]);
   const byId = new Map(servers.map((s) => [s.id, s]));
@@ -888,7 +889,7 @@ export async function loadOrgContainerIssues(
   organizationId: string,
 ): Promise<ContainerIssuesResult> {
   const [servers, rows, projectCounts] = await Promise.all([
-    repos.server.listByOrganization(organizationId),
+    infrastructureServers(organizationId),
     repos.serverContainerStatus.listByOrg(organizationId),
     repos.project.countActiveByServer(organizationId),
   ]);

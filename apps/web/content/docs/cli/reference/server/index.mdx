@@ -39,8 +39,8 @@ openship server [options] [command]
 | [`check [options] <serverId>`](/docs/cli/reference/server#openship-server-check) | Run component health checks against a saved server |
 | [`update [options] <serverId>`](/docs/cli/reference/server#openship-server-update) | Check for and apply native-module migrations (OpenResty, …) |
 | [`install [options] <serverId>`](/docs/cli/reference/server#openship-server-install) | Install components on a server |
-| [`install-session [sessionId]`](/docs/cli/reference/server#openship-server-install-session) | Inspect a server installation session |
-| [`install-events [sessionId]`](/docs/cli/reference/server#openship-server-install-events) | Reattach to installation logs and prompts without starting another install |
+| [`install-session [options] [sessionId]`](/docs/cli/reference/server#openship-server-install-session) | Inspect a server installation session |
+| [`install-events [options] [sessionId]`](/docs/cli/reference/server#openship-server-install-events) | Reattach to installation logs and prompts without starting another install |
 | [`uninstall [options] <serverId> <component>`](/docs/cli/reference/server#openship-server-uninstall) | Remove a component through the server's shared installer |
 | [`install-respond [options] <sessionId>`](/docs/cli/reference/server#openship-server-install-respond) | Respond to an installation prompt |
 | [`rate-limit [options] <serverId>`](/docs/cli/reference/server#openship-server-rate-limit) | Read or update per-server OpenResty rate limiting |
@@ -182,6 +182,10 @@ Reattach to installation logs and prompts without starting another install
 openship server install-events [options] [sessionId]
 ```
 
+| Option | Meaning |
+| --- | --- |
+| `--server <serverId>` | Select the server's current installation |
+
 ## openship server install-respond
 
 Respond to an installation prompt
@@ -201,6 +205,10 @@ Inspect a server installation session
 ```text
 openship server install-session [options] [sessionId]
 ```
+
+| Option | Meaning |
+| --- | --- |
+| `--server <serverId>` | Select the server's current installation |
 
 ## openship server list
 

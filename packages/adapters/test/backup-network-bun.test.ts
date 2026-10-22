@@ -23,6 +23,9 @@ it("enforces backup network policy and preserves TLS identity in the Bun runtime
         "ec",
         "-pkeyopt",
         "ec_paramgen_curve:prime256v1",
+        // LibreSSL otherwise emits explicit curve parameters, rejected by Bun's TLS runtime.
+        "-pkeyopt",
+        "ec_param_enc:named_curve",
         "-nodes",
         "-days",
         "1",

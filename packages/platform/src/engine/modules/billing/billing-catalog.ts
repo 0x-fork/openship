@@ -131,6 +131,8 @@ export function subscriptionPlan(subscription: OblienSubscription, organizationI
 /** Openship controls retail price and copy; Oblien purchases the resource pool. */
 export function subscriptionOffer(tier: PlanTierId, interval: "monthly" | "annual"): OblienOffer {
   const raw = PRICING.plans.find(plan => plan.id === tier);
+  if (raw?.availableForPurchase === false)
+    throw new AppError("This plan is retained for existing subscriptions. Choose a current Cloud plan for a new purchase.", 400, "BILLING_PLAN_RETIRED");
   const amount = raw?.price[interval];
   if (!raw || !amount || raw.billing.mode !== "monthly" || interval !== "monthly") {
     throw new AppError("This plan is not available for checkout", 400, "BILLING_PLAN_NOT_PURCHASABLE");
@@ -191,6 +193,7 @@ export function presentCloudPlans(requestedLocale?: string, capacityCatalog?: Ob
     const raw = PRICING.plans.find((item) => item.id === id)!;
     return {
       id,
+      availableForPurchase: plan.availableForPurchase,
       name: raw.billing.checkoutName ?? plan.name,
       description: raw.billing.checkoutDescription ?? (id === "free" ? "" : plan.description),
       popular: plan.popular,
@@ -221,6 +224,7 @@ export function presentCloudPlans(requestedLocale?: string, capacityCatalog?: Ob
   });
   return {
     provider: "oblien",
+    management: PRICING.management,
     locale,
     annual: { enabled: PRICING.annual.enabled, monthsFree: PRICING.annual.monthsFree },
     custom: { resources: PRICING.custom.resources, extraMonthlyCents: PRICING.custom.extraMonthlyCents },

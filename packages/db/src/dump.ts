@@ -215,6 +215,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
     ["action_storage_chunk", schema.actionStorageChunk],
     ["action_budget", schema.actionBudget],
     ["action_credit_purchase", schema.actionCreditPurchase],
+    ["management_billing", schema.managementBilling],
   ].map(([sqlName, table]) => ({
     sqlName: sqlName as string,
     table: table as PgTable,

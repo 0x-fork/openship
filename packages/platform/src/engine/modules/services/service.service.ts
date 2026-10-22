@@ -667,7 +667,7 @@ export async function createService(
   // Refuse the row too, not just its start: a static-only tier can never run
   // this container, and persisting a service the org will be blocked from
   // starting is a worse experience than refusing it here.
-  await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
+  await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null, project.serverId);
 
   // Through mergeAdvanced even on CREATE: there is nothing to preserve, but it
   // strips the `null`-means-remove sentinels the update path accepts, so a
@@ -983,7 +983,7 @@ export async function updateService(
 
   if (env.CLOUD_MODE && patch.enabled === true) {
     await createProvisionLock(`cloud:service-quota:${ctx.organizationId}`).run(async () => {
-      await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
+      await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null, project.serverId);
       await assertServiceDefinitionQuota(ctx.organizationId, projectId, 1, [serviceId]);
       await repos.service.update(serviceId, patch);
     });
@@ -2151,7 +2151,7 @@ async function provisionServiceContainer(
   // never sees it. A provisioned service container IS a container, so a
   // static-only tier can't have one, and without this a free org could add a
   // Postgres service and start it with no gating at all.
-  await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
+  await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null, project.serverId);
 
   if (!project.activeDeploymentId) {
     throw new Error("Deploy the project first, then start its services.");
@@ -2287,14 +2287,14 @@ async function prepareServiceStart(ctx: RequestContext, projectId: string, servi
     const services = await repos.service.listByProject(projectId);
     const service = services.find(item => item.id === serviceId);
     if (!service) throw new Error("Service not found");
-    await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null);
-    await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId], project.workspaceId ?? null);
+    await assertPlanAllowsServices(ctx.organizationId, project.workspaceId ?? null, project.serverId);
+    await assertRunningServiceQuota(ctx.organizationId, 1, [serviceId], project.workspaceId ?? null, project.serverId);
     const existing = await resolve();
     try {
       if (existing) {
         await assertCloudRuntimeLimits(ctx.organizationId, existing.runtime, [{
           containerId: existing.containerId, allocatedResources: existing.row?.allocatedResources,
-        }], project.workspaceId ?? null);
+        }], project.workspaceId ?? null, project.serverId);
       } else {
         await assertCloudDeploymentLimits(ctx.organizationId, {
           projectId, resources: project.resources as Record<string, unknown> | null,

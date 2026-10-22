@@ -1,3 +1,4 @@
+import { isCustomerServer } from "../billing/management.service";
 /**
  * Project CRUD service - create, read, update, list, ensure.
  */
@@ -623,7 +624,7 @@ async function ensureProjectApp(data: ResolvedCreateProjectBody, slug: string, o
   return withProjectCreationLock(organizationId, async () => {
     let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
     if (app) return { app, created: false };
-    await assertProjectQuota(organizationId, data.workspaceId ?? null);
+    await assertProjectQuota(organizationId, data.workspaceId ?? null, data.serverId);
 
     const source = resolveProjectSource(data);
 
@@ -949,7 +950,7 @@ async function createProductionProject(
   }
   // Workspace ownership is always derived from the selected server.
   data = { ...data, workspaceId: undefined };
-  if (env.CLOUD_MODE || selectedServer?.workspaceId) {
+  if ((env.CLOUD_MODE && !await isCustomerServer(organizationId, selectedServer?.id)) || selectedServer?.workspaceId) {
     const { workspace, server } = await resolveCloudProjectServer(organizationId, data.serverId);
     if (workspace) {
       if (!ctx) throw new AppError("Workspace placement requires an authenticated execution context", 403, "CLOUD_WORKSPACE_ACCESS_REQUIRED");
@@ -1471,8 +1472,8 @@ async function findProjectByAppSlug(
  * Exported for the project CLONE: a duplicate is a new project and must count like one, or
  * "duplicate" becomes the way around the cap.
  */
-export async function assertProjectQuota(organizationId: string, workspaceId?: string | null): Promise<void> {
-  if (!env.CLOUD_MODE) {
+export async function assertProjectQuota(organizationId: string, workspaceId?: string | null, serverId?: string | null): Promise<void> {
+  if (!env.CLOUD_MODE || await isCustomerServer(organizationId, serverId)) {
     const { total } = await repos.projectGroup.listByOrganization(organizationId, {
       page: 1,
       perPage: 1,
