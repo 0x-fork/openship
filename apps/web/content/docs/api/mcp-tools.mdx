@@ -180,7 +180,7 @@ The current API has **515 unique tools**. Permission tags below describe the rou
 | `post_deployments_by_id_cancel`<br />`POST /api/deployments/:id/cancel` | Cancel an in-progress deployment. | `deployment:write` |
 | `post_deployments_by_id_keep`<br />`POST /api/deployments/:id/keep` | Keep a partial-failure deployment awaiting a decision (accept the succeeded services). | `deployment:write` |
 | `post_deployments_by_id_pin`<br />`POST /api/deployments/:id/pin` | Pin or unpin a retained deployment image for rollback using body.pinned. Read restore-plan to confirm whether that image is still available. | `deployment:write` |
-| `post_deployments_by_id_redeploy`<br />`POST /api/deployments/:id/redeploy` | Re-run the latest deployment for this project. | `deployment:write` |
+| `post_deployments_by_id_redeploy`<br />`POST /api/deployments/:id/redeploy` | Redeploy the project. useExistingCommit rebuilds the selected commit; reuseBuild retries a failed attempt's retained completed Docker images with no rebuild or substitute pull. | `deployment:write` |
 | `post_deployments_by_id_reject`<br />`POST /api/deployments/:id/reject` | Reject a partial-failure deployment awaiting a decision (roll back the changed services). | `deployment:write` |
 | `post_deployments_by_id_restart`<br />`POST /api/deployments/:id/restart` | Restart the running container(s) for this deployment. | `deployment:write` |
 | `post_deployments_by_id_rollback`<br />`POST /api/deployments/:id/rollback` | Roll back to this deployment's artifact/commit. | `deployment:write` |

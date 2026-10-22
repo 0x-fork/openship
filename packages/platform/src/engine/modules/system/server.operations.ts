@@ -37,6 +37,7 @@ import { sshManager, type ReachabilityDiagnosis } from "../../lib/ssh-manager";
 import { validateSshConnectionOptions } from "../../lib/ssh-validation";
 import { resolvesToLocalHost } from "../../lib/self-host";
 import { boxOwningOrgId } from "../../lib/box-org";
+import { assertOperatorSshAccess } from "../../lib/operator-ssh-access";
 import { ensureLocalServer, localServerHostChannel } from "../../lib/startup/self-server";
 import { encryptSecretField } from "../../lib/credential-encryption";
 import { audit, operationAuditContext } from "../../lib/audit-emitter";
@@ -268,6 +269,7 @@ async function createConnectedServer(ctx: ExecutionContext, body: CreateServerIn
   }
 
   assertNativeSshSettings(body);
+  await assertOperatorSshAccess(body, ctx.organizationId);
   const server = await repos.server.create({
     organizationId: ctx.organizationId,
     sshHostKey,
@@ -376,8 +378,10 @@ async function updateServer(ctx: ExecutionContext, id: string, body: UpdateServe
     }
   }
 
-  if (LOCAL_ROW_READONLY_FIELDS.some((field) => body[field] !== undefined))
+  if (LOCAL_ROW_READONLY_FIELDS.some((field) => body[field] !== undefined)) {
     assertNativeSshSettings({ ...existing, ...body });
+    await assertOperatorSshAccess({ ...existing, ...body }, ctx.organizationId);
+  }
   if (LOCAL_ROW_READONLY_FIELDS.some((field) => body[field] !== undefined))
     validateSshConnectionOptions({
       ...existing,

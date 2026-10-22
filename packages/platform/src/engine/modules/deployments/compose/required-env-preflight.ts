@@ -3,11 +3,12 @@ import type { BuildLogger } from "@repo/adapters";
 import { decryptEnvMap } from "../../../lib/encryption";
 import { mergeServiceDeployEnv } from "./service-env-layers";
 import { newerThanRestoredRelease } from "./project-services";
+import { replaysFrozenDeployment } from "../deployment-artifacts";
 
 /** Shared by early validation and activation so both use the same saved layers. */
 export async function loadServiceDeployEnvironment(opts: {
   projectId: string;
-  dep: Pick<Deployment, "environment" | "trigger">;
+  dep: Pick<Deployment, "environment" | "trigger"> & Partial<Pick<Deployment, "meta">>;
   service: Pick<Service, "id" | "name" | "environment" | "advanced">;
   projectEnv: Record<string, string>;
   frozenEnv: Record<string, string>;
@@ -30,7 +31,7 @@ export async function loadServiceDeployEnvironment(opts: {
       templateKeys: service.advanced?.environmentTemplateKeys,
       service: serviceEnv,
     },
-    dep.trigger === "rollback" && Object.keys(frozenEnv).length > 0,
+    replaysFrozenDeployment(dep) && Object.keys(frozenEnv).length > 0,
   );
 }
 

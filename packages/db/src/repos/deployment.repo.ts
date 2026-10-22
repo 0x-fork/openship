@@ -1,7 +1,7 @@
 import type { RoleContainerRef } from "@repo/core";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { ilike, type SQL, eq, and, asc, desc, gte, lte, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
-import { generateId, AppError, summarizeDeploymentHistory, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
+import { generateId, AppError, redactUrlCredentials, summarizeDeploymentHistory, DEPLOYMENT_HISTORY_STATUSES, type DeploymentHistoryQuery, type ResourceValues } from "@repo/core";
 import { isDeepStrictEqual } from "node:util";
 import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
@@ -72,6 +72,14 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     workspaceId ? eq(project.workspaceId, workspaceId) : undefined,
   );
 
+  // deployment.error_message is copied from raw process output (git clone
+  // failures included), which can echo a clone URL with its credential in the
+  // userinfo. Redact at the write so no caller can forget it.
+  function withRedactedError<T extends Partial<NewDeployment> | undefined>(extra: T): T {
+    if (!extra || typeof extra.errorMessage !== "string") return extra;
+    return { ...extra, errorMessage: redactUrlCredentials(extra.errorMessage) };
+  }
+
   // Pin the outcome and its clock in the same transaction. The cancel handler
   // and the worker can both finish the session later, but neither may replace
   // this duration with cleanup time or a missing build result (zero). The worker
@@ -81,7 +89,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
     return db.transaction(async (tx) => {
       const rows = await tx
         .update(deployment)
-        .set(codec.sealDeployment({ ...extra, status: "cancelled", updatedAt: now }))
+        .set(codec.sealDeployment({ ...withRedactedError(extra), status: "cancelled", updatedAt: now }))
         .where(and(where, sql`coalesce(${deployment.roleHandover}->>'phase', '') <> 'committing'`))
         .returning();
       if (rows.length === 0) return false;
@@ -276,7 +284,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
         if (!session) return false;
         const now = new Date();
         const [row] = await tx.update(deployment).set({
-          status: "failed", errorMessage: input.errorMessage,
+          status: "failed", errorMessage: redactUrlCredentials(input.errorMessage),
           errorCode: input.errorCode ?? "CLOUD_BUILD_QUEUE_REJECTED", updatedAt: now,
         }).where(and(eq(deployment.id, input.deploymentId), eq(deployment.projectId, input.projectId),
           eq(deployment.organizationId, input.organizationId), eq(deployment.status, "queued"),
@@ -878,7 +886,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       }
       const rows = await db
         .update(deployment)
-        .set(codec.sealDeployment({ status, ...extra, updatedAt: new Date() }))
+        .set(codec.sealDeployment({ status, ...withRedactedError(extra), updatedAt: new Date() }))
         .where(and(eq(deployment.id, id), ne(deployment.status, "cancelled")))
         .returning();
       return rows.length > 0;
@@ -1214,6 +1222,18 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       })).map(codec.openDeployment);
     },
 
+    /** Worker-only receipt. Merge without replacing a concurrent cancellation,
+     * provider execution receipt, or encrypted deployment configuration. */
+    async recordCompletedBuildArtifacts(id: string, organizationId: string, receipt: unknown): Promise<boolean> {
+      const rows = await db.update(deployment).set({
+        meta: sql`coalesce(${deployment.meta}, '{}'::jsonb) || jsonb_build_object('completedBuildArtifacts', ${JSON.stringify(receipt)}::jsonb)`,
+        artifactRetainedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(and(eq(deployment.id, id), eq(deployment.organizationId, organizationId),
+        inArray(deployment.status, ["building", "deploying"]))).returning();
+      return rows.length === 1;
+    },
+
     /** Set the timestamp marking "this deployment's artifact is archived
      *  and rollback-restorable". Pass null to mark it purged. */
     async setArtifactRetainedAt(id: string, at: Date | null) {
@@ -1317,7 +1337,7 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
      * write. `logs` undefined means "don't touch the column": that caller has
      * no payload to shed, so its error propagates untouched.
      */
-    async finishBuildSession(id: string, status: string, durationMs: number, logs?: unknown[]) {
+    async finishBuildSession(id: string, status: string, durationMs: number | null, logs?: unknown[]) {
       const OMIT = Symbol("omit");
       // `logs` is spread in only when there is a payload — the column is left
       // untouched by ABSENCE from the SET clause, not by an undefined value.

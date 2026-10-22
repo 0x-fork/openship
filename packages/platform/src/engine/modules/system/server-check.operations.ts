@@ -15,6 +15,7 @@ import {
 import { confirmPortScanReachability } from "../../lib/port-reachability";
 import { formatDuration, systemDebug } from "../../lib/system-debug";
 import { sshManager, buildSshConfig, isTransportFailure } from "../../lib/ssh-manager";
+import { assertOperatorSshAccess } from "../../lib/operator-ssh-access";
 import { sshKeyPathProblem } from "../../lib/ssh-key-path";
 import { pinnedEdgeImage, withPinnedEdgeImage } from "../../lib/edge-image";
 import { deliverManagedImage } from "../../lib/deliver-managed-image";
@@ -115,9 +116,9 @@ async function checkServerComponents(ctx: ExecutionContext, serverId: string, na
  * Shared by the authenticated `/test-connection` and the pre-auth first-run
  * `/onboarding/test-connection` so both behave identically.
  */
-export async function runEphemeralConnectionTest(body: CreateServerInput) {
+export async function runEphemeralConnectionTest(body: CreateServerInput, scope: { organizationId?: string; localBootstrap?: boolean } = {}) {
   const startedAt = Date.now();
-  const built = await buildEphemeralSshConfig(body);
+  const built = await buildEphemeralSshConfig(body, scope);
 
   systemDebug("system-check", `test-connection:start`);
   const result = await runConnectivityCheck("ssh", built);
@@ -154,7 +155,7 @@ export async function testConnection(ctx: ExecutionContext, body: CreateServerIn
     await verifyCustomerSshConnection(body);
     return { ok: true, message: "SSH connection verified", code: "ok" };
   }
-  const result = await runEphemeralConnectionTest(body);
+  const result = await runEphemeralConnectionTest(body, { organizationId: ctx.organizationId });
   if (result.ok) audit.recordAsync(operationAuditContext(ctx), { eventType: "server:write", resourceType: "server", resourceId: "*" });
   return result;
 }
@@ -164,7 +165,7 @@ export async function testConnection(ctx: ExecutionContext, body: CreateServerIn
  * Build an ephemeral SshConfig from request-body credentials for a one-off
  * connectivity check. Returns the config, or a Response when validation fails.
  */
-async function buildEphemeralSshConfig(body: CreateServerInput) {
+async function buildEphemeralSshConfig(body: CreateServerInput, scope: { organizationId?: string; localBootstrap?: boolean }) {
   const host = (body.sshHost as string)?.trim();
   if (!host) {
     return failSystem({ ok: false, message: "SSH host is required" }, 400);
@@ -176,6 +177,7 @@ async function buildEphemeralSshConfig(body: CreateServerInput) {
   // concrete: a relative path, a key that was never copied to THIS host, or one
   // outside the allowlisted roots (the desktop file picker can reach those).
   assertNativeSshSettings(body);
+  await assertOperatorSshAccess(body, scope.organizationId, scope.localBootstrap);
   const rawKeyPath = typeof body.sshKeyPath === "string" ? body.sshKeyPath.trim() : "";
   const rawKeyMaterial = typeof body.sshPrivateKey === "string" ? body.sshPrivateKey.trim() : "";
   if (body.sshAuthMethod === "key") {
@@ -197,6 +199,7 @@ async function buildEphemeralSshConfig(body: CreateServerInput) {
   let config;
   try {
     config = await buildSshConfig({
+      organizationId: scope.organizationId,
       sshHost: host,
       sshPort: body.sshPort ? Number(body.sshPort) : null,
       sshUser: (body.sshUser as string) || null,
@@ -208,7 +211,7 @@ async function buildEphemeralSshConfig(body: CreateServerInput) {
       sshJumpHost: body.sshJumpHost as string ?? null,
       sshTransport: body.sshTransport,
       sshArgs: body.sshArgs as string ?? null,
-    });
+    }, { localBootstrap: scope.localBootstrap });
   } catch (err) {
     if (err instanceof OperationError) throw err;
     return failSystem({ ok: false, message: safeErrorMessage(err) }, 400);

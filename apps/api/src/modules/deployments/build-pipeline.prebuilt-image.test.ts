@@ -238,6 +238,8 @@ vi.mock("@repo/platform/engine/modules/backups/triggers/pre-deploy", () => ({
 }));
 
 vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
+  beginBuildTiming: vi.fn(),
+  completeBuildTiming: vi.fn(),
   onFailure: (...args: unknown[]) => mocks.onFailure(...args),
   onSuccess: (...args: unknown[]) => mocks.onSuccess(...args),
   onCancelled: (...args: unknown[]) => mocks.onCancelled(...args),

@@ -124,6 +124,8 @@ import { firePreDeployBackups, type PreDeployBackupPolicy } from "../backups/tri
 import { buildBackgroundContext } from "../../lib/background-context";
 import * as sessionManager from "./session-manager";
 import {
+  beginBuildTiming,
+  completeBuildTiming,
   onFailure,
   onSuccess,
   onCancelled,
@@ -132,6 +134,7 @@ import {
   routeIssuesWarning,
   type LifecycleContext,
 } from "./deployment-lifecycle";
+import { recordDeploymentArtifacts } from "./deployment-artifacts";
 import { auditPorts } from "./port-audit.service";
 import {
   allocateAndReservePinnedHostPort,
@@ -1170,6 +1173,8 @@ async function executeBuildAndDeploy(
           serverExecutor: clonePlan.cloneRunsOnTarget ? targetExecutor : null,
           repoUrl: snapshot.repoUrl,
           onLog: (message) => logger.log(message),
+          // Read .gitmodules at the deployed ref for submodule token expansion.
+          gitRef: dep.commitSha ?? dep.branch ?? null,
         })
       : {};
 
@@ -1221,6 +1226,7 @@ async function executeBuildAndDeploy(
     // hasServer=false but must build its OWN image, not the static nginx one —
     // so key strictly off the static workload, not `!hasServer` (issue #538-B).
     buildConfig.isStatic = workload === "static";
+    buildConfig.gitTokenRepositories = gitCred.tokenRepositories;
     // When opted in, the runtime clones on the remote build host instead of the
     // orchestrator transferring the context. The credential arrives either via
     // the relay (gitCredentialHelperPath, set once the relay is open) or the
@@ -1321,6 +1327,7 @@ async function executeBuildAndDeploy(
           buildResources,
           runtimeResources: prodResources,
           gitToken: gitCred.token,
+          gitTokenRepositories: gitCred.tokenRepositories,
           gitCredentialHelperPath: composeRelay?.scriptPath,
           gitSsh: gitCred.ssh,
           gitAmbient: effectiveCloneOnTarget ? gitCred.ambient : undefined,
@@ -1365,22 +1372,28 @@ async function executeBuildAndDeploy(
       if (deployRelay) {
         buildConfig.gitCredentialHelperPath = deployRelay.scriptPath;
       }
+      beginBuildTiming(ctx);
       try {
         // static-sandbox: build in a Docker sandbox, then extract the doc-root to a
         // host dir the edge serves. Everything else (server apps, bare-built static
         // on a Docker-less local box, cloud) builds normally.
         if (deployRouting.buildMode === "static-sandbox") {
           // buildMode is derived from runtime.name === "docker", so the cast is sound.
-          return await (runtime as DockerRuntime).buildStaticToHost(
+          const result = await (runtime as DockerRuntime).buildStaticToHost(
             buildConfig,
             runtime instanceof CloudDockerRuntime
               ? runtime.staticBuildPath(buildSessionId)
               : `${STATIC_RELEASE_BASE}/.builds/${buildSessionId}`,
             logger,
           );
+          return { ...result, durationMs: completeBuildTiming(ctx, result.durationMs) ?? undefined };
         }
-        return await runtime.build(buildConfig, logger);
+        const result = await runtime.build(buildConfig, logger);
+        return { ...result, durationMs: completeBuildTiming(ctx, result.durationMs) ?? undefined };
       } finally {
+        // A thrown adapter has no BuildResult. Freeze elapsed build work before
+        // closing the credential relay, whose teardown is not build time.
+        completeBuildTiming(ctx);
         // Reverse tunnel + remote helper script torn down regardless of outcome —
         // the credential is reachable only for the build's duration.
         if (deployRelay) await deployRelay.close().catch((diagnosticFailure) => {
@@ -1402,7 +1415,11 @@ async function executeBuildAndDeploy(
     });
     let preparedReleaseImage: BuildResult | null = null;
     const releaseImageRef = snapshot.releaseImageRef?.trim();
+    if (reusedArtifact) completeBuildTiming(ctx, 0);
     if (!reusedArtifact && releaseImageRef) {
+      // Pulling an existing registry image is not a source build, even if image
+      // preparation or the later deployment fails.
+      completeBuildTiming(ctx, 0);
       if (!runtime.supports("prebuiltImage") || !runtime.prepareImage) {
         throw new Error(
           `The ${runtime.name} runtime cannot deploy a prebuilt container image. Choose Docker or Cloud.`,
@@ -1429,6 +1446,7 @@ async function executeBuildAndDeploy(
       );
     }
     const buildResult = reusedArtifact ?? preparedReleaseImage ?? (await buildFromSource());
+    buildResult.durationMs = completeBuildTiming(ctx, buildResult.durationMs) ?? undefined;
 
     // ONLY an artifact this deploy PRODUCED goes on the cleanup list. `provisioned`
     // exists so onFailure/onCancelled can reclaim a half-built image or build dir,
@@ -1501,6 +1519,14 @@ async function executeBuildAndDeploy(
     await setDeploymentStatus(dep.id, "deploying", {
       extra: { imageRef: buildResult.imageRef, buildDurationMs: buildResult.durationMs },
     });
+    // A completed Docker image can survive a later runtime failure. Recording
+    // is optional; a failed receipt write keeps the existing cleanup behavior.
+    try {
+      await recordDeploymentArtifacts(dep, runtime, [{ imageRef: buildResult.imageRef }]);
+    } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/deployments/build-pipeline");
+      logger.log("The completed image could not be retained for a deployment-only retry.\n", "warn");
+    }
 
     // Keep the exact lock decision on the phase. Post-route claim convergence
     // must use the unlocked helper only when this wrapper really acquired the
@@ -1549,7 +1575,7 @@ async function executeBuildAndDeploy(
       const { runRoleConfigurationRollout } = await import("./role-configuration-rollout");
       await runRoleConfigurationRollout({ project, dep, runtime, config: deployConfig, logger, signal: cancellationSignal,
         beforeStart: containerId => attachLinkedNetworks(project.id, runtime, (message, level) => logger.log(`${message}\n`, level), dep.id, [containerId]),
-        publish: (containerId, warningMessage) => onSuccess(ctx, { containerId, url: dep.url ?? undefined, durationMs: 0, warningMessage }) });
+        publish: (containerId, warningMessage) => onSuccess(ctx, { containerId, url: dep.url ?? undefined, durationMs: buildResult.durationMs, warningMessage }) });
       await archivePreviousDeployment(dep, project, logger);
       return;
     }
@@ -3045,7 +3071,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   await onSuccess(ctx, {
     containerId: deployResult.containerId!,
     url: deployResult.url,
-    durationMs: buildResult.durationMs ?? 0,
+    durationMs: buildResult.durationMs,
     ...(warningMessage ? { warningMessage } : {}),
     ...(Object.keys(metaPatch).length > 0 ? { metaPatch } : {}),
   });
