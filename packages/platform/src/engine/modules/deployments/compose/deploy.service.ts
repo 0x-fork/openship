@@ -149,6 +149,7 @@ import { compileProjectRoutingFields } from "../../../lib/project-routing-fields
 import { buildCompositeRegistration, buildDomainFanoutRegistrations, planCompositeRoute } from "./composite-route";
 import { collectComposeRoutePortDemands } from "./route-port-demands";
 import { hasRestorableServicePorts } from "./cutover-route-identity";
+import { recoverServiceRouting } from "./recover-service-routing";
 import { newerThanRestoredRelease, serviceKind } from "./project-services";
 import {
   OUT_OF_SCOPE_SKIP_REASON,
@@ -3370,15 +3371,15 @@ async function deployComposeServicesCore(
                     ]);
                     const options = { onWarning: (message: string) => warnings.push(message),
                       managedEdgeSyncedByCaller: true };
-                    await reapplyProjectLiveRoutes(project, [], options);
-                    await applyProjectRouting(project.id, options);
+                    await recoverServiceRouting(
+                      () => reapplyProjectLiveRoutes(project, [], options),
+                      () => applyProjectRouting(project.id, options),
+                      opts?.executor,
+                    );
                     if (warnings.length) throw new Error(warnings.join("; "));
                   };
                   try {
-                    const recoverySignal = new AbortController().signal;
-                    await withTimeout(opts?.executor?.runWithAbortSignal
-                      ? opts.executor.runWithAbortSignal(recoverySignal, restore) : restore(),
-                    30_000, "Previous service routing recovery timed out");
+                    await restore();
                     pending.recovered = true;
                     pending.preserveCandidate = false;
                   } catch (error) {
