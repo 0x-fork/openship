@@ -2208,14 +2208,17 @@ describe("manual DNS certificate activation", () => {
     await nginx.registerRoute(wildcard);
     const paths = [...files.keys()].filter((path) => path.endsWith(".conf") || path.endsWith(".route.json"));
     const previous = paths.map((path) => [path, files.get(path)]);
+    const cert = makeTestCert([wildcard.domain]);
     opts.failReload = true;
-    await expect(nginx.installCert(wildcard.domain, makeTestCert([wildcard.domain]))).rejects.toThrow();
+    await expect(nginx.installCert(wildcard.domain, cert)).rejects.toThrow();
     expect(paths.map((path) => [path, files.get(path)])).toEqual(previous);
+    expect(files.has(`/etc/letsencrypt/live/${wildcard.domain}/fullchain.pem`)).toBe(false);
+    expect(files.has(`/etc/letsencrypt/live/${wildcard.domain}/privkey.pem`)).toBe(false);
 
-    // The certificate did get written. A retry must activate it instead of
-    // accepting readable PEM files as proof the previous reload succeeded.
+    // A failed upload rolls back its files too; retry the upload through the
+    // same installation path once the edge can reload again.
     opts.failReload = false;
-    await expect(nginx.provisionCert(wildcard.domain)).resolves.toMatchObject({ verified: true });
+    await expect(nginx.installCert(wildcard.domain, cert)).resolves.toMatchObject({ verified: true });
     const config = files.get(paths.find((path) => path.endsWith(".conf"))!)!;
     expect(config).toContain("listen 443 ssl;");
     expect(config).toContain("proxy_pass http://127.0.0.1:4010;");
