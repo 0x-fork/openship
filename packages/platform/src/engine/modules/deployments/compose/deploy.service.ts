@@ -901,6 +901,8 @@ export interface ComposeDeployOptions {
    *  rest running and carry their previous runtime row forward. Undefined
    *  = full deploy (recreate every enabled service). */
   targetServiceIds?: Set<string>;
+  /** Scope infrastructure reconciliation without forcing unchanged targets to restart. */
+  keepUnchanged?: boolean;
   /** Exact service/path pairs produced or internally pinned as self-hosted
    * static artifacts during this deployment's build phase. */
   staticArtifactRefs?: ReadonlyMap<string, string>;
@@ -1651,7 +1653,7 @@ async function deployComposeServicesCore(
     // having changed nothing — the same silent-no-op `newerThanRestoredRelease`
     // guards against from the other direction.
     if (replaysFrozenDeployment(dep)) return false;
-    if (opts?.targetServiceIds) return false; // smart subset already carries non-targets forward
+    if (opts?.targetServiceIds && !opts.keepUnchanged) return false; // explicit refresh targets recreate
     if (!carryAnchor) return false; // never deployed → deploy it
     if (previousReplicas !== nextReplicas) return false; // Replica settings are project-level, not service edits.
     if (svc.build || !svc.image) return false; // must be image-only (external); buildables always rebuild

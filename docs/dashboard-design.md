@@ -804,6 +804,11 @@ Existing hostnames keep their Access choice when server defaults change. Close o
 private dialogs on account/organization switches, discard late results, and guard
 backdrop, Escape and close buttons while a write is in flight.
 
+The project Apps & Services view keeps runtime-role configuration and live role replicas
+available when the primary app is represented by a service row. The existing role editor
+reads support from the API; do not add a duplicate primary application card. Service-only
+changes retain the web process and roles, while the toolbar wraps on narrow screens.
+
 Webhook delivery rows show a short, localized explanation below the repository when change analysis records a decision. Reuse the existing feed; keep unknown reason codes out of user-facing text.
 
 Fine-grained token capability hints describe the enforced operation scope. Deployment trigger access does not promise cancellation, rollback, or deletion; those keep their project admin requirement.
