@@ -386,8 +386,8 @@ export const deployApi = {
   buildStart: (deployment_id: string) => api.post<any>(endpoints.deploy.buildStart(deployment_id)),
 
   /** Re-deploy an existing deployment */
-  buildRedeploy: (deployment_id: string) =>
-    api.post<any>(endpoints.deploy.buildRedeploy(deployment_id)),
+  buildRedeploy: (deployment_id: string, options?: { reuseBuild?: boolean }) =>
+    api.post<any>(endpoints.deploy.buildRedeploy(deployment_id), options),
 
   /** Check SSL certificate status for a domain */
   sslStatus: (domain: string) => api.post<any>(endpoints.deploy.sslStatus, { domain }),

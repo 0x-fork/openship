@@ -15,6 +15,7 @@ import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics"
 import { repos, type Project, type Service } from "@repo/db";
 import { getProjectType, type ComposeAdvanced, type StackId } from "@repo/core";
 import { serviceKind, type DeployableService } from "../../../lib/deployable-service";
+import { replaysFrozenDeployment } from "../deployment-artifacts";
 export { serviceKind } from "../../../lib/deployable-service";
 
 export function isMultiServiceProject(
@@ -123,7 +124,7 @@ export function newerThanRestoredRelease(dep: {
   trigger?: string | null;
   meta?: unknown;
 }): (service: { name: string }) => boolean {
-  if (dep.trigger !== "rollback") return () => false;
+  if (!replaysFrozenDeployment(dep)) return () => false;
   const frozen = (dep.meta as { composeServices?: Array<{ name?: string }> } | null)
     ?.composeServices;
   const names = new Set((frozen ?? []).map((s) => s.name).filter((n): n is string => !!n));

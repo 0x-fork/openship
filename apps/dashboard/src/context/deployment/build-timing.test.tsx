@@ -538,6 +538,25 @@ describe("deployment counter (#919)", () => {
     expect(api.status).toHaveBeenCalledTimes(settledReads);
   });
 
+  it("reveals a saved-image retry when terminal cleanup finishes without requiring refresh", async () => {
+    await mount();
+    await load({ status: "failed", is_active: false, completionPending: true,
+      canRetryDeployment: false, buildDurationMs: 4500 });
+    const initialReads = api.status.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(api.status).toHaveBeenCalledTimes(initialReads + 2);
+    expect(build.state.canRetryDeployment).toBe(false);
+    api.status.mockResolvedValue(snapshot({ status: "failed", is_active: false,
+      completionPending: false, canRetryDeployment: true, buildDurationMs: 4500 }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(build.state.canRetryDeployment).toBe(true);
+    expect(build.state.completionPending).toBe(false);
+    const reads = api.status.mock.calls.length;
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(api.status).toHaveBeenCalledTimes(reads);
+    expect(clockText()).toBe("0:05");
+  });
+
   it("does not let a delayed status poll replace a new retry's state", async () => {
     api.stream.isConnected = false;
     await mount();

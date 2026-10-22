@@ -132,6 +132,7 @@ import {
   routeIssuesWarning,
   type LifecycleContext,
 } from "./deployment-lifecycle";
+import { recordDeploymentArtifacts } from "./deployment-artifacts";
 import { auditPorts } from "./port-audit.service";
 import {
   allocateAndReservePinnedHostPort,
@@ -1504,6 +1505,14 @@ async function executeBuildAndDeploy(
     await setDeploymentStatus(dep.id, "deploying", {
       extra: { imageRef: buildResult.imageRef, buildDurationMs: buildResult.durationMs },
     });
+    // A completed Docker image can survive a later runtime failure. Recording
+    // is optional; a failed receipt write keeps the existing cleanup behavior.
+    try {
+      await recordDeploymentArtifacts(dep, runtime, [{ imageRef: buildResult.imageRef }]);
+    } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/deployments/build-pipeline");
+      logger.log("The completed image could not be retained for a deployment-only retry.\n", "warn");
+    }
 
     // Keep the exact lock decision on the phase. Post-route claim convergence
     // must use the unlocked helper only when this wrapper really acquired the

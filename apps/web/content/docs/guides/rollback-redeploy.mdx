@@ -113,6 +113,35 @@ says so. To make sure a version always stays instantly restorable, **pin** it �
 
 ## Redeploy (run it again)
 
+### Retry deployment without rebuilding
+
+When a Docker build finishes but starting its containers fails, the failed attempt offers
+**Retry deployment** while its completed images are still retained. This creates a new attempt
+through the normal deployment pipeline using the exact images, source revision, destination,
+and saved configuration. It does not rebuild or pull replacement images.
+Runtime secrets still follow the normal deployment environment layering: the saved project
+environment is replayed, while service-scoped values use the shared service environment loader.
+
+Openship retains the newest failed completed build until a newer completed attempt fails or a
+later release succeeds. A missing image produces a clear error; it never silently rebuilds.
+Use ordinary **Redeploy** when you want current source or configuration instead. Cancelled and
+incomplete builds, bare/static releases, and services requiring repository bind-mount files do
+not offer this image-only retry. A routing-only warning on a running release uses **Retry routing**
+in Domains, which leaves its containers running.
+
+The same operation is available through the API, SDK, and CLI:
+
+```bash
+openship deployment redeploy <deployment-id> --reuse-build
+```
+
+```ts
+await client.deployments.redeploy(deploymentId, { reuseBuild: true });
+```
+
+`POST /api/deployments/:id/redeploy` accepts `{ "reuseBuild": true }`.
+`useExistingCommit` is a separate rebuild option and cannot be combined with `reuseBuild`.
+
 Redeploying builds and ships your project again. Reach for it after you push a fix, or when you want the
 live site to pick up the newest commit.
 
@@ -127,8 +156,7 @@ The small caret (⌄) next to the button opens a couple of extra choices:
   only for multi-service projects (a single-app project always rebuilds the whole app anyway).
 - **Refresh images & redeploy** — pull refreshed image tags and rebuild with fresh base images,
   keeping the deployed source revision.
-- **Check image updates** — compare recorded image digests with the registry and show the last observed
-  runtime version.
+- **Check image updates** — compare recorded image digests with the registry and show image drift.
 
 ## Runtime settings
 

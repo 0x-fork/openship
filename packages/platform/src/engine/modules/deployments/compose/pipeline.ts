@@ -65,6 +65,7 @@ import { strictRefreshImages } from "../pinned-artifacts";
 import { cloudCapacityFailure } from "../../../lib/cloud-capacity";
 import { retirePreviousRoleContainers } from "../role-runtime";
 import { assertRequiredServiceEnvironment } from "./required-env-preflight";
+import { deploymentArtifacts, recordDeploymentArtifacts } from "../deployment-artifacts";
 
 export interface ComposePipelineOpts {
   project: Project;
@@ -377,6 +378,22 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   await setDeploymentStatus(dep.id, "deploying", {
     extra: { buildDurationMs: composeBuild.durationMs },
   });
+  if (composeBuild.buildFailures.size === 0) {
+    try {
+      const services = await getCurrentServices();
+      const images = [...composeBuild.imageRefs]
+        .filter(([serviceId]) => !targetServiceIds || targetServiceIds.has(serviceId))
+        .map(([serviceId, imageRef]) => ({
+          serviceId,
+          serviceName: services.find(service => service.id === serviceId)?.name ?? "",
+          imageRef,
+        }));
+      if (images.every(image => image.serviceName)) await recordDeploymentArtifacts(dep, runtime, images);
+    } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/deployments/compose/pipeline");
+      logger.log("Completed service images could not be retained for a deployment-only retry.\n", "warn");
+    }
+  }
   sessionManager.broadcastInstallPhase(dep.id, { id: "services", status: "active" });
 
   let composeResult;
@@ -452,7 +469,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
           logger,
         });
       }
-      await cleanupUnusedBuiltArtifactsAfterDeployError(
+      if (!deploymentArtifacts(dep.meta)) await cleanupUnusedBuiltArtifactsAfterDeployError(
         dep,
         runtime,
         composeBuild.builtImageRefs,
@@ -506,7 +523,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   );
 
   if (composeResult.status === "failed") {
-    await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger, publishedServiceIds);
+    if (!deploymentArtifacts(dep.meta)) await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger, publishedServiceIds);
     await onFailure(ctx, composeResult.error ?? "Compose deploy failed", composeBuild.durationMs,
       deploymentResourceFailure({ project, message: composeResult.error ?? "", causes: composeBuild.buildErrorCauses }));
     return;
@@ -522,7 +539,7 @@ export async function executeComposePipeline(opts: ComposePipelineOpts): Promise
   // the vhost was just pointed at — into the unused list, so every SUCCESSFUL
   // compose deploy `rm -rf`'d the static site it had just published, reported
   // ready, and then 404'd every request.
-  await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger, publishedServiceIds);
+  if (!deploymentArtifacts(dep.meta)) await cleanupBuiltArtifacts(runtime, composeBuild.builtImageRefs, logger, publishedServiceIds);
 
   // Routing failures are best-effort (domains are optional — never fail the
   // deploy). Fold them into the SAME top-level "action required" signal the

@@ -57,7 +57,7 @@
     "deployments.redeploy": {
       "page": "deployments",
       "section": "Submit",
-      "description": "Submit a new deployment based on an existing release.",
+      "description": "Rebuild an existing release, or retry a failed attempt with its retained completed Docker images using reuseBuild.",
       "route": "POST /api/deployments/:id/redeploy"
     },
     "deployments.pin": {

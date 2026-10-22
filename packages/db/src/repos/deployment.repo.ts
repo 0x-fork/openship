@@ -1222,6 +1222,18 @@ export function createDeploymentRepo(db: Database, encryption: ConfigurationEncr
       })).map(codec.openDeployment);
     },
 
+    /** Worker-only receipt. Merge without replacing a concurrent cancellation,
+     * provider execution receipt, or encrypted deployment configuration. */
+    async recordCompletedBuildArtifacts(id: string, organizationId: string, receipt: unknown): Promise<boolean> {
+      const rows = await db.update(deployment).set({
+        meta: sql`coalesce(${deployment.meta}, '{}'::jsonb) || jsonb_build_object('completedBuildArtifacts', ${JSON.stringify(receipt)}::jsonb)`,
+        artifactRetainedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(and(eq(deployment.id, id), eq(deployment.organizationId, organizationId),
+        inArray(deployment.status, ["building", "deploying"]))).returning();
+      return rows.length === 1;
+    },
+
     /** Set the timestamp marking "this deployment's artifact is archived
      *  and rollback-restorable". Pass null to mark it purged. */
     async setArtifactRetainedAt(id: string, at: Date | null) {
