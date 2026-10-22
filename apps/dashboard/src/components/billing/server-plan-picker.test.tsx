@@ -130,18 +130,17 @@ describe("plans for an existing server", () => {
     expect(h.post).not.toHaveBeenCalled();
   });
 
-  it("keeps lower-cost choices behind Other plans and reviews them against the selected server", async () => {
-    // No allocated disk in this fixture: the preview still validates actual disk size.
-    await render(picker("starter"));
+  it("keeps lower-cost choices behind Other plans and excludes retired offers", async () => {
+    await render(picker("pro"));
     await click(copy.plansRoute.otherPlans);
-    expect(planNames()).toContain("Hobby");
-    expect(sidebarState()).toBe("collapsed");
+    expect(planNames()).toContain("Starter");
+    expect(planNames()).not.toContain("Hobby");
     expect(host.textContent).toContain(copy.plansRoute.otherPlansHint);
     h.post.mockRejectedValueOnce(new Error("Preview offline"));
     await click(copy.planChange.review);
-    expect(h.post).toHaveBeenCalledWith("billing/subscription/change/preview", expect.objectContaining({ workspaceId: "cws-production", planTierId: "hobby" }));
+    expect(h.post).toHaveBeenCalledWith("billing/subscription/change/preview", expect.objectContaining({ workspaceId: "cws-production", planTierId: "starter" }));
     await click(copy.plansRoute.backToUpgrades);
-    expect(planNames()).toEqual(["Pro", "Scale"]);
+    expect(planNames()).toEqual(["Scale"]);
     expect(sidebarState()).toBe("expanded");
   });
 
@@ -366,7 +365,7 @@ describe("buying another managed server", () => {
     expect(input(copy.custom.cpu)?.value).toBe("3");
     expect(buttons(copy.custom.name)[0]?.getAttribute("aria-pressed")).toBe("true");
     await click(copy.custom.presets);
-    expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
+    expect(planNames()).toEqual(["Starter", "Pro", "Scale"]);
     expect(buttons(copy.custom.presets)[0]?.getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -410,7 +409,7 @@ describe("buying another managed server", () => {
     await render(<CloudPurchaseProvider tabs="header">
       <BillingHeader /><CloudPurchaseTabs /><ManagedServerPurchase preserveProject />
     </CloudPurchaseProvider>);
-    await click("Choose Hobby");
+    await click("Choose Starter");
     const monthly = buttons(copy.purchase.monthly)[0]!;
     const payg = buttons(copy.purchase.payg)[0]!;
     expect(payg.closest('fieldset')?.disabled).toBe(true);
@@ -426,7 +425,7 @@ describe("buying another managed server", () => {
     await render(<ModalProvider><AddServerFromProject /></ModalProvider>);
     await click("Add a destination");
     const dialog = document.querySelector('[role="dialog"]')!;
-    expect([...dialog.querySelectorAll("article h3")].map(heading => heading.textContent)).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
+    expect([...dialog.querySelectorAll("article h3")].map(heading => heading.textContent)).toEqual(["Starter", "Pro", "Scale"]);
     expect(dialog.querySelector("header h2")?.textContent).toBe(baseDictionary.servers.setup.addServer);
     expect(h.create).not.toHaveBeenCalled(); expect(h.post).not.toHaveBeenCalled();
     await act(async () => dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
@@ -436,11 +435,11 @@ describe("buying another managed server", () => {
 
   it("creates a server with its default name only after a plan is chosen", async () => {
     await render(<ManagedServerPurchase preserveProject />);
-    expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
+    expect(planNames()).toEqual(["Starter", "Pro", "Scale"]);
     expect(host.querySelector("input")).toBeNull();
     expect(h.create).not.toHaveBeenCalled();
     expect(h.post).not.toHaveBeenCalled();
-    await click("Choose Hobby");
+    await click("Choose Starter");
     expect(h.create).toHaveBeenCalledExactlyOnceWith({ name: copy.workspaces.defaultName });
   });
 
@@ -457,9 +456,9 @@ describe("buying another managed server", () => {
   it("lets the visitor compare other plans and safely ignores a removed or invalid requested plan", async () => {
     await render(<ManagedServerPurchase requestedPlanId="starter" />);
     await click(copy.plansRoute.otherPlans);
-    expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
+    expect(planNames()).toEqual(["Starter", "Pro", "Scale"]);
     await render(<ManagedServerPurchase requestedPlanId="not-a-live-plan" />);
-    expect(planNames()).toEqual(["Hobby", "Starter", "Pro", "Scale"]);
+    expect(planNames()).toEqual(["Starter", "Pro", "Scale"]);
     expect(h.create).not.toHaveBeenCalled();
     expect(h.post).not.toHaveBeenCalled();
   });
@@ -494,7 +493,7 @@ describe("buying another managed server", () => {
     expect(h.post).toHaveBeenCalledOnce();
   });
 
-  it.each(["missing-plan", "free", "enterprise"])("does not substitute another checkout for an unavailable pricing selection (%s)", async requestedPlanId => {
+  it.each(["missing-plan", "free", "enterprise", "hobby"])("does not substitute another checkout for an unavailable pricing selection (%s)", async requestedPlanId => {
     await render(<ManagedServerPurchase requestedPlanId={requestedPlanId} autoCheckout />);
     expect(host.textContent).toContain(copy.plansRoute.requestedPlanUnavailable);
     expect(h.create).not.toHaveBeenCalled();
@@ -597,7 +596,7 @@ describe("buying another managed server", () => {
     const location = window.location.href;
     await render(<ModalProvider><AddServerFromProject /></ModalProvider>);
     await click("Add a destination");
-    await click("Choose Hobby");
+    await click("Choose Starter");
     expect(h.create).toHaveBeenCalledOnce();
     expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.objectContaining({ workspaceId: server.id }));
     expect(h.readServer).toHaveBeenCalledExactlyOnceWith(server.serverId);
@@ -688,7 +687,7 @@ describe("buying another managed server", () => {
   it("discards an unavailable checkout when the customer changes organization", async () => {
     h.post.mockRejectedValueOnce(new ApiError(503, "Unavailable", { code: "OBLIEN_CHECKOUT_UNAVAILABLE" }));
     await render(<ManagedServerPurchase preserveProject />);
-    await click("Choose Hobby");
+    await click("Choose Starter");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(copy.checkoutUnavailable.checkoutTitle);
     h.org = "org-b";
     await render(<ManagedServerPurchase preserveProject />);
@@ -700,24 +699,24 @@ describe("buying another managed server", () => {
     let created!: (value: CloudWorkspaceSummary) => void;
     h.create.mockReturnValueOnce(new Promise(resolve => { created = resolve; }));
     const purchase = <ManagedServerPurchase preserveProject />;
-    await render(purchase); await click("Choose Hobby");
+    await render(purchase); await click("Choose Starter");
     h.org = "org-b";
     await render(<ManagedServerPurchase preserveProject />);
     await act(async () => created(server));
     expect(h.post).not.toHaveBeenCalled();
     expect(popup.close).toHaveBeenCalled();
     h.create.mockResolvedValueOnce({ ...server, id: "cws-org-b" });
-    await click("Choose Hobby");
+    await click("Choose Starter");
     expect(h.post).toHaveBeenCalledWith("billing/subscription", expect.objectContaining({ workspaceId: "cws-org-b" }));
   });
 
   it("allows retrying a failed server creation without starting checkout prematurely", async () => {
     h.create.mockRejectedValueOnce(new Error("Server could not be created"));
-    await render(<ManagedServerPurchase preserveProject />); await click("Choose Hobby");
-    expect(buttons("Choose Hobby")[0]?.disabled).toBe(false);
+    await render(<ManagedServerPurchase preserveProject />); await click("Choose Starter");
+    expect(buttons("Choose Starter")[0]?.disabled).toBe(false);
     expect(host.textContent).toContain("Server could not be created");
     expect(h.post).not.toHaveBeenCalled();
-    await click("Choose Hobby");
+    await click("Choose Starter");
     expect(h.create).toHaveBeenCalledTimes(2);
     expect(h.post).toHaveBeenCalledOnce();
   });

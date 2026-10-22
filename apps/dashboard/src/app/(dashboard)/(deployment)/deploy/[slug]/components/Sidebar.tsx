@@ -7,6 +7,7 @@ import React, { useCallback } from "react";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { RepositoryBranchSelect } from "@/components/github/RepositoryBranchSelect";
 import DropdownMenu from "@/components/ui/DropdownMenu";
+import { Button } from "@/components/ui/button";
 import DomainSettings from "./DomainSettings";
 import BuildSummary from "./BuildSummary";
 import { LocalDeployComingSoonModal } from "@/components/LocalDeployComingSoonModal";
@@ -387,10 +388,12 @@ const Sidebar: React.FC<{ destinationReady: boolean }> = ({ destinationReady }) 
   // deploy gates (cloud/clone/domain checks are deploy concerns). Deploying is
   // the separate "Redeploy" action on the project page.
   const searchParams = useSearchParams();
-  const isConfigMode = searchParams.get("mode") === "config";
+  const isConfigMode = searchParams.get("mode") === "config" && Boolean(config.projectId);
   const [isSaving, setIsSaving] = React.useState(false);
+  const saveInFlight = React.useRef(false);
   const handleSave = useCallback(async () => {
-    if (!destinationReady) return;
+    if (!destinationReady || isRescanning || saveInFlight.current) return;
+    saveInFlight.current = true;
     setIsSaving(true);
     try {
       const projectId = await startDeployment({ saveConfigOnly: true });
@@ -401,9 +404,16 @@ const Sidebar: React.FC<{ destinationReady: boolean }> = ({ destinationReady }) 
         router.push(`/projects/${projectId}/advanced`);
       }
     } finally {
+      saveInFlight.current = false;
       setIsSaving(false);
     }
-  }, [startDeployment, router, selfHosted, destinationReady]);
+  }, [startDeployment, router, destinationReady, isRescanning]);
+
+  const handleCancel = () => {
+    if (saveInFlight.current || isRescanning || !config.projectId) return;
+    // Leaving the wizard unmounts its draft provider; no save or deploy is sent.
+    router.push(`/projects/${config.projectId}/advanced`);
+  };
 
   return (
     <div className="lg:sticky lg:top-6 h-fit space-y-4">
@@ -532,23 +542,35 @@ const Sidebar: React.FC<{ destinationReady: boolean }> = ({ destinationReady }) 
           config from the project Runtime page SAVES without deploying — deploy
           is the separate "Redeploy" action. */}
       {isConfigMode ? (
-        <button
-          onClick={handleSave}
-          disabled={isSaving || isRescanning || !destinationReady}
-          className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {isSaving ? (
-            <>
-              <UiIcon name="spinner" className="size-4 animate-spin" />
-              {t.deploy.sidebar.saving}
-            </>
-          ) : (
-            <>
-              <UiIcon name="check" className="size-4" />
-              {t.deploy.sidebar.saveChanges}
-            </>
-          )}
-        </button>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-w-0 flex-1 whitespace-normal"
+            onClick={handleCancel}
+            disabled={isSaving || isRescanning || !config.projectId}
+          >
+            {t.projectSettings.settingSection.cancel}
+          </Button>
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving || isRescanning || !destinationReady}
+            className="min-w-0 flex-1 whitespace-normal"
+          >
+            {isSaving ? (
+              <>
+                <UiIcon name="spinner" className="size-4 animate-spin" />
+                {t.deploy.sidebar.saving}
+              </>
+            ) : (
+              <>
+                <UiIcon name="check" className="size-4" />
+                {t.deploy.sidebar.saveChanges}
+              </>
+            )}
+          </Button>
+        </div>
       ) : (
         <button
           onClick={handleDeploy}

@@ -116,7 +116,16 @@
     "addReleaseCommand": "Ajouter une commande",
     "removeReleaseCommand": "Supprimer la commande {number}",
     "runtimeImageLabel": "Image d’exécution",
-    "runtimeImageDesc": "Image de base de production facultative pour Docker. Doit être compatible avec le runtime et la recette générée ; laissez vide pour utiliser la valeur par défaut."
+    "runtimeImageDesc": "Image de base de production facultative pour Docker. Doit être compatible avec le runtime et la recette générée ; laissez vide pour utiliser la valeur par défaut.",
+    "runtimeTitle": "Environnement d’exécution",
+    "runtimeDesc": "Choisissez l’image qui exécute votre application. L’actualisation conserve la version et les empreintes fixées.",
+    "runtimeBareDesc": "Cette application s’exécute directement sur son serveur. Gérez l’environnement installé sur celui-ci.",
+    "runtimeStaticDesc": "L’image de compilation prépare vos fichiers statiques. Aucun environnement d’application ne s’exécute après le déploiement.",
+    "runtimeDockerfileDesc": "Votre Dockerfile définit l’image d’exécution.",
+    "runtimeServicesDesc": "Choisissez les images d’exécution de chaque service dans Services.",
+    "runtimePrebuiltDesc": "L’image d’application sélectionnée inclut son environnement d’exécution.",
+    "runtimeOverrideUnused": "Ces valeurs enregistrées ne s’appliquent pas à ce déploiement. Effacez-les avant d’enregistrer.",
+    "clearRuntimeOverrides": "Effacer les valeurs enregistrées"
   },
   "projectSettings": {
     "framework": "Framework",

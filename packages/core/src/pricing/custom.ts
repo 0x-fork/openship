@@ -20,7 +20,7 @@ export function quoteCustomResources(resources: CustomServerResources, catalog: 
   }
   const rates = catalog.custom.extraMonthlyCents;
   const candidates = catalog.plans.flatMap(plan => {
-    if (!plan.price.monthly || plan.billing.mode !== "monthly" || plan.contactSales) return [];
+    if (!plan.availableForPurchase || !plan.price.monthly || plan.billing.mode !== "monthly" || plan.contactSales) return [];
     const included = plan.billing.resourceLimits;
     const breakdown = {
       basePriceCents: plan.price.monthly,

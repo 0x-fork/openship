@@ -193,6 +193,66 @@ describe("countActiveByServer and listActiveByServer describe the same set", () 
     expect(await projectRepo.countActiveByServer("org_1", { withRoutes: true })).toEqual({ srv1: 3 });
   });
 
+  it("requires an edge for a public primary app while ignoring private, disabled and removing routes", async () => {
+    await seedBound(db, "primary", { serverId: "srv1" });
+    await seedBound(db, "private", { serverId: "srv2" });
+    await db.insert(schema.service).values([
+      {
+        id: "app",
+        projectId: "primary",
+        name: "app",
+        kind: "monorepo",
+        enabled: true,
+        exposed: true,
+      },
+      {
+        id: "database",
+        projectId: "primary",
+        name: "database",
+        kind: "compose",
+        enabled: true,
+        exposed: false,
+      },
+      { id: "disabled", projectId: "private", name: "disabled", enabled: false, exposed: true },
+      { id: "removed", projectId: "private", name: "removed", enabled: true, exposed: true },
+    ]);
+    await db.insert(schema.domain).values([
+      {
+        id: "app",
+        projectId: "primary",
+        serviceId: "app",
+        hostname: "app.example.com",
+        targetPort: 8080,
+      },
+      {
+        id: "database",
+        projectId: "primary",
+        serviceId: "database",
+        hostname: "db.example.com",
+        targetPort: 5432,
+      },
+      {
+        id: "disabled",
+        projectId: "private",
+        serviceId: "disabled",
+        hostname: "disabled.example.com",
+        targetPort: 8080,
+      },
+      {
+        id: "removed",
+        projectId: "private",
+        serviceId: "removed",
+        hostname: "removed.example.com",
+        targetPort: 8080,
+        status: "removing",
+      },
+    ]);
+    expect(await projectRepo.countActiveByServer("org_1")).toEqual({ srv1: 1, srv2: 1 });
+    expect(await projectRepo.countActiveByServer("org_1", { withRoutes: true })).toEqual({
+      srv1: 1,
+    });
+  });
+
   it("carries what the confirm needs to render and the delete needs to decide", async () => {
     await db.insert(schema.projectGroup).values({
       id: "app_p1",

@@ -562,7 +562,7 @@ export default function ProjectTopology({
   };
 
   const stageResources = (
-    values: { cpuCores: number; memoryMb: number },
+    values: { cpuCores: number; memoryMb: number; swapDisabled?: boolean },
     before: ProjectResources,
     service?: Service,
   ) => {
@@ -581,7 +581,7 @@ export default function ProjectTopology({
             kind: "resources",
             title: "Resize environment defaults",
             before: previous?.kind === "resources" ? previous.before : before.production,
-            values,
+            values: { cpuCores: values.cpuCores, memoryMb: values.memoryMb },
           },
         ];
       });

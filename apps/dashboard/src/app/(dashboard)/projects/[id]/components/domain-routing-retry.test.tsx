@@ -36,7 +36,11 @@ vi.mock("@/lib/api", async (original) => {
   return {
     ...actual,
     getApiBaseUrl: () => "http://localhost:4000/api/",
-    projectsApi: { ...actual.projectsApi, getEdgeStatus: async () => ({ ready: true }) },
+    projectsApi: {
+      ...actual.projectsApi,
+      getEdgeStatus: async () => ({ ready: true }),
+      listRouteProtection: async () => ({ data: [] }),
+    },
     domainsApi: { ...actual.domainsApi, list: mocks.listDomains, verifySsl: mocks.verifySsl },
     deployApi: {
       ...actual.deployApi,

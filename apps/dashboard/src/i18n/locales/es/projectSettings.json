@@ -666,13 +666,15 @@
       "increaseAria": "Aumentar historial de reversiones",
       "sizeEach": "~{size} por imagen, incluidas las capas compartidas",
       "diskFree": "{size} libres",
-      "autoBadge": "ajustado automáticamente",
+      "autoBadge": "Automático",
       "manualBadge": "definido manualmente",
       "kindFiles": "archivos generados en disco",
       "kindImages": "imágenes en el host",
       "descGitFiles": "Los archivos de las versiones recientes se conservan igualmente, así un rollback puede omitir la compilación.",
       "retentionHint": "Conserva los artefactos de los despliegues recientes para volver atrás rápidamente.",
       "retentionDescription": "Número máximo de versiones anteriores que se conservan. Las versiones activas y fijadas no cuentan para este límite. Se eliminan los artefactos antiguos, pero el historial sigue disponible. Usa 0 para conservar solo las versiones activas y fijadas.",
+      "automaticValue": "Hasta {count} versiones",
+      "automaticDescription": "Conserva hasta el límite predeterminado del historial. Si queda poco espacio, los artefactos recuperables pueden eliminarse antes. Las versiones activas y fijadas no cuentan para el límite. El historial de commits y configuración se conserva; volver a una versión anterior puede requerir recompilarla.",
       "defaultBadge": "valor predeterminado de la instancia",
       "loadFailed": "No se pudo cargar la configuración de reversión."
     },
@@ -1231,5 +1233,19 @@
     "saved": "Regla guardada",
     "saveFailed": "Error al guardar la regla",
     "loadFailed": "Error al cargar las reglas"
+  },
+  "runtimeUpdates": {
+    "options": "Opciones de redespliegue",
+    "refresh": "Actualizar imágenes y volver a desplegar",
+    "refreshing": "Actualizando imágenes…",
+    "check": "Buscar actualizaciones de imágenes",
+    "title": "Actualizaciones de imágenes",
+    "failed": "No se pudo iniciar la actualización de imágenes.",
+    "uncertain": "La solicitud agotó el tiempo de espera. Revisa el historial de despliegues antes de volver a intentarlo.",
+    "available": "Actualizaciones de imágenes disponibles",
+    "current": "Los digests de las imágenes coinciden con los últimos observados en el registro.",
+    "checkUnavailable": "La comparación requiere resúmenes registrados y acceso al registro.",
+    "checkFailed": "No se pudieron buscar actualizaciones de imágenes.",
+    "pinned": "Las imágenes están fijadas por digest. Edita la referencia configurada para actualizarlas."
   }
 }

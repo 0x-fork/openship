@@ -30,6 +30,11 @@ import { teardownProject } from "./project-teardown";
 import { addDomain, verifyDomain } from "../domains/domain.service";
 import { runtimeTarget } from "../../config/index";
 import { syncProjectRouteState } from "../domains/project-route.service";
+import {
+  readPreviewRouteProtection,
+  inheritPreviewRouteProtection,
+  syncPreviewRouteProtection,
+} from "../../lib/route-protection";
 
 interface PullRequest {
   state: "open" | "closed";
@@ -226,12 +231,19 @@ export async function configurePreviews(
 ) {
   const source = await repos.project.findByIdInOrganization(projectId, ctx.organizationId);
   if (!source) throw new AppError("Project not found", 404);
+  if (settings.protectionHostname)
+    settings = { ...settings, protectionHostname: settings.protectionHostname.trim().toLowerCase() };
   const baseDomain = settings.baseDomain?.trim()
     ? normalizeCustomHostname(settings.baseDomain)
     : undefined;
   if (baseDomain && (baseDomain.startsWith("*.") || !isValidCustomHostname(baseDomain)))
     throw new AppError("Enter a valid base domain, without '*.'.", 400);
+  if (source.previewSettings?.protectionHostname !== settings.protectionHostname &&
+      (await repos.pullRequestPreview.list(source.id, ctx.organizationId)).some((row) => row.projectId))
+    throw new AppError("Disable previews and finish cleanup before changing their password source.",
+      409, "PREVIEW_ROUTE_PROTECTION_MANAGED");
   if (settings.enabled) {
+    await readPreviewRouteProtection(ctx, source, { ...settings, baseDomain });
     if (
       source.environmentType === "preview" ||
       source.gitProvider !== "github" ||
@@ -335,9 +347,16 @@ export async function preparePreviewDeployment(
     );
   }
   const baseDomain = source.previewSettings?.baseDomain;
+  // Persist protection before syncProjectRouteState/addDomain can publish any
+  // existing route. The shared registration guard covers later aliases/retries.
+  await readPreviewRouteProtection(ctx, source);
   if (baseDomain && child.workloadType !== "worker") {
     const services = await repos.service.listByProject(child.id);
     const publicServices = services.filter((service) => service.exposed && service.customDomain);
+    for (const hostname of [
+      `${child.slug}.${baseDomain}`,
+      ...publicServices.flatMap((service) => (service.publicEndpoints ?? []).map((endpoint) => endpoint.customDomain!)),
+    ]) await inheritPreviewRouteProtection(child.id, hostname);
     if (
       !services.some((service) => service.kind === "monorepo") &&
       !["services", "docker-compose", "monorepo"].includes(child.framework ?? "")
@@ -447,7 +466,7 @@ async function reconcile(row: PullRequestPreview, token: string) {
     const services = await repos.service.listByProject(source.id);
     const input = previewEnvironmentInput(source, services, row.number, pr.head.ref);
     child = await withProjectCreationLock(source.organizationId, async () => {
-      await assertProjectQuota(source.organizationId, source.workspaceId);
+      await assertProjectQuota(source.organizationId, source.workspaceId, source.serverId);
       return repos.pullRequestPreview.createEnvironment(row.id, token, input);
     });
     row = { ...row, projectId: child.id, headSha: null, deploymentId: null };
@@ -494,6 +513,8 @@ async function reconcile(row: PullRequestPreview, token: string) {
     }))!;
   }
   const dep = row.deploymentId ? await repos.deployment.findById(row.deploymentId) : null;
+  if (dep?.status === "ready" && source.previewSettings?.protectionHostname)
+    await syncPreviewRouteProtection(ctx, child.id);
   const primary = await repos.domain.getPrimaryByProject(child.id);
   const meta = dep?.meta as { edgeUnsynced?: boolean; deployWarning?: string } | null;
   const status =
@@ -619,6 +640,8 @@ export async function runPullRequestPreviewsSweep() {
         previewId: row.id,
       });
       await repos.pullRequestPreview.update(row.id, token, {
+        ...(error instanceof AppError && error.code?.includes("ROUTE_PROTECTION")
+          ? { status: "routing" as const, url: null } : {}),
         error: safeErrorMessage(error),
         nextAttemptAt: new Date(Date.now() + 60_000),
       });

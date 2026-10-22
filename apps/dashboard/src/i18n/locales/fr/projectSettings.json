@@ -666,13 +666,15 @@
       "increaseAria": "Augmenter l'historique de restauration",
       "sizeEach": "~{size} par image, couches partagées incluses",
       "diskFree": "{size} libres",
-      "autoBadge": "dimensionné automatiquement",
+      "autoBadge": "Automatique",
       "manualBadge": "défini manuellement",
       "kindFiles": "fichiers générés sur le disque",
       "kindImages": "images sur l'hôte",
       "descGitFiles": "Les fichiers des versions récentes sont conservés de toute façon, donc un rollback peut éviter la compilation.",
       "retentionHint": "Conservez les artefacts des déploiements récents pour un retour arrière rapide.",
       "retentionDescription": "Nombre maximal de versions précédentes à conserver. Les versions actives et épinglées ne sont pas comptées dans cette limite. Les anciens artefacts sont supprimés, mais l’historique reste disponible. Indiquez 0 pour ne conserver que les versions actives et épinglées.",
+      "automaticValue": "Jusqu’à {count} versions",
+      "automaticDescription": "Conserve au maximum le nombre de versions défini par défaut. Si l’espace disque manque, les artefacts récupérables peuvent être supprimés plus tôt. Les versions actives et épinglées ne comptent pas dans cette limite. L’historique des commits et de la configuration reste disponible ; un retour arrière peut nécessiter une reconstruction.",
       "defaultBadge": "valeur par défaut de l’instance",
       "loadFailed": "Impossible de charger les paramètres de retour arrière."
     },
@@ -1231,5 +1233,19 @@
     "updateFailed": "Échec de la mise à jour",
     "toastTitle": "Source",
     "cliManaged": "Il s'agit du plan de contrôle d'Openship — il se met à jour lui-même. Exécutez « openship update » sur l'hôte pour le mettre à niveau ; rien à modifier ici."
+  },
+  "runtimeUpdates": {
+    "options": "Options de redéploiement",
+    "refresh": "Actualiser les images et redéployer",
+    "refreshing": "Actualisation des images…",
+    "check": "Vérifier les mises à jour d’images",
+    "title": "Mises à jour d’images",
+    "failed": "Impossible de lancer l’actualisation des images.",
+    "uncertain": "Le délai de la requête a expiré. Consultez l’historique des déploiements avant de réessayer.",
+    "available": "Mises à jour d’images disponibles",
+    "current": "Les digests des images correspondent aux derniers digests observés dans le registre.",
+    "checkUnavailable": "La comparaison nécessite des empreintes enregistrées et un accès au registre.",
+    "checkFailed": "Impossible de vérifier les mises à jour d’images.",
+    "pinned": "Les images sont épinglées par digest. Modifiez la référence configurée pour les actualiser."
   }
 }

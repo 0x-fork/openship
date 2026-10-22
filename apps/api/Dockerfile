@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM --platform=$BUILDPLATFORM golang:1.26.4-bookworm AS actions-runner
+FROM --platform=$BUILDPLATFORM golang:1.26.9-bookworm AS actions-runner
 WORKDIR /runner
 COPY packages/actions-runner/go.mod packages/actions-runner/go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -9,7 +9,7 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
  && node build.mjs
 
 # ─── Build stage ────────────────────────────────────────
-# Keep both stages on .bun-version; runtime tests cover private-CA HTTPS and async WebSocket upgrades.
+# Keep the dependency installer on .bun-version.
 FROM oven/bun:1.3.14 AS builder
 WORKDIR /app
 
@@ -31,7 +31,7 @@ RUN --mount=type=cache,target=/root/.bun/install/cache \
  && cd apps/api && bun run build
 
 # ─── Production stage ──────────────────────────────────
-FROM oven/bun:1.3.14 AS runner
+FROM node:22.23.4-bookworm-slim AS runner
 WORKDIR /app
 
 # Remote-server management from the containerized control plane:
@@ -46,24 +46,13 @@ WORKDIR /app
 #     — so a containerized install could not deploy a private repo at all unless
 #     the server had its own credential. It is a build dependency of the control
 #     plane, not an optional extra.
-#   • ca-certificates — the TRUST STORE that `git` needs and `bun` does not.
-#     Bun embeds its own CA bundle, so every API call (repo listing, token mint,
-#     GitHub REST) worked from this image while `git clone https://…` died with
-#     `server certificate verification failed. CAfile: none CRLfile: none` —
-#     libcurl looks for a bundle ON DISK and this base image ships none. It is a
-#     Recommends of `git`, so `--no-install-recommends` (rightly kept, for
-#     everything else) is exactly what dropped it. Naming it explicitly means the
-#     flag can't take it away again. Symptom to recognise: authenticated in the
-#     UI, repos listing fine, every clone failing at the TLS handshake — before
-#     any credential is even presented.
+#   • ca-certificates provides the OS trust store used by git and SSH helpers.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssh-client rsync git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# @repo/* are TypeScript-SOURCE workspace packages (package.json main =
-# src/index.ts) resolved via the ROOT package.json "workspaces" field — there
-# is NO node_modules/@repo; bun points straight at packages/*. tsup externalizes
-# them (dist does `import { repos } from "@repo/db"`), so the runner MUST ship
+# @repo/* exports TypeScript source through workspace links under packages/.
+# tsup leaves those imports external, so the runner must ship
 # the whole workspace, not just apps/api/dist:
 #   • root manifests (the "workspaces" field is what resolves @repo/*)
 #   • packages/ — incl. packages/db/drizzle, which the DB client auto-migrates
@@ -83,4 +72,5 @@ COPY --from=builder /app/apps/email/engine ./apps/email/engine
 
 ENV NODE_ENV=production
 EXPOSE 4000
-CMD ["bun", "run", "apps/api/dist/index.js"]
+# tsx loads the TypeScript workspace packages that tsup leaves external.
+CMD ["node", "--import", "tsx", "apps/api/dist/index.js"]
