@@ -747,7 +747,7 @@ re-read on every deploy, and `build:` contexts resolve relative to it, exactly a
     resources: {
       type: "object",
       description:
-        "Per-service cpu/memory caps, overriding the top-level resources field by field. Same shape; 0 = no limit. Parity with compose mem_limit / deploy.resources.limits.",
+        "Per-service cpu/memory caps, overriding the top-level resources field by field. Same shape; 0 = no limit. Parity with compose mem_limit / deploy.resources.limits. swapDisabled runs the container without swap and requires a positive memory limit.",
     },
   }}
 />

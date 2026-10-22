@@ -467,4 +467,16 @@ describe("topology review and apply", () => {
     ).rejects.toThrow("already exists");
     expect(io.createService).not.toHaveBeenCalled();
   });
+  it("stages the swap opt-in together with the memory limit it needs", () => {
+    const changes = stageServiceChange(
+      [],
+      api,
+      { advanced: { resources: { memoryMb: 1024, swapDisabled: true } } },
+      true,
+    );
+    expect(changes[0]).toMatchObject({
+      kind: "update-service",
+      patch: { advanced: { resources: { memoryMb: 1024, swapDisabled: true } } },
+    });
+  });
 });

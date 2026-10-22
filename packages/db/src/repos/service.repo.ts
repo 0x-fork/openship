@@ -317,6 +317,17 @@ export function composeWritePatch(
     parsed.advanced === null ? null : (stored?.advanced ?? null),
     spec.advanced,
   );
+  // `resources` is replaced wholesale when a compose file supplies mem_limit /
+  // cpus, but `swapDisabled` is an operator-owned Docker setting with no
+  // compose equivalent. Losing it here would silently re-enable swap on the
+  // next compose sync.
+  if (
+    stored?.advanced?.resources?.swapDisabled === true &&
+    advanced.resources &&
+    advanced.resources.swapDisabled === undefined
+  ) {
+    advanced.resources = { ...advanced.resources, swapDisabled: true };
+  }
   if (usesLiteralImage) {
     // A writer that supplies an image without parser provenance means that
     // image literally. This includes manual edits AND old frozen snapshots;

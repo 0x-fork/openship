@@ -25,6 +25,12 @@ export interface ResourceValues {
   memoryMb: number;
   /** Writable disk in MB. Only cloud workspaces enforce this. */
   diskMb: number;
+  /**
+   * Opt-in: run the container with NO swap. Docker expresses this as
+   * `MemorySwap === Memory`, so it is only meaningful alongside a positive
+   * memory limit — apply-time validation rejects the combination otherwise.
+   */
+  swapDisabled?: boolean;
 }
 
 /** No additional container cap — the server is the default ceiling. */

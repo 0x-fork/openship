@@ -22,6 +22,7 @@ import {
   isValidEnvKey,
   looksLikeSecretKey,
   mergeAdvanced,
+  hasMemoryLimit,
   parseContainerHosts,
   validateComposeGpuConfig,
   normalizeServiceLabel,
@@ -108,7 +109,7 @@ import {
   publicEndpointHostname,
   resolveServicePublicEndpoints,
 } from "../../lib/public-endpoints";
-import { resolveRuntimeResources } from "../../lib/resources";
+import { resolveInheritedResources, resolveRuntimeResources } from "../../lib/resources";
 import { assertFreeEndpointsAllowed, composeEndpointChanges } from "../../lib/free-domain-guard";
 import { assertCloudDeploymentLimits, assertCloudRuntimeLimits, assertPlanAllowsServices, assertRunningServiceQuota, assertServiceDefinitionQuota } from "../../lib/plan-guard";
 import { env } from "../../config/env";
@@ -588,6 +589,31 @@ export function registerAppServiceRowReconcile(): void {
   });
 }
 
+/**
+ * A service may only disable swap with a positive EFFECTIVE memory limit. The
+ * limit can be the service's own or inherited from the project; check both here
+ * so the invalid combination is refused at write time instead of surfacing at
+ * deploy — after the running container has already been stopped.
+ */
+function assertSwapDisabledHasMemory(
+  advanced: ComposeAdvanced | null | undefined,
+  project: Pick<Project, "resources">,
+): void {
+  const resources = advanced?.resources;
+  if (resources?.swapDisabled !== true) return;
+  const effective = resolveInheritedResources(
+    resources,
+    project.resources as Record<string, unknown> | null,
+  );
+  if (!hasMemoryLimit(effective)) {
+    throw new AppError(
+      "Disabling swap requires a positive memory limit. Set a memory limit on the service or its project.",
+      400,
+      "SWAP_DISABLED_REQUIRES_MEMORY_LIMIT",
+    );
+  }
+}
+
 export async function createService(
   ctx: RequestContext,
   projectId: string,
@@ -674,6 +700,7 @@ export async function createService(
   // caller can send one payload shape to both.
   const advanced = mergeAdvanced(null, data.advanced);
   validateComposeGpuConfig(advanced);
+  assertSwapDisabledHasMemory(advanced, project);
   if (advanced.extraHosts !== undefined) {
     advanced.extraHosts = parseContainerHosts(advanced.extraHosts);
   }
@@ -810,6 +837,7 @@ export async function updateService(
   if ("advanced" in patch) {
     patch.advanced = mergeAdvanced(svc.advanced as ComposeAdvanced | null, patch.advanced);
     validateComposeGpuConfig(patch.advanced as ComposeAdvanced);
+    assertSwapDisabledHasMemory(patch.advanced as ComposeAdvanced, project);
     const extraHosts = (patch.advanced as ComposeAdvanced).extraHosts;
     if (extraHosts !== undefined) {
       (patch.advanced as ComposeAdvanced).extraHosts = parseContainerHosts(extraHosts);

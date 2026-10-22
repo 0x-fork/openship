@@ -75,7 +75,9 @@ export interface TemplateServiceSpec {
   image?: string;
   /** Exact retired defaults eligible for an explicit image-only repair. */
   replacesImages?: readonly string[];
-  /** Advisory sizing recommendation; never copied into installed container limits. */
+  /** Advisory sizing recommendation; CPU/disk are never copied into installed
+   *  container limits. `swapDisabled` is the exception: install copies it along
+   *  with the memory limit it requires. */
   resources?: Readonly<ResourceValues>;
   /** NVIDIA requests applied when the install chooses GPU mode. */
   gpus?: ComposeGpu | ComposeGpu[];

@@ -498,15 +498,19 @@ function splitDomain(host: string): {
  */
 function toAdvancedResources(
   r: OpenshipResources | undefined,
-): { cpuCores?: number; memoryMb?: number } | undefined {
+): { cpuCores?: number; memoryMb?: number; swapDisabled?: boolean } | undefined {
   if (!r) return undefined;
   const base = r.tier ? resolveTierResources(r.tier) : undefined;
   const cpuCores = r.cpuCores ?? base?.cpuCores;
   const memoryMb = r.memoryMb ?? base?.memoryMb;
-  if (cpuCores === undefined && memoryMb === undefined) return undefined;
+  const swapDisabled = r.swapDisabled === true ? true : undefined;
+  if (cpuCores === undefined && memoryMb === undefined && swapDisabled === undefined) {
+    return undefined;
+  }
   return {
     ...(cpuCores !== undefined && { cpuCores }),
     ...(memoryMb !== undefined && { memoryMb }),
+    ...(swapDisabled && { swapDisabled }),
   };
 }
 
