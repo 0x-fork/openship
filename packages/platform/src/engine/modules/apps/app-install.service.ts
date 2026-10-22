@@ -647,6 +647,17 @@ export async function installApp(
           : {}),
         ...(svc.build ? { build: resolveBuild(svc.build) } : {}),
         ...(svc.stopGracePeriod ? { stopGracePeriod: svc.stopGracePeriod } : {}),
+        // Advisory CPU/disk sizing is deliberately NOT installed, but swap
+        // behavior is a runtime guarantee rather than a recommendation — and
+        // Docker requires the memory cap that makes it enforceable.
+        ...(svc.resources?.swapDisabled
+          ? {
+              resources: {
+                memoryMb: svc.resources.memoryMb,
+                swapDisabled: true,
+              },
+            }
+          : {}),
       },
       // Routing is exactly what the operator chose — never the template's
       // `exposed` flag turned into a hostname.

@@ -135,6 +135,7 @@ jobs:
               test/e2e/runtime-roles.e2e.test.ts
               test/e2e/image-volume-persistence.e2e.test.ts
               test/e2e/image-refresh.e2e.test.ts
+              test/e2e/service-swap.e2e.test.ts
               test/e2e/compose-overlap-cutover.e2e.test.ts
               test/e2e/compose-engine-overlap.e2e.test.ts
           # Run routing, certificate selection and the rule guard with real HTTP on

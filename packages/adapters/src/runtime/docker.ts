@@ -67,6 +67,7 @@ import type {
   ContainerInfo,
   ContainerStatus,
   ResourceUsage,
+  ResourceConfig,
   ShellOptions,
   ShellSession,
   ProvisionLock,
@@ -220,6 +221,7 @@ import {
   dockerBuildResourceLimits,
   describeResourceLimits,
   inspectResourceLimits,
+  validateSwapDisabled,
 } from "./resource-limits";
 import {
   type DockerConnectionOptions as DockerTransportOptions,
@@ -1223,6 +1225,8 @@ export class DockerRuntime implements RuntimeAdapter {
   readonly unsupportedComposeKeys: ReadonlySet<keyof ComposeAdvanced> = new Set();
 
   private _docker!: Dockerode;
+  /** Memoized `Docker /info.SwapLimit`. Undefined = this daemon did not report it. */
+  private swapLimitSupport?: Promise<boolean | undefined>;
   /** Underlying dockerode instance - exposed for advanced usage */
   get docker(): Dockerode {
     return this._docker;
@@ -1331,6 +1335,44 @@ export class DockerRuntime implements RuntimeAdapter {
   /** Get Docker daemon info (version, platform, etc.) */
   async info(): Promise<Record<string, unknown>> {
     return this.docker.info();
+  }
+
+  /**
+   * Fail before touching the live container when a saved swap-disabled setting
+   * cannot be applied. `dockerResourceLimits` enforces the memory-limit
+   * requirement; this adds the daemon capability check (`/info.SwapLimit`),
+   * which is false on hosts built without swap accounting.
+   */
+  private async assertSwapSupported(
+    resources?: Partial<ResourceConfig> | null,
+  ): Promise<void> {
+    validateSwapDisabled(resources);
+    if (resources?.swapDisabled !== true) return;
+
+    let supported: boolean | undefined;
+    try {
+      supported = await (this.swapLimitSupport ??= this.docker
+        .info()
+        .then((info) => (typeof info.SwapLimit === "boolean" ? info.SwapLimit : undefined)));
+    } catch (error) {
+      // A transient probe failure must not be remembered as "unsupported".
+      this.swapLimitSupport = undefined;
+      throw new AppError(
+        `Could not verify this Docker host's swap support before deploying: ${safeErrorMessage(error)}`,
+        503,
+        "SWAP_DISABLED_HOST_PROBE_FAILED",
+      );
+    }
+
+    if (supported !== true) {
+      throw new AppError(
+        supported === false
+          ? 'This Docker host cannot disable container swap (swap accounting is disabled). Enable swap accounting on the host or turn off "Disable swap" for this service.'
+          : 'This Docker host did not report swap-limit support. Verify its swap accounting or turn off "Disable swap" for this service.',
+        422,
+        "SWAP_DISABLED_UNSUPPORTED_HOST",
+      );
+    }
   }
 
   // ── Image naming ────────────────────────────────────────────────────────
@@ -4104,6 +4146,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     if (!imageRef) {
       throw new Error("Docker deploy requires an imageRef (built image tag)");
     }
+    await this.assertSwapSupported(config.resources);
 
     const containerName = DockerRuntime.deploymentContainerName(config);
 
@@ -4280,6 +4323,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     if (!imageRef) {
       throw new Error("Docker role containers require an imageRef (built image tag)");
     }
+    await this.assertSwapSupported(config.resources);
     if (!Number.isInteger(replica) || replica < 1) {
       throw new Error(`Role replica must be an integer >= 1, got ${replica}`);
     }
@@ -4438,6 +4482,7 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
 
     try {
       deadline.signal.throwIfAborted();
+      await this.assertSwapSupported(config.resources);
       const { env, dropped } = deploymentContainerEnv(config);
       if (dropped.length > 0) onLog({
         timestamp: new Date().toISOString(), level: "warn",
@@ -5364,7 +5409,11 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
       hostPort,
       ...(hostPortByContainerPort ? { hostPortByContainerPort } : {}),
       uptimeSeconds: uptimeSeconds && uptimeSeconds > 0 ? uptimeSeconds : undefined,
-      resources: { cpuCores: limits?.cpuCores ?? 0, memoryMb: limits?.memoryMb ?? 0 },
+      resources: {
+        cpuCores: limits?.cpuCores ?? 0,
+        memoryMb: limits?.memoryMb ?? 0,
+        ...(limits?.swapDisabled && { swapDisabled: true }),
+      },
     };
   }
 
@@ -6277,6 +6326,10 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
     const log = onLog ?? (() => {});
     const staged = this.stagedServices.has(config);
     const containerName = staged ? newcomerName(config) : `openship-${config.slug}-${config.serviceName}`;
+
+    // Validate the swap setting against the daemon BEFORE pulling the image or
+    // removing the currently-serving container.
+    await this.assertSwapSupported(config.resources);
 
     // Resolve and validate the complete create payload before any irreversible
     // action. A malformed later port/volume/health setting must not be discovered

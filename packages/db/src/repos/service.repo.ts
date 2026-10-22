@@ -12,6 +12,7 @@ import {
 } from "@repo/core";
 import type { Database } from "../connection";
 import { createConfigurationSecrets, type ConfigurationEncryption } from "../configuration-secrets";
+import { assertServiceSwapResources } from "./service-swap-resources";
 import { assertProjectConfigurationWritable, withProjectConfigurationWrite } from "./project-work-admission";
 import { deployment, envVar, project, service, serviceDeployment } from "../schema";
 import type { ComposeServiceSpec, ServicePublicEndpoint } from "../schema/service";
@@ -317,6 +318,17 @@ export function composeWritePatch(
     parsed.advanced === null ? null : (stored?.advanced ?? null),
     spec.advanced,
   );
+  // `resources` is replaced wholesale when a compose file supplies mem_limit /
+  // cpus, but `swapDisabled` is an operator-owned Docker setting with no
+  // compose equivalent. Losing it here would silently re-enable swap on the
+  // next compose sync.
+  if (
+    stored?.advanced?.resources?.swapDisabled === true &&
+    advanced.resources &&
+    advanced.resources.swapDisabled === undefined
+  ) {
+    advanced.resources = { ...advanced.resources, swapDisabled: true };
+  }
   if (usesLiteralImage) {
     // A writer that supplies an image without parser provenance means that
     // image literally. This includes manual edits AND old frozen snapshots;
@@ -617,10 +629,19 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       inArray(project.id, db.select({ id: service.projectId }).from(service).where(eq(service.id, id))),
       data.projectId ? eq(project.id, data.projectId) : undefined,
     )!;
-    return withProjectConfigurationWrite(db, predicate, async (tx) => tx
-      .update(service)
-      .set(codec.sealService({ ...data, ...(updatedAt === null ? {} : { updatedAt }) }))
-      .where(eq(service.id, id)).returning());
+    return withProjectConfigurationWrite(db, predicate, async (tx) => {
+      if (data.advanced?.resources?.swapDisabled === true || data.projectId !== undefined) {
+        const [current] = await tx.select({ projectId: service.projectId, advanced: service.advanced })
+          .from(service).where(eq(service.id, id));
+        if (current) {
+          const advanced = data.advanced === undefined ? codec.openService(current).advanced : data.advanced;
+          await assertServiceSwapResources(tx, data.projectId ?? current.projectId, advanced?.resources);
+        }
+      }
+      return tx.update(service)
+        .set(codec.sealService({ ...data, ...(updatedAt === null ? {} : { updatedAt }) }))
+        .where(eq(service.id, id)).returning();
+    });
   }
 
   /** Both Compose writers compare decrypted values before sealing the patch.
@@ -834,8 +855,10 @@ export function createServiceRepo(db: Database, encryption: ConfigurationEncrypt
       // Return the persisted defaults and timestamps. Synthesizing a Service
       // from the input omitted fields such as namespaceVolumes and made create
       // disagree with the next read of the same row.
-      const [row] = await withProjectConfigurationWrite(db, eq(project.id, data.projectId), async (tx) =>
-        tx.insert(service).values(codec.sealService({ id, ...data })).returning());
+      const [row] = await withProjectConfigurationWrite(db, eq(project.id, data.projectId), async (tx) => {
+        await assertServiceSwapResources(tx, data.projectId, data.advanced?.resources);
+        return tx.insert(service).values(codec.sealService({ id, ...data })).returning();
+      });
       return codec.openService(row!);
     },
 
