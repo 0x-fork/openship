@@ -366,8 +366,16 @@ export class OblienBillingApi {
         invalid_redirect_url: "Cloud billing requires a valid HTTPS return link. Contact Openship support.",
         billing_idempotency_conflict: "This checkout attempt no longer matches the original request. Contact Openship support before starting another payment.",
         billing_checkout_reconciliation_required: "An earlier checkout needs to be reviewed. Contact Openship support before starting another payment.",
+        capacity_checkout_pending:
+          "This Cloud space already has an unfinished purchase. Open Billing and complete or cancel it before starting another.",
+        capacity_checkout_limit:
+          "There are too many unfinished purchases. Open Billing and complete or cancel an existing purchase before starting another. If none is listed, contact Openship support.",
+        capacity_resource_update_pending:
+          "This Cloud space is still updating. Wait for the current operation to finish before changing its plan.",
+        billing_payment_mismatch:
+          "We could not verify this payment against your checkout. Contact Openship support before making another payment.",
         checkout_cancellation_pending:
-          "Cancellation is still being confirmed. Retry the same payment before starting another checkout.",
+          "Cancellation is still being confirmed. Refresh its status before starting another checkout.",
         checkout_already_paid: "Payment already completed. Refresh its verification status.",
         checkout_expired: "This checkout has expired. Choose your plan again to start a new checkout.",
         capacity_checkout_expired: "This checkout has expired. Choose your plan again to start a new checkout.",
@@ -393,11 +401,12 @@ export class OblienBillingApi {
         insufficient_redeemable_balance: "Cloud server purchases are temporarily unavailable. Contact Openship support.",
       };
       const checkoutUnavailable = path === "/billing/checkout" && providerFailure;
+      const checkoutPending = !providerFailure && code === "capacity_checkout_pending";
       const message = Object.hasOwn(known, code) ? known[code]
         : checkoutUnavailable ? "Cloud checkout is temporarily unavailable. Please try again later."
           : "Cloud billing could not complete this request. Please retry.";
       throw new OperationError(diagnostic.reference ? `${message} Reference: ${diagnostic.reference}.` : message,
-        status, capacityUnavailable ? "CLOUD_CAPACITY_UNAVAILABLE"
+        status, checkoutPending ? "CLOUD_WORKSPACE_CHECKOUT_PENDING" : capacityUnavailable ? "CLOUD_CAPACITY_UNAVAILABLE"
           : checkoutUnavailable ? "OBLIEN_CHECKOUT_UNAVAILABLE" : "OBLIEN_BILLING_ERROR", {
           ...(Object.hasOwn(known, code) ? { providerCode: code } : {}),
           ...(checkoutExpired ? { checkoutExpired: true } : {}),

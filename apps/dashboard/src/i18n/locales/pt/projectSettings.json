@@ -1233,5 +1233,19 @@
     "saved": "Regra salva",
     "saveFailed": "Falha ao salvar regra",
     "loadFailed": "Falha ao carregar regras"
+  },
+  "runtimeUpdates": {
+    "options": "Opções de reimplantação",
+    "refresh": "Atualizar imagens e reimplantar",
+    "refreshing": "Atualizando imagens…",
+    "check": "Verificar atualizações de imagens",
+    "title": "Atualizações de imagens",
+    "failed": "Não foi possível iniciar a atualização de imagens.",
+    "uncertain": "O tempo da solicitação esgotou. Verifique o histórico de implantações antes de tentar novamente.",
+    "available": "Atualizações de imagens disponíveis",
+    "current": "Os digests das imagens correspondem aos últimos observados no registro.",
+    "checkUnavailable": "A comparação exige digests registrados e acesso ao registro.",
+    "checkFailed": "Não foi possível verificar atualizações de imagens.",
+    "pinned": "As imagens estão fixadas por digest. Edite a referência configurada para atualizá-las."
   }
 }

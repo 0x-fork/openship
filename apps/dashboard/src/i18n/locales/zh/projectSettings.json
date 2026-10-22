@@ -1233,5 +1233,19 @@
     "saved": "规则已保存",
     "saveFailed": "保存规则失败",
     "loadFailed": "加载规则失败"
+  },
+  "runtimeUpdates": {
+    "options": "重新部署选项",
+    "refresh": "刷新镜像并重新部署",
+    "refreshing": "正在刷新镜像…",
+    "check": "检查镜像更新",
+    "title": "镜像更新",
+    "failed": "无法启动镜像刷新。",
+    "uncertain": "请求超时。请先检查部署历史，再重试。",
+    "available": "有可用的镜像更新",
+    "current": "镜像摘要与最近观测到的仓库摘要一致。",
+    "checkUnavailable": "比较需要已记录的摘要和镜像仓库访问权限。",
+    "checkFailed": "无法检查镜像更新。",
+    "pinned": "镜像已通过摘要固定。请编辑配置的引用以更新镜像。"
   }
 }

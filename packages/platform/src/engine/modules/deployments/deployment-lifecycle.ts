@@ -23,7 +23,7 @@ import {
 } from "@repo/db";
 import { DockerRuntime, isEdgeDownMessage, type BuildLogger, type LogEntry } from "@repo/adapters";
 import type { RuntimeAdapter } from "@repo/adapters";
-import { SYSTEM, safeErrorMessage } from "@repo/core";
+import { SYSTEM, redactUrlCredentials, safeErrorMessage } from "@repo/core";
 import { env } from "../../config/index";
 import { isArtifactRef } from "../../lib/container-ref";
 import type { DeploymentMeta } from "../../lib/deployment-runtime";
@@ -42,6 +42,7 @@ import { trackBackgroundWork } from "../../lib/background-work";
 import { onWebmailDeployed } from "../mail/webmail/webmail-install.service";
 import { computeCleanupKeepSet } from "../projects/cleanup-keep-set";
 import { deploymentResourceFailure, type DeploymentFailureMeta } from "./resource-failure";
+import { deploymentArtifacts } from "./deployment-artifacts";
 
 /**
  * Shared routing/TLS advisory for a deploy whose workloads succeeded. Connection
@@ -594,12 +595,16 @@ export async function onFailure(
   error?: string,
   durationMs?: number | null,
   errorMeta?: { errorCode?: string; errorDetails?: Record<string, unknown>; errorMessage?: string },
+  opts: { keepProvisioned?: boolean } = {},
 ): Promise<void> {
   const { runtime, project, dep, buildSessionId, provisioned } = ctx;
   if (dep.roleHandover?.phase === "committing") {
     await protectRoleHandoverOutcome(ctx);
     return;
   }
+  // Redact before ANY sink (error reporter, SSE, notification payloads, the row):
+  // a clone failure can quote the credentialed clone URL.
+  if (error) error = redactUrlCredentials(error);
   durationMs = await resolveBuildDuration(ctx, durationMs);
   // Only settle clocks that were actually started; retained/untouched rows keep
   // their existing outcome and timing. Capture the endpoint before cleanup.
@@ -622,11 +627,13 @@ export async function onFailure(
   // failure reason even for direct compose-pipeline failures (#751).
   ensureTerminalFailureLog(ctx, error);
 
-  // Always delete the workspace/container on failure so the user doesn't
-  // have to manually clean up.
-  if (runtime && provisioned.imageRef) {
+  // Routing recovery can leave either release serving traffic. Preserve both
+  // until the operator resolves it; an ordinary failed attempt still cleans up.
+  if (!opts.keepProvisioned && runtime && provisioned.imageRef) {
     try {
-      await cleanupBuildArtifact(runtime, provisioned.imageRef);
+      // A verified completed Docker image survives for bounded deployment-only
+      // retry; incomplete artifacts and failed containers retain normal cleanup.
+      if (!deploymentArtifacts(dep.meta)) await cleanupBuildArtifact(runtime, provisioned.imageRef);
     } catch (destroyErr) {
       errorDiagnostics.error("platform/engine/modules/deployments/deployment-lifecycle", `[DEPLOY] Failed to destroy ${provisioned.imageRef} on failure:`, destroyErr);
       // Retry once after a short delay
@@ -637,7 +644,7 @@ export async function onFailure(
     }
   }
 
-  await cleanupOwnedServiceContainers(ctx, "failure");
+  if (!opts.keepProvisioned) await cleanupOwnedServiceContainers(ctx, "failure");
 
   // INVARIANT: failure writes the DEPLOYMENT row only — NEVER the project row.
   // The project's live-release pointer (activeDeploymentId) advances solely on

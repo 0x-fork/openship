@@ -144,7 +144,7 @@ r.get(
 r.post("/:id/build", { tag: "deployment:write", auditHandledByOperation: true, mcpExcluded: "Legacy start-by-deployment-ID adapter. Start or redeploy through /api/deployments or /api/deployments/build/access." }, ctrl.buildStart);
 r.post(
   "/:id/redeploy",
-  { tag: "deployment:write", mcp: { description: "Re-run the latest deployment for this project." }, auditHandledByOperation: true, body: RedeploySchema, bodyValidatedByOperation: true },
+  { tag: "deployment:write", mcp: { description: "Redeploy the project. useExistingCommit rebuilds the selected commit; reuseBuild retries a failed attempt's retained completed Docker images with no rebuild or substitute pull." }, auditHandledByOperation: true, body: RedeploySchema, bodyValidatedByOperation: true },
   ctrl.buildRedeploy,
 );
 r.get(

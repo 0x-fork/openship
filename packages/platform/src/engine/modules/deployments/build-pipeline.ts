@@ -28,6 +28,7 @@ import {
 } from "../../lib/project-runtime-lock";
 import { resolveDeploymentEnvironment } from "./deployment-environment";
 import { deploymentResourceFailure } from "./resource-failure";
+import { recordRuntimeImageReceipts, runtimeImageTrackingRef } from "../../lib/runtime-image-receipts";
 import {
   BUILD_ENV_VARS,
   AppError,
@@ -133,6 +134,7 @@ import {
   routeIssuesWarning,
   type LifecycleContext,
 } from "./deployment-lifecycle";
+import { recordDeploymentArtifacts } from "./deployment-artifacts";
 import { auditPorts } from "./port-audit.service";
 import {
   allocateAndReservePinnedHostPort,
@@ -1170,6 +1172,8 @@ async function executeBuildAndDeploy(
           serverExecutor: clonePlan.cloneRunsOnTarget ? targetExecutor : null,
           repoUrl: snapshot.repoUrl,
           onLog: (message) => logger.log(message),
+          // Read .gitmodules at the deployed ref for submodule token expansion.
+          gitRef: dep.commitSha ?? dep.branch ?? null,
         })
       : {};
 
@@ -1221,6 +1225,7 @@ async function executeBuildAndDeploy(
     // hasServer=false but must build its OWN image, not the static nginx one —
     // so key strictly off the static workload, not `!hasServer` (issue #538-B).
     buildConfig.isStatic = workload === "static";
+    buildConfig.gitTokenRepositories = gitCred.tokenRepositories;
     // When opted in, the runtime clones on the remote build host instead of the
     // orchestrator transferring the context. The credential arrives either via
     // the relay (gitCredentialHelperPath, set once the relay is open) or the
@@ -1321,6 +1326,7 @@ async function executeBuildAndDeploy(
           buildResources,
           runtimeResources: prodResources,
           gitToken: gitCred.token,
+          gitTokenRepositories: gitCred.tokenRepositories,
           gitCredentialHelperPath: composeRelay?.scriptPath,
           gitSsh: gitCred.ssh,
           gitAmbient: effectiveCloneOnTarget ? gitCred.ambient : undefined,
@@ -1512,6 +1518,14 @@ async function executeBuildAndDeploy(
     await setDeploymentStatus(dep.id, "deploying", {
       extra: { imageRef: buildResult.imageRef, buildDurationMs: buildResult.durationMs },
     });
+    // A completed Docker image can survive a later runtime failure. Recording
+    // is optional; a failed receipt write keeps the existing cleanup behavior.
+    try {
+      await recordDeploymentArtifacts(dep, runtime, [{ imageRef: buildResult.imageRef }]);
+    } catch (error) {
+      observeCaughtError(error, "platform/engine/modules/deployments/build-pipeline");
+      logger.log("The completed image could not be retained for a deployment-only retry.\n", "warn");
+    }
 
     // Keep the exact lock decision on the phase. Post-route claim convergence
     // must use the unlocked helper only when this wrapper really acquired the
@@ -2947,10 +2961,18 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
   // `metaPatch` is spread into deployment.meta (persisted) and read back for the
   // SSE payload in onSuccess, so both live + refresh see the same result.
   const metaPatch: Record<string, unknown> = {};
+  const priorImageReceipts = (dep.meta as { runtimeImages?: unknown } | null)?.runtimeImages ??
+    (prevDep?.meta as { runtimeImages?: unknown } | null)?.runtimeImages;
+  metaPatch.runtimeImages = recordRuntimeImageReceipts(priorImageReceipts,
+    buildResult.baseImages !== undefined && buildResult.imageRef
+      ? [{ imageRef: buildResult.imageRef, baseImages: buildResult.baseImages }] : []);
   // Image preparation resolves a registry tag to its immutable repo digest.
   // Freeze that exact reference into the successful deployment so a rollback
   // can re-pull the same bytes even after local image retention expires.
   if (snapshot.releaseImageRef && (runtime.name === "docker" || runtime.name === "kubernetes") && buildResult.imageRef) {
+    metaPatch.runtimeImageSource = runtimeImageTrackingRef(snapshot.releaseImageRef,
+      (dep.meta as { runtimeImageSource?: unknown } | null)?.runtimeImageSource,
+      dep.trigger === "rollback" || !!snapshot.refreshAppDeploymentId || !!snapshot.handoverAppImage);
     metaPatch.releaseImageRef = buildResult.imageRef;
   }
   if (portCheck.length > 0) metaPatch.portCheck = portCheck;
@@ -3044,6 +3066,7 @@ async function executeServerDeploy(phase: DeployPhaseInputs, deployConfig: Deplo
     logger.log(`Deployment completed with warnings: ${warningMessage}\n`, "warn");
   }
 
+  throwIfDeploymentCancelled(phase.cancellationSignal);
   await onSuccess(ctx, {
     containerId: deployResult.containerId!,
     url: deployResult.url,

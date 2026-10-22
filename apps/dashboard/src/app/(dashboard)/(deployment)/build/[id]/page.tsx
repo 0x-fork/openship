@@ -116,8 +116,8 @@ const BuildPage: React.FC = () => {
   // racy: if the POST stalled or transiently failed, the reconnect gate
   // (`hasConnected || !lastStartBuild`) refused to retry and the user
   // saw an empty terminal until they hit refresh.
-  const handleRedeploy = useCallback(async (): Promise<string | null> => {
-    const newDeploymentId = await redeploy(deploymentId);
+  const handleRedeploy = useCallback(async (options?: { reuseBuild?: boolean }): Promise<string | null> => {
+    const newDeploymentId = await redeploy(deploymentId, options);
 
     if (newDeploymentId) {
       initializedDeploymentRef.current = newDeploymentId;

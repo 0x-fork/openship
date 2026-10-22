@@ -19,7 +19,7 @@ import type {
   BuildConfig,
 } from "@repo/adapters";
 import { BuildLogger, CloudDockerRuntime, STATIC_RELEASE_BASE } from "@repo/adapters";
-import { composeBuildIssues, hasRelativeVolumeMounts, validateImageReference, type ComposeAdvanced } from "@repo/core";
+import { composeBuildIssues, hasRelativeVolumeMounts, validateImageReference, type BaseImageReceipt, type ComposeAdvanced } from "@repo/core";
 import { repos, type Deployment, type Project, type Service } from "@repo/db";
 
 import {
@@ -399,6 +399,8 @@ function resolveSubAppOverrides(opts: SubAppOverrideInputs): {
 
 export interface ComposeBuildImagesResult {
   imageRefs: Map<string, string>;
+  /** Bases selected by each successful source build; absent on older adapters. */
+  baseImages?: Map<string, BaseImageReceipt[]>;
   /** Exact service/image pairs that are already available on the deploy target
    * because they were built now or explicitly pinned by an internal workflow. */
   preparedLocalImages: Map<string, string>;
@@ -437,6 +439,7 @@ export async function buildComposeImages(opts: {
   buildEnvVars: Record<string, string>;
   buildResources: ResourceConfig;
   gitToken?: string;
+  gitTokenRepositories?: string[];
   /** Relay helper path on the build host — desktop clone-on-server credential. */
   gitCredentialHelperPath?: string;
   /** Per-server SSH clone credential (ssh-server-key / deploy-key mode). */
@@ -461,6 +464,7 @@ export async function buildComposeImages(opts: {
   const serviceNames = new Set(enabled.map((service) => service.name));
   const buildDnsDiagnostics = new Map<string, ServiceBuildDnsDiagnostics>();
   const imageRefs = new Map<string, string>();
+  const baseImages = new Map<string, BaseImageReceipt[]>();
   const preparedLocalImages = new Map<string, string>();
   const builtImageRefs = new Map<string, string>();
   const staticArtifactRefs = new Map<string, string>();
@@ -840,6 +844,7 @@ export async function buildComposeImages(opts: {
       }
       if (opts.gitSsh) buildConfig.gitSsh = opts.gitSsh;
       if (opts.gitAmbient) buildConfig.gitAmbient = opts.gitAmbient;
+      buildConfig.gitTokenRepositories = opts.gitTokenRepositories;
 
       return { service, buildConfig, serviceLogger };
     };
@@ -895,6 +900,7 @@ export async function buildComposeImages(opts: {
       }
 
       imageRefs.set(service.id, buildResult.imageRef);
+      baseImages.set(service.id, buildResult.baseImages ?? []);
       preparedLocalImages.set(service.id, buildResult.imageRef);
       builtImageRefs.set(service.id, buildResult.imageRef);
       if (buildResult.imageRef.startsWith("/") && staticServiceIds.has(service.id)) {
@@ -1009,6 +1015,7 @@ export async function buildComposeImages(opts: {
 
   return {
     imageRefs,
+    baseImages,
     preparedLocalImages,
     builtImageRefs,
     staticArtifactRefs,
