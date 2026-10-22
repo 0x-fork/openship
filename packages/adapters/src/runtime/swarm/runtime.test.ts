@@ -8,8 +8,8 @@ import { SwarmRuntime } from "./runtime";
 
 /** Model a create which may commit after the client's response deadline. */
 describe("Swarm uncertain activation recovery", () => {
-  it.each(["lost", "malformed"])(
-    "does not restore a previous writer after a %s create receipt, even if the candidate is not yet listed",
+  it.each(["lost", "malformed", "rejected"])(
+    "recovers only after a definite create rejection (%s receipt)",
     async (receipt) => {
       const projectId = "project",
         runtimeId = "runtime";
@@ -54,6 +54,10 @@ describe("Swarm uncertain activation recovery", () => {
               });
             if (request.path === "/services/create") {
               createDispatched = true;
+              if (receipt === "rejected")
+                return callback(
+                  Object.assign(new Error("invalid service specification"), { statusCode: 400 }),
+                );
               return receipt === "lost"
                 ? callback(Object.assign(new Error("create response lost"), { code: "ETIMEDOUT" }))
                 : callback(null, { ID: "invalid" });
@@ -132,10 +136,14 @@ describe("Swarm uncertain activation recovery", () => {
         );
         expect(createDispatched).toBe(true);
         expect(result.status).toBe("failed");
-        expect(updatePrevious).not.toHaveBeenCalled();
-        await expect(runtime.start(oldRef)).rejects.toMatchObject({
-          code: "CLUSTER_ROLLOUT_UNCERTAIN",
-        });
+        if (receipt === "rejected") {
+          expect(updatePrevious).toHaveBeenCalledOnce();
+        } else {
+          expect(updatePrevious).not.toHaveBeenCalled();
+          await expect(runtime.start(oldRef)).rejects.toMatchObject({
+            code: "CLUSTER_ROLLOUT_UNCERTAIN",
+          });
+        }
       } finally {
         await runtime.dispose();
       }

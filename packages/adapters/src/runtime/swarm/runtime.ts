@@ -579,7 +579,14 @@ export class SwarmRuntime implements MultiServiceRuntimeAdapter {
       });
       id = result.ID;
     } catch (error) {
-      if ((error as { statusCode?: number })?.statusCode !== 409) throw error;
+      const status = (error as { statusCode?: number })?.statusCode;
+      if (status !== 409) {
+        // A definite rejection cannot launch a task; retain ordinary recovery.
+        // Transport errors, timeouts and server failures remain uncertain.
+        if (status !== undefined && [400, 401, 403, 404].includes(status))
+          this.uncertainCreations.delete(config.serviceName);
+        throw error;
+      }
       const existing = await swarmRequest<Service>(
         docker,
         "GET",
