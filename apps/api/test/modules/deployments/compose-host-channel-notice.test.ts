@@ -655,6 +655,45 @@ describe("compose deploy — host channel unavailable", () => {
     }));
   });
 
+  it("preserves both containers after a recovery deadline without abandoning the active route writer", async () => {
+    const f = stagedFixture();
+    const result = await f.run(f.routingOptions);
+    let releaseRoute!: () => void;
+    const routeSettled = new Promise<void>(resolve => { releaseRoute = resolve; });
+    let routeStarted!: () => void;
+    const started = new Promise<void>(resolve => { routeStarted = resolve; });
+    h.reapplyProjectLiveRoutes.mockImplementation(async () => {
+      routeStarted();
+      await routeSettled;
+    });
+    const setTimeout = globalThis.setTimeout;
+    let expire!: () => void;
+    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation((callback, delay, ...args) => {
+      if (delay === 30_000) expire = () => (callback as () => void)();
+      return setTimeout(callback, delay, ...args);
+    });
+    try {
+      let released = false;
+      const recovery = result.cutover!.rollback().finally(() => { released = true; });
+      await started;
+      expire();
+      await Promise.resolve();
+      expect(released).toBe(false);
+      expect(f.runtime.destroy).not.toHaveBeenCalled();
+      releaseRoute();
+      await expect(recovery).resolves.toBe(false);
+      expect(h.applyProjectRouting).not.toHaveBeenCalled();
+      expect(f.retire).not.toHaveBeenCalled();
+      expect(f.runtime.destroy).not.toHaveBeenCalled();
+      expect(h.upsertServiceDeployment).toHaveBeenCalledWith(expect.objectContaining({
+        containerId: "new-api", status: "failed", errorMessage: expect.stringContaining("routing recovery timed out"),
+      }));
+    } finally {
+      releaseRoute();
+      timer.mockRestore();
+    }
+  });
+
   it("does not retire the predecessor when route registration reports a warning", async () => {
     const f = stagedFixture();
     f.registerRoute.mockRejectedValue(new Error("edge reload failed"));
