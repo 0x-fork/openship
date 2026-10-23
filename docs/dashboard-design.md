@@ -413,6 +413,8 @@ check retryable before starting the move.
 - The Cloud sidebar orders its sections as Main, Settings, then Infrastructure.
   Self-hosted instances keep Infrastructure before Settings, including when connected to Cloud.
   Backups belongs under Infrastructure beside Servers/Resources, Emails and Jobs, in every platform mode.
+  Missing-edge warnings use the API's routing requirement, independently of the total project count.
+  Private workloads and workers keep the optional install action without an outage/attention indicator.
   Cloud and Cloud-connected installations add Support as the final entry, under Help.
   Keep it reachable for existing Cloud projects if the connection needs attention, using
   the sidebar's loaded project inventory. The private support center uses a

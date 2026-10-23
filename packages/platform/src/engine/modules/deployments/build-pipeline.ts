@@ -1930,7 +1930,7 @@ function buildDeployEnvironment(
             // deploys and runs on its port; routing is flagged action-required
             // and retried later (route registration below is also best-effort).
             try {
-              if (plannedDomains.length > 0 || deps.prepareHostPorts) {
+              if (plannedDomains.length > 0) {
                 // Routing needs OpenResty on 80/443. If a foreign proxy already
                 // holds them, HOLD the deploy and prompt (migrate / take over /
                 // cancel) — the same session prompt flow used for port conflicts.
@@ -1966,17 +1966,16 @@ function buildDeployEnvironment(
               // Same idea for Openship Cloud's target check: make the box able to
               // answer it now, so a free domain added later doesn't need a redeploy
               // first. Cheap and idempotent (a couple of stats once written).
-              await ensureEdgeChallengeReady(phase.project.organizationId, phase.routing, {
-                serverId: phase.serverId ?? undefined,
-                onLog: (m) => logger.log(m, "warn"),
-              });
-              // Bring the box's OTHER vhosts up to this build's shape while we're here.
-              // This project's own routes are rewritten by the deploy anyway; the ones
-              // that need it are the projects nobody is redeploying, which is where a
-              // generated-config fix otherwise never lands. No-op once converged.
-              await repairEdgeVhosts(phase.routing, {
-                onLog: (m, level) => logger.log(m, level ?? "info"),
-              });
+              if (plannedDomains.length > 0) {
+                await ensureEdgeChallengeReady(phase.project.organizationId, phase.routing, {
+                  serverId: phase.serverId ?? undefined,
+                  onLog: (m) => logger.log(m, "warn"),
+                });
+                // Converge the box's other vhosts only when this deploy needs edge routing.
+                await repairEdgeVhosts(phase.routing, {
+                  onLog: (m, level) => logger.log(m, level ?? "info"),
+                });
+              }
             } catch (err) {
               observeCaughtError(err, "platform/engine/modules/deployments/build-pipeline");
               logger.log(
