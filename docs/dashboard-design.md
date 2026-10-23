@@ -813,4 +813,24 @@ changes retain the web process and roles, while the toolbar wraps on narrow scre
 
 Webhook delivery rows show a short, localized explanation below the repository when change analysis records a decision. Reuse the existing feed; keep unknown reason codes out of user-facing text.
 
+## Topology scaling
+
+Node Overview offers a compact Scale action that opens the existing inspector.
+Application replica changes show the observed and requested counts in a review
+before calling the existing configuration release API. Preserve stale-release
+preconditions and action locks. Unsupported Kubernetes Compose workloads, storage,
+and Cloud destinations show their capability reason; do not advertise application
+copies as synchronized replicas. An existing compute cluster can open the shared
+runtime setup inline, preserving the workload draft. Embedded setup omits runtime
+removal and unrelated navigation; continuation rechecks readiness and does not
+deploy an application.
+
+Managed database nodes have Overview, Scale, and Details views. Scale shows the
+primary/replica or shard layout, observed readiness and timestamp, and reviews
+changes against the saved sequence. PostgreSQL presents a read-replica count;
+Redis replication and sharding remain distinct. Connection fields allow explicit
+writer and reader bindings, explain application-side selection, and keep secrets
+masked. Use semantic surfaces and existing controls, with progress from saved
+operations. Account, workspace and instance changes reset private drafts/reviews.
+
 Fine-grained token capability hints describe the enforced operation scope. Deployment trigger access does not promise cancellation, rollback, or deletion; those keep their project admin requirement.
