@@ -868,7 +868,9 @@
       "allTab": "الكل",
       "eventHeader": "الحدث",
       "cellAria": "{category} عبر {channel}",
-      "notifyMe": "إشعاري"
+      "notifyMe": "إشعاري",
+      "search": "البحث في التنبيهات",
+      "noResults": "لا توجد تنبيهات مطابقة."
     },
     "orgDefaults": {
       "title": "الإعدادات الافتراضية للمؤسسة",

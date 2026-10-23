@@ -868,7 +868,9 @@
       "allTab": "全部",
       "eventHeader": "事件",
       "cellAria": "通过 {channel} 接收 {category}",
-      "notifyMe": "通知我"
+      "notifyMe": "通知我",
+      "search": "搜索提醒",
+      "noResults": "没有匹配的提醒。"
     },
     "orgDefaults": {
       "title": "组织默认设置",

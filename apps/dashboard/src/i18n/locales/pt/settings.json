@@ -868,7 +868,9 @@
       "allTab": "Todos",
       "eventHeader": "Evento",
       "cellAria": "{category} via {channel}",
-      "notifyMe": "Notificar-me"
+      "notifyMe": "Notificar-me",
+      "search": "Pesquisar alertas",
+      "noResults": "Nenhum alerta correspondente."
     },
     "orgDefaults": {
       "title": "Padrões da organização",

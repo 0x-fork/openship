@@ -907,7 +907,9 @@
       "allTab": "Tümü",
       "eventHeader": "Olay",
       "cellAria": "{channel} üzerinden {category}",
-      "notifyMe": "Bana bildir"
+      "notifyMe": "Bana bildir",
+      "search": "Uyarılarda ara",
+      "noResults": "Eşleşen uyarı yok."
     },
     "orgDefaults": {
       "title": "Organizasyon varsayılanları",

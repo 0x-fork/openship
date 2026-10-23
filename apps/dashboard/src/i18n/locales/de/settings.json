@@ -868,7 +868,9 @@
       "allTab": "Alle",
       "eventHeader": "Ereignis",
       "cellAria": "{category} über {channel}",
-      "notifyMe": "Benachrichtigen"
+      "notifyMe": "Benachrichtigen",
+      "search": "Benachrichtigungen suchen",
+      "noResults": "Keine passenden Benachrichtigungen."
     },
     "orgDefaults": {
       "title": "Organisationsstandards",

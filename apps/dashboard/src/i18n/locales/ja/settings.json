@@ -868,7 +868,9 @@
       "allTab": "すべて",
       "eventHeader": "イベント",
       "cellAria": "{channel} 経由の {category}",
-      "notifyMe": "通知"
+      "notifyMe": "通知",
+      "search": "アラートを検索",
+      "noResults": "一致するアラートはありません。"
     },
     "orgDefaults": {
       "title": "組織のデフォルト",

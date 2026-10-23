@@ -868,7 +868,9 @@
       "allTab": "Tous",
       "eventHeader": "Événement",
       "cellAria": "{category} via {channel}",
-      "notifyMe": "Me notifier"
+      "notifyMe": "Me notifier",
+      "search": "Rechercher des alertes",
+      "noResults": "Aucune alerte correspondante."
     },
     "orgDefaults": {
       "title": "Valeurs par défaut de l'organisation",

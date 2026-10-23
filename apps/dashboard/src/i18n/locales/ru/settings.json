@@ -928,7 +928,9 @@
       "allTab": "Все",
       "eventHeader": "Событие",
       "cellAria": "{category} через {channel}",
-      "notifyMe": "Уведомлять меня"
+      "notifyMe": "Уведомлять меня",
+      "search": "Поиск оповещений",
+      "noResults": "Нет подходящих оповещений."
     },
     "orgDefaults": {
       "title": "По умолчанию для организации",
