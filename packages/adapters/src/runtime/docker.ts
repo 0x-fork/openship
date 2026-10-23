@@ -1758,7 +1758,7 @@ export class DockerRuntime implements RuntimeAdapter {
     });
   }
 
-  private async pruneManagedBuildState(executor: CommandExecutor, options: { projectId?: string; keepBytes?: number } = {}) {
+  private async pruneManagedBuildState(executor: CommandExecutor, options: { projectId?: string; keepBytes?: number; measurementTimeoutMs?: number } = {}) {
     // Docker/exec replies can precede their durable exit acknowledgements.
     // Otherwise teardown mistakes its own finished inspection/removal commands
     // for a live build, even when no cache volume exists.
@@ -4783,7 +4783,9 @@ OPENSHIP_BASES_PY`, { timeout: 5_000 });
         );
       return this.withBuildCacheLock(() => {
         options.abortSignal?.throwIfAborted();
-        return this.pruneManagedBuildState(executor, { keepBytes: keepStorageBytes ?? 0 });
+        // Maintenance has a longer bounded scan window than the build path,
+        // so caches deferred by a build can still be collected in the daily sweep.
+        return this.pruneManagedBuildState(executor, { keepBytes: keepStorageBytes ?? 0, measurementTimeoutMs: 120_000 });
       });
     }
 

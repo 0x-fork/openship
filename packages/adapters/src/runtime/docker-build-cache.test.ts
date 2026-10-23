@@ -113,6 +113,7 @@ describe("managed project cache cleanup", () => {
     );
     const volume = {
       Name: projectBuildCacheVolume("p1"),
+      CreatedAt: new Date().toISOString(),
       Mountpoint: "/cache/state",
       Labels: { "openship.build-cache": "1", "openship.build-cache.project": "p1" },
     };
@@ -169,6 +170,14 @@ describe("managed project cache cleanup", () => {
     expect(h.dial).not.toHaveBeenCalled();
     expect(h.calls[0]).toBe("lock");
     expect(h.calls.at(-1)).toBe("unlock");
+  });
+
+  it("gives background retention a longer scan deadline than build admission", async () => {
+    const h = cacheRuntime();
+    h.idle();
+    await h.runtime.pruneBuildCache({ all: true, keepStorageBytes: 5 * 1024 ** 3 });
+    expect(h.exec).toHaveBeenCalledWith("du -sk -- '/cache/state'", { timeout: 120_000 });
+    expect(h.remove).not.toHaveBeenCalled();
   });
 
   it("preserves attached project state without falling through to native pruning", async () => {

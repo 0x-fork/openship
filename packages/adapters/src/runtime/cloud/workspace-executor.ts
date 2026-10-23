@@ -45,7 +45,7 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     const abort = () => controller.abort(outer?.reason);
     outer?.addEventListener("abort", abort, { once: true });
     if (outer?.aborted) abort();
-    const timer = setTimeout(() => controller.abort(new Error("Cloud command timed out")), opts?.timeout ?? 120_000);
+    const timer = setTimeout(() => controller.abort(new DOMException("Cloud command timed out", "TimeoutError")), opts?.timeout ?? 120_000);
     try {
       const result = await this.streamExec(command, () => {}, { signal: controller.signal });
       controller.signal.throwIfAborted();
@@ -88,7 +88,7 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
     };
     const kill = () => {
       killed = true;
-      const error = new Error("Cloud command cancelled");
+      const error = new AppError("Cloud command cancelled", 499, "CLOUD_COMMAND_CANCELLED");
       cancellation.abort(error);
       // Keep the caller's operation lock until the provider acknowledges the
       // stop. An ID arriving after cancellation must be stopped as well.
@@ -142,7 +142,7 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
             if (killed) {
               await stopTask();
               await releaseTask(runtime, taskId);
-              throw new Error("Cloud command cancelled");
+              throw new AppError("Cloud command cancelled", 499, "CLOUD_COMMAND_CANCELLED");
             }
             await tracking?.record(identity());
             if (killed || signal?.aborted) kill();
@@ -217,6 +217,12 @@ export class CloudWorkspaceExecutor implements CommandExecutor {
       opts?.signal?.throwIfAborted();
       flush();
       return { code, output };
+    } catch (error) {
+      // Preserve the caller's timeout/cancellation reason only after the owned
+      // command has confirmed exit. Recovery failures must keep their own error.
+      if (opts?.signal?.aborted && error instanceof AppError && error.code === "CLOUD_COMMAND_CANCELLED")
+        throw opts.signal.reason;
+      throw error;
     } finally {
       flush();
       opts?.signal?.removeEventListener("abort", child.kill);

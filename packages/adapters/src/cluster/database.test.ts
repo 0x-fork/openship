@@ -82,7 +82,7 @@ describe("operator database manifests", () => {
       const recover = vi.spyOn(changed.dataTasks, "restore");
       await changed.restore(async () => {});
       expect(recover).not.toHaveBeenCalled();
-      const write = request.mock.calls.findLast(
+      const write = [...request.mock.calls].reverse().find(
         ([method, path]) =>
           method === "PATCH" && /\/(?:clusters|redisreplications)\/database$/.test(path),
       );
