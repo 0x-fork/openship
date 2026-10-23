@@ -834,3 +834,14 @@ masked. Use semantic surfaces and existing controls, with progress from saved
 operations. Account, workspace and instance changes reset private drafts/reviews.
 
 Fine-grained token capability hints describe the enforced operation scope. Deployment trigger access does not promise cancellation, rollback, or deletion; those keep their project admin requirement.
+
+Monorepo imports start with an explicit **Choose apps** step. Detection supplies candidates;
+CLI tools, mobile apps and packages are never enabled just because they have a port.
+Show selected app cards only, with **Change selection** followed by **Add more** on the
+right of the section header. **Add more** opens the repository folder picker. Folder
+selection reuses repository browsing and detection, while
+commands, environment and framework edits reuse the existing app form. Rescans retain
+user choices and manually added folders. Keep each route on its owning app. The sidebar
+shows at most three domain rows, a total count and **View all**; the shared domain editor
+uses an app selector and a public-access toggle. Changing wizard settings takes effect
+when saved or deployed, according to the existing wizard action.
