@@ -707,6 +707,7 @@ export function useDeploymentBuild(
     if (
       !saveConfigOnly &&
       config.projectType === "monorepo" &&
+      config.serviceDeploymentMode !== "single" &&
       !config.monorepoApps?.some((app) => app.enabled)
     ) {
       showToast("Choose at least one app to deploy", "error", "Apps");
@@ -850,6 +851,11 @@ export function useDeploymentBuild(
 
       const isServiceDeployment = usesServiceDeployment(config);
       const isMonorepoDeployment = config.projectType === "monorepo";
+      // Single-app mode keeps the monorepo source type, but owns project routes.
+      // Omission delegates routing to service rows; [] explicitly stays private.
+      const usesProjectRoutes =
+        !isServiceDeployment &&
+        (!isMonorepoDeployment || config.serviceDeploymentMode === "single");
 
       // Step 1: Ensure project exists
       const projectData = await projectsApi.ensure({
@@ -887,7 +893,7 @@ export function useDeploymentBuild(
         // "None" routing → explicit [] so ensure() doesn't PERSIST a stale free
         // subdomain onto the project row (this runs before the buildAccess
         // payload below, which already handles None the same way).
-        publicEndpoints: !isServiceDeployment && !isMonorepoDeployment
+        publicEndpoints: usesProjectRoutes
           ? config.noPublicRoute
             ? []
             : config.publicEndpoints.map((endpoint) => (
@@ -976,7 +982,7 @@ export function useDeploymentBuild(
         sourceEnvKeys: resolvedEnvPlan.sourceEnvKeys,
         // "None" routing → explicit [] (no public URL). Must be [], not
         // undefined: undefined makes the backend auto-derive a free subdomain.
-        publicEndpoints: !isServiceDeployment && !isMonorepoDeployment
+        publicEndpoints: usesProjectRoutes
           ? config.noPublicRoute
             ? []
             : config.publicEndpoints.map((endpoint) => (

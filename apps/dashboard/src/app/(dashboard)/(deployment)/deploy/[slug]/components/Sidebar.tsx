@@ -609,7 +609,9 @@ const Sidebar: React.FC<{ destinationReady: boolean }> = ({ destinationReady }) 
             state.isDeploying ||
             isRescanning ||
             !destinationReady ||
-            (config.projectType === "monorepo" && !config.monorepoApps?.some((app) => app.enabled))
+            (config.projectType === "monorepo" &&
+              config.serviceDeploymentMode !== "single" &&
+              !config.monorepoApps?.some((app) => app.enabled))
           }
           className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary/90 transition-all hover:shadow-lg hover:shadow-primary/25 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
         >
