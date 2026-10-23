@@ -801,6 +801,7 @@ export async function reapplyProjectLiveRoutes(
       ...(resolved.platform.executor
         ? { edgeProxy: edgeProxyFor(resolved.platform.executor, "openresty", { ours: true }) }
         : {}),
+      ...(opts.isSelfApp ? { controlPlanePort: env.OPENSHIP_DASHBOARD_PORT || 3001 } : {}),
       registers,
       removes,
     });

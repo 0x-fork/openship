@@ -291,6 +291,7 @@ describe("reapplyProjectLiveRoutes self-app loopback route (issue #129)", () => 
 
   it("registers the self-app's own loopback dashboard route when isSelfApp is set", async () => {
     await reapplyProjectLiveRoutes(project, [], { isSelfApp: true });
+    expect(reconcile.mock.calls[0][1].controlPlanePort).toBe(3001);
 
     expect(reconcile).toHaveBeenCalledTimes(1);
     expect(reconcile.mock.calls[0][1].registers).toEqual([
@@ -307,6 +308,7 @@ describe("reapplyProjectLiveRoutes self-app loopback route (issue #129)", () => 
 
   it("still refuses the same loopback dashboard route for an ordinary tenant project", async () => {
     await reapplyProjectLiveRoutes(project, []);
+    expect(reconcile.mock.calls[0][1].controlPlanePort).toBeUndefined();
 
     expect(reconcile).toHaveBeenCalledTimes(1);
     expect(reconcile.mock.calls[0][1].registers).toEqual([]);
