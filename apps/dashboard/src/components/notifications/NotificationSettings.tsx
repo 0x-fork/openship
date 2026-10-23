@@ -21,7 +21,7 @@ import { Icon as UiIcon } from "@repo/ui/icons";
  *      defaults used when a member has not made an explicit category choice.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -227,6 +227,38 @@ function useActiveView() {
 }
 
 function ScopedNotificationSettings({
+  section = "all",
+  ...props
+}: NotificationSettingsProps) {
+  const { t } = useI18n();
+  const [view, setView] = useState<"preferences" | "history">("preferences");
+  const tabsId = useId();
+  if (section === "channels") return <NotificationPreferences {...props} section={section} />;
+  return (
+    <div className="space-y-5">
+      <Tabs
+        idPrefix={tabsId}
+        ariaLabel={t.settings.notifications.overview.title}
+        value={view}
+        onChange={setView}
+        tabs={[
+          { key: "preferences", label: t.settings.notifications.overview.configuration },
+          { key: "history", label: t.settings.notifications.deliveryHistory.title },
+        ]}
+      />
+      <div role="tabpanel" id={`${tabsId}-panel-preferences`} aria-labelledby={`${tabsId}-tab-preferences`} hidden={view !== "preferences"}>
+        <NotificationPreferences {...props} section={section} />
+      </div>
+      {view === "history" && (
+        <div role="tabpanel" id={`${tabsId}-panel-history`} aria-labelledby={`${tabsId}-tab-history`}>
+          <NotificationDeliveryHistory />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NotificationPreferences({
   mode = "settings",
   section = "all",
 }: NotificationSettingsProps) {
@@ -373,7 +405,6 @@ function ScopedNotificationSettings({
           onChange={() => refresh({ silent: true })}
         />
       )}
-      {section !== "channels" && <NotificationDeliveryHistory />}
     </div>
   );
 }
@@ -551,6 +582,7 @@ function ChannelsCard({
                     onClick={() => handleTest(ch.id)}
                     disabled={testing === ch.id}
                     variant="secondary"
+                    className="ms-auto"
                   >
                     {testing === ch.id ? (
                       <UiIcon name="spinner" className="size-3.5 animate-spin" />
@@ -838,12 +870,12 @@ function EventNotificationsCard({
               const isBusy = busyCat === cat.id;
               const notifyMe = enabledCats.has(cat.id) || (!rowCats.has(cat.id) && enabled);
               return (
-                <div key={cat.id} className="flex flex-wrap items-center gap-4 rounded-xl bg-card p-4">
-                  <div className="min-w-0 flex-1 basis-72">
+                <div key={cat.id} className="space-y-4 rounded-xl bg-card p-4">
+                  <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">{catLabel}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{catDesc}</p>
                   </div>
-                  <div className="ms-auto flex flex-wrap items-center justify-end gap-x-6 gap-y-4">
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
                     <div className="flex items-center gap-3">
                       <span className="text-sm text-foreground">
                         {t.settings.notifications.subscriptions.notifyMe}
@@ -868,11 +900,13 @@ function EventNotificationsCard({
                         })}
                       />
                     </div>
-                    <ChannelMultiSelect
-                      value={kinds}
-                      disabled={disabled || isBusy || !isAdmin}
-                      onChange={(next) => setDefault(cat.id, enabled, next)}
-                    />
+                    <div className="ms-auto">
+                      <ChannelMultiSelect
+                        value={kinds}
+                        disabled={disabled || isBusy || !isAdmin}
+                        onChange={(next) => setDefault(cat.id, enabled, next)}
+                      />
+                    </div>
                   </div>
                 </div>
               );

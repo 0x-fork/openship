@@ -166,9 +166,7 @@ it("renders all seven channel kinds with preferences and history; never sends a 
   expect(host.querySelectorAll("li")).toHaveLength(7);
   expect(host.textContent).toContain("7 of 7 channels ready");
   expect(host.querySelector('section[aria-label="Alert preferences"]')).not.toBeNull();
-  expect(host.lastElementChild?.lastElementChild?.getAttribute("aria-label")).toBe(
-    "Delivery history",
-  );
+  expect(host.querySelector('section[aria-label="Delivery history"]')).toBeNull();
   expect(m.test).not.toHaveBeenCalled();
   expect(
     Array.from(host.querySelectorAll("button")).filter((b) => b.textContent === "Send test"),
@@ -184,6 +182,20 @@ it("sends only the clicked channel test and can disable or delete a channel", as
   await click("More: email destination");
   await click("Delete channel");
   expect(m.remove).toHaveBeenCalledExactlyOnceWith("email");
+});
+
+it("opens history inline only when selected and preserves a channel draft on return", async () => {
+  await render();
+  expect(host.querySelector('section[aria-label="Delivery history"]')).toBeNull();
+  await click("Add channel");
+  await fill("Name", "On call draft");
+  await click("Delivery history");
+  expect(host.querySelector('section[aria-label="Delivery history"]')).not.toBeNull();
+  expect(host.querySelector('[role="tabpanel"][hidden]')).not.toBeNull();
+  await click("Channels & alerts");
+  expect(host.querySelector('section[aria-label="Delivery history"]')).toBeNull();
+  expect([...host.querySelectorAll<HTMLInputElement>("input")].some((input) => input.value === "On call draft")).toBe(true);
+  expect(m.create).not.toHaveBeenCalled();
 });
 
 it("filters alert names and descriptions within the selected tab without changing preferences", async () => {
@@ -409,6 +421,8 @@ it("works without props and explains account channels versus organization prefer
   expect(host.textContent).toContain(
     "Alert preferences and defaults apply to the active organization",
   );
+  expect(host.querySelector('section[aria-label="Delivery history"]')).toBeNull();
+  await click("Delivery history");
   expect(host.querySelector('section[aria-label="Delivery history"]')).not.toBeNull();
 });
 
