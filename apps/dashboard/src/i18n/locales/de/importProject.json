@@ -321,6 +321,7 @@
       "detectedApp": "Erkannte App",
       "empty": "Wähle Apps aus diesem Repository oder füge einen Ordner hinzu. Ohne Auswahl wird nichts bereitgestellt.",
       "addFromRepo": "App aus Repository hinzufügen",
+      "addMore": "Weitere hinzufügen",
       "cancel": "Abbrechen",
       "addApp": "App hinzufügen",
       "chooseFolder": "Ordner ändern",

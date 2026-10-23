@@ -371,16 +371,18 @@ const MonorepoApps: React.FC = () => {
                 : interpolate(copy.selected, { count: String(selectedCount) })}
             </p>
           </div>
-          <Button variant="secondary" onClick={choose}>
-            {selectedCount ? copy.changeSelection : copy.chooseApps}
-          </Button>
+          <div className="ms-auto flex flex-wrap items-center justify-end gap-2">
+            <Button variant="secondary" onClick={choose}>
+              {selectedCount ? copy.changeSelection : copy.chooseApps}
+            </Button>
+            {!isSingleAppMode && !config.uploadSessionId && (
+              <Button variant="secondary" onClick={() => setAdding(true)}>
+                <UiIcon name="plus" className="size-4" />
+                {copy.addMore}
+              </Button>
+            )}
+          </div>
         </div>
-        {!isSingleAppMode && !config.uploadSessionId && (
-          <Button variant="ghost" className="mt-3" onClick={() => setAdding(true)}>
-            <UiIcon name="plus" className="size-4" />
-            {copy.addFromRepo}
-          </Button>
-        )}
       </div>
 
       {/* Per-app runtime: workspace install + per-sub-app cards.

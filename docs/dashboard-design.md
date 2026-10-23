@@ -817,8 +817,9 @@ Fine-grained token capability hints describe the enforced operation scope. Deplo
 
 Monorepo imports start with an explicit **Choose apps** step. Detection supplies candidates;
 CLI tools, mobile apps and packages are never enabled just because they have a port.
-Show selected app cards only, with **Change selection** and **Add app from repository**
-always available. Folder selection reuses repository browsing and detection, while
+Show selected app cards only, with **Change selection** followed by **Add more** on the
+right of the section header. **Add more** opens the repository folder picker. Folder
+selection reuses repository browsing and detection, while
 commands, environment and framework edits reuse the existing app form. Rescans retain
 user choices and manually added folders. Keep each route on its owning app. The sidebar
 shows at most three domain rows, a total count and **View all**; the shared domain editor

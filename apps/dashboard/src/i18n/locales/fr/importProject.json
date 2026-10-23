@@ -321,6 +321,7 @@
       "detectedApp": "Application détectée",
       "empty": "Choisissez des applications du dépôt ou ajoutez un dossier. Rien ne sera déployé sans sélection.",
       "addFromRepo": "Ajouter une application du dépôt",
+      "addMore": "Ajouter",
       "cancel": "Annuler",
       "addApp": "Ajouter l’application",
       "chooseFolder": "Changer de dossier",

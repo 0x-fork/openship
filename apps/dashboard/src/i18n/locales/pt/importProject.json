@@ -321,6 +321,7 @@
       "detectedApp": "App detectado",
       "empty": "Escolha apps deste repositório ou adicione uma pasta. Nada será implantado até ser selecionado.",
       "addFromRepo": "Adicionar app do repositório",
+      "addMore": "Adicionar mais",
       "cancel": "Cancelar",
       "addApp": "Adicionar app",
       "chooseFolder": "Alterar pasta",

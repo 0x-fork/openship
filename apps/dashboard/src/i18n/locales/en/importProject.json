@@ -321,6 +321,7 @@
       "detectedApp": "Detected app",
       "empty": "Choose apps from this repository, or add a folder. Nothing will deploy until you select it.",
       "addFromRepo": "Add app from repository",
+      "addMore": "Add more",
       "cancel": "Cancel",
       "addApp": "Add app",
       "chooseFolder": "Change folder",

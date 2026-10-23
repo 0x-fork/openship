@@ -321,6 +321,7 @@
       "detectedApp": "Algılanan uygulama",
       "empty": "Bu depodan uygulama seçin veya klasör ekleyin. Seçim yapmadan hiçbir şey dağıtılmaz.",
       "addFromRepo": "Depodan uygulama ekle",
+      "addMore": "Daha fazla ekle",
       "cancel": "İptal",
       "addApp": "Uygulama ekle",
       "chooseFolder": "Klasörü değiştir",

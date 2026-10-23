@@ -321,6 +321,7 @@
       "detectedApp": "检测到的应用",
       "empty": "从此仓库选择应用或添加文件夹。未选择的应用不会部署。",
       "addFromRepo": "从仓库添加应用",
+      "addMore": "添加更多",
       "cancel": "取消",
       "addApp": "添加应用",
       "chooseFolder": "更改文件夹",
