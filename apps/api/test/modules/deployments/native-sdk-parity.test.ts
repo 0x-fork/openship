@@ -55,6 +55,7 @@ const h = vi.hoisted(() => ({
   manageSsl: vi.fn(),
   servers: new Map<string, { organizationId: string; [key: string]: unknown }>(),
   serverCreate: vi.fn(), serverUpdate: vi.fn(), serverRemove: vi.fn(), serverWorkloads: vi.fn(),
+  serverInvalidate: vi.fn(),
   serverExec: vi.fn(), serverWithExecutor: vi.fn(), serverModuleScan: vi.fn(), serverModuleApply: vi.fn(),
   serverRateRead: vi.fn(), serverRateApply: vi.fn(),
   componentCheck: vi.fn(), installDocker: vi.fn(), installEdge: vi.fn(), removeEdge: vi.fn(),
@@ -92,10 +93,13 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@repo/db", () => ({
   withAdvisoryLock: async (_key: string, fn: () => Promise<unknown>) => fn(),
+  tryAcquireAdvisoryLock: async () => ({ release: async () => {} }),
   schema: {},
   getDriver: () => "postgres",
   repos: {
+    ingress: { byServer: async () => null },
     serverCluster: { membership: async () => null },
+    clusterDatabase: { list: async () => [] },
     user: { findFoundingAdmin: async () => ({ id: "founder" }) },
     instanceSettings: { get: async () => h.settings, upsert: h.settingsUpsert, delete: h.settingsDelete },
     serverTunnel: {
@@ -106,6 +110,7 @@ vi.mock("@repo/db", () => ({
     },
     member: { find: async (org: string, user: string) => h.members.get(`${org}:${user}`) },
     project: { findById: async (id: string) => h.projects.get(id),
+      findByIdInOrganization: async (id: string, org: string) => h.projects.get(id)?.organizationId === org ? h.projects.get(id) : undefined,
       findDraftByAppTemplate: h.appDraft,
       listEnvVars: async (id: string, environment: string, service?: string) => service
         ? h.appEnv.get(`${id}:${environment}:${service}`) ?? []
@@ -323,15 +328,18 @@ vi.mock("@repo/platform/engine/lib/deployment-runtime", async importOriginal => 
 
 vi.mock("@repo/platform/engine/lib/startup/self-server", () => ({ ensureLocalServer: vi.fn(async () => null), localServerHostChannel: vi.fn(async () => null) }));
 vi.mock("@repo/platform/engine/lib/geo-ip", () => ({ primeGeo: vi.fn(async () => {}), countryForIp: () => null }));
-vi.mock("@repo/platform/engine/lib/host-capacity", () => ({ invalidateHostCapacity: vi.fn(async () => {}), getTrustedHostCapacity: h.hostCapacity }));
+vi.mock("@repo/platform/engine/lib/host-capacity", () => ({ invalidateHostCapacity: vi.fn(async () => {}), getTrustedHostCapacity: h.hostCapacity, getHostCapacity: vi.fn(async () => ({ cpuCores: 0, memoryMb: 0, source: "unknown" })) }));
 vi.mock("@repo/platform/engine/lib/openresty-paths", () => ({
   invalidateOpenRestyPaths: vi.fn(async () => {}),
   withOpenRestyRouting: async (_id: string, work: (routing: unknown) => unknown) => work({ getRateLimitConfig: h.serverRateRead, applyRateLimit: h.serverRateApply }),
 }));
 vi.mock("@repo/platform/engine/lib/ssh-manager", () => ({
   sshManager: {
-    withExecutor: h.serverWithExecutor, invalidate: vi.fn(),
-    acquire: async () => ({ exec: h.monitorExec }), retain: h.serverRetain, release: h.serverRelease,
+    withExecutor: h.serverWithExecutor,
+    invalidate: h.serverInvalidate,
+    acquire: async () => ({ exec: h.monitorExec }),
+    retain: h.serverRetain,
+    release: h.serverRelease,
   },
 }));
 vi.mock("@repo/platform/engine/lib/agent-exec", () => ({ execOnHost: h.serverExec }));
@@ -373,6 +381,7 @@ import { appSettingsRoutes } from "../../../src/modules/apps/app-settings.routes
 import { appConnectionRoutes } from "../../../src/modules/apps/app-connection.routes";
 import { backupDestinationRoutes } from "../../../src/modules/backup-destinations/destination.routes";
 import { backupRoutes } from "../../../src/modules/backups/backup.routes";
+import { serverResourceRoutes } from "../../../src/modules/system/server-resource.routes";
 import { serverManagementRoutes } from "../../../src/modules/system/server-management.routes";
 import { systemManagementRoutes } from "../../../src/modules/system/system-management.routes";
 import { getInternalSetup, onboardingSetup } from "../../../src/modules/system/setup.controller";
@@ -389,6 +398,10 @@ import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
 
 const secret = "secret-that-must-not-leave-the-presenter";
+function storedServerFixture(id?: string) {
+  const server = serverFixture(id);
+  return { ...server, createdAt: new Date(server.createdAt) };
+}
 const app = new Hono();
 app.onError(handleApiError);
 app.route("/api/health", healthRoutes);
@@ -402,7 +415,8 @@ app.route("/api/apps", appRoutes);
 app.route("/api/backup-destinations", backupDestinationRoutes);
 app.route("/api/projects/:id/app-settings", appSettingsRoutes);
 app.route("/api/projects/:id/app-connection", appConnectionRoutes);
-app.route("/api/system", serverManagementRoutes);
+app.route("/api/system", serverResourceRoutes);
+app.route("/api/system", serverResourceRoutes).route("/api/system", serverManagementRoutes);
 app.route("/api/system", systemManagementRoutes);
 app.route("/api", backupRoutes);
 
@@ -527,6 +541,32 @@ describe("deployment preparation HTTP/native parity", () => {
     }
     expect(h.localInfo).not.toHaveBeenCalled();
     expect(h.audit).not.toHaveBeenCalled();
+  });
+
+  it("checks a selected native folder against sourceRoots before scanning through either entry point", async () => {
+    vi.stubEnv("OPENSHIP_NATIVE", "true");
+    const directory = await mkdtemp(join(tmpdir(), "prepare-selected-root-"));
+    try {
+      const root = join(await realpath(directory), "source");
+      await mkdir(join(root, "app"), { recursive: true });
+      await symlink(directory, join(root, "outside"));
+      const local = await native();
+      configureNativeSourceRoots([root]);
+      for (const deployments of [local.deployments, remote().deployments]) {
+        h.localInfo.mockClear();
+        await expect(
+          deployments.prepare({ source: "local", path: root, rootDirectory: "outside" }),
+        ).rejects.toMatchObject({ code: "SOURCE_PATH_NOT_ALLOWED", statusCode: 403 });
+        expect(h.localInfo).not.toHaveBeenCalled();
+        await deployments.prepare({ source: "local", path: root, rootDirectory: "app" });
+        expect(h.localInfo).toHaveBeenCalledWith(
+          expect.objectContaining({ path: root, rootDirectory: "app" }),
+        );
+      }
+    } finally {
+      configureNativeSourceRoots([]);
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("returns editable source values in one authorized HTTP or native preparation", async () => {
@@ -736,7 +776,8 @@ describe("app HTTP/native parity through retained catalog, installer, and settin
     expect(result).toMatchObject({ kind: "template", projectId: "installed-app" });
     expect(h.projectCreate).toHaveBeenCalledTimes(2);
     for (const args of h.projectCreate.mock.calls) {
-      expect(args).toEqual([expect.objectContaining({ appTemplateId: definition.id, projectType: "services" }), "org-a", { tokenId: "app-token" }]);
+      expect(args).toEqual([expect.objectContaining({ appTemplateId: definition.id, projectType: "services" }), "org-a", { tokenId: "app-token" },
+        expect.objectContaining({ organizationId: "org-a", role: "restricted", tokenScope: { tokenId: "app-token" } })]);
     }
     expect(h.serviceCreate.mock.calls.every(([ctx]) => ctx.role === "restricted" && !ctx.hono)).toBe(true);
     expect(h.audit).toHaveBeenCalledTimes(2);
@@ -1054,13 +1095,13 @@ beforeEach(() => {
   h.services.set("service-b", { projectId: "project-b" });
   h.domains.set("domain-a", { projectId: "project-a" });
   h.domains.set("domain-b", { projectId: "project-b" });
-  h.servers.set("server-a", { ...serverFixture(), organizationId: "org-a", sshPrivateKey: "enc1:stored-secret" });
-  h.servers.set("server-b", { ...serverFixture("server-b"), organizationId: "org-b" });
-  h.serverWithExecutor.mockImplementation(async (_id, work) => work({}));
+  h.servers.set("server-a", { ...storedServerFixture(), organizationId: "org-a", sshPrivateKey: "enc1:stored-secret" });
+  h.servers.set("server-b", { ...storedServerFixture("server-b"), organizationId: "org-b" });
+  h.serverWithExecutor.mockImplementation(async (_id, work) => work({ exec: h.monitorExec }));
   h.serverExec.mockResolvedValue({ output: "private-output", exitCode: 0, timedOut: false, truncated: false, durationMs: 1 });
   h.serverWorkloads.mockResolvedValue([]);
   h.serverRateRead.mockResolvedValue({ rps: 10, burst: 20, whitelist: [] });
-  h.serverCreate.mockImplementation(async data => ({ ...serverFixture("server-new"), ...data, organizationId: "org-a" }));
+  h.serverCreate.mockImplementation(async data => ({ ...storedServerFixture("server-new"), ...data, organizationId: "org-a" }));
   h.serverUpdate.mockImplementation(async (id, patch) => ({ ...h.servers.get(id), ...patch }));
   h.componentCheck.mockImplementation(async (_executor, names: string[]) => names.map(name => ({
     name, label: name, description: `${name} component`, installable: true, installed: true, healthy: true, message: "ready",
@@ -1068,7 +1109,11 @@ beforeEach(() => {
   h.installDocker.mockResolvedValue({ component: "docker", success: true });
   h.installEdge.mockResolvedValue({ component: "edge", success: true });
   h.removeEdge.mockResolvedValue({ component: "edge", success: true });
-  h.monitorExec.mockResolvedValue(JSON.stringify({ cpu: 10, memUsed: 1024 }));
+  h.monitorExec.mockResolvedValue(JSON.stringify({
+    cpu: 10, memTotal: 4096, memUsed: 1024, memAvail: 3072,
+    diskTotal: 10000, diskUsed: 1000, diskAvail: 9000,
+    uptime: "120", load1: "0.1", load5: "0.2", load15: "0.3",
+  }));
   h.containerRows.set("server-a:edge", serverContainerFixture());
   h.containerRows.set("server-b:edge", serverContainerFixture("server-b", "org-b"));
   h.mailRecord.mockResolvedValue(undefined);
@@ -1099,7 +1144,7 @@ describe("deployment inspection HTTP/native parity", () => {
   const remote = () => new OpenshipClient({ baseUrl: "http://openship.test", organizationId: "org-a", fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
   const usage = { cpuPercent: 12, memoryMb: 64, diskMb: 128, networkRxBytes: 123, networkTxBytes: 456 };
   const cases = [
-    { method: "containerInfo", engine: h.deploymentContainerInfo, result: { containerId: "primary-service", status: "running", hostPortByContainerPort: { "8080": 49100 }, usage } },
+    { method: "containerInfo", engine: h.deploymentContainerInfo, result: { containerId: "primary-service", status: "running", hostPortByContainerPort: { "8080": 49100 }, usage, resources: { cpuCores: 0.25, memoryMb: 512 } } },
     { method: "containerUsage", engine: h.deploymentContainerUsage, result: usage },
     { method: "pendingActions", engine: h.deploymentPendingActions, result: [] },
   ] as const;
@@ -1127,10 +1172,11 @@ describe("deployment inspection HTTP/native parity", () => {
 
 describe("hostname SSL HTTP/native parity", () => {
   const remote = () => new OpenshipClient({ baseUrl: "http://openship.test", organizationId: "org-a", fetch: ((url, init) => app.request(url as string, init)) as typeof fetch });
+  const expiresAt = new Date(Date.now() + 90 * 86_400_000).toISOString();
   beforeEach(() => {
-    h.domains.set("domain-a", { ...domainFixture(), id: "domain-a", projectId: "project-a", hostname: "app.example.com", sslStatus: "active", sslIssuer: "Let's Encrypt", sslExpiresAt: "2026-12-01T00:00:00.000Z", verified: true });
+    h.domains.set("domain-a", { ...domainFixture(), id: "domain-a", projectId: "project-a", hostname: "app.example.com", sslStatus: "active", sslIssuer: "Let's Encrypt", sslExpiresAt: expiresAt, verified: true });
     h.domains.set("domain-www", { ...h.domains.get("domain-a")!, id: "domain-www", projectId: "project-a", hostname: "www.app.example.com" });
-    h.manageSsl.mockResolvedValue({ expiresAt: "2026-12-01T00:00:00.000Z", issuer: "Let's Encrypt" });
+    h.manageSsl.mockResolvedValue({ verified: true, expiresAt, issuer: "Let's Encrypt" });
     h.domainGet.mockImplementation(async (_ctx, id) => h.domains.get(id));
   });
 
@@ -1145,7 +1191,7 @@ describe("hostname SSL HTTP/native parity", () => {
   it("keeps primary and www renewal outcomes independent, with one audit per operation", async () => {
     h.manageSsl.mockImplementation(async hostname => {
       if (hostname.startsWith("www.")) throw new Error("www DNS is not pointed here");
-      return { expiresAt: "2026-12-01T00:00:00.000Z", issuer: "Let's Encrypt" };
+      return { verified: true, expiresAt, issuer: "Let's Encrypt" };
     });
     const input = { domain: "app.example.com", includeWww: true };
     const result = await (await native()).deployments.renewSsl(input);
@@ -1162,6 +1208,13 @@ describe("hostname SSL HTTP/native parity", () => {
     for (const deployments of [(await native()).deployments, remote().deployments]) {
       expect(await deployments.renewSsl({ domain: "app.example.com" })).toMatchObject({ success: false, status: "provisioning" });
     }
+  });
+
+  it("preserves pending certificate verification through both native and HTTP contracts", async () => {
+    h.manageSsl.mockResolvedValue({ verified: false, expiresAt, issuer: "provider", reason: "pending", detail: "Checking the edge certificate" });
+    const result = await (await native()).deployments.renewSsl({ domain: "app.example.com" });
+    expect(result).toMatchObject({ success: false, pending: true, status: "provisioning", message: "Checking the edge certificate" });
+    expect(await remote().deployments.renewSsl({ domain: "app.example.com" })).toEqual(result);
   });
 
   it("rejects read-only credentials before renewal and rechecks each hostname's organization", async () => {
@@ -1732,7 +1785,7 @@ describe("domain and DNS HTTP/native parity", () => {
       expect(await contextFor("domain-b", "provision")).toBeNull();
     }
   });
-  it("keeps certificate contents out of audit and preserves the cloud upload refusal", async () => {
+  it("keeps certificate contents out of audit and refuses uploads to provider-managed Cloud domains", async () => {
     h.domainUpload.mockResolvedValue({ domain: "app.example.com", sslStatus: "active", issuer: "manual" });
     const local = await native();
     const input = { certPem: "private-certificate-content", keyPem: "private-key-content" };
@@ -1741,6 +1794,7 @@ describe("domain and DNS HTTP/native parity", () => {
     expect(JSON.stringify(h.audit.mock.calls)).not.toContain("private-key-content");
     expect(JSON.stringify(h.audit.mock.calls)).not.toContain("private-certificate-content");
     h.env.CLOUD_MODE = true;
+    h.projects.set("project-a", { organizationId: "org-a", serverId: "cloud-server", workspaceId: "cloud-space" });
     await expect(local.domains.uploadCert("domain-a", input)).rejects.toMatchObject({ statusCode: 404 });
     await expect(remote().domains.uploadCert("domain-a", input)).rejects.toMatchObject({ status: 404 });
     expect(h.domainUpload).toHaveBeenCalledTimes(2);
@@ -1990,7 +2044,7 @@ describe("server installation HTTP/native parity", () => {
     expect(setupPromptState(session.id)).toEqual({ pending: false, subscribers: 0 });
   });
 
-  it("keeps session replay and response private, including busy-install errors", async () => {
+  it("keeps session replay and response private without blocking an independent server", async () => {
     restrictToServer();
     const session = createSetupSession([{ name: "edge", label: "Edge" }], "server-b");
     setupSessions.add(session.id);
@@ -1999,11 +2053,15 @@ describe("server installation HTTP/native parity", () => {
       await expect(servers.getInstallSession({ sessionId: session.id })).rejects.toMatchObject({ code: "NOT_FOUND" });
       await expect(servers.respondToInstall({ sessionId: session.id, action: "override" })).rejects.toMatchObject({ code: "NOT_FOUND" });
       await expect(servers.installEvents({ sessionId: session.id })[Symbol.asyncIterator]().next()).rejects.toMatchObject({ code: "NOT_FOUND" });
-      const failure = await servers.installComponents("server-a", { components: ["edge"] })[Symbol.asyncIterator]().next().catch(error => error);
-      expect(failure).toMatchObject({ statusCode: 409, code: "install_in_progress" });
-      expect(JSON.stringify(failure.details)).not.toContain(session.id);
+      await expect(servers.getInstallSession()).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await servers.getInstallSession({ serverId: "server-a" })).toEqual({ active: false });
+      const events = [];
+      for await (const event of servers.installComponents("server-a", { components: ["edge"] })) events.push(event);
+      expect(events.at(-1)?.event).toBe("end");
+      expect(JSON.stringify(events)).not.toContain(session.id);
+      await drainServerInstallations();
     }
-    expect(h.installEdge).not.toHaveBeenCalled();
+    expect(h.installEdge).toHaveBeenCalledTimes(2);
   });
 
   it("revalidates server grants before starting the next installation component", async () => {
@@ -2050,7 +2108,12 @@ describe("server installation HTTP/native parity", () => {
       const abort = new AbortController();
       const iterator = servers.monitor("server-a", { signal: abort.signal })[Symbol.asyncIterator]();
       const event = await iterator.next();
-      expect(event.value).toMatchObject({ event: "stats", data: JSON.stringify({ cpu: 10, memUsed: 1024 }) });
+      expect(event.value).toMatchObject({ event: "stats" });
+      expect(JSON.parse(event.value!.data)).toEqual({
+        cpu: 10, memTotal: 4096, memUsed: 1024, memAvail: 3072,
+        diskTotal: 10000, diskUsed: 1000, diskAvail: 9000,
+        uptime: "120", load1: "0.1", load5: "0.2", load15: "0.3",
+      });
       abort.abort();
       await iterator.return?.();
     }
@@ -2197,6 +2260,19 @@ describe("server HTTP/native parity", () => {
       await expect(servers.create({ sshHost: "example.com", sshPort: 99999 })).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
     }
     expect(h.serverCreate).not.toHaveBeenCalled();
+  });
+
+  it("updates GPU metadata through HTTP/native without disconnecting retained SSH sessions", async () => {
+    const local = await native();
+    for (const servers of [local.servers, remote().servers]) {
+      await expect(servers.update("server-a", { gpuOverride: "yes" })).resolves.toMatchObject({
+        gpu: { available: true, override: "yes" },
+      });
+    }
+    expect(h.serverInvalidate).not.toHaveBeenCalled();
+    expect(h.audit.mock.calls.at(-1)?.[0]).toMatchObject({ after: { gpuOverride: "yes" } });
+    await local.servers.update("server-a", { sshHost: "gpu.example.com" });
+    expect(h.serverInvalidate).toHaveBeenCalledExactlyOnceWith("server-a");
   });
 
   it("requires server admin for execution and rate-limit writes, beyond a write grant", async () => {

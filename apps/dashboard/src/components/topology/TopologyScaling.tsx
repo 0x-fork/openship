@@ -37,7 +37,7 @@ export function TopologyScaling({
   onDeploy: () => void;
   onClusterState?: (state: ProjectCluster) => void;
   onStage: (
-    values: { cpuCores: number; memoryMb: number },
+    values: { cpuCores: number; memoryMb: number; swapDisabled?: boolean },
     before: ProjectResources,
     service?: Service,
   ) => void;
@@ -46,6 +46,7 @@ export function TopologyScaling({
   const [view, setView] = useState<ProjectResources | null>(null);
   const [cpu, setCpu] = useState("");
   const [memory, setMemory] = useState("");
+  const [swapDisabled, setSwapDisabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [staged, setStaged] = useState(false);
@@ -62,6 +63,7 @@ export function TopologyScaling({
         baseline.current = service;
         setCpu(String(service?.advanced?.resources?.cpuCores ?? data.production.cpuCores));
         setMemory(String(service?.advanced?.resources?.memoryMb ?? data.production.memoryMb));
+        setSwapDisabled(service?.advanced?.resources?.swapDisabled === true);
       })
       .catch((reason) => {
         if (!cancelled)
@@ -119,7 +121,11 @@ export function TopologyScaling({
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
-                  const values = { cpuCores: Number(cpu), memoryMb: Number(memory) };
+                  const values = {
+                    cpuCores: Number(cpu),
+                    memoryMb: Number(memory),
+                    ...(swapDisabled && { swapDisabled: true }),
+                  };
                   const invalid =
                     !cpu.trim() ||
                     !memory.trim() ||
@@ -130,12 +136,14 @@ export function TopologyScaling({
                     !Number.isInteger(values.memoryMb);
                   const problem = invalid
                     ? "Enter a valid CPU limit and whole-number memory limit."
-                    : view.requiresLimit && (!values.cpuCores || !values.memoryMb)
-                      ? "This target requires explicit CPU and memory limits."
-                      : validateAgainstCapacity(
-                          { ...values, diskMb: view.production.diskMb },
-                          view.capacity ?? UNKNOWN_CAPACITY,
-                        );
+                    : swapDisabled && !(values.memoryMb > 0)
+                      ? "Disabling swap requires a positive memory limit."
+                      : view.requiresLimit && (!values.cpuCores || !values.memoryMb)
+                        ? "This target requires explicit CPU and memory limits."
+                        : validateAgainstCapacity(
+                            { ...values, diskMb: view.production.diskMb },
+                            view.capacity ?? UNKNOWN_CAPACITY,
+                          );
                   if (problem) {
                     setError(problem);
                     return;
@@ -180,6 +188,26 @@ export function TopologyScaling({
                 </div>
                 {!view.requiresLimit && (
                   <p className="text-[11px] text-muted-foreground">Use 0 for no limit.</p>
+                )}
+                {service && (
+                  <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 size-3.5 accent-foreground"
+                      checked={swapDisabled}
+                      onChange={(event) => {
+                        setSwapDisabled(event.target.checked);
+                        setStaged(false);
+                      }}
+                    />
+                    <span>
+                      Disable swap
+                      <span className="block text-[11px]">
+                        Runs this container without swap. Requires a positive memory limit and a
+                        Docker host with swap accounting enabled.
+                      </span>
+                    </span>
+                  </label>
                 )}
                 {view.capacity && view.capacity.source !== "unknown" && (
                   <p className="text-[11px] text-muted-foreground">

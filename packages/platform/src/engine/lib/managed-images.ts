@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { createHash } from "node:crypto";
 import { type Dirent, existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
@@ -58,11 +59,21 @@ const SIGNATURE_SKIP_DIRS = new Set([
 /** Recursively collect `relpath|size|mtimeMs` lines for the source files under `dir`. */
 function statSignature(dir: string): string[] {
   const lines: string[] = [];
+  try {
+    if (existsSync(dir)) {
+      const st = statSync(dir);
+      if (st.isFile()) return [`${dir}|${st.size}|${st.mtimeMs}`];
+    }
+  } catch (error) {
+    observeCaughtError(error, "platform/engine/lib/managed-images");
+    return [];
+  }
   const walk = (abs: string) => {
     let entries: Dirent[];
     try {
       entries = readdirSync(abs, { withFileTypes: true });
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "platform/engine/lib/managed-images");
       return; // unreadable dir → contributes nothing rather than throwing the scan
     }
     for (const entry of entries) {
@@ -75,7 +86,8 @@ function statSignature(dir: string): string[] {
         try {
           const st = statSync(child);
           lines.push(`${relative(dir, child)}|${st.size}|${st.mtimeMs}`);
-        } catch {
+        } catch (diagnosticFailure) {
+          observeCaughtError(diagnosticFailure, "platform/engine/lib/managed-images");
           // Raced away between readdir and stat — skip it.
         }
       }
@@ -113,14 +125,16 @@ const devTagCache = new Map<string, { at: number; tag: string | undefined }>();
 export function devSourceTag(
   baseVersion: string,
   buildContext: string,
-  componentSubdir: string,
+  componentSubdir: string | readonly string[],
 ): string | undefined {
-  const dir = join(buildContext, componentSubdir);
+  const sources = typeof componentSubdir === "string" ? [componentSubdir] : componentSubdir;
+  const dir = JSON.stringify([baseVersion, buildContext, sources]);
   const now = Date.now();
   const cached = devTagCache.get(dir);
   if (cached && now - cached.at < DEV_TAG_TTL_MS) return cached.tag;
 
-  const lines = statSignature(dir);
+  const lines = sources.flatMap(source => statSignature(join(buildContext, source))
+    .map(line => `${source}|${line}`));
   const tag = lines.length
     ? `${baseVersion}-dev.${createHash("sha256").update(lines.sort().join("\n")).digest("hex").slice(0, 12)}`
     : undefined;
@@ -138,7 +152,8 @@ export function devSourceTag(
 export function devFallbackTag(
   baseVersion: string,
   spec?: { context: string; dockerfile: string },
+  sourcePaths?: readonly string[],
 ): string {
   if (!spec) return baseVersion;
-  return devSourceTag(baseVersion, spec.context, dirname(spec.dockerfile)) ?? baseVersion;
+  return devSourceTag(baseVersion, spec.context, sourcePaths ?? dirname(spec.dockerfile)) ?? baseVersion;
 }

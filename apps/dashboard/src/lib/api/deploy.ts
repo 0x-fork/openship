@@ -1,13 +1,15 @@
-import { api } from "./client";
+import { api, type RequestOptions } from "./client";
 import type { DeploymentPage, ListDeploymentsInput } from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type {
   StackId,
   ComposeAdvanced,
+  ComposeEnvironmentMeta,
   RoutingConfig,
   OpenshipResourceTier,
   OpenshipReadiness,
   WorkloadType,
+  StackRole,
 } from "@repo/core";
 import type {
   CloudResourceTier,
@@ -56,7 +58,7 @@ export interface RestorePlanUI {
   reason?: string;
 }
 
-export type PrepareProjectSource = { includeEnv?: boolean } & (
+export type PrepareProjectSource = { includeEnv?: boolean; rootDirectory?: string } & (
   | {
       source?: "github";
       owner: string;
@@ -89,21 +91,9 @@ export interface PrepareComposeService {
   ports: string[];
   dependsOn: string[];
   environment: Record<string, string>;
-  environmentMeta?: Record<
-    string,
-    {
-      source: "env-file" | "default" | "missing" | "interpolated";
-      variable?: string;
-      defaultValue?: string;
-      resolvedValue: string;
-      expression?: string;
-      /** The compose file marks this row mandatory (`${VAR:?…}`) and at least
-       *  one referenced variable is unresolved. */
-      required?: boolean;
-      /** Names referenced by an embedded expression that still need a value. */
-      unresolvedVariables?: string[];
-    }
-  >;
+  /** Parser-owned expressions; preview values are not a replacement for their source. */
+  environmentTemplates?: Record<string, string>;
+  environmentMeta?: Record<string, ComposeEnvironmentMeta>;
   volumes: string[];
   command?: string;
   restart?: string;
@@ -128,6 +118,8 @@ export interface PrepareAppConfig {
   installCommand: string;
   startCommand: string;
   buildImage: string;
+  runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   outputDirectory: string;
   rootDirectory: string;
   productionPaths: string[];
@@ -140,6 +132,16 @@ export type PrepareSingleAppCandidate = PrepareAppConfig;
 
 /** One deployable sub-app discovered inside a monorepo. */
 export interface PrepareMonorepoApp {
+  suggested?: boolean;
+  enabled?: boolean;
+  exposed?: boolean;
+  environment?: Record<string, string>;
+  publicEndpoints?: Array<{
+    port?: number;
+    domain?: string;
+    customDomain?: string;
+    domainType?: string;
+  }>;
   id: string;
   name: string;
   rootDirectory: string;
@@ -224,6 +226,10 @@ export interface PrepareProjectResponse extends PrepareAppConfig {
   readiness?: OpenshipReadiness;
   /** Ordered commands required before activating a single-app release. */
   releaseCommands?: string[] | null;
+  /** Declared runtime roles; absent means web only, a declared [] means none. */
+  roles?: StackRole[] | null;
+  /** Source-scan suggestions; enabling roles requires an explicit selection. */
+  rolePresets?: StackRole[] | null;
   /**
    * What the repo's openship.json parse refused (#641). Advisory — the deploy
    * runs either way, on the fields that did parse. Reaches the wizard without a
@@ -268,7 +274,7 @@ export const deployApi = {
    *  single-app, or the service id for a compose service) so it won't re-nag
    *  after a refresh. */
   skipPortCheck: (id: string, target: number | string) =>
-    api.post<any>(endpoints.deploy.skipPortCheck(id), { target }),
+    api.post<{ success: boolean }>(endpoints.deploy.skipPortCheck(id), { target }),
 
   /** Live, on-demand port-reachability audit of a PROJECT's active deployment
    *  (advisory) — powers the Domains tab's "port not reachable" hint. */
@@ -383,15 +389,15 @@ export const deployApi = {
   }) => api.post<any>(endpoints.deploy.buildAccess, payload),
 
   /** Poll build status */
-  getBuildStatus: (deploymentId: string) =>
-    api.get<any>(endpoints.deploy.buildStatus(deploymentId)),
+  getBuildStatus: (deploymentId: string, options?: RequestOptions) =>
+    api.get<any>(endpoints.deploy.buildStatus(deploymentId), options),
 
   /** Start a build by deployment ID */
   buildStart: (deployment_id: string) => api.post<any>(endpoints.deploy.buildStart(deployment_id)),
 
   /** Re-deploy an existing deployment */
-  buildRedeploy: (deployment_id: string) =>
-    api.post<any>(endpoints.deploy.buildRedeploy(deployment_id)),
+  buildRedeploy: (deployment_id: string, options?: { reuseBuild?: boolean }) =>
+    api.post<any>(endpoints.deploy.buildRedeploy(deployment_id), options),
 
   /** Check SSL certificate status for a domain */
   sslStatus: (domain: string) => api.post<any>(endpoints.deploy.sslStatus, { domain }),

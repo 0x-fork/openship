@@ -1,3 +1,4 @@
+import { diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { organizationOptions, isSaasDeployment } from "./organization-lifecycle";
 import { betterAuth, type User } from "better-auth";
 import { APIError } from "better-auth/api";
@@ -5,7 +6,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { bearer, mcp, emailOTP } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
 import { db, getDriver, repos, schema, and, eq, gt, sql } from "@repo/db";
-import { env, runtimeTarget, runtimeTargetId, trustedOrigins } from "../config/env";
+import { env, runtimeTarget, runtimeTargetId, trustedOrigins, localDashboardUrl } from "../config/env";
 import {
   resolveAuthBaseUrl,
   resolveDashboardPublicUrl,
@@ -19,6 +20,8 @@ import {
 import { provisionUser } from "./provision-user";
 import { socialProviderCredentials } from "./auth-providers";
 import { isAuthorizedLocalSignup } from "./local-bootstrap";
+import { accountSecurityPlugins } from "./account-security";
+import { getAuthMode } from "./auth-mode";
 
 /**
  * Better Auth - handles registration, login, OAuth, sessions, tokens.
@@ -84,6 +87,15 @@ const googleOAuth = socialProviderCredentials("google");
 
 export const auth = betterAuth({
   basePath: "/api/auth",
+  logger: {
+    level: "warn",
+    // Better Auth plugins can catch failures internally before returning an
+    // HTTP response. Retain those causes without dumping SDK request objects.
+    log(level, message, ...args) {
+      if (level === "error") errorDiagnostics.error("auth", message, ...args);
+      else if (level === "warn") errorDiagnostics.warn("auth", message, ...args);
+    },
+  },
   // Dynamic when served on a public URL — every absolute OAuth/auth URL is built
   // from the forwarded public host so remote MCP clients get reachable endpoints
   // (see resolveAuthBaseUrl). Static runtimeTarget.api otherwise (cloud/dev).
@@ -112,6 +124,8 @@ export const auth = betterAuth({
       oauthApplication: schema.oauthApplication,
       oauthAccessToken: schema.oauthAccessToken,
       oauthConsent: schema.oauthConsent,
+      passkey: schema.passkey,
+      twoFactor: schema.twoFactor,
     },
   }),
 
@@ -365,6 +379,13 @@ export const auth = betterAuth({
 
   /* ---------- Plugins ---------- */
   plugins: [
+    ...accountSecurityPlugins({
+      database: db,
+      // DB-discovered self-app domains construct URLs; they do not grant trust.
+      dashboardUrl: env.OPENSHIP_PUBLIC_URL || localDashboardUrl,
+      getAuthMode,
+    }),
+
     /**
      * Bearer auth — accepts `Authorization: Bearer <session.token>` as
      * an alternative to the session cookie. Needed for server-to-server
@@ -422,7 +443,7 @@ export const auth = betterAuth({
           // value throws at boot), and the `cloud-saas` row — production — cannot
           // reach this branch. It is NOT gated on NODE_ENV, which flips by accident.
           if (runtimeTargetId === "local-saas") {
-            console.warn(
+            errorDiagnostics.warn("platform/engine/lib/auth",
               `\n[dev:local-saas] email verification code for ${email}: ${otp}\n` +
                 `  (expires in 10 min. Logged because this target has no mail transport; ` +
                 `never happens on cloud-saas.)\n`,

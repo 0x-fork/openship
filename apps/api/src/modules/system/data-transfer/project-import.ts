@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import {
   db,
   createTransferReader,
@@ -15,7 +16,6 @@ import {
   type DatabaseTransaction,
 } from "@repo/db";
 import { isLoopbackHost } from "@repo/core";
-import { getCloudConnectionStatusForOrg } from "@repo/platform/engine/lib/cloud/session";
 import { needsExplicitServerMapping, transferServer } from "./export.service";
 import { resolveExportSelection, summarizeExportCounts } from "./selection";
 import { transferSecretsRequirePassphrase } from "./passphrase-crypto";
@@ -98,6 +98,7 @@ function normalizeHost(host: unknown): string {
 }
 function sameServer(source: TransferServer, target: TransferServer): boolean {
   return (
+    !!normalizeHost(source.host) &&
     !needsExplicitServerMapping(source) &&
     normalizeHost(source.host) === normalizeHost(target.host) &&
     source.port === target.port &&
@@ -278,7 +279,6 @@ export async function planProjectImport(
   selection: ImportSelection,
   context: ImportContext,
   reader: Reader = db,
-  cloud?: Awaited<ReturnType<typeof getCloudConnectionStatusForOrg>>,
 ): Promise<ProjectImportPlan> {
   validateImportSelection(selection);
   const allProjects = file.dump.tables.project ?? [];
@@ -341,8 +341,7 @@ export async function planProjectImport(
         row.id === project.id ||
         (row.organizationId === context.organizationId &&
           !row.deletedAt &&
-          ((row.groupId === groupId && row.environmentSlug === project.environmentSlug) ||
-            (!!project.cloudWorkspaceId && row.cloudWorkspaceId === project.cloudWorkspaceId))),
+          row.groupId === groupId && row.environmentSlug === project.environmentSlug),
     );
     const match = matches[0];
     const selected = requested.includes(String(project.id));
@@ -392,6 +391,7 @@ export async function planProjectImport(
       : { tables: {}, serverIds: [], warnings: [] };
     assertActiveDeploymentOwnership(graph.tables);
   } catch (error) {
+    observeCaughtError(error, "api/modules/system/data-transfer/project-import");
     throw new ProjectImportError(
       error instanceof Error ? error.message : "The selected project snapshot is incomplete.",
     );
@@ -445,7 +445,7 @@ export async function planProjectImport(
     if (!sourceServers.has(String(row.id))) sourceServers.set(String(row.id), transferServer(row));
   }
   const neededServerIds = new Set(graph.serverIds);
-  if ((graph.tables.project ?? []).some((row) => !row.serverId && !row.cloudWorkspaceId))
+  if ((graph.tables.project ?? []).some((row) => !row.serverId && !row.workspaceId))
     neededServerIds.add("local");
   if (
     (graph.tables.deployment ?? []).some(
@@ -512,31 +512,6 @@ export async function planProjectImport(
     (row) => !retargetedServerIds.has(typeof row.serverId === "string" ? row.serverId : "local"),
   );
 
-  const cloudProjects = (graph.tables.project ?? []).filter((row) => row.cloudWorkspaceId);
-  if (cloudProjects.length) {
-    const connection = cloud ?? (await getCloudConnectionStatusForOrg(context.organizationId));
-    const expected = new Set(
-      cloudProjects
-        .map((project) =>
-          file.manifest?.cloudAccounts
-            .find((account) => account.organizationId === project.organizationId)
-            ?.email?.toLowerCase(),
-        )
-        .filter(Boolean),
-    );
-    if (!connection.connected || !connection.user?.email)
-      blockers.push(
-        "Connect this destination workspace to the source Openship Cloud account before importing cloud projects. Cloud servers will not work with a different account.",
-      );
-    else if ([...expected].some((email) => email !== connection.user!.email.toLowerCase()))
-      blockers.push(
-        `Cloud account mismatch. Connect this workspace to ${[...expected].join(", ")} before importing these cloud projects.`,
-      );
-    else if (expected.size === 0)
-      warnings.push(
-        "The source cloud identity is unavailable in this archive. Verify that the connected account owns these cloud workspaces.",
-      );
-  }
   if (!file.secrets || selection.includeSecrets === false)
     warnings.push(
       "Environment values and credentials will not be restored. Existing destination secrets are kept when overwriting; add missing values before deploying new projects.",
@@ -578,8 +553,11 @@ export async function planProjectImport(
       }
       if (name === "project") {
         row.deletionInProgress = false;
-        if (!source.serverId && !source.cloudWorkspaceId)
+        if (!source.serverId && !source.workspaceId)
           row.serverId = maps.get("servers")?.get("local") ?? null;
+        // A subscription cannot be imported. Placement comes only from the
+        // selected, organization-owned destination server, never archive IDs.
+        row.workspaceId = destinationServers.find(server => server.id === row.serverId)?.workspaceId ?? null;
       }
       return row;
     });
@@ -684,7 +662,9 @@ export async function planProjectImport(
   const retargetedProjects = new Set<string>();
   for (const project of graph.tables.project ?? []) {
     const serverId = typeof project.serverId === "string" ? project.serverId : "local";
-    if (!project.cloudWorkspaceId && retargetedServerIds.has(serverId)) {
+    // Managed projects are configuration imports. Reusing their remote runtime
+    // handles would create two controllers claiming the same running workload.
+    if (project.workspaceId || retargetedServerIds.has(serverId)) {
       retargetedProjects.add(maps.get("project")?.get(String(project.id)) ?? String(project.id));
     }
   }
@@ -720,6 +700,14 @@ export async function planProjectImport(
       // A transferred hook must be explicitly delegated by a user in this
       // installation. Imported JSON must never forge an execution identity.
       if (name === "incoming_webhook") next.executionAuthority = null;
+      if (name === "route_protection") next.appliedRevision = null;
+      // Project archives omit preview ownership and builder-local cache proof.
+      // Re-enable automation explicitly after import on the destination.
+      if (name === "project") {
+        next.previewSettings = null;
+        next.previewScannedAt = null;
+        next.buildCacheReceipts = null;
+      }
       for (const [key, value] of Object.entries(next)) {
         if (typeof value === "string" && SOFT_REFS[key])
           next[key] = maps.get(SOFT_REFS[key]!)?.get(value) ?? value;
@@ -758,11 +746,17 @@ export async function planProjectImport(
         (name === "service_deployment" && retargetedDeployments.has(String(next.deploymentId)))
       ) {
         next.containerId = null;
+        next.imageRef = null;
         if (name === "deployment") {
           next.meta = null;
           next.status = "cancelled";
+          next.artifactRetainedAt = null;
+          next.pinned = false;
         } else {
+          next.allocatedResources = null;
+          next.hostPort = null;
           next.hostPorts = null;
+          next.ip = null;
           next.status = "stopped";
         }
       }

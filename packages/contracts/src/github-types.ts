@@ -53,6 +53,7 @@ export interface GitHubInstallation {
   };
   app_id: number;
   target_type: string;
+  suspended_at?: string | null;
   permissions: Record<string, string>;
   events: string[];
 }

@@ -13,6 +13,7 @@
  * Unit location: /etc/systemd/system/ (standard for admin-created units)
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import type { CommandExecutor, LogEntry, LogCallback, ResourceUsage, RuntimeLogStreamOptions } from "../../types";
 import type { ProcessSupervisor, SupervisorDeployOpts } from "./types";
 import { sampleBareUsage, ZERO_USAGE } from "./usage";
@@ -21,6 +22,7 @@ import { portOccupantDetails, probeListeningPort } from "../port-conflict";
 import { managedDeploymentUnitName } from "../../system/port-owner";
 import { execReliable } from "../../system/remote-journal";
 import { DeployError } from "@repo/core";
+import { ensureOwnedDir } from "../../system/elevated-executor";
 
 /**
  * Escape an env value for a double-quoted systemd `Environment=` assignment.
@@ -74,7 +76,6 @@ export class SystemdSupervisor implements ProcessSupervisor {
   }
 
   private async writeArtifactPath(id: string, path: string): Promise<void> {
-    await this.artifactExecutor.mkdir(`${this.workDir}/.artifacts`);
     await this.artifactExecutor.writeFile(this.artifactFile(id), path);
   }
 
@@ -82,7 +83,8 @@ export class SystemdSupervisor implements ProcessSupervisor {
     try {
       const content = await this.artifactExecutor.readFile(this.artifactFile(id));
       return content.trim() || null;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/systemd");
       return null;
     }
   }
@@ -131,6 +133,9 @@ WantedBy=multi-user.target
   // ── Lifecycle ────────────────────────────────────────────────────────
 
   async deploy(opts: SupervisorDeployOpts): Promise<void> {
+    // Metadata uses the deployment login, even when systemctl uses sudo.
+    // Check its directory before activating a process we could not track.
+    await ensureOwnedDir(this.artifactExecutor, `${this.workDir}/.artifacts`);
     const unitContent = this.buildUnitFile(opts);
     const unitPath = this.unitPath(opts.deploymentId);
     const unitName = this.unitName(opts.deploymentId);
@@ -161,7 +166,8 @@ WantedBy=multi-user.target
           `journalctl -u ${sq(unitName)} -n 10 --no-pager 2>/dev/null`,
         );
         hint = tail.trim();
-      } catch { /* journal may not be readable */ }
+      } catch (diagnosticFailure) {
+        observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/systemd"); /* journal may not be readable */ }
 
       // Detect EADDRINUSE - another process is holding the port
       if (hint.includes("EADDRINUSE")) {
@@ -186,7 +192,8 @@ WantedBy=multi-user.target
     const unitName = this.unitName(deploymentId);
     try {
       await this.executor.exec(`systemctl stop ${sq(unitName)} 2>/dev/null || true`);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/systemd");
       // Unit may not exist - that's OK
     }
   }
@@ -235,7 +242,8 @@ WantedBy=multi-user.target
         `systemctl is-active ${sq(unitName)} 2>/dev/null || true`,
       );
       return result.trim() === "active";
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/systemd");
       return false;
     }
   }
@@ -263,7 +271,8 @@ WantedBy=multi-user.target
         `/sys/fs/cgroup/system.slice/${unitName}`,
         `/sys/fs/cgroup/system.slice/${unitName}/init.scope`,
       ]);
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/systemd");
       return { ...ZERO_USAGE };
     }
   }
@@ -288,7 +297,8 @@ WantedBy=multi-user.target
             level: parseLogLevel(line),
           };
         });
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/systemd");
       return [];
     }
   }
@@ -321,6 +331,7 @@ WantedBy=multi-user.target
           : new Error(`Log reader exited with code ${result.code}`));
       },
       (error) => {
+        observeCaughtError(error, "adapters/runtime/supervisor/systemd");
         if (!stopped) opts?.onEnd?.(error instanceof Error ? error : new Error(String(error)));
       },
     );
@@ -329,7 +340,9 @@ WantedBy=multi-user.target
       stopped = true;
       this.executor
         .exec(`pkill -f ${sq(`journalctl.*${unitName}`)} 2>/dev/null || true`)
-        .catch(() => {});
+        .catch((diagnosticFailure) => {
+          observeCaughtError(diagnosticFailure, "adapters/runtime/supervisor/systemd");
+        });
     };
   }
 }

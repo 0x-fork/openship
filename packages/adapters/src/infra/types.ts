@@ -15,16 +15,32 @@
 
 import type { ManualCert, RouteConfig, SslResult } from "../types";
 import type { OutputProbeResult, StaticProbeOptions } from "../system/output-exists";
+import type { RouteProtection } from "./route-protection";
 
 // ─── Routing ─────────────────────────────────────────────────────────────────
 
+export type ProjectRouteCleanupResult = "removed" | "absent" | "foreign";
+
 export interface RoutingProvider {
+  /** Validated atomic update of an already-published hostname; false means no route yet. */
+  setRouteProtection?(
+    domain: string,
+    policy: RouteProtection | null,
+  ): Promise<boolean>;
   /** Register a reverse-proxy route (domain → container/process) */
   registerRoute(route: RouteConfig): Promise<void>;
 
   /** Remove a reverse-proxy route. Providers that can roll back a failed
    * removal must not recreate it after the caller has abandoned the attempt. */
   removeRoute(domain: string, opts?: { signal?: AbortSignal }): Promise<void>;
+
+  /** Project-scoped teardown may preserve a route freshly proven to belong to
+   * another project. Unknown ownership must reject. A foreign result also forbids
+   * a later generic release of the managed hostname. */
+  removeProjectRoute?(domain: string): Promise<ProjectRouteCleanupResult>;
+
+  /** Pause a file-served site while retaining its hostname and certificate. */
+  suspendRoute?(domain: string): Promise<void>;
 
   /**
    * Re-emit vhosts an older generator wrote, so a fix to the EMITTED config shape reaches

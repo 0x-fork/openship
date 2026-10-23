@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { Icon as UiIcon, type IconName } from "@repo/ui/icons";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -24,7 +25,7 @@ import { serviceDisplayUrl } from "@/utils/route-display";
 import { backupsApi, getApiErrorCode, getApiErrorMessage, type BackupPolicy } from "@/lib/api";
 import { PolicyEditor } from "@/components/backup/PolicyEditor";
 import { BackupRunCard } from "@/components/backup/BackupRunCard";
-import { ServiceTerminal } from "@/components/terminal/ServiceTerminal";
+import { ConnectionNotice } from "@/components/shared/ConnectionNotice";
 import { useTheme } from "@/components/theme-provider";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/button";
@@ -34,13 +35,17 @@ import { ServiceEnvironmentPanel } from "./ServiceEnvironmentPanel";
 import { TerminalLogs } from "../logs/TerminalLogs";
 import { endpoints } from "@/lib/api/endpoints";
 import { useI18n, interpolate } from "@/components/i18n-provider";
-import { useLocalhostForward } from "@/hooks/useLocalhostForward";
 import { UseInProjectModal } from "../UseInProjectModal";
 import { ServiceOverview } from "./ServiceOverview";
+import { ServiceTerminalPanel } from "./ServiceTerminalPanel";
 import { ServiceVolumesPanel } from "./ServiceVolumesPanel";
 import { ServiceDomainsPanel } from "./ServiceDomainsPanel";
+import { ServiceLocalhostAction } from "./ServiceLocalhostAction";
 import type { ServiceDomainIntent } from "./ServicePortsCard";
 import { configuredServiceEndpoints } from "@/lib/service-endpoints";
+import { useRuntimeUpdate } from "@/hooks/useRuntimeUpdate";
+import { RuntimeRedeployMenu } from "@/components/project-settings/RuntimeRedeployMenu";
+import { RuntimeImageUpdateNotice } from "@/components/project-settings/RuntimeImageUpdateNotice";
 
 type ServiceTab = "overview" | "terminal" | "logs" | "env" | "domains" | "volumes" | "settings" | "backup";
 const SERVICE_TAB_DEFS: TabDef<ServiceTab>[] = [
@@ -61,7 +66,9 @@ interface ServiceDetailPanelProps {
   container?: ServiceContainer;
   /** An outstanding runtime read, distinct from a confirmed stopped service. */
   containerChecking?: boolean;
+  containerError?: string | null;
   projectId: string;
+  workspaceId?: string | null;
   projectSlugBase: string;
   /** Tab to open on mount (from the URL: /services/[id]/[tab]). */
   initialTab?: string;
@@ -92,7 +99,9 @@ export function ServiceDetailPanel({
   service,
   container,
   containerChecking,
+  containerError,
   projectId,
+  workspaceId,
   projectSlugBase,
   initialTab,
   onRefresh,
@@ -108,8 +117,10 @@ export function ServiceDetailPanel({
 }: ServiceDetailPanelProps) {
   const { baseDomain } = usePlatform();
   const { showToast } = useToast();
-  const showCloudPricing = useCloudDeployPricing();
-  const environmentApply = useServiceEnvironmentApply(projectId, onRefresh);
+  const showCloudPricing = useCloudDeployPricing(workspaceId);
+  const environmentApply = useServiceEnvironmentApply(projectId, onRefresh, workspaceId);
+  const runtimeUpdate = useRuntimeUpdate(projectId, service.id, workspaceId,
+    JSON.stringify([activeDeploymentId, service.image, service.build, service.buildImage]));
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
   const router = useRouter();
@@ -120,36 +131,11 @@ export function ServiceDetailPanel({
   const [deleting, setDeleting] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [redeploying, setRedeploying] = useState(false);
+  const [resettingStorage, setResettingStorage] = useState(false);
+  const storageResetPending = useRef(false);
   const applyingEnvironment = environmentApply.applyingServiceId !== null;
-  const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment;
+  const serviceOperationBusy = actionLoading !== null || deploying || redeploying || applyingEnvironment || resettingStorage || runtimeUpdate.updating;
   const status = getServiceStatus(service, container, containerChecking);
-
-  // Desktop-only "Open": SSH-forward this service's published host port onto
-  // localhost and open it — the same affordance the project card offers. Hidden
-  // unless we're a desktop dashboard managing a remote server (backend 404s
-  // otherwise). Port comes from the live container, else the compose mapping.
-  const { canForward, forward } = useLocalhostForward({ serverId, deployTarget });
-  const [openingLocal, setOpeningLocal] = useState(false);
-  const forwardPort =
-    container?.hostPort ||
-    (() => {
-      for (const p of service.ports ?? []) {
-        const parts = String(p).split(":");
-        const host = parts.length >= 2 ? Number(parts[parts.length - 2]) : NaN;
-        if (Number.isFinite(host)) return host;
-      }
-      return service.exposedPort ? Number(service.exposedPort) : 0;
-    })();
-  const canOpenLocal = canForward && Number.isFinite(forwardPort) && forwardPort > 0;
-  const openOnLocalhost = async () => {
-    if (!forwardPort || openingLocal) return;
-    setOpeningLocal(true);
-    try {
-      await forward(forwardPort, "open");
-    } finally {
-      setOpeningLocal(false);
-    }
-  };
 
   // Backup only applies to compose services (stateful containers) — never
   // monorepo sub-apps (source-built frontends).
@@ -208,16 +194,24 @@ export function ServiceDetailPanel({
   // the parked session rather than spawning a fresh shell.
   const [terminalResumeToken, setTerminalResumeToken] = useState<string | null>(null);
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const key = `openship.serviceterm.resume.${service.id}`;
-    setTerminalResumeToken(window.localStorage.getItem(key));
+    try {
+      if (typeof window === "undefined" || !window.localStorage) return;
+      const key = `openship.serviceterm.resume.${service.id}`;
+      setTerminalResumeToken(window.localStorage.getItem(key));
+    } catch {
+      // diagnostics-ignore: localStorage access may fail in restricted/private browsing mode.
+    }
   }, [service.id]);
   const persistResumeToken = (token: string | null) => {
     setTerminalResumeToken(token);
-    if (typeof window === "undefined") return;
-    const key = `openship.serviceterm.resume.${service.id}`;
-    if (token) window.localStorage.setItem(key, token);
-    else window.localStorage.removeItem(key);
+    try {
+      if (typeof window === "undefined" || !window.localStorage) return;
+      const key = `openship.serviceterm.resume.${service.id}`;
+      if (token) window.localStorage.setItem(key, token);
+      else window.localStorage.removeItem(key);
+    } catch {
+      // diagnostics-ignore: localStorage write may fail in restricted/private browsing mode.
+    }
   };
 
   // ── Backup section state ────────────────────────────────────────────
@@ -368,7 +362,10 @@ export function ServiceDetailPanel({
         changeTab("env");
         return;
       }
-      if (action !== "stop" && showCloudPricing(err)) return;
+      if (action !== "stop" && showCloudPricing(err, async () => {
+        await servicesApi[action](projectId, service.id);
+        onRefresh();
+      })) return;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.deployFailed),
         "error",
@@ -399,9 +396,8 @@ export function ServiceDetailPanel({
   const handleDeployStart = async () => {
     setDeploying(true);
     try {
-      // Start provisions this service in its existing runtime layout. Compose
-      // reuses the project Docker workspace, which may need a larger allocation;
-      // native Cloud uses a separate service workspace. No build page is needed.
+      // Start provisions this image service on the project's selected server
+      // through the shared Docker deployer. No source build is needed.
       const res = await servicesApi.start(projectId, service.id);
       if ((res as any)?.success === false) {
         setDeploying(false);
@@ -433,16 +429,16 @@ export function ServiceDetailPanel({
   /**
    * PIPELINE services only (compose stack / monorepo sub-app / source-built):
    * rebuild + redeploy ONLY this service and land on the build screen. Image
-   * apps don't get this — they Start/Stop.
+   * apps use the shared image refresh operation when redeploying.
    */
   const handleRedeployService = async () => {
     if (!activeDeploymentId) {
       showToast(t.projectDetail.services.detail.toast.deployFirstRedeploy, "error", service.name);
-      return;
+      return false;
     }
     if (!service.enabled) {
       showToast(t.projectDetail.services.detail.toast.enableBeforeRedeploy, "error", service.name);
-      return;
+      return false;
     }
     setRedeploying(true);
     try {
@@ -454,18 +450,20 @@ export function ServiceDetailPanel({
           "error",
           service.name,
         );
-        return;
+        return false;
       }
       const newId = res?.data?.deployment?.id;
       router.push(newId ? `/build/${newId}` : `/projects/${projectId}/deployments`);
+      return true;
     } catch (err) {
       setRedeploying(false);
-      if (showCloudPricing(err)) return;
+      if (showCloudPricing(err)) return false;
       showToast(
         getApiErrorMessage(err, t.projectDetail.services.detail.toast.redeployFailed),
         "error",
         service.name,
       );
+      return false;
     }
   };
 
@@ -526,6 +524,7 @@ export function ServiceDetailPanel({
       onDeleted?.();
       await onRefresh();
     } catch (error) {
+      observeCaughtError(error, "dashboard/app/(dashboard)/projects/[id]/components/services/ServiceDetailPanel");
       showToast(
         error instanceof Error ? error.message : t.projectDetail.services.detail.toast.deleteFailed,
         "error",
@@ -598,6 +597,16 @@ export function ServiceDetailPanel({
           </div>
         </div>
         <div className="ms-auto flex max-w-full flex-wrap items-center gap-2">
+          {service.enabled && activeDeploymentId && (
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="secondary" className="h-9" disabled={serviceOperationBusy}
+                onClick={() => void (usesDeployPipeline ? handleRedeployService() : runtimeUpdate.update())}>
+                <UiIcon name="rocket" className="size-3.5" />
+                {redeploying || runtimeUpdate.updating ? t.projectDetail.services.detail.redeploying : t.projectDetail.services.detail.redeploy}
+              </Button>
+              <RuntimeRedeployMenu runtime={runtimeUpdate} disabled={serviceOperationBusy} />
+            </div>
+          )}
           {resolvedUrl && (
             <Button asChild variant="secondary" size="sm" className="h-9">
               <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" title={resolvedUrl}>
@@ -617,20 +626,12 @@ export function ServiceDetailPanel({
               <UiIcon name="plug" className="size-3.5" />{t.projects.connections.useInProject}
             </Button>
           )}
-          {canOpenLocal && (
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={openOnLocalhost}
-              disabled={openingLocal}
-              title={t.projects.connections.openLocalhost}
-              className="h-9"
-            >
-              <UiIcon name="devices" className={openingLocal ? "size-3.5 animate-pulse" : "size-3.5"} />
-              {t.projects.connections.openLocalhost}
-            </Button>
-          )}
+          <ServiceLocalhostAction
+            service={service}
+            container={container}
+            serverId={serverId}
+            deployTarget={deployTarget}
+          />
           <Button
             type="button"
             variant="ghost"
@@ -657,6 +658,7 @@ export function ServiceDetailPanel({
       </div>
 
       {/* ── Tab strip ──────────────────────────────────────────── */}
+      <RuntimeImageUpdateNotice result={runtimeUpdate.checkResult} busy={serviceOperationBusy} onRefresh={runtimeUpdate.update} />
       <Tabs
         className="border-b-0"
         size="md"
@@ -672,6 +674,16 @@ export function ServiceDetailPanel({
         value={activeTab}
         onChange={changeTab}
       />
+
+      {status === "unknown" && activeTab !== "terminal" && (
+        <ConnectionNotice
+          title={t.projectDetail.services.connection.statusTitle}
+          message={t.projectDetail.services.connection.statusHint}
+          detail={containerError || undefined}
+          onRetry={onRefresh}
+          retrying={containerChecking}
+        />
+      )}
 
       {/* ── Overview ───────────────────────────────────────────── */}
       {activeTab === "overview" && (
@@ -702,6 +714,19 @@ export function ServiceDetailPanel({
           projectId={projectId}
           deployTarget={deployTarget}
           onSave={(volumes) => handleUpdateService({ volumes })}
+          operationBusy={serviceOperationBusy}
+          onResetVolumes={activeDeploymentId && service.enabled ? async (volumes, configured) => {
+            if (storageResetPending.current) return { configured, started: false };
+            storageResetPending.current = true;
+            setResettingStorage(true);
+            try {
+              if (!configured) await handleUpdateService({ volumes });
+              return { configured: true, started: await handleRedeployService() };
+            } finally {
+              storageResetPending.current = false;
+              setResettingStorage(false);
+            }
+          } : undefined}
           onBackup={supportsBackup ? handleVolumeBackup : undefined}
           backupBusy={backupLoading || backupRunning || !!backupError}
           backupFeedback={supportsBackup ? backupFeedback : undefined}
@@ -709,27 +734,20 @@ export function ServiceDetailPanel({
       )}
 
       {/* ── Terminal ───────────────────────────────────────────── */}
-      {activeTab === "terminal" &&
-        (status === "running" ? (
-          <div className="min-h-[460px]">
-            <ServiceTerminal
-              serviceId={service.id}
-              enabled={true}
-              name={service.name}
-              theme={resolvedTheme === "light" ? "light" : "dark"}
-              resumeToken={terminalResumeToken}
-              onResumeTokenChange={persistResumeToken}
-            />
-          </div>
-        ) : (
-          <div className="flex min-h-[220px] items-center justify-center rounded-2xl border border-dashed border-border/50 bg-muted/10 text-xs text-muted-foreground">
-            {status === "checking" || status === "unknown" ? (
-              <ServiceStatusBadge status={status} />
-            ) : (
-              t.projectDetail.services.detail.startShellHint
-            )}
-          </div>
-        ))}
+      {activeTab === "terminal" && (
+        <ServiceTerminalPanel
+          serviceId={service.id}
+          name={service.name}
+          status={status}
+          checking={containerChecking}
+          error={containerError}
+          onRefresh={onRefresh}
+          onSettings={() => changeTab("settings")}
+          theme={resolvedTheme === "light" ? "light" : "dark"}
+          resumeToken={terminalResumeToken}
+          onResumeTokenChange={persistResumeToken}
+        />
+      )}
 
       {/* ── Logs ───────────────────────────────────────────────── */}
       {activeTab === "logs" && (
@@ -756,6 +774,12 @@ export function ServiceDetailPanel({
             operationBusy={serviceOperationBusy}
             onDirtyChange={setEnvDirty}
             onApply={() => environmentApply.apply(service)}
+            onDeploy={usesDeployPipeline ? (activeDeploymentId ? handleRedeployService : undefined) : handleDeployStart}
+            deployLabel={
+              usesDeployPipeline
+                ? t.projectDetail.services.detail.redeploy
+                : t.projectDetail.services.detail.start
+            }
           />
         </div>
       )}
@@ -825,22 +849,6 @@ export function ServiceDetailPanel({
                     />
                   )
                 )}
-                {/* Pipeline services (compose / monorepo / source-built) keep the
-                    per-service Redeploy → build page. Image apps never show it. */}
-                {usesDeployPipeline && service.enabled && activeDeploymentId && (
-                  <ActionButton
-                    icon={"rocket"}
-                    label={
-                      redeploying
-                        ? t.projectDetail.services.detail.redeploying
-                        : t.projectDetail.services.detail.redeploy
-                    }
-                    loading={redeploying}
-                    disabled={serviceOperationBusy}
-                    onClick={handleRedeployService}
-                    variant="primary"
-                  />
-                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -876,6 +884,7 @@ export function ServiceDetailPanel({
           <ServiceSettingsForm
             service={service}
             includeVolumes={false}
+            enableAutomationActions
             siblingServiceNames={switchableServices
               .filter((s) => s.id !== service.id)
               .map((s) => s.name)

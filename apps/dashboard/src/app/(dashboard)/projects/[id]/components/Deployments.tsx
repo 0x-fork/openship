@@ -1,5 +1,6 @@
 "use client";
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { Icon as UiIcon } from "@repo/ui/icons";
 
 import React from "react";
@@ -14,8 +15,10 @@ import { useCloudDeployPricing } from "@/hooks/useCloudDeployPricing";
 import { useToast } from "@/context/ToastContext";
 import { useI18n, interpolate } from "@/components/i18n-provider";
 import { useRouter } from "next/navigation";
-import DropdownMenu from "@/components/ui/DropdownMenu";
 import WarningCallout from "@/components/shared/WarningCallout";
+import { useRuntimeUpdate } from "@/hooks/useRuntimeUpdate";
+import { RuntimeRedeployMenu } from "@/components/project-settings/RuntimeRedeployMenu";
+import { RuntimeImageUpdateNotice } from "@/components/project-settings/RuntimeImageUpdateNotice";
 import {
   hasConnectedDomain,
   isPotentiallyPublicService,
@@ -35,11 +38,16 @@ export const Deployments = () => {
   } = useProjectSettings();
   const { t } = useI18n();
   const { showToast } = useToast();
-  const showCloudPricing = useCloudDeployPricing();
+  const showCloudPricing = useCloudDeployPricing(projectData.workspaceId);
   const { showModal, hideModal } = useModal();
   const router = useRouter();
 
   const [isRedeploying, setIsRedeploying] = React.useState(false);
+  const runtimeUpdate = useRuntimeUpdate(id, undefined, projectData?.workspaceId,
+    JSON.stringify([projectData?.activeDeploymentId, projectData?.buildImage, projectData?.runtimeImage, projectData?.releaseSource?.imageTemplate]));
+  const hasServiceRuntime = servicesData.services.some((service) => service.enabled);
+  const canUpdateRuntime = projectData?.activeDeploymentId && (hasServiceRuntime ||
+    projectData?.runtimeMode !== "bare");
   // The Openship control-plane self-app has no deployable source and updates
   // itself via the CLI — redeploy/self-update controls would only 403, so hide them.
   const isSelfApp = projectData?.appTemplateId === "openship";
@@ -70,7 +78,8 @@ export const Deployments = () => {
         if (cancelled) return;
         setBlockedAction(res?.data?.actions?.find((a) => a.kind === "deploy_blocked") ?? null);
       })
-      .catch(() => {
+      .catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "dashboard/app/(dashboard)/projects/[id]/components/Deployments");
         /* best-effort — the status badge already says Action Required */
       });
     return () => {
@@ -113,7 +122,7 @@ export const Deployments = () => {
         const res = await deployApi.trigger(body);
         openTriggeredBuild(router, res, projectData.id);
       } catch (error) {
-        if (showCloudPricing(error)) {
+        if (showCloudPricing(error, () => runRedeploy(mode))) {
           setIsRedeploying(false);
           return;
         }
@@ -129,7 +138,7 @@ export const Deployments = () => {
           router.push(`/projects/${projectData.id}/deployments`);
           return;
         }
-        console.error("Redeploy failed:", error);
+        errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/Deployments", "Redeploy failed:", error);
         showToast(
           getApiErrorMessage(
             error,
@@ -147,7 +156,7 @@ export const Deployments = () => {
   );
 
   const handleRedeploy = async () => {
-    if (!projectData?.id || isRedeploying) return;
+    if (!projectData?.id || isRedeploying || runtimeUpdate.updating) return;
 
     setIsRedeploying(true);
     try {
@@ -220,7 +229,7 @@ export const Deployments = () => {
 
       await runRedeploy();
     } catch (error) {
-      console.error("Error redeploying project:", error);
+      errorDiagnostics.error("dashboard/app/(dashboard)/projects/[id]/components/Deployments", "Error redeploying project:", error);
       showToast(t.projects.redeploy.failedRedeploy, "error", t.projects.redeploy.errorTitle);
     } finally {
       setIsRedeploying(false);
@@ -243,7 +252,7 @@ export const Deployments = () => {
             <button
               type="button"
               onClick={() => void handleRedeploy()}
-              disabled={isRedeploying}
+              disabled={isRedeploying || runtimeUpdate.updating}
               className="rounded-lg bg-danger-solid px-3 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-danger-solid/90 disabled:opacity-60"
             >
               {isRedeploying ? t.projects.redeploy.deploying : t.projects.deployBlocked.redeploy}
@@ -306,7 +315,7 @@ export const Deployments = () => {
             <button
               type="button"
               onClick={handleRedeploy}
-              disabled={isRedeploying}
+              disabled={isRedeploying || runtimeUpdate.updating}
               className="rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               {isRedeploying ? t.projects.redeploy.deploying : t.projects.redeploy.redeployLatest}
@@ -342,7 +351,7 @@ export const Deployments = () => {
             <button
               type="button"
               onClick={handleRedeploy}
-              disabled={isRedeploying}
+              disabled={isRedeploying || runtimeUpdate.updating}
               className="rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               {isRedeploying ? t.projects.redeploy.deploying : t.projects.redeploy.deployVersion}
@@ -351,7 +360,10 @@ export const Deployments = () => {
         />
       )}
 
-      {!isSelfApp && availableUpdate?.mode === "image" && (
+      {!isSelfApp && <RuntimeImageUpdateNotice result={runtimeUpdate.checkResult}
+        busy={isRedeploying || runtimeUpdate.updating} onRefresh={runtimeUpdate.update} />}
+
+      {!isSelfApp && availableUpdate?.mode === "image" && !runtimeUpdate.checkResult?.images.some((image) => image.status === "update_available") && (
         <WarningCallout
           title={t.projectSettings.appSource.updateAvailable}
           description={availableUpdate.services?.filter((service) => service.behind)
@@ -360,7 +372,7 @@ export const Deployments = () => {
             <button
               type="button"
               onClick={() => runRedeploy("update")}
-              disabled={isRedeploying}
+              disabled={isRedeploying || runtimeUpdate.updating}
               className="rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
             >
               {isRedeploying ? t.projects.redeploy.deploying : t.projectSettings.appSource.update}
@@ -393,18 +405,18 @@ export const Deployments = () => {
             <div className="flex items-center gap-2 shrink-0">
               <button
                 onClick={handleRedeploy}
-                disabled={isRedeploying}
+                disabled={isRedeploying || runtimeUpdate.updating}
                 className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:bg-primary/50"
               >
                 {isRedeploying
                   ? t.projects.redeploy.deployingButton
                   : t.projects.redeploy.redeployProject}
               </button>
-              <DropdownMenu
-                align="right"
-                disabled={isRedeploying}
-                triggerClassName="inline-flex items-center justify-center rounded-xl border border-border/60 bg-muted/30 p-2.5 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                trigger={<UiIcon name="chevron-down" className="size-4" />}
+              <RuntimeRedeployMenu
+                size="default"
+                runtime={runtimeUpdate}
+                supported={!!canUpdateRuntime}
+                disabled={isRedeploying || runtimeUpdate.updating}
                 actions={[
                   {
                     id: "refresh",

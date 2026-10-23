@@ -31,6 +31,9 @@ export interface PinnedArtifactSnapshot extends SnapshotClassInput {
   handoverImages?: Record<string, string>;
   /** Single-app equivalent: the whole release is this one image. */
   handoverAppImage?: string;
+  /** Server-classified primary source app in a frozen attached-services topology.
+   * Its service row and single-app engine refer to the same artifact. */
+  primaryAppServiceName?: string;
   /**
    * Env-only single-app refresh: reuse the ACTIVE deployment's retained
    * artifact. Docker pairs this with handoverAppImage; Bare resolves the
@@ -51,6 +54,11 @@ export interface PinnedArtifactSnapshot extends SnapshotClassInput {
   strictServiceScope?: boolean;
   refreshServiceIds?: string[];
   forcePullImages?: boolean;
+  completedBuildArtifacts?: unknown;
+  retryBuildFromDeploymentId?: string;
+  roleConfiguration?: unknown;
+  webOwnerDeploymentId?: string;
+  capacityAdjustment?: { key: string; requestHash: string };
   composeServices?: Array<{
     name: string;
     enabled?: boolean;
@@ -73,15 +81,22 @@ export function pinnedImageForService(
   snapshot: PinnedArtifactSnapshot | null | undefined,
   serviceName: string | null | undefined,
 ): string | undefined {
-  if (!snapshot?.handoverImages || !serviceName) return undefined;
-  return nonEmpty(snapshot.handoverImages[serviceName]);
+  if (!snapshot || !serviceName) return undefined;
+  return serviceName === snapshot.primaryAppServiceName
+    ? pinnedAppImage(snapshot)
+    : nonEmpty(snapshot.handoverImages?.[serviceName]);
 }
 
 /** The pinned image for a single-app deploy, if any. */
 export function pinnedAppImage(
   snapshot: PinnedArtifactSnapshot | null | undefined,
 ): string | undefined {
-  return nonEmpty(snapshot?.handoverAppImage);
+  return (
+    nonEmpty(snapshot?.handoverAppImage) ??
+    (snapshot?.primaryAppServiceName
+      ? nonEmpty(snapshot.handoverImages?.[snapshot.primaryAppServiceName])
+      : undefined)
+  );
 }
 
 export function refreshAppDeploymentId(
@@ -107,6 +122,18 @@ export function hasPinnedArtifacts(snapshot: PinnedArtifactSnapshot | null | und
   return Object.values(snapshot?.handoverImages ?? {}).some((ref) => !!nonEmpty(ref));
 }
 
+/** Only strict refreshes promise not to fall back to building. Ordinary
+ * rollback/migration pins may be reclaimed, so they still reserve build capacity. */
+export function strictRefreshImages(
+  snapshot: PinnedArtifactSnapshot,
+): Readonly<Record<string, string>> | undefined {
+  return snapshot.strictServiceScope &&
+    snapshot.targetServiceIds?.length &&
+    snapshot.targetServiceIds.every((id) => snapshot.refreshServiceIds?.includes(id))
+    ? snapshot.handoverImages
+    : undefined;
+}
+
 /** Strip every one-shot artifact and execution hint before a new native deploy. */
 export function withoutPinnedArtifacts<T extends PinnedArtifactSnapshot>(snapshot: T): T {
   const {
@@ -118,6 +145,11 @@ export function withoutPinnedArtifacts<T extends PinnedArtifactSnapshot>(snapsho
     strictServiceScope: _strictScope,
     refreshServiceIds: _refreshServices,
     forcePullImages: _forcePull,
+    completedBuildArtifacts: _completedArtifacts,
+    retryBuildFromDeploymentId: _retryBuild,
+    capacityAdjustment: _capacityAdjustment,
+    roleConfiguration: _roleConfiguration,
+    webOwnerDeploymentId: _webOwner,
     ...rest
   } = snapshot;
   return rest as T;
@@ -139,18 +171,19 @@ export function snapshotNeedsProjectSource(
   if (pinnedStaticDir(snapshot)) return false;
   const enabled = (services ?? snapshot.composeServices ?? []).filter((s) => s.enabled !== false);
   if (enabled.length > 0) {
-    const inlineSource = enabled.some(s => s.advanced?.build);
+    const inlineSource = enabled.some((s) => s.advanced?.build);
     return enabled.some(
       (s) =>
         (!inlineSource && hasRelativeVolumeMounts(s.volumes)) ||
-        (!s.advanced?.build && ((s.kind === "monorepo" && !s.image) || !!s.build || !!s.dockerfile) &&
+        (!s.advanced?.build &&
+          ((s.kind === "monorepo" && !s.image) || !!s.build || !!s.dockerfile) &&
           !pinnedImageForService(snapshot, s.name)),
     );
   }
   // A Dockerfile app still needs its source even with hasBuild=false (no
   // buildpack commands). Uploads/local folders need staging instead of a clone.
   return (
-    (classNeedsGitSource(snapshotToClass(snapshot)) || !!snapshot.localPath || !!snapshot.uploadWorkspaceId) &&
+    (classNeedsGitSource(snapshotToClass(snapshot)) || !!snapshot.localPath) &&
     !pinnedAppImage(snapshot) &&
     !refreshAppDeploymentId(snapshot)
   );
@@ -161,7 +194,7 @@ export function snapshotNeedsGitSource(
   snapshot: PinnedArtifactSnapshot,
   services?: PinnedArtifactSnapshot["composeServices"],
 ): boolean {
-  if (snapshot.localPath || snapshot.uploadWorkspaceId) return false;
+  if (snapshot.localPath) return false;
   return snapshotNeedsProjectSource(snapshot, services);
 }
 

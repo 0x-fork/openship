@@ -58,6 +58,7 @@
  * full priority chain lives here and ONLY here.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { repos } from "@repo/db";
 import { AppError } from "@repo/core";
 import { env } from "../../config/env";
@@ -71,8 +72,10 @@ import {
 // gh-CLI (github.local-auth) is imported DYNAMICALLY at its two self-hosted
 // "local"-purpose call sites below, so the gh module never loads in CLOUD_MODE.
 import { canUseGitHubRepo, type GitHubAccessOp } from "./github-access";
+import { isTransientGitHubFailure } from "./github.error";
 import type { ExecutionContext as RequestContext } from "@repo/platform";
 import { mayUseInstanceGitIdentity } from "./github-instance-access";
+import { installationTokenRepositories, MAX_SUBMODULE_REPOS } from "./gitmodules";
 
 // ─── Public types ───────────────────────────────────────────────────────────
 
@@ -88,6 +91,8 @@ export type GitHubTokenSource =
 export interface TokenResult {
   token: string;
   source: GitHubTokenSource;
+  /** Exact server-authorized repository names for an expanded App clone mint. */
+  repositories?: string[];
 }
 
 /**
@@ -133,6 +138,15 @@ export interface TokenContext {
   /** Skip sources already rejected during this read. Does not change the
    *  chain's order, permissions, or which kinds are available on this platform. */
   exclude?: GitHubTokenSource[];
+  /**
+   * oblien/openship#979: extra bare repo names under the SAME owner to
+   * include when minting an App installation token, i.e. private submodules the
+   * clone will recurse into. The parent `repo` is always included. Each extra is
+   * authorized through the same github-access gate as `repo` before it widens
+   * the token; unauthorized names are dropped. Capped (MAX_SUBMODULE_REPOS).
+   * Only the app-installation step reads this.
+   */
+  extraRepositories?: string[];
 }
 
 // ─── The dispatcher ─────────────────────────────────────────────────────────
@@ -164,6 +178,7 @@ interface ChainCtx {
   organizationId?: string;
   purpose: GitHubPurpose;
   tokenCtx: TokenContext;
+  installationRepositories?: string[];
   /**
    * The 0-bypass permission verdict for this (target, op), resolved ONCE up front
    * and shared by every consumer: the App branch's mint AND its probe (so preflight
@@ -242,7 +257,7 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
       const { getLocalGhToken } = await import("./github.local-auth");
       return getLocalGhToken();
     },
-    probe: async (c) => Boolean(await SPECS["gh-cli"].resolve(c).catch(() => null)),
+    probe: async (c) => Boolean(await SPECS["gh-cli"].resolve(c).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return null; })),
   },
 
   /* NOTE for anyone adding a credential kind below: if it is NOT the caller's own
@@ -261,12 +276,17 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
       // it travels to build workers. Matching the credential to the grant is the
       // other half of GHSA-hp2g-hw7g-f3vm's "owner-wide" defect: authorization and
       // capability now have the same width.
-      return tryInstallationToken(
+      const extraRepositories = await authorizedExtraRepositories(c);
+      const token = await tryInstallationToken(
         c.ctx,
         c.tokenCtx.owner,
         c.tokenCtx.installationId,
         c.tokenCtx.repo,
+        extraRepositories,
       );
+      if (token && c.tokenCtx.extraRepositories?.length)
+        c.installationRepositories = installationTokenRepositories(c.tokenCtx.repo, extraRepositories);
+      return token;
     },
     probe: async (c) => {
       if (!c.tokenCtx.owner || !c.targetAuthorized) return false;
@@ -275,11 +295,11 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
       let installId: number | null = null;
       if (c.organizationId) {
         installId = await getInstallationIdByOrg(c.organizationId, c.tokenCtx.owner).catch(
-          () => null,
+          (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return null; },
         );
       }
       if (!installId) {
-        installId = await getInstallationId(c.ctx, c.tokenCtx.owner).catch(() => null);
+        installId = await getInstallationId(c.ctx, c.tokenCtx.owner).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return null; });
       }
       return Boolean(installId);
     },
@@ -297,7 +317,7 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
       // the mint will refuse is exactly the preflight/resolution drift this table
       // exists to make impossible.
       if (!borrowableForOp(c) || !c.tokenCtx.projectId) return false;
-      const project = await repos.project.findById(c.tokenCtx.projectId).catch(() => null);
+      const project = await repos.project.findById(c.tokenCtx.projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return null; });
       return Boolean(project?.cloneTokenEncrypted);
     },
   },
@@ -307,7 +327,7 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
     shippable: true, // same reasoning as `project`
     resolve: async (c) => readUserGlobalToken(c.userId),
     probe: async (c) => {
-      const settings = await repos.settings.findByUser(c.userId).catch(() => null);
+      const settings = await repos.settings.findByUser(c.userId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return null; });
       return Boolean(settings?.cloneTokenEncrypted && settings.cloneTokenAsDefault);
     },
   },
@@ -325,7 +345,7 @@ export const SPECS: Record<GitHubTokenSource, CredentialSpec> = {
      */
     shippable: true,
     resolve: async (c) => getUserToken(c.userId),
-    probe: async (c) => Boolean(await getUserToken(c.userId).catch(() => null)),
+    probe: async (c) => Boolean(await getUserToken(c.userId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return null; })),
   },
 };
 
@@ -465,7 +485,15 @@ export async function tokenFor(
   const c = await chainCtx(ctx, purpose, tokenCtx);
   for (const spec of chainFor(purpose, tokenCtx.only, tokenCtx.exclude)) {
     const token = await spec.resolve(c);
-    if (token) return { token, source: spec.kind };
+    if (token) {
+      return {
+        token,
+        source: spec.kind,
+        ...(spec.kind === "app-installation" && c.installationRepositories
+          ? { repositories: c.installationRepositories }
+          : {}),
+      };
+    }
   }
   return null;
 }
@@ -535,7 +563,7 @@ export async function requireTokenFor(
  */
 async function isCliOperatorAllowed(userId: string): Promise<boolean> {
   if (env.GITHUB_AUTH_MODE === "cli") return true;
-  const settings = await repos.settings.findByUser(userId).catch(() => null);
+  const settings = await repos.settings.findByUser(userId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return null; });
   return settings?.ghCliOperatorOptedIn === true;
 }
 
@@ -574,44 +602,87 @@ async function mayUseOperatorCliToken(
  * otherwise be silently downgraded to a broader user PAT / OAuth token with
  * no trace — masking a security-relevant signal. Returns null on failure so
  * the priority chain continues unchanged.
+ *
+ * A transient failure (GitHub 5xx, rate limit, timeout, broken connection) is
+ * rethrown instead: it says nothing about the installation, so it must neither
+ * fall through to a broader credential nor surface as GITHUB_TOKEN_REQUIRED,
+ * which callers such as the Actions runner reconciler treat as a definitive
+ * loss of access and act on by cancelling running jobs.
  */
 async function tryInstallationToken(
   ctx: RequestContext,
   owner: string,
   installationId?: number,
   repo?: string,
+  extraRepositories?: string[],
 ): Promise<string | null> {
   try {
     return await getInstallationToken(ctx, owner, installationId, {
-      repositories: repo ? [repo] : undefined,
+      // Parent first, then authorized same-owner submodules (empty extras keep
+      // upstream's exact `[repo]` narrowing).
+      repositories: installationTokenRepositories(repo, extraRepositories),
     });
   } catch (err) {
-    console.warn(
+    if (isTransientGitHubFailure(err)) throw err;
+    errorDiagnostics.warn("platform/engine/modules/github/github.token",
       `[github.token] App installation token mint failed for owner=${owner}` +
         `${installationId ? ` install=${installationId}` : ""}: ` +
-        `${(err as Error).message} — falling through to the next credential`,
+        `${(err as Error).message} — falling through to the next credential`, err,
     );
     return null;
   }
 }
 
+/**
+ * Filter `tokenCtx.extraRepositories` through the same github-access gate the
+ * parent repo cleared, so submodule expansion can never widen a token past the
+ * caller's grant. The parent must name a repo (an owner-level mint is already
+ * as wide as it gets).
+ */
+async function authorizedExtraRepositories(c: ChainCtx): Promise<string[] | undefined> {
+  const owner = c.tokenCtx.owner;
+  const extras = c.tokenCtx.extraRepositories;
+  if (!owner || !c.tokenCtx.repo || !extras?.length) return undefined;
+  const candidates = (installationTokenRepositories(undefined, extras, MAX_SUBMODULE_REPOS) ?? [])
+    .filter((name) => name.toLowerCase() !== c.tokenCtx.repo!.toLowerCase());
+  const allowed: string[] = [];
+  for (const name of candidates) {
+    const ok = await canUseGitHubRepo(
+      c.ctx,
+      { owner, repo: name, installationId: c.tokenCtx.installationId },
+      c.tokenCtx.op ?? "read",
+      { ownerLevel: (c.tokenCtx.op ?? "read") === "write" ? "authority" : "reach" },
+    ).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return false; });
+    if (ok) allowed.push(name);
+  }
+  if (allowed.length < candidates.length) {
+    errorDiagnostics.warn("platform/engine/modules/github/github.token",
+      `[github.token] submodule token expansion: ${candidates.length - allowed.length} of ` +
+        `${candidates.length} extra repo(s) under owner=${owner} not authorized for this caller; dropped`,
+    );
+  }
+  return allowed.length ? allowed : undefined;
+}
+
 async function readProjectToken(projectId: string): Promise<string | null> {
-  const project = await repos.project.findById(projectId).catch(() => null);
+  const project = await repos.project.findById(projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return null; });
   if (!project?.cloneTokenEncrypted) return null;
   try {
     return decrypt(project.cloneTokenEncrypted);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token");
     return null;
   }
 }
 
 async function readUserGlobalToken(userId: string): Promise<string | null> {
-  const settings = await repos.settings.findByUser(userId).catch(() => null);
+  const settings = await repos.settings.findByUser(userId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token"); return null; });
   if (!settings?.cloneTokenEncrypted) return null;
   if (!settings.cloneTokenAsDefault) return null;
   try {
     return decrypt(settings.cloneTokenEncrypted);
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.token");
     return null;
   }
 }

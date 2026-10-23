@@ -2,6 +2,7 @@
  * GitHub webhook push events — branch-matched redeployment.
  */
 
+import { observedAllSettled, reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { repos, type Project } from "@repo/db";
 import { env } from "@repo/platform/engine/config/env";
 import { triggerDeployment } from "@repo/platform/engine/modules/deployments/build.service";
@@ -11,11 +12,12 @@ import {
 } from "@repo/platform/engine/modules/github/github.service";
 import { cloudFetchAsOrgOwner } from "@repo/platform/engine/lib/cloud/transport";
 import { fetchOrgCloudProjects } from "@repo/platform/engine/lib/cloud/projects";
-import { safeErrorMessage } from "@repo/core";
+import { safeErrorMessage, normalizeProjectRootDirectory } from "@repo/core";
 import {
   extractChangedFiles,
   routeServicesByChanges,
 } from "@repo/platform/engine/modules/github/webhook-changed-files";
+import { resolveProjectChangeImpact } from "@repo/platform/engine/modules/github/project-change-impact";
 import { webhookActorCtx } from "./webhook-shared";
 import { resolveOrgOwner } from "@repo/platform/engine/lib/org-actor";
 import { notification } from "@repo/platform/engine/lib/notification-dispatcher";
@@ -47,7 +49,7 @@ function recordPushDelivery(
   p: Project | null,
   input: BranchDeploymentTrigger,
   outcome: string,
-  opts?: { organizationId?: string | null; actionRef?: string | null; error?: string | null },
+  opts?: { organizationId?: string | null; actionRef?: string | null; error?: string | null; reason?: string },
 ): Promise<void> {
   return repos.webhookDelivery
     .record({
@@ -63,10 +65,13 @@ function recordPushDelivery(
         repo: `${input.owner}/${input.repo}`,
         branch: input.branch,
         commit: input.commitSha ?? undefined,
+        ...(opts?.reason ? { reason: opts.reason } : {}),
       },
     })
     .then(() => {})
-    .catch(() => {});
+    .catch((diagnosticFailure) => {
+      observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push");
+    });
 }
 
 export async function handlePush(
@@ -126,7 +131,7 @@ async function deployProjectFromPush(
   // Webhooks have no human actor — attribute to the org OWNER (owns the
   // GitHub App installation + is the meaningful audit actor). No owner =
   // broken org state; fail rather than guess a random member.
-  const owner = await resolveOrgOwner(p.organizationId).catch(() => null);
+  const owner = await resolveOrgOwner(p.organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push"); return null; });
   if (!owner) {
     throw new Error(
       `No org owner available to act as webhook actor for project ${p.id} (org ${p.organizationId})`,
@@ -139,7 +144,7 @@ async function deployProjectFromPush(
   // and which services does it affect?". For force-deploy paths
   // (forceAll / forceDeployNext / single-service projects with
   // no affected services) we just deploy everything.
-  const services = await repos.service.listByProject(p.id).catch(() => []);
+  const services = await repos.service.listByProject(p.id).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push"); return []; });
   const enabledServices = services.filter((s) => s.enabled);
 
   // Treat compose- and monorepo-kind services as "real" routable
@@ -154,6 +159,7 @@ async function deployProjectFromPush(
   let routingReason: string | undefined;
   let changedPathsTruncated = false;
   let changedPaths: string[] | undefined;
+  let changeReason: string | undefined;
 
   if (input.payload) {
     const extracted = await extractChangedFiles(input.payload, {
@@ -178,7 +184,7 @@ async function deployProjectFromPush(
       // Full changed set unknown → deploy everything; under-deploy would ship stale code.
       forceAll = true;
       routingReason = routingReason ?? "changed-files-truncated";
-      console.warn(
+      errorDiagnostics.warn("api/modules/github/webhook-push",
         `[GitHub Webhook] ${input.owner}/${input.repo}#${input.branch} project ${p.id}: changed-files set is truncated (commits[] >= 20 and compareCommits could not recover the full list) — deploying all services (forceAll).`,
       );
     }
@@ -189,10 +195,26 @@ async function deployProjectFromPush(
     // double-fire force.
     const consumed = await repos.project
       .consumeForceDeployNext(p.id)
-      .catch(() => false);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push"); return false; });
     if (consumed) {
       forceAll = true;
       routingReason = routingReason ?? "force-deploy-next";
+    }
+
+    if (!forceAll && routableServices.length === 0 && normalizeProjectRootDirectory(p.rootDirectory ?? undefined)) {
+      // Compare with the deployed release, not just this push's before SHA: a
+      // previous failed deployment may contain app changes still waiting to ship.
+      const active = p.activeDeploymentId ? await repos.deployment.findById(p.activeDeploymentId) : null;
+      const compare = active?.projectId === p.id && active.commitSha && input.commitSha
+        ? await compareCommits(webhookActorCtx(actorUserId, p.organizationId, "webhook:project-impact"), input.owner, input.repo, active.commitSha, input.commitSha)
+            .catch(error => { observeCaughtError(error, "api/modules/github/webhook-push"); return null; })
+        : null;
+      const impact = compare && !compare.truncated
+        ? await resolveProjectChangeImpact(webhookActorCtx(actorUserId, p.organizationId, "webhook:project-impact"), p, compare.files, input.commitSha)
+        : { affected: true, reason: active ? "unknown-deployed-diff" : "first-deployment" };
+      changeReason = impact.reason;
+      console.log(`[GitHub Webhook] project ${p.id}: ${impact.affected ? "deploying" : "skipping"} (${impact.reason}).`);
+      if (!impact.affected) return { skipped: true as const, projectId: p.id, reason: impact.reason };
     }
 
     if (!forceAll && routableServices.length > 0) {
@@ -216,7 +238,7 @@ async function deployProjectFromPush(
     // observe it `true`.
     const consumed = await repos.project
       .consumeForceDeployNext(p.id)
-      .catch(() => false);
+      .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push"); return false; });
     if (consumed) {
       forceAll = true;
       routingReason = "force-deploy-next";
@@ -228,6 +250,8 @@ async function deployProjectFromPush(
       `[GitHub Webhook] ${input.owner}/${input.repo}#${input.branch} project ${p.id}: forceAll=true (${routingReason})`,
     );
   }
+
+  changeReason ??= routingReason;
 
   // Rollback context (strategy + commit_sha_before anchor) is resolved inside
   // triggerDeployment via the shared resolveRollbackContext helper — no need to
@@ -241,6 +265,7 @@ async function deployProjectFromPush(
       commitMessage: input.commitMessage,
       trigger: "webhook",
       serviceIds,
+      actionEvent: input.payload as unknown as Record<string, unknown> | undefined,
       forceAll,
       // Let the compose-drift reconciler skip its repo scan when this push
       // didn't touch a compose file. Truncated → pass null (unknown → reconcile).
@@ -259,14 +284,14 @@ async function deployProjectFromPush(
         changedPathsTruncated,
       )
       .catch((err: unknown) => {
-        console.warn(
+        errorDiagnostics.warn("api/modules/github/webhook-push",
           `[GitHub Webhook] failed to persist changedPaths for ${deploymentId}:`,
           err,
         );
       });
   }
 
-  return triggered;
+  return { ...triggered, ...(changeReason && !triggered?.skipped ? { reason: changeReason } : {}) };
 }
 
 async function triggerBranchDeployments(
@@ -299,7 +324,7 @@ async function triggerBranchDeployments(
       : branchProjects;
   const droppedForInstallation = branchProjects.length - autoDeployProjects.length;
   if (droppedForInstallation > 0) {
-    console.warn(
+    errorDiagnostics.warn("api/modules/github/webhook-push",
       `[GitHub Webhook] ${input.event} ${input.owner}/${input.repo}#${input.branch}: skipped ` +
         `${droppedForInstallation} branch-matched project(s) not bound to delivering installation ` +
         `${deliveredInstallationId} (cross-tenant fan-out guard)`,
@@ -341,7 +366,7 @@ async function triggerBranchDeployments(
   // that has since deployed a newer commit, or an event that forces all services.
   const pendingProjects = autoDeployProjects.filter((p) => !handledProjectIds.has(p.id));
   const alreadyHandled = autoDeployProjects.length - pendingProjects.length;
-  const results = await Promise.allSettled(
+  const results = await observedAllSettled(
     pendingProjects.map((p) =>
       // A webhook has no interactive user watching for errors. When a redeploy
       // is blocked BEFORE a deployment row exists (preflight throws with no
@@ -352,7 +377,7 @@ async function triggerBranchDeployments(
         notifyAutoDeployFailed(p, err);
         throw err;
       }),
-    ),
+    ), "api/modules/github/webhook-push",
   );
 
   let succeeded = 0;
@@ -363,13 +388,13 @@ async function triggerBranchDeployments(
       const p = pendingProjects[i];
       if (r.status === "fulfilled") {
         handledProjectIds.add(p.id);
-        const v = r.value as { deployment?: { id?: string }; skipped?: boolean } | undefined;
+        const v = r.value as { deployment?: { id?: string }; skipped?: boolean; reason?: string } | undefined;
         if (v?.skipped) {
           skipped++;
-          await recordPushDelivery(p, input, "skipped");
+          await recordPushDelivery(p, input, "skipped", { reason: v.reason });
         } else {
           succeeded++;
-          await recordPushDelivery(p, input, "dispatched", { actionRef: v?.deployment?.id });
+          await recordPushDelivery(p, input, "dispatched", { actionRef: v?.deployment?.id, reason: v?.reason });
         }
       } else {
         failed++;
@@ -382,7 +407,7 @@ async function triggerBranchDeployments(
     const errors = results
       .filter((r): r is PromiseRejectedResult => r.status === "rejected")
       .map((r) => String(r.reason));
-    console.error(
+    errorDiagnostics.error("api/modules/github/webhook-push",
       `[GitHub Webhook] ${input.event} deploy failures for ${input.owner}/${input.repo}#${input.branch}:`,
       errors,
     );
@@ -399,7 +424,7 @@ async function triggerBranchDeployments(
     message:
       `Triggered ${succeeded} deployment(s) for ${input.owner}/${input.repo}#${input.branch}` +
       `${alreadyHandled ? `, ${alreadyHandled} already handled by this delivery` : ""}` +
-      `${skipped ? `, ${skipped} skipped (no affected services)` : ""}` +
+      `${skipped ? `, ${skipped} skipped (no relevant changes)` : ""}` +
       `${failed ? `, ${failed} failed` : ""}`,
   };
 }
@@ -421,7 +446,7 @@ async function forwardPushToCloud(
 
   const bindings = await repos.cloudWebhookBinding
     .findByRepo(input.owner, input.repo)
-    .catch(() => []);
+    .catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push"); return []; });
   // Mirror projectWebhookBranch: "" means the repo's default branch, so resolve
   // it the same way the local filter does before comparing to the pushed branch.
   const bound = bindings.find(
@@ -433,11 +458,11 @@ async function forwardPushToCloud(
   }
 
   if (!cloudProjectId) {
-    const orgIds = await repos.settings.listCloudLinkedOrgIds().catch(() => []);
+    const orgIds = await repos.settings.listCloudLinkedOrgIds().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push"); return []; });
     const ownerKey = input.owner.toLowerCase();
     const repoKey = input.repo.toLowerCase();
     for (const orgId of orgIds) {
-      const result = await fetchOrgCloudProjects(orgId).catch(() => null);
+      const result = await fetchOrgCloudProjects(orgId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push"); return null; });
       if (result?.state !== "merged") continue;
       const match = result.projects.find((p) => {
         const o = typeof p.gitOwner === "string" ? p.gitOwner.toLowerCase() : "";
@@ -464,7 +489,9 @@ async function forwardPushToCloud(
             webhookId: null,
             webhookSecret: null,
           })
-          .catch(() => {});
+          .catch((diagnosticFailure) => {
+            observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push");
+          });
         break;
       }
     }
@@ -483,7 +510,7 @@ async function forwardPushToCloud(
       // delivered this push, whichever lands second skips).
       trigger: "webhook",
     }),
-  }).catch(() => null);
+  }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push"); return null; });
 
   return { forwarded: !!res && res.ok, cloudProjectId, organizationId };
 }
@@ -505,7 +532,7 @@ async function resolveDefaultBranch(
   if (!unbranchedProject) return null;
 
   try {
-    const owner = await resolveOrgOwner(unbranchedProject.organizationId).catch(() => null);
+    const owner = await resolveOrgOwner(unbranchedProject.organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "api/modules/github/webhook-push"); return null; });
     if (!owner) return null;
     const repository = await getRepository(
       webhookActorCtx(owner.userId, unbranchedProject.organizationId, "webhook:github-resolve-default-branch"),
@@ -515,8 +542,8 @@ async function resolveDefaultBranch(
     return repository.default_branch;
   } catch (err) {
     const message = safeErrorMessage(err);
-    console.warn(
-      `[GitHub Webhook] Could not resolve default branch for ${input.owner}/${input.repo}: ${message}`,
+    errorDiagnostics.warn("api/modules/github/webhook-push",
+      `[GitHub Webhook] Could not resolve default branch for ${input.owner}/${input.repo}: ${message}`, err,
     );
     return null;
   }

@@ -5,6 +5,7 @@
  * keeping this module focused on data transformation and business rules.
  */
 
+import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { randomBytes } from "crypto";
 import { githubFetch, getGitHubAuthMode } from "./github.auth";
 import { ghFetch } from "./github.http";
@@ -33,7 +34,7 @@ import { env } from "../../config/env";
 import { resolveApiPublicUrl, sharedWebhookUrl, domainWebhookUrl } from "../../lib/public-url";
 import { hasActiveGitHubSource } from "./github-source.service";
 
-export const GITHUB_DEPLOY_WEBHOOK_EVENTS = ["push"] as const;
+export const GITHUB_DEPLOY_WEBHOOK_EVENTS = ["push", "pull_request"] as const;
 const MAX_FALLBACK_TREE_ENTRIES = 5000;
 const MAX_COMPARE_FILES_PER_RESPONSE = 300;
 const COMPARE_CACHE_TTL_SECONDS = 6 * 60 * 60;
@@ -61,13 +62,14 @@ async function listRepositoryTreeViaContents(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  opts: { branch?: string } = {},
+  opts: { branch?: string; signal?: AbortSignal } = {},
 ): Promise<Array<{ path: string; type: "file" | "dir" }>> {
   const tree: Array<{ path: string; type: "file" | "dir" }> = [];
   const visited = new Set<string>();
   const queue = [""];
 
   while (queue.length > 0) {
+    opts.signal?.throwIfAborted();
     const currentPath = queue.shift() ?? "";
     if (visited.has(currentPath) || isIgnoredRepoPath(currentPath)) {
       continue;
@@ -77,7 +79,7 @@ async function listRepositoryTreeViaContents(
     const entries = await listFiles(ctx, owner, repo, {
       ...opts,
       ...(currentPath ? { path: currentPath } : {}),
-    }).catch(() => [] as GitHubFileContent[]);
+    }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return [] as GitHubFileContent[]; });
 
     for (const entry of entries) {
       const entryType: "file" | "dir" = entry.type === "dir" ? "dir" : "file";
@@ -410,7 +412,8 @@ export async function getCommitByRef(
       url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}`,
     });
     return { sha: data.sha, message: data.commit.message };
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service");
     return null;
   }
 }
@@ -474,7 +477,8 @@ export async function getRecentCommits(
       date: c.commit.author?.date ?? "",
       url: c.html_url,
     }));
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service");
     return [];
   }
 }
@@ -519,8 +523,8 @@ export async function compareCommits(
   if (cacheable) {
     store = await cacheStore<CompareCommitsResult>("github-commit-comparisons", {
       maxSize: 5_000,
-    }).catch(() => null);
-    const cached = await store?.get(key).catch(() => null);
+    }).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return null; });
+    const cached = await store?.get(key).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return null; });
     if (cached) return cached;
   }
 
@@ -549,9 +553,12 @@ export async function compareCommits(
         // suppressing a real update whose matching file was omitted by GitHub.
         truncated: returnedFiles.length >= MAX_COMPARE_FILES_PER_RESPONSE,
       };
-      if (store) await store.set(key, result, COMPARE_CACHE_TTL_SECONDS).catch(() => {});
+      if (store) await store.set(key, result, COMPARE_CACHE_TTL_SECONDS).catch((diagnosticFailure) => {
+        observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service");
+      });
       return result;
-    } catch {
+    } catch (diagnosticFailure) {
+      observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service");
       return null;
     }
   })();
@@ -573,11 +580,12 @@ export async function listFiles(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  opts: { branch?: string; path?: string } = {},
+  opts: { branch?: string; path?: string; signal?: AbortSignal } = {},
 ): Promise<GitHubFileContent[]> {
   const filePath = opts.path ?? "";
   return githubFetch<GitHubFileContent[]>({
     ctx,
+    signal: opts.signal,
     owner,
     repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeRepoPath(filePath)}`,
@@ -592,11 +600,12 @@ export async function listRepositoryTree(
   ctx: RequestContext,
   owner: string,
   repo: string,
-  opts: { branch?: string } = {},
+  opts: { branch?: string; requireComplete?: boolean; signal?: AbortSignal } = {},
 ): Promise<Array<{ path: string; type: "file" | "dir" }>> {
   const ref = opts.branch?.trim() || "HEAD";
   const data = await githubFetch<GitHubTreeResponse>({
     ctx,
+    signal: opts.signal,
     owner,
     repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(ref)}`,
@@ -614,8 +623,10 @@ export async function listRepositoryTree(
     return tree;
   }
 
+  if (opts.requireComplete) throw new Error("GitHub returned an incomplete repository tree");
+
   const fallbackTree = await listRepositoryTreeViaContents(ctx, owner, repo, opts).catch(
-    () => tree,
+    (diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return tree; },
   );
   return fallbackTree.length > 0 ? fallbackTree : tree;
 }
@@ -628,7 +639,7 @@ export async function getFileContent(
   owner: string,
   repo: string,
   file: string,
-  opts: { branch?: string; json?: boolean } = {},
+  opts: { branch?: string; json?: boolean; signal?: AbortSignal } = {},
 ): Promise<{
   sha: string;
   size: number;
@@ -637,6 +648,7 @@ export async function getFileContent(
 }> {
   const data = await githubFetch<GitHubFileContent>({
     ctx,
+    signal: opts.signal,
     owner,
     repo,
     url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeRepoPath(file)}`,
@@ -766,113 +778,6 @@ export async function deleteWebhook(
   });
 }
 
-// ─── Check runs ──────────────────────────────────────────────────────────────
-
-/**
- * Create a GitHub check run (used to report deployment status).
- */
-export async function createCheckRun(
-  ctx: RequestContext,
-  owner: string,
-  repo: string,
-  opts: {
-    name: string;
-    headSha: string;
-    status: "queued" | "in_progress" | "completed";
-    /** Conclusion is only valid when status === "completed". */
-    conclusion?: "success" | "failure" | "cancelled" | "neutral" | "skipped";
-    detailsUrl?: string;
-    output?: { title: string; summary: string; text?: string };
-  },
-): Promise<{ id: number; htmlUrl?: string } | null> {
-  try {
-    const data = await githubFetch<{ id: number; html_url?: string }>({
-      ctx,
-      owner,
-      repo,
-      url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs`,
-      method: "POST",
-      // READ tier: a check run REPORTS the status of a build we were already
-      // authorized to run. It is deploy-tier status reporting, not repo
-      // administration, so a read grant is the right authority.
-      authorizeAs: "read",
-      // ...but only the App CAN post it. Unpinned, the self-hosted chain returns
-      // the operator's gh-CLI token first and every check 403s — silently, even
-      // with a working installation one step later in the chain.
-      credential: ["app-installation"],
-      params: {
-        name: opts.name,
-        head_sha: opts.headSha,
-        status: opts.status,
-        started_at: new Date().toISOString(),
-        ...(opts.status === "completed"
-          ? { completed_at: new Date().toISOString(), conclusion: opts.conclusion }
-          : {}),
-        details_url: opts.detailsUrl,
-        output: opts.output,
-      },
-    });
-    return { id: data.id, htmlUrl: data.html_url };
-  } catch (err) {
-    // Best-effort, but never silent. "No checks appeared on my PR" was
-    // indistinguishable from "no checks were attempted": every caller swallows
-    // again with `.catch(() => {})`, and this function never throws, so the
-    // reason died here. The thrown error carries GitHub's own status + message.
-    //
-    // The App hint is appended because the pin above makes the no-credential
-    // case report the generic "connect your GitHub account" — misleading on a
-    // self-host that HAS a working gh CLI or PAT, since neither can ever post a
-    // check run. The App is the requirement, not a GitHub connection per se.
-    console.warn(
-      `[GitHub Checks] create failed for ${owner}/${repo} ${opts.name}@${opts.headSha.slice(0, 7)}: ${safeErrorMessage(err)} ` +
-        `(check runs require a GitHub App installation — a gh-CLI/PAT credential cannot post one)`,
-    );
-    return null;
-  }
-}
-
-/**
- * Update an existing check run (e.g. mark as completed).
- */
-export async function updateCheckRun(
-  ctx: RequestContext,
-  owner: string,
-  repo: string,
-  checkRunId: number,
-  opts: {
-    status: "completed";
-    conclusion: "success" | "failure" | "cancelled" | "neutral" | "skipped";
-    output?: { title: string; summary: string; text?: string };
-  },
-): Promise<void> {
-  try {
-    await githubFetch({
-      ctx,
-      owner,
-      repo,
-      url: `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs/${checkRunId}`,
-      method: "PATCH",
-      // Same tier as createCheckRun — status reporting on a build already authorized.
-      authorizeAs: "read",
-      // Same pin as createCheckRun — the Checks API is App-only.
-      credential: ["app-installation"],
-      params: {
-        status: opts.status,
-        completed_at: new Date().toISOString(),
-        conclusion: opts.conclusion,
-        ...(opts.output ? { output: opts.output } : {}),
-      },
-    });
-  } catch (err) {
-    // Best-effort — never fails the deployment, never silent either (see create).
-    console.warn(
-      `[GitHub Checks] update failed for ${owner}/${repo} check ${checkRunId}: ${safeErrorMessage(err)}`,
-    );
-  }
-}
-
-// ─── User organisations ──────────────────────────────────────────────────────
-
 // The library "home" view (getUserHome), the Settings connection-status data
 // (getConnectionStatus), and the "Local only" badge rule all MOVED into the
 // GitHubSource adapter (./sources): GhCliSource / GitHubAppSource own the
@@ -917,7 +822,7 @@ export async function resolveWebhookStrategy(
   organizationId?: string,
 ): Promise<WebhookStrategy> {
   const orgId = organizationId ?? project?.organizationId ?? undefined;
-  if (orgId && (await hasActiveGitHubSource(orgId).catch(() => false))) return "app";
+  if (orgId && (await hasActiveGitHubSource(orgId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return false; }))) return "app";
   const base = getWebhookStrategy();
   if (base === "app") return "app";
 
@@ -1058,7 +963,7 @@ export function resolveProjectWebhookSecret(
     } catch {
       // Encryption key rotation / corrupted row — fall through to env
       // rather than silently rejecting every webhook for this project.
-      console.warn(
+      errorDiagnostics.warn("platform/engine/modules/github/github.service",
         "[GitHub Webhook] project.webhookSecret failed to decrypt; falling back to env.GITHUB_WEBHOOK_SECRET",
       );
     }
@@ -1076,13 +981,13 @@ export function resolveProjectWebhookSecret(
  * (legacy) global env var and one project's leak can't verify another's.
  */
 async function ensureProjectWebhookSecret(projectId: string): Promise<string> {
-  const proj = await dbRepos.project.findById(projectId).catch(() => null);
+  const proj = await dbRepos.project.findById(projectId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return null; });
   if (proj?.webhookSecret) {
     try {
       return decrypt(proj.webhookSecret);
     } catch {
       // Corrupted row / key rotation — mint a fresh one below and overwrite.
-      console.warn(
+      errorDiagnostics.warn("platform/engine/modules/github/github.service",
         "[GitHub Webhook] existing project.webhookSecret failed to decrypt; minting a fresh secret",
       );
     }
@@ -1173,11 +1078,11 @@ export async function registerWebhook(
  */
 export async function backfillWebhookSecrets(): Promise<void> {
   if (env.CLOUD_MODE) return;
-  const projects = await dbRepos.project.listNeedingWebhookBackfill().catch(() => []);
+  const projects = await dbRepos.project.listNeedingWebhookBackfill().catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return []; });
   for (const p of projects) {
     if (!p.gitOwner || !p.gitRepo) continue;
     try {
-      const owner = await resolveOrgOwner(p.organizationId).catch(() => null);
+      const owner = await resolveOrgOwner(p.organizationId).catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.service"); return null; });
       if (!owner?.userId) continue;
       const ctx = buildBackgroundContext({
         userId: owner.userId,
@@ -1190,8 +1095,8 @@ export async function backfillWebhookSecrets(): Promise<void> {
         `[GitHub Webhook] backfilled per-project secret for ${p.gitOwner}/${p.gitRepo} (project ${p.id})`,
       );
     } catch (err) {
-      console.warn(
-        `[GitHub Webhook] webhook-secret backfill failed for project ${p.id}: ${safeErrorMessage(err)}`,
+      errorDiagnostics.warn("platform/engine/modules/github/github.service",
+        `[GitHub Webhook] webhook-secret backfill failed for project ${p.id}: ${safeErrorMessage(err)}`, err,
       );
     }
   }

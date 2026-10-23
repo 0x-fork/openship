@@ -24,6 +24,20 @@ expect, that's why.
 
 The home tab contains language, interface preferences, and self-hosted build preferences.
 
+## Appearance
+
+Open **Settings → General** to use the existing Light, Dim, Dark and System switches; preset changes apply immediately. Choose **Customize** to open the editor inline (`/settings?tab=general&view=appearance`) while General stays selected, and **Back to General** to return. Built-in presets remain unchanged; editing one in the editor creates a personal copy. System follows the device, using Dim for a dark Desktop environment and Dark on the web.
+
+The editor groups all registered design tokens into surfaces, text, controls, status, effects and scales. Search by token name, edit its color or value, and reset individual overrides. Typography controls the interface and monospace fonts, size, weight and line height. Uploaded WOFF2 files are embedded in theme JSON, so custom fonts travel with an export.
+
+Edits preview immediately across the dashboard, including open terminals, without restarting their sessions. **Save** persists the theme to the authenticated user on the connected instance. **Discard** restores the saved appearance. The bottom controls retain a readable base palette; **Reset** previews the default Light appearance and clears the personal library only when you save. Navigating away discards the unsaved preview; a full reload warns about unsaved changes.
+
+Import a JSON file, paste JSON, or load a public HTTPS JSON URL that permits browser CORS requests. URL imports omit credentials and are fetched once, rather than continuously following remote changes. A single-theme import replaces a matching theme ID or adds it to the library; a library import replaces the draft library. Nothing is persisted until Save.
+
+**Download theme** exports the active theme; **Download all** exports the personal library. The versioned format supports up to 32 themes, two WOFF2 fonts per theme (256 KiB each), and 1 MiB total. Unsupported tokens, invalid values, cyclic token references and incompatible versions are rejected. These preferences affect this account's dashboard, not deployed applications or other members.
+
+The [appearance API and CLI](/docs/api/settings#personal-appearance) use the same format. Saving requires a version of the API that supports the appearance endpoints; a failed settings read stays visible and blocks saving until a retry succeeds.
+
 ## Git
 
 The **Git** tab owns outbound source-control access. On self-hosted instances, workspace owners first see
@@ -104,9 +118,19 @@ Who can reach this organization's projects, deployments, and servers. See
 
 - **Active members** — everyone with access, their role, and a **Remove member** action.
 - **Pending invitations** — invites you've sent that haven't been accepted yet.
-- **Invite member** — email a join link. Pick a role: **Member** (read + write to everything), **Admin**
+- **Invite member** — send through the instance's configured email service or create a link to copy.
+  Pick a role: **Member** (read + write to everything), **Admin**
   (Member plus manage members and billing), or **Restricted** (no default access — you choose exactly which
   resources to unlock). Restricted invites open a resource picker.
+
+Both delivery choices use the same email-bound invitation. The link is shown after creation
+and stays available in Pending invitations, where it can also be revoked. From a connected
+Desktop, copied links point to the remote instance. Recipients use their own accounts and
+enter the invited organization after accepting.
+Self-hosted recipients can choose **Open in Desktop** on the invitation page, confirm the
+instance, and use the same sign-in and acceptance flow in the app. The page also provides
+a copyable invitation URL for manual connection. Joining never grants more than the offered
+role and resource access; opening the link alone does not join a workspace.
 
 If you're on a personal workspace, this tab also offers **Create team** to spin up a separate, isolated
 team organization.
@@ -133,9 +157,10 @@ when. Search across events, actors, and resources, filter by event type, and exp
 ## Cloud
 
 *(Self-hosted and desktop only.)* Link this instance to Openship Cloud to unlock cloud deployments, managed SSL, and the
-global CDN. Press **Connect to Openship Cloud** and sign in; once connected the card shows your cloud
-account with a **Disconnect** option. This connection is also what enables migrating your instance to the
-cloud — see [Connect to Cloud & migrate](/docs/guides/cloud-connect-migration).
+global CDN. Press **Connect to Openship Cloud**, sign in, and review the account and organization
+before authorizing. The consent screen has **Switch** actions for both. Once connected the card shows
+your cloud account with a **Disconnect** option. This connection also enables migrating your instance
+to Cloud — see [Connect to Cloud & migrate](/docs/guides/cloud-connect-migration).
 
 ## Instance
 
@@ -151,7 +176,20 @@ you add an email + password login without losing any projects or history.
 **Update & security notifications**. Openship only ever *pulls* this data from the public GitHub releases —
 nothing can push updates to your install. More in [Updating Openship](/docs/guides/updating).
 
-### Export / Import data
+### Instance location
+
+Move between Desktop and a connected or managed server from one card. Choose API-only or
+API + dashboard, or connect Desktop to an existing remote instance without copying its data.
+The move preserves workspaces and credentials, verifies the receiver before cutover, and
+keeps the source inactive afterward. **Move back to Desktop** transfers the latest remote
+state. [Read the instance move guide](/docs/guides/migrate-control-plane).
+
+The card shows the current location and its main action. The **More instance options** menu
+contains existing-instance connections, move codes and returning to a previous server.
+An active server offers **Connect a Desktop** directly; a retired server offers
+**Move an instance here**.
+
+### Backup & recovery
 
 *(Self-hosted and desktop, instance administrators only.)* **Export instance or projects** downloads a
 portable JSON file. Choose the entire instance, or select projects and individual environments in bulk.
@@ -190,8 +228,8 @@ files stay on their server. Keep using that server, or move the runtime data wit
 restore. Reconnect local source folders and update Git/webhook callback URLs when the control-plane
 address changes. The import result keeps these follow-up notes available.
 
-Direct transfer continues to move an entire instance. Use an export file for project selections so you
-can review conflicts and server mappings on the destination before applying them.
+Use **Instance location** for a live move of the whole control plane. Use an export file for
+project selections so you can review conflicts and server mappings before applying them.
 
 <Callout title="Import can wipe this instance" type="warn">
 An instance archive offers merge or full replacement. Replacement erases

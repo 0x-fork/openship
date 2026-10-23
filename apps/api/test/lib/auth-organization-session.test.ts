@@ -139,6 +139,40 @@ describe("Better Auth active organization sessions", () => {
     expect(await repos.organization.findById(organizationId)).toBeTruthy();
   });
 
+  it("keeps the Cloud workspace deletion gate for an active workspace", async () => {
+    await repos.cloudWorkspace.create({ organizationId, name: "Managed server" });
+    const response = await post("delete", owner, { organizationId });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "ORG_DELETE_CLOUD_WORKSPACES_ACTIVE" });
+    expect(await repos.organization.findById(organizationId)).toBeTruthy();
+  });
+
+  it("keeps the ingress deletion gate for an active workspace", async () => {
+    const serverId = `server-${organizationId}`;
+    const credentialId = `credential-${organizationId}`;
+    await db.insert(schema.servers).values({ id: serverId, organizationId, sshHost: "192.0.2.10" });
+    await db.insert(schema.credential).values({
+      id: credentialId,
+      organizationId,
+      provider: "cloudflare",
+      name: "Unused ingress credential",
+      secretsEnc: "unused-test-fixture",
+    });
+    await repos.ingress.create({
+      id: `ingress-${organizationId}`,
+      organizationId,
+      serverId,
+      credentialId,
+      accountId: "test-account",
+      name: "Existing tunnel",
+      connector: "existing",
+    });
+    const response = await post("delete", owner, { organizationId });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "ORG_DELETE_INGRESS_ACTIVE" });
+    expect(await repos.organization.findById(organizationId)).toBeTruthy();
+  });
+
   it("keeps the managed network deletion gate for an active workspace", async () => {
     const [network] = await db
       .insert(schema.serverCluster)

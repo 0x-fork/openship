@@ -23,38 +23,20 @@
  * data).
  */
 
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { cacheStore } from "../../lib/cache-store/index";
+import { GitHubApiError } from "./github.error";
+export { GitHubApiError, isGitHubCredentialRejected } from "./github.error";
 
 export interface GhRequest {
   url: string;
+  signal?: AbortSignal;
   method?: string;
   /** GET → serialized to the query string; non-GET → JSON request body. */
   params?: Record<string, unknown>;
   headers?: Record<string, string>;
-}
-
-/** Shared by credential health checks and request fallback. GitHub also uses
- * 403 for rate limits, which say nothing about whether a token is valid. */
-export function isGitHubCredentialRejected(
-  status: number,
-  headers: Headers,
-  message?: unknown,
-): boolean {
-  return status === 401 || (status === 403 &&
-    headers.get("x-ratelimit-remaining") !== "0" && !headers.has("retry-after") &&
-    !(typeof message === "string" && /rate limit|abuse detection/i.test(message)));
-}
-
-/** Machine-readable failure details; callers must not infer retry policy from
- * translated/upstream error text or retry mutations after an auth failure. */
-export class GitHubApiError extends Error {
-  readonly credentialRejected: boolean;
-
-  constructor(readonly status: number, message: string, headers: Headers) {
-    super(`GitHub API error (${status}): ${message}`);
-    this.name = "GitHubApiError";
-    this.credentialRejected = isGitHubCredentialRejected(status, headers, message);
-  }
+  /** Signed artifact links and completed Actions logs use the same auth boundary. */
+  response?: "json" | "redirect";
 }
 
 function ghHeaders(token: string, extra?: Record<string, string>): Record<string, string> {
@@ -82,7 +64,7 @@ async function timedFetch(url: string, init: RequestInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GH_FETCH_TIMEOUT_MS);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal });
   } finally {
     clearTimeout(timer);
   }
@@ -102,6 +84,7 @@ export async function ghSend(token: string, req: GhRequest): Promise<Response> {
   const method = req.method ?? "GET";
   return timedFetch(withQuery(req.url, method, req.params), {
     method,
+    signal: req.signal,
     headers: ghHeaders(token, req.headers),
     body: method !== "GET" ? JSON.stringify(req.params ?? {}) : undefined,
   });
@@ -115,15 +98,33 @@ export async function ghFetch<T = unknown>(token: string, req: GhRequest): Promi
   const method = req.method ?? "GET";
   const res = await timedFetch(withQuery(req.url, method, req.params), {
     method,
+    signal: req.signal,
     headers: ghHeaders(token, req.headers),
     body: method !== "GET" ? JSON.stringify(req.params ?? {}) : undefined,
+    ...(req.response === "redirect" && { redirect: "manual" as const }),
   });
 
   if (res.status === 204) return { success: true } as T;
+  if (req.response === "redirect" && res.status >= 300 && res.status < 400) {
+    const location = res.headers.get("location");
+    if (!location || new URL(location).protocol !== "https:")
+      throw new Error("GitHub returned an invalid download link");
+    await res.body?.cancel();
+    return { url: location } as T;
+  }
 
-  const data = (await res.json()) as T & { message?: string };
+  // GitHub accepts some mutations with an empty 201/202 body, including reruns.
+  const data = (
+    res.ok && [201, 202, 205].includes(res.status)
+      ? await res.text().then((value) => (value.trim() ? JSON.parse(value) : { success: true }))
+      : await res.json()
+  ) as T & { message?: string };
   if (!res.ok) {
-    throw new GitHubApiError(res.status, (data as { message?: string }).message ?? "Unknown", res.headers);
+    throw new GitHubApiError(
+      res.status,
+      (data as { message?: string }).message ?? "Unknown",
+      res.headers,
+    );
   }
   return data;
 }
@@ -138,11 +139,13 @@ export async function ghFetchSoft<T = unknown>(token: string, req: GhRequest): P
     const method = req.method ?? "GET";
     const res = await timedFetch(withQuery(req.url, method, req.params), {
       method,
+      signal: req.signal,
       headers: ghHeaders(token, req.headers),
     });
     if (!res.ok) return null;
     return (await res.json()) as T;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.http");
     return null;
   }
 }
@@ -160,18 +163,22 @@ export async function ghFetchPublic<T = unknown>(req: GhRequest): Promise<T | nu
     const headers = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
-      ...Object.fromEntries(Object.entries(req.headers ?? {}).filter(([name]) =>
-        !["authorization", "cookie"].includes(name.toLowerCase()),
-      )),
+      ...Object.fromEntries(
+        Object.entries(req.headers ?? {}).filter(
+          ([name]) => !["authorization", "cookie"].includes(name.toLowerCase()),
+        ),
+      ),
     };
     const res = await timedFetch(withQuery(req.url, "GET", req.params), {
       method: "GET",
+      signal: req.signal,
       headers,
     });
     if (res.status === 204) return { success: true } as T;
     if (!res.ok) return null;
     return (await res.json()) as T;
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.http");
     return null;
   }
 }
@@ -202,7 +209,10 @@ export async function isPublicRepo(owner: string, repo: string): Promise<boolean
   try {
     const res = await timedFetch(
       `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
-      { method: "GET", headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } },
+      {
+        method: "GET",
+        headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      },
     );
     if (res.ok) {
       const data = (await res.json()) as { private?: boolean };
@@ -211,8 +221,51 @@ export async function isPublicRepo(owner: string, repo: string): Promise<boolean
         return true;
       }
     }
-  } catch {
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.http");
     /* network/timeout → treat as not-known-public */
   }
   return false;
+}
+
+/**
+ * Three-way anonymous visibility probe (oblien/openship#979 follow-up).
+ * Unlike `isPublicRepo`, which collapses every failure to "not known public",
+ * this separates a DEFINITIVE anonymous 404 ("private or missing": an anonymous
+ * clone is certain to fail with "Repository not found") from "unknown"
+ * (rate-limited, network error, 5xx), so a caller can fail loudly on the former
+ * without breaking public repos when the probe itself is throttled.
+ */
+export type AnonymousRepoVisibility = "public" | "not-found" | "unknown";
+
+export async function probeAnonymousRepoVisibility(
+  owner: string,
+  repo: string,
+  apiBase = "https://api.github.com",
+): Promise<AnonymousRepoVisibility> {
+  if (!owner || !repo) return "unknown";
+  try {
+    const res = await timedFetch(
+      `${apiBase.replace(/\/+$/, "")}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+      {
+        method: "GET",
+        headers: { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
+      },
+    );
+    if (res.status === 404) return "not-found";
+    if (res.ok) {
+      const data = (await res.json().catch(() => {
+        observeCaughtError(
+          new SyntaxError("GitHub anonymous repository visibility returned invalid JSON"),
+          "platform/engine/modules/github/github.http",
+        );
+        return null;
+      })) as { private?: boolean } | null;
+      if (data?.private === false) return "public";
+      if (data?.private === true) return "not-found";
+    }
+  } catch (diagnosticFailure) {
+    observeCaughtError(diagnosticFailure, "platform/engine/modules/github/github.http");
+  }
+  return "unknown";
 }

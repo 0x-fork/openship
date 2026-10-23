@@ -1,5 +1,10 @@
 import { api } from "./client";
 import { endpoints } from "./endpoints";
+import type {
+  CreateDeploymentResult,
+  UpdateRuntimeInput,
+  RuntimeImageCheckResult,
+} from "@repo/contracts";
 
 /** One entity's update status (project/app/self-app/webmail). */
 export interface UpdateStatusItem {
@@ -11,6 +16,7 @@ export interface UpdateStatusItem {
   kind: "commit" | "release" | "image";
   behind: boolean;
   latestInProgress: boolean;
+  inProgressDeploymentId?: string | null;
   currentLabel: string | null;
   latestLabel: string | null;
   detail: unknown;
@@ -24,6 +30,16 @@ export interface ScanSummary {
 }
 
 export const updatesApi = {
+  checkRuntime: (projectId: string, input: UpdateRuntimeInput = {}) =>
+    api.post<{ data: RuntimeImageCheckResult }>(endpoints.updates.runtimeCheck(projectId), input, {
+      timeout: 60_000,
+    }),
+  /** Refresh configured runtime tags/base images without changing source or pins. */
+  updateRuntime: (projectId: string, input: UpdateRuntimeInput = {}) =>
+    api.post<{ data: CreateDeploymentResult }>(endpoints.updates.runtime(projectId), input, {
+      timeout: 60_000,
+    }),
+
   /**
    * Every project with a drift question, whether or not a scan has run — the read
    * is read-through server-side, so an absent entry means "nothing to compare"

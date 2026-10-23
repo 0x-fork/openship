@@ -7,7 +7,7 @@ import { useI18n } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Tabs, type TabDef } from "@/components/ui/Tabs";
 
-export type MonitoringTab = "open" | "health" | "resolved";
+export type MonitoringTab = "open" | "health" | "resolved" | "notifications" | "deployments";
 
 export function MonitoringNavigation({
   value,
@@ -23,8 +23,10 @@ export function MonitoringNavigation({
   const navigation = useRef<HTMLDivElement>(null);
   const tabs: TabDef<MonitoringTab>[] = [
     { key: "open", label: c.tabs.open },
-    { key: "health", label: c.tabs.health, hidden: !selfHosted },
+    { key: "health", label: c.tabs.health },
     { key: "resolved", label: c.tabs.resolved },
+    { key: "notifications", label: c.tabs.notifications },
+    { key: "deployments", label: t.deployments.header.title },
   ];
 
   return (

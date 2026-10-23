@@ -6,10 +6,18 @@ import type {
   RouteRuleSpec,
   ProxySettings,
   OpenshipReadiness,
+  StackRole,
   WorkloadType,
   DeploymentHistoryQuery,
 } from "@repo/core";
-import type { DeploymentPage, ProjectControlOperations, RollbackCapacity } from "@repo/contracts";
+import type {
+  EnsureProjectInput,
+  DeploymentPage,
+  ProjectControlOperations,
+  RollbackCapacity,
+  RouteProtectionInput,
+  RouteProtectionStatus,
+} from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type { ReleaseImageSource } from "../release-image-source";
 import {
@@ -45,6 +53,7 @@ export interface PendingAction {
     | "prompt"
     | "partial_decision"
     | "routing_unsynced"
+    | "runtime_health"
     | "domain_unverified"
     | "ssl_error"
     | "port_advisory";
@@ -64,14 +73,18 @@ export type RollbackCapacityUI = RollbackCapacity;
 /** Build + runtime options accepted by POST /:id/options (updateOptions). All
  *  optional — only the fields sent are written. Mirrors the backend allowlist. */
 export interface ProjectOptionsBody {
+  githubChecks?: import("@repo/core").GitHubDeploymentChecks | null;
   gitBranch?: string;
   framework?: string;
   packageManager?: string;
   buildImage?: string;
+  runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   installCommand?: string;
   buildCommand?: string;
   startCommand?: string;
   releaseCommands?: string[] | null;
+  roles?: StackRole[] | null;
   outputDirectory?: string;
   productionPaths?: string;
   /** Persistent mounts. `null` clears the override and restores the framework's
@@ -152,7 +165,11 @@ export interface ScanProjectResponse {
   buildCommand: PrepareProjectResponse["buildCommand"];
   startCommand: PrepareProjectResponse["startCommand"];
   releaseCommands?: PrepareProjectResponse["releaseCommands"];
+  roles?: PrepareProjectResponse["roles"];
+  rolePresets?: PrepareProjectResponse["rolePresets"];
   buildImage: PrepareProjectResponse["buildImage"];
+  runtimeVersion?: string | null;
+  runtimeImage?: string | null;
   outputDirectory: PrepareProjectResponse["outputDirectory"];
   rootDirectory: PrepareProjectResponse["rootDirectory"];
   productionPaths: PrepareProjectResponse["productionPaths"];
@@ -248,7 +265,9 @@ export const projectsApi = {
 
   /** Create or update a project (mandatory before build access) */
   ensure: (body: {
+    githubChecks?: import("@repo/core").GitHubDeploymentChecks | null;
     projectId?: string;
+    serverId?: string;
     name: string;
     /** Rollback retention picked in the wizard before the project existed.
      *  `null` window inherits the instance default. */
@@ -272,6 +291,8 @@ export const projectsApi = {
     composePath?: string;
     startCommand?: string;
     buildImage?: string;
+    runtimeVersion?: string | null;
+    runtimeImage?: string | null;
     port?: number;
     publicEndpoints?: Array<{
       port?: number;
@@ -286,30 +307,14 @@ export const projectsApi = {
     workloadType?: WorkloadType;
     /** Project flavor - "monorepo" persists the sub-app + workspace fields below. */
     projectType?: "app" | "docker" | "services" | "monorepo";
-    monorepoApps?: Array<{
-      name: string;
-      rootDirectory: string;
-      framework?: string;
-      packageManager?: string;
-      buildImage?: string;
-      installCommand?: string;
-      buildCommand?: string;
-      startCommand?: string;
-      outputDirectory?: string;
-      port?: number;
-      enabled?: boolean;
-      exposed?: boolean;
-      domain?: string;
-      customDomain?: string;
-      domainType?: "free" | "custom";
-      environment?: Record<string, string>;
-    }>;
+    monorepoApps?: EnsureProjectInput["monorepoApps"];
     monorepoWorkspace?: {
       packageManager: string;
       /** Shell command run ONCE at the repo root before per-app builds. */
       prepareCommand?: string;
     };
     /** Routing config parsed from the repo's vercel.json (opaque passthrough). */
+    cloudStaticHosting?: "pages" | "server";
     routingConfig?: RoutingConfig | null;
     /**
      * Deploy-time readiness gate. Omitted/null = OFF (the default) — the deploy
@@ -318,6 +323,7 @@ export const projectsApi = {
     readiness?: OpenshipReadiness | null;
     /** Ordered commands required before activating a single-app release. */
     releaseCommands?: string[] | null;
+    roles?: StackRole[] | null;
   }) => api.post<any>(endpoints.projects.ensure, body),
 
   /** List local projects only */
@@ -549,6 +555,10 @@ export const projectsApi = {
     api.get<EdgeConfigReport>(endpoints.projects.edgeConfig(id)),
 
   /* ── Route rules (self-hosted edge: rate-limit / ban / allow-deny) ── */
+  listRouteProtection: (id: string | number) =>
+    api.get<{ data: RouteProtectionStatus[] }>(`/projects/${id}/route-protection`),
+  changeRouteProtection: (id: string | number, body: RouteProtectionInput) =>
+    api.put<{ data: RouteProtectionStatus }>(`/projects/${id}/route-protection`, body),
   listRouteRules: (id: string | number) =>
     api.get<{ rules: RouteRuleRow[] }>(endpoints.projects.routeRules(id)),
   createRouteRule: (id: string | number, body: RouteRuleInput) =>

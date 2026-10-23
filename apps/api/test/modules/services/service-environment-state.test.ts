@@ -107,7 +107,12 @@ describe("effective service environment through HTTP, SDK and real storage", () 
   it.each(["docker", "cloud"])(
     "resolves port-only public URLs on the %s deployment target",
     async (target) => {
+      const managed = target === "cloud"
+        ? await repos.cloudWorkspace.create({ organizationId: owner.orgId, name: "Managed server" })
+        : null;
+      const server = managed ? await repos.server.findByWorkspace(managed.id, owner.orgId) : null;
       const stack = await seedProject(owner.orgId, {
+        serverId: server?.id,
         framework: "docker-compose",
         runtimeMode: "docker",
       });
@@ -116,13 +121,15 @@ describe("effective service environment through HTTP, SDK and real storage", () 
         environment: { BACKEND_ORIGIN: "{{publicUrl:backend:8080}}" },
       });
       await seedService(stack.id, { name: "backend", exposed: false, ports: ["8080:8080"] });
-      const deployment = await seedDeployment(stack);
+      const deployment = await seedDeployment(stack, {
+        meta: server ? { deployTarget: "cloud", serverId: server.id, managedWorkspaceId: managed!.id,
+          managedServer: { projectId: stack.id, workspaceId: "provider-vm", ownerWorkspaceId: managed!.id } } : {},
+      });
       await setActive(stack.id, deployment.id);
       await seedServiceDeployment(deployment.id, api, { containerId: "current-api" });
       const runtime = await DockerRuntime.create({
         dockerSocketPath: "/tmp/openship-test-absent.sock",
       });
-      Object.defineProperty(runtime, "name", { value: target });
       vi.spyOn(runtime, "supports").mockReturnValue(false);
       vi.spyOn(runtime, "dispose").mockResolvedValue(undefined);
       vi.spyOn(runtime, "inspectContainer").mockResolvedValue({
@@ -140,7 +147,7 @@ describe("effective service environment through HTTP, SDK and real storage", () 
       vi.spyOn(runtime, "inspectImageEnv").mockResolvedValue([]);
       vi.mocked(deploymentRuntime.resolveDeploymentRuntimeForRead).mockResolvedValue({
         runtime,
-        serverId: null,
+        serverId: server?.id ?? null,
         hostPortTarget: null,
       });
       vi.spyOn(serverTarget, "resolveServerHost").mockResolvedValue(null);
@@ -166,6 +173,112 @@ describe("effective service environment through HTTP, SDK and real storage", () 
       }
     },
   );
+
+  it("does not offer unchanged image defaults for recovery, even if explicitly repeated by a legacy container", async () => {
+    const deployment = (await repos.deployment.findById(
+      (await repos.project.findById(project.id))!.activeDeploymentId!,
+    ))!;
+    await seedServiceDeployment(deployment.id, service, { containerId: "legacy-api" });
+    const runtime = await DockerRuntime.create({
+      dockerSocketPath: "/tmp/openship-test-absent.sock",
+    });
+    vi.spyOn(runtime, "supports").mockReturnValue(false);
+    vi.spyOn(runtime, "dispose").mockResolvedValue(undefined);
+    vi.spyOn(runtime, "inspectContainer").mockResolvedValue({
+      id: "legacy-api",
+      name: "api",
+      image: "node:22",
+      imageId: "sha256:node-image",
+      state: "running",
+      // Docker appends non-overridden image defaults; these equal defaults were
+      // explicitly included by an older deployment and precede that suffix.
+      env: ["NODE_VERSION=22.0.0", "YARN_VERSION=1.22.22", "RECOVER_ME=keep-me", "PATH=/usr/bin"],
+      labels: { "openship.project": project.id, "openship.service": service.name },
+      networks: [],
+      mounts: [],
+      ports: [],
+    });
+    vi.spyOn(runtime, "inspectImageEnv").mockResolvedValue([
+      "PATH=/usr/bin",
+      "NODE_VERSION=22.0.0",
+      "YARN_VERSION=1.22.22",
+    ]);
+    vi.mocked(deploymentRuntime.resolveDeploymentRuntimeForRead).mockResolvedValue({
+      runtime,
+      serverId: null,
+      hostPortTarget: null,
+    });
+    const state = await client.services.getEnvironment(project.id, service.id, {
+      inspectRuntime: true,
+    });
+    expect(state.recoverableKeys).toEqual(["RECOVER_ME"]);
+    const recovered = await client.services.revealEnv(project.id, service.id, {
+      keys: ["RECOVER_ME", "NODE_VERSION", "YARN_VERSION"],
+      environment: "production",
+      source: "runtime",
+      containerId: "legacy-api",
+    });
+    expect(recovered).toEqual({ RECOVER_ME: "keep-me" });
+  });
+
+  it.each(["absent", "empty"])(
+    "repairs an %s legacy service deployment record transactionally after Apply",
+    async (record) => {
+      const active = (await repos.project.findById(project.id))!.activeDeploymentId!;
+      if (record === "empty") await seedServiceDeployment(active, service, { containerId: null });
+      await repos.service.recordEnvironmentApply({
+        projectId: project.id,
+        organizationId: owner.orgId,
+        deploymentId: active,
+        serviceId: service.id,
+        expectedContainerId: null,
+        previousContainerId: "legacy-api",
+        containerId: "replacement-api",
+        ip: "172.22.0.9",
+        appliedAt: new Date(),
+      });
+      const rows = await repos.service.listByDeployment(active);
+      expect(rows.filter((row) => row.serviceId === service.id)).toHaveLength(1);
+      expect(rows.find((row) => row.serviceId === service.id)).toMatchObject({
+        containerId: "replacement-api",
+        status: "success",
+        ip: "172.22.0.9",
+      });
+      expect((await repos.project.findById(project.id))!.activeDeploymentId).toBe(active);
+    },
+  );
+
+  it("rolls back legacy bookkeeping if the service or active release no longer belongs to this apply", async () => {
+    const active = (await repos.project.findById(project.id))!.activeDeploymentId!;
+    const other = await seedProject(owner.orgId);
+    const foreign = await seedService(other.id, { name: "foreign" });
+    await expect(
+      repos.service.recordEnvironmentApply({
+        projectId: project.id,
+        organizationId: owner.orgId,
+        deploymentId: active,
+        serviceId: foreign.id,
+        expectedContainerId: null,
+        previousContainerId: "legacy-api",
+        containerId: "wrong-target",
+        appliedAt: new Date(),
+      }),
+    ).rejects.toThrow("service changed");
+    await setActive(project.id, (await seedDeployment(project)).id);
+    await expect(
+      repos.service.recordEnvironmentApply({
+        projectId: project.id,
+        organizationId: owner.orgId,
+        deploymentId: active,
+        serviceId: service.id,
+        expectedContainerId: null,
+        previousContainerId: "legacy-api",
+        containerId: "stale-release",
+        appliedAt: new Date(),
+      }),
+    ).rejects.toThrow("service changed");
+    expect(await repos.service.listByDeployment(active)).toEqual([]);
+  });
 
   it("saves only deliberate edits, retaining ciphertext, row identity and other scopes", async () => {
     await client.services.setEnvVars(project.id, service.id, {

@@ -11,6 +11,8 @@
  */
 
 import { encrypt, decrypt, decryptEnvMap } from "@repo/platform/engine/lib/encryption";
+import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { env } from "@repo/platform/engine/config/env";
 import {
   encryptSecretField,
   decryptSecretField,
@@ -22,6 +24,11 @@ import type { SecretEntry } from "./types";
 
 const configuration = createConfigurationSecrets({ encrypt, decrypt });
 function configurationCell(spec: SecretColumn, cell: unknown, direction: "open" | "seal"): unknown {
+  if (spec.sqlName === "action_run" && spec.column === "configuration") {
+    const value = structuredClone(cell) as { secrets?: Record<string, string> };
+    if (value?.secrets) value.secrets = Object.fromEntries(Object.entries(value.secrets).map(([key, text]) => [key, direction === "open" ? decrypt(text) : encrypt(text)]));
+    return value;
+  }
   if (spec.sqlName === "deployment" && spec.column === "meta") {
     return direction === "open"
       ? configuration.openDeploymentMeta(cell)
@@ -34,11 +41,11 @@ function configurationCell(spec: SecretColumn, cell: unknown, direction: "open" 
 }
 
 /** Preserve a stored cell, including an explicit clear; absent columns stay absent. */
-export function extractPlaintext(
+export async function extractPlaintext(
   spec: SecretColumn,
   id: string,
   cell: unknown,
-): SecretEntry | null {
+): Promise<SecretEntry | null> {
   if (cell === undefined) return null;
   const base = { table: spec.sqlName, id, column: spec.column } as const;
   if (cell === null) {
@@ -49,6 +56,10 @@ export function extractPlaintext(
   }
 
   switch (spec.scheme) {
+    case "better-auth": {
+      if (typeof cell !== "string") return null;
+      return { ...base, scheme: "better-auth", value: cell === "" ? "" : await symmetricDecrypt({ key: env.BETTER_AUTH_SECRET, data: cell }) };
+    }
     case "json":
       return { ...base, scheme: "json", json: configurationCell(spec, cell, "open") };
     case "scalar": {
@@ -88,12 +99,14 @@ export function extractPlaintext(
  * value to write. For notification-config, `currentCell` is the restored
  * (secret-scrubbed) config object the secret sub-fields are merged back into.
  */
-export function sealForInstance(
+export async function sealForInstance(
   spec: SecretColumn,
   entry: SecretEntry,
   currentCell?: unknown,
-): unknown {
+): Promise<unknown> {
   switch (spec.scheme) {
+    case "better-auth":
+      return entry.value != null ? symmetricEncrypt({ key: env.BETTER_AUTH_SECRET, data: entry.value }) : null;
     case "json":
       return configurationCell(spec, entry.json, "seal");
     case "scalar":

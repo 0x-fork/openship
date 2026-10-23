@@ -1,3 +1,4 @@
+import { reportCaughtError as observeCaughtError } from "@repo/core/diagnostics";
 import { DockerRuntime, splitRuntimeEnv } from "@repo/adapters";
 import {
   AppError,
@@ -170,7 +171,7 @@ async function inspectServiceEnvironment(saved: SavedEnvironment) {
       "SERVICE_NOT_DEPLOYED",
     );
   }
-  const { runtime, serverId } = await resolveDeploymentRuntimeForRead(saved.deployment);
+  const { runtime, serverId } = await resolveDeploymentRuntimeForRead({ ...saved.deployment, meta: { ...(saved.deployment.meta as Record<string, unknown>), runtimeMode: "docker" } });
   try {
     if (!(runtime instanceof DockerRuntime)) {
       throw new AppError(
@@ -211,14 +212,21 @@ async function inspectServiceEnvironment(saved: SavedEnvironment) {
         "SERVICE_ENVIRONMENT_UNAVAILABLE",
       );
     const imageEnv = await runtime.inspectImageEnv(detail.imageId, { required: true });
+    const current = envEntries(detail.env);
+    const image = envEntries(imageEnv);
     return {
       containerId: detail.id,
-      current: envEntries(detail.env),
-      image: envEntries(imageEnv),
-      // Use migration's provenance rules; image defaults are not recovered as overrides.
-      recoverable: toDiscoveredService(detail, undefined, imageEnv).env,
+      current,
+      image,
+      // A value supplied by the immutable image survives replacement without an
+      // override, even if an older deploy explicitly repeated it in Config.Env.
+      recoverable: Object.fromEntries(
+        Object.entries(toDiscoveredService(detail, undefined, imageEnv).env ?? {}).filter(
+          ([key, value]) => value !== image[key],
+        ),
+      ),
       serverId,
-      cloudRuntime: runtime.name === "cloud",
+      cloudRuntime: !!saved.project.workspaceId,
     };
   } finally {
     disposeRuntime(runtime);
@@ -250,6 +258,7 @@ export async function getServiceEnvironment(
       .sort();
     view.status = view.changedKeys.length ? "pending" : "synced";
   } catch (error) {
+    observeCaughtError(error, "platform/engine/modules/services/service-environment-state");
     view.status =
       error instanceof AppError && error.code === "SERVICE_NOT_DEPLOYED"
         ? "not-deployed"

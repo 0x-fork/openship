@@ -25,9 +25,9 @@
  *     — not `configFields` — are what the operator fills in the Create-App form.
  */
 
-import type { ComposeHealthcheck } from "./types";
+import type { ComposeHealthcheck, ComposeGpu } from "./types";
 import type { AppInstallLayout, AppManagement, AppSettingGroup } from "./app-settings";
-import type { AppMinResources } from "./resources";
+import type { AppMinResources, ResourceValues } from "./resources";
 import { resolveServiceHostnameLabel } from "./service-routing";
 import catalog from "./apps/catalog.json";
 
@@ -38,6 +38,7 @@ export type AppCategory =
   | "mail"
   | "analytics"
   | "automation"
+  | "ai"
   | "other";
 
 /**
@@ -72,6 +73,16 @@ export interface TemplateServiceSpec {
   name: string;
   /** Upstream image to pull. Exactly one of `image`/`build` per service. */
   image?: string;
+  /** Exact retired defaults eligible for an explicit image-only repair. */
+  replacesImages?: readonly string[];
+  /** Advisory sizing recommendation; CPU/disk are never copied into installed
+   *  container limits. `swapDisabled` is the exception: install copies it along
+   *  with the memory limit it requires. */
+  resources?: Readonly<ResourceValues & { swapDisabled?: boolean }>;
+  /** NVIDIA requests applied when the install chooses GPU mode. */
+  gpus?: ComposeGpu | ComposeGpu[];
+  /** Private container shared memory in bytes; never host IPC. */
+  shmSize?: number;
   /** Inline build context — build instead of pull. Mutually exclusive with `image`. */
   build?: TemplateServiceBuild;
   /** Port mappings, compose syntax (e.g. "8080:80"). */
@@ -111,6 +122,8 @@ export interface TemplateServiceSpec {
    * images whose entrypoint rewrites argv instead of `exec "$@"` (e.g. MinIO).
    */
   commandArgv?: readonly string[];
+  /** Exact image entrypoint override; maps to the existing Compose entrypoint. */
+  entrypointArgv?: readonly string[];
   /**
    * Seconds/duration Docker waits after SIGTERM before SIGKILL (maps to
    * `service.advanced.stopGracePeriod`). Needed by apps whose clean shutdown
@@ -357,6 +370,8 @@ export interface AppRequires {
   label: LocalizedString;
   /** Match candidate source apps by category (e.g. "database"). */
   category?: AppCategory;
+  /** Match a specific provides bundle, rather than any app in the category. */
+  bundleId?: string;
   /** Target env var the resolved connection value is injected as. */
   envKey: string;
   /** Reachability mode for the wired connection (default "public"). */
@@ -364,6 +379,18 @@ export interface AppRequires {
   /** A missing optional requirement doesn't block install (default false). */
   optional?: boolean;
 }
+
+/** Public editorial content. Article files are compiled into catalog.json. */
+export interface AppMarketplaceContent {
+  features?: readonly { title: string; description?: string }[];
+  article?: string;
+  /** Authoring only: articles/<slug>.md relative to apps/catalog/. */
+  articleFile?: string;
+}
+
+/** Shared upstream artifact used by the engine and public app directory. */
+export const APP_CATALOG_URL =
+  "https://raw.githubusercontent.com/oblien/openship/main/packages/core/src/apps/catalog.json";
 
 export interface AppTemplate {
   id: string;
@@ -409,11 +436,17 @@ export interface AppTemplate {
   repository?: string;
   name: string;
   description: string;
+  /** Optional features and Markdown for the public app detail page. */
+  marketplace?: AppMarketplaceContent;
   /** "template" = instantiate the services below; "flow" = defer to `flowHref`. */
   kind: "template" | "flow";
   /** Catalog logo id (resolved to an icon in the dashboard). */
   logo: string;
   category: AppCategory;
+  /** GPU placement guidance. GPU services default to required when omitted. */
+  gpu?: "recommended" | "required";
+  /** False limits installation to self-hosted destinations. Existing apps default to true. */
+  supportsCloud?: boolean;
   tags?: readonly string[];
   /** Stack id the instantiated project carries (template kind). */
   framework?: string;
@@ -483,7 +516,7 @@ export const APP_TEMPLATES: readonly AppTemplate[] = catalog.apps as unknown as 
  * enum members never bump it. Overlay ingest gates against `MAX_SUPPORTED_SCHEMA`
  * (see apps/schema.ts) so a newer-than-known entry degrades gracefully.
  */
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 export function getAppTemplate(id: string): AppTemplate | undefined {
   return APP_TEMPLATES.find((t) => t.id === id);

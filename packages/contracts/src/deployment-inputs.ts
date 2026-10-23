@@ -166,7 +166,9 @@ export const BuildAccessBody = Type.Object({
       description: "Subset of serviceIds to recreate WITHOUT rebuilding (env-only refresh).",
     }),
   ),
-  cloudResourceTier: Type.Optional(CloudResourceTierEnum()),
+  cloudResourceTier: Type.Optional(CloudResourceTierEnum({
+    description: "Container limits inside the selected managed server. Unlimited uses its available capacity; it does not resize the server.",
+  })),
   cloudResourceCustom: Type.Optional(
     Type.Object(
       { cpuCores: Type.Number(), memoryMb: Type.Number(), diskMb: Type.Number() },
@@ -180,6 +182,15 @@ export const BuildAccessBody = Type.Object({
 // the controller resolves source from (owner,repo) vs path and enforces the
 // conditional requireds (owner+repo for github, path for local).
 export const PrepareDeployBody = Type.Object({
+  rootDirectory: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 200,
+      pattern: "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).*$",
+      description:
+        "Inspect this repository-relative app folder explicitly; use . for the repository root.",
+    }),
+  ),
   ...SourceScanOptionsSchema.properties,
   source: Type.Optional(
     Type.Union([Type.Literal("github"), Type.Literal("local")], {

@@ -5,10 +5,14 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { baseDictionary } from "@/i18n";
 import { AppCatalog } from "./AppCatalog";
 
-const h = vi.hoisted(() => ({ catalog: vi.fn(), push: vi.fn() }));
+const h = vi.hoisted(() => ({ catalog: vi.fn(), push: vi.fn(), cloud: false }));
+vi.mock("@/context/PlatformContext", () => ({ usePlatform: () => ({ selfHosted: !h.cloud }) }));
 vi.mock("@/lib/api", () => ({ appsApi: { catalog: h.catalog } }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: h.push }), useSearchParams: () => new URLSearchParams() }));
-vi.mock("@/components/i18n-provider", () => ({ useI18n: () => ({ t: baseDictionary }) }));
+vi.mock("@/components/i18n-provider", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/components/i18n-provider")>(),
+  useI18n: () => ({ t: baseDictionary, locale: "en" }),
+}));
 vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: vi.fn() }) }));
 vi.mock("@/components/HelpMenu", () => ({ HelpMenu: () => null }));
 vi.mock("./AddCustomAppModal", () => ({ AddCustomAppModal: () => null }));
@@ -18,6 +22,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   h.push.mockReset();
+  h.cloud = false;
   h.catalog.mockResolvedValue({ data: [
     { id: "n8n", name: "Automation app", category: "automation", kind: "template", description: "Workflow engine" },
     { id: "mail", name: "Mail setup", category: "mail", kind: "flow", flowHref: "/emails/setup", description: "Existing mail wizard" },
@@ -34,6 +39,17 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const button = (name: string) => [...container.querySelectorAll("button")].find(node => node.textContent?.includes(name))!;
+
+it("labels customer-server requirements before opening the shared install flow", async () => {
+  h.cloud = true;
+  h.catalog.mockResolvedValue({ data: [{ id: "ollama", name: "Ollama", kind: "template", category: "ai", description: "Models", gpu: "recommended", supportsCloud: false }] });
+  await act(async () => root.render(<AppCatalog />));
+  expect(button("Ollama").disabled).toBe(false);
+  expect(container.textContent).toContain("GPU recommended");
+  expect(container.textContent).toContain("Requires your own server");
+  await act(async () => button("Ollama").click());
+  expect(h.push).toHaveBeenCalledWith("/apps/new/ollama");
+});
 
 it("uses existing template and flow install routes without starting an installation", async () => {
   await act(async () => root.render(<AppCatalog />));

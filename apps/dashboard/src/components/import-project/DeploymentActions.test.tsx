@@ -155,6 +155,22 @@ describe("shared deployment controls", () => {
     expect(host.textContent).not.toContain(copy.openSite);
   });
 
+  it("shows Stopping in the header until cancellation finishes, then enables redeploy", async () => {
+    deployment.deploymentStatus = "cancelled";
+    deployment.state.cancellationPending = true;
+    await render(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(copy.stopping);
+    expect(button(copy.stopping).disabled).toBe(true);
+    expect(button(copy.redeploy)).toBeUndefined();
+
+    deployment.state.cancellationPending = false;
+    await render(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(copy.status.cancelled);
+    expect(button(copy.redeploy).disabled).toBe(false);
+    await act(async () => button(copy.redeploy).click());
+    expect(redeploy).toHaveBeenCalledOnce();
+  });
+
   it("stops an active deployment and disables the action while stopping", async () => {
     deployment.deploymentStatus = "building";
     await render();
@@ -176,6 +192,20 @@ describe("shared deployment controls", () => {
     expect(button(copy.redeploying).disabled).toBe(true);
     await act(async () => finish(null));
     expect(button(copy.redeploy).disabled).toBe(false);
+  });
+
+  it("offers a deployment-only retry only with the server's retained build receipt", async () => {
+    deployment.deploymentStatus = "failed";
+    await render();
+    expect(button(baseDictionary.billing.workspaces.retryDeployment)).toBeUndefined();
+    deployment.state.canRetryDeployment = true;
+    await render();
+    await act(async () => button(baseDictionary.billing.workspaces.retryDeployment).click());
+    expect(redeploy).toHaveBeenCalledExactlyOnceWith({ reuseBuild: true });
+    expect(button(copy.redeploy)).toBeDefined();
+    deployment.deploymentStatus = "cancelled";
+    await render();
+    expect(button(baseDictionary.billing.workspaces.retryDeployment)).toBeUndefined();
   });
 
   it("uses the project header and correct configuration link for a local source", async () => {
