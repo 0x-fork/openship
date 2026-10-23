@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./docker-swarm";
 export * from "./actions";
 export * from "./action-capabilities";
 export * from "./stacks";
@@ -88,6 +89,7 @@ export * from "./updates";
 export * from "./proxy-settings";
 export * from "./audit-taxonomy";
 export * from "./access-grants";
+export * from "./access-capabilities";
 export * from "./answer";
 export * from "./host-profile";
 export * from "./host-firewall";

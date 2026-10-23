@@ -1,5 +1,8 @@
 "use client";
 
+import { serializeMonorepoApp } from "./monorepo-config";
+import { persistRouteProtectionDrafts, clearRouteProtectionDrafts } from "./route-protection-drafts";
+
 import { actionsApi } from "@/lib/api/actions";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import type { IconName } from "@repo/ui/icons";
@@ -701,6 +704,16 @@ export function useDeploymentBuild(
       return null;
     }
 
+    if (
+      !saveConfigOnly &&
+      config.projectType === "monorepo" &&
+      config.serviceDeploymentMode !== "single" &&
+      !config.monorepoApps?.some((app) => app.enabled)
+    ) {
+      showToast("Choose at least one app to deploy", "error", "Apps");
+      return null;
+    }
+
     const envPlan = planDeploymentEnvPersistence({
       projectId: config.projectId,
       envVars: config.envVars,
@@ -766,9 +779,9 @@ export function useDeploymentBuild(
 
     try {
       // ── Save-only (Edit from the Runtime page): the project ALREADY exists,
-      // so persist build + runtime config through POST /:id/options and STOP.
-      // Deliberately does NOT call `ensure` (which would resend git + routes + a
-      // re-detected framework). Env uses the shared per-key merge contract:
+      // so persist build + runtime config through POST /:id/options. Monorepo
+      // app settings use the existing ensure contract with only those fields;
+      // no repository rescan or deployment. Env uses the shared per-key merge contract:
       // untouched masked secrets are omitted and explicit edits are persisted
       // before success is reported. No deploy. ────────────────────────────────
       if (saveConfigOnly) {
@@ -778,6 +791,8 @@ export function useDeploymentBuild(
           return null;
         }
         try {
+          const savedProtection = await persistRouteProtectionDrafts(projectId, config);
+          if (savedProtection.size) setConfig(prev => syncActiveModeSnapshot(clearRouteProtectionDrafts(prev, savedProtection)));
           await projectsApi.setOptions(projectId, {
             ...(!isSourceless ? { gitBranch: config.branch } : {}),
             framework: config.framework,
@@ -808,6 +823,16 @@ export function useDeploymentBuild(
               ? { runtimeMode: config.runtimeMode }
               : {}),
           });
+          if (config.projectType === "monorepo") {
+            const saved = await projectsApi.ensure({
+              projectId,
+              name: config.projectName,
+              projectType: "monorepo",
+              monorepoApps: (config.monorepoApps ?? []).map(serializeMonorepoApp),
+              monorepoWorkspace: config.monorepoWorkspace,
+            });
+            if (!saved.success) throw new Error("Failed to save app configuration");
+          }
           await persistProjectEnvDiff(projectId, envPlan.merge);
           if (usesServiceDeployment(config)) {
             const synced = await servicesApi.sync(projectId, config.services.map(serializeComposeService));
@@ -826,6 +851,11 @@ export function useDeploymentBuild(
 
       const isServiceDeployment = usesServiceDeployment(config);
       const isMonorepoDeployment = config.projectType === "monorepo";
+      // Single-app mode keeps the monorepo source type, but owns project routes.
+      // Omission delegates routing to service rows; [] explicitly stays private.
+      const usesProjectRoutes =
+        !isServiceDeployment &&
+        (!isMonorepoDeployment || config.serviceDeploymentMode === "single");
 
       // Step 1: Ensure project exists
       const projectData = await projectsApi.ensure({
@@ -863,7 +893,7 @@ export function useDeploymentBuild(
         // "None" routing → explicit [] so ensure() doesn't PERSIST a stale free
         // subdomain onto the project row (this runs before the buildAccess
         // payload below, which already handles None the same way).
-        publicEndpoints: !isServiceDeployment && !isMonorepoDeployment
+        publicEndpoints: usesProjectRoutes
           ? config.noPublicRoute
             ? []
             : config.publicEndpoints.map((endpoint) => (
@@ -881,20 +911,7 @@ export function useDeploymentBuild(
         // Monorepo: persist the per-sub-app slices + shared workspace install.
         projectType: isMonorepoDeployment ? "monorepo" : undefined,
         monorepoApps: isMonorepoDeployment
-          ? (config.monorepoApps ?? []).map((app) => ({
-              name: app.name,
-              rootDirectory: app.rootDirectory,
-              framework: app.framework,
-              packageManager: app.packageManager,
-              buildImage: app.buildImage,
-              installCommand: app.installCommand || undefined,
-              buildCommand: app.buildCommand || undefined,
-              startCommand: app.startCommand || undefined,
-              outputDirectory: app.outputDirectory || undefined,
-              port: app.port ? Number(app.port) : undefined,
-              enabled: app.enabled,
-              exposed: true,
-            }))
+          ? (config.monorepoApps ?? []).map(serializeMonorepoApp)
           : undefined,
         monorepoWorkspace: isMonorepoDeployment && config.monorepoWorkspace
           ? {
@@ -926,6 +943,8 @@ export function useDeploymentBuild(
       ensuredDraftRef.current = { key: draftKey, id: projectData.project_id };
       // Configure automation before any build is started. A failed setup keeps
       // the draft project recoverable through the existing deployment error path.
+      const savedProtection = await persistRouteProtectionDrafts(projectData.project_id!, config);
+      if (savedProtection.size) setConfig(prev => syncActiveModeSnapshot(clearRouteProtectionDrafts(prev, savedProtection)));
       if (config.actions) await actionsApi.updateProjectPolicy({ ...config.actions, projectId: projectData.project_id! });
 
       let resolvedEnvPlan = envPlan;
@@ -963,7 +982,7 @@ export function useDeploymentBuild(
         sourceEnvKeys: resolvedEnvPlan.sourceEnvKeys,
         // "None" routing → explicit [] (no public URL). Must be [], not
         // undefined: undefined makes the backend auto-derive a free subdomain.
-        publicEndpoints: !isServiceDeployment
+        publicEndpoints: usesProjectRoutes
           ? config.noPublicRoute
             ? []
             : config.publicEndpoints.map((endpoint) => (

@@ -10,7 +10,14 @@ import type {
   WorkloadType,
   DeploymentHistoryQuery,
 } from "@repo/core";
-import type { DeploymentPage, ProjectControlOperations, RollbackCapacity } from "@repo/contracts";
+import type {
+  EnsureProjectInput,
+  DeploymentPage,
+  ProjectControlOperations,
+  RollbackCapacity,
+  RouteProtectionInput,
+  RouteProtectionStatus,
+} from "@repo/contracts";
 import { endpoints } from "./endpoints";
 import type { ReleaseImageSource } from "../release-image-source";
 import {
@@ -46,6 +53,7 @@ export interface PendingAction {
     | "prompt"
     | "partial_decision"
     | "routing_unsynced"
+    | "runtime_health"
     | "domain_unverified"
     | "ssl_error"
     | "port_advisory";
@@ -299,24 +307,7 @@ export const projectsApi = {
     workloadType?: WorkloadType;
     /** Project flavor - "monorepo" persists the sub-app + workspace fields below. */
     projectType?: "app" | "docker" | "services" | "monorepo";
-    monorepoApps?: Array<{
-      name: string;
-      rootDirectory: string;
-      framework?: string;
-      packageManager?: string;
-      buildImage?: string;
-      installCommand?: string;
-      buildCommand?: string;
-      startCommand?: string;
-      outputDirectory?: string;
-      port?: number;
-      enabled?: boolean;
-      exposed?: boolean;
-      domain?: string;
-      customDomain?: string;
-      domainType?: "free" | "custom";
-      environment?: Record<string, string>;
-    }>;
+    monorepoApps?: EnsureProjectInput["monorepoApps"];
     monorepoWorkspace?: {
       packageManager: string;
       /** Shell command run ONCE at the repo root before per-app builds. */
@@ -564,6 +555,10 @@ export const projectsApi = {
     api.get<EdgeConfigReport>(endpoints.projects.edgeConfig(id)),
 
   /* ── Route rules (self-hosted edge: rate-limit / ban / allow-deny) ── */
+  listRouteProtection: (id: string | number) =>
+    api.get<{ data: RouteProtectionStatus[] }>(`/projects/${id}/route-protection`),
+  changeRouteProtection: (id: string | number, body: RouteProtectionInput) =>
+    api.put<{ data: RouteProtectionStatus }>(`/projects/${id}/route-protection`, body),
   listRouteRules: (id: string | number) =>
     api.get<{ rules: RouteRuleRow[] }>(endpoints.projects.routeRules(id)),
   createRouteRule: (id: string | number, body: RouteRuleInput) =>

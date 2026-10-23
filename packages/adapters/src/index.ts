@@ -199,6 +199,7 @@ export type {
   ProvisionCertOptions,
   DnsCertificateProvider,
 } from "./infra/types";
+export { createRouteProtection, revokeRouteSessions, assertRouteProtection, type RouteProtection } from "./infra/route-protection";
 export { NginxProvider, type NginxProviderOptions, type RateLimitConfig } from "./infra/nginx";
 // For the upstream-down e2e in apps/api: it asserts on the real marker rather than a copy of
 // the string, which could drift from the page it is checking for.
@@ -655,3 +656,7 @@ export {
   probeDockerExecutionPlatforms,
   DOCKER_BINFMT_IMAGE,
 } from "./runtime/docker-platforms";
+export { inspectDockerSwarm } from "./runtime/swarm/inspect";
+export { SwarmRuntime } from "./runtime/swarm/runtime";
+export { assertSwarmServiceConfig } from "./runtime/swarm/spec";
+export { prepareRemoteSource } from "./runtime/remote-source";

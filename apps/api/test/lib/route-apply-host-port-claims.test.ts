@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, HOST_PORT_QUARANTINE_OWNER, repos, schema, type HostPortClaim } from "@repo/db";
 import type { Platform, RuntimeAdapter } from "@repo/adapters";
 import type { HostPortTargetIdentity } from "@repo/platform/engine/lib/host-port-target";
@@ -68,6 +68,14 @@ function routeOptions(hostPortTarget = localTarget) {
 }
 
 describe("live route host-port recovery (#915)", () => {
+  beforeAll(async () => {
+    await db.insert(schema.organization).values({ id: project.organizationId, name: "Routing" });
+    const group = await repos.projectGroup.create({
+      organizationId: project.organizationId, name: "Routing", slug: "routing",
+    });
+    await db.insert(schema.project).values({ ...project, groupId: group.id, name: "App" });
+  });
+
   beforeEach(async () => {
     await db.delete(schema.hostPortClaim);
   });
@@ -274,6 +282,24 @@ describe("control-plane dashboard route recovery (#1019)", () => {
     activeDeploymentId: "dep_adopt",
   };
   const dashboard = { serviceId: null, containerPort: 3001, hostPort: 3001 };
+
+  beforeAll(async () => {
+    await db
+      .insert(schema.organization)
+      .values({ id: project.organizationId, name: "Routing" })
+      .onConflictDoNothing();
+    const group = await repos.projectGroup.create({
+      organizationId: project.organizationId,
+      name: "Self app",
+      slug: "self-app",
+    });
+    await db.insert(schema.project).values({
+      ...selfApp,
+      groupId: group.id,
+      name: "Openship",
+      appTemplateId: "openship",
+    });
+  });
 
   // The adopted dashboard is a host process: no container, no runtime proof.
   function dashboardRoute(controlPlanePort?: number) {

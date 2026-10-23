@@ -317,7 +317,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, ru
     },
   ];
   // Managed builds always execute on the selected server's adapter.
-  const visibleBuildOptions = config.deployTarget === "cloud" ? [] : buildOptions;
+  const visibleBuildOptions = !selfHosted || config.deployTarget === "cloud" ? [] : buildOptions;
 
   // Clone-location picker (DOCKER server deploys, incl. services). Bare always
   // clones on the target, so it keeps the credential-forwarding checkbox below
@@ -329,7 +329,7 @@ const DeployTargetStep: React.FC<DeployTargetStepProps> = ({ serverSelection, ru
   // Clone location only exists for a REMOTE build (the clone runs on the target).
   // "This Machine" (local build) clones + builds here and ships the output, so
   // there's no on-server-vs-here choice to make — hide it entirely.
-  const showCloneStrategy =
+  const showCloneStrategy = selfHosted &&
     config.deployTarget === "server" &&
     config.buildStrategy === "server" &&
     (config.runtimeMode === "docker" || isServiceDeployment);

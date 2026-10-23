@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   buildComposeImages: vi.fn(),
   deployComposeServices: vi.fn(),
   cleanupBuildArtifact: vi.fn(async () => {}),
+  finishServiceDeploymentTimings: vi.fn(async () => {}),
   onCancelled: vi.fn(async () => {}),
   onFailure: vi.fn(async () => {}),
   onReconciling: vi.fn(async () => {}),
@@ -41,6 +42,9 @@ vi.mock("@repo/platform/engine/modules/deployments/compose/deploy.service", () =
   deployComposeServices: mocks.deployComposeServices, composeDeployMadeNoChanges: () => false,
 }));
 vi.mock("@repo/platform/engine/modules/deployments/deployment-lifecycle", () => ({
+  beginBuildTiming: vi.fn(),
+  completeBuildTiming: vi.fn(),
+  finishServiceDeploymentTimings: mocks.finishServiceDeploymentTimings,
   cleanupBuildArtifact: mocks.cleanupBuildArtifact,
   onCancelled: mocks.onCancelled,
   onFailure: mocks.onFailure,
@@ -262,6 +266,10 @@ describe("executeComposePipeline — cancellation", () => {
     // Whatever finished building before the cancel landed is garbage — nothing
     // references it and no deploy will.
     expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(expect.anything(), "img/svc-0");
+    expect(mocks.finishServiceDeploymentTimings).toHaveBeenCalledOnce();
+    expect(mocks.finishServiceDeploymentTimings.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.cleanupBuildArtifact.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("still cleans up when a built image refuses to delete", async () => {
@@ -343,6 +351,9 @@ describe("executeComposePipeline — cancellation", () => {
     ).rejects.toBe(REACHED_DEPLOY);
 
     expect(mocks.cleanupBuildArtifact).toHaveBeenCalledTimes(2);
+    expect(mocks.finishServiceDeploymentTimings.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.cleanupBuildArtifact.mock.invocationCallOrder[0]!,
+    );
     expect(mocks.cleanupBuildArtifact).toHaveBeenCalledWith(
       expect.anything(),
       "openship/api:bld_x",

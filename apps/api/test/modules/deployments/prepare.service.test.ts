@@ -37,6 +37,55 @@ describe("resolveProjectInfo", () => {
     return path;
   }
 
+  it("inspects an explicitly selected root or unlisted folder without promoting another app", async () => {
+    const path = await mkdtemp(join(tmpdir(), "openship-selected-root-"));
+    tempDirs.push(path);
+    await mkdir(join(path, "apps/web"), { recursive: true });
+    await mkdir(join(path, "packages/job"), { recursive: true });
+    await writeFile(
+      join(path, "package.json"),
+      JSON.stringify({
+        name: "root",
+        scripts: { start: "node root.js" },
+        workspaces: ["apps/*", "packages/*"],
+      }),
+    );
+    await writeFile(
+      join(path, "apps/web/package.json"),
+      JSON.stringify({ scripts: { build: "vite build" }, devDependencies: { vite: "^6" } }),
+    );
+    await writeFile(
+      join(path, "packages/job/package.json"),
+      JSON.stringify({ scripts: { start: "node job.js" } }),
+    );
+    const root = await resolveProjectInfo({ source: "local", path, rootDirectory: "." });
+    expect(root.rootDirectory).toBe("./");
+    expect(root.startCommand).toContain("start");
+    expect(root.monorepoApps).toBeUndefined();
+    const manual = await resolveProjectInfo({
+      source: "local",
+      path,
+      rootDirectory: "packages/job",
+    });
+    expect(manual.rootDirectory).toBe("packages/job");
+    expect(manual.startCommand).toContain("start");
+    await expect(
+      resolveProjectInfo({ source: "local", path, rootDirectory: "missing" }),
+    ).rejects.toThrow(/selected app folder/);
+  });
+
+  it.each([true, false])("retains service swapDisabled=%s through source detection", async swapDisabled => {
+    const path = await mkdtemp(join(tmpdir(), "openship-swap-source-"));
+    tempDirs.push(path);
+    await writeFile(join(path, "openship.json"), JSON.stringify({
+      services: [{ name: "vault", image: "example/vault:1", resources: {
+        ...(swapDisabled ? { memoryMb: 1024 } : {}), swapDisabled,
+      } }],
+    }));
+    const detected = await resolveProjectInfo({ source: "local", path });
+    expect(detected.services?.[0]?.advanced?.resources?.swapDisabled).toBe(swapDisabled);
+  });
+
   it("suggests framework roles without enabling them and respects an explicit opt-out", async () => {
     const path = await mkdtemp(join(tmpdir(), "openship-role-suggestions-"));
     tempDirs.push(path);

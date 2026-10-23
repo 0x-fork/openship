@@ -3,7 +3,7 @@ import { posix } from "node:path";
 import type Dockerode from "dockerode";
 import { formatVolumeMount, parseVolumeMount } from "@repo/core";
 import { isRuntimeNotFoundError } from "../system/errors";
-import { OPENSHIP_LABEL } from "../system/port-owner";
+import { OPENSHIP_LABEL, isBuildHelperMarkers } from "../system/port-owner";
 import { projectVolumePrefix, ensureProjectVolume } from "./docker-project-volume";
 
 /** A destination belongs to a workload, not to a particular image or release. */
@@ -16,6 +16,8 @@ type VolumeOwner = {
   projectId: string;
   workload: string;
   previous?: { containerId: string; serviceName?: string; required?: boolean };
+  /** A scheduler verifies its release ownership before returning the saved mounts. */
+  readPrevious?: () => Promise<Pick<Dockerode.ContainerInspectInfo, "Mounts"> | undefined>;
 };
 
 /**
@@ -48,10 +50,14 @@ export async function resolveImageVolumeBinds(
   for (const mount of mounts) if (mount.source) targets.delete(mount.target);
   const binds = mounts.filter((mount) => mount.source).map(formatVolumeMount);
   if (!targets.size) return binds;
-  let previous: Dockerode.ContainerInspectInfo | undefined;
+  let previous: Pick<Dockerode.ContainerInspectInfo, "Mounts"> | undefined =
+    await owner.readPrevious?.();
+  let previousLabels: Record<string, string> | undefined;
   if (owner.previous) {
     try {
-      previous = await docker.getContainer(owner.previous.containerId).inspect();
+      const container = await docker.getContainer(owner.previous.containerId).inspect();
+      previous = container;
+      previousLabels = container.Config.Labels ?? {};
     } catch (error) {
       if (!isRuntimeNotFoundError(error)) throw error;
       if (owner.previous.required !== false)
@@ -62,13 +68,17 @@ export async function resolveImageVolumeBinds(
     }
   }
   if (previous && owner.previous) {
-    const labels = previous.Config.Labels ?? {};
+    const labels = previousLabels ?? {};
     if (
       labels[OPENSHIP_LABEL.project] !== owner.projectId ||
       (owner.previous.serviceName &&
         labels[OPENSHIP_LABEL.service] !== owner.previous.serviceName) ||
       labels[OPENSHIP_LABEL.role] ||
-      labels[OPENSHIP_LABEL.build]
+      isBuildHelperMarkers({
+        build: labels[OPENSHIP_LABEL.build],
+        deployment: labels[OPENSHIP_LABEL.deployment],
+        service: labels[OPENSHIP_LABEL.service],
+      })
     ) {
       throw new Error(
         "The previous container's storage ownership could not be verified; no volumes were changed.",

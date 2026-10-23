@@ -170,6 +170,8 @@ export async function runClusterRuntime(
         409,
         "CLUSTER_RUNTIME_CONFLICT",
       );
+    if (row.provider !== "k3s" || !plan.networkId || !plan.networkRevision)
+      throw new AppError("This runtime is externally managed.", 409, "CLUSTER_RUNTIME_EXTERNAL");
     const network = await repos.serverCluster.get(ctx.organizationId, plan.networkId);
     if (row.intent === "setup") {
       if (
@@ -576,6 +578,7 @@ export const clusterRuntimeCollection = {
     const result = await withServerInventoryLock(ctx.organizationId, async () => {
       await fleetAdmin(ctx);
       const cluster = await repos.computeCluster.get(ctx.organizationId, input.clusterId);
+      if (!cluster.networkId) throw new AppError("This runtime is externally managed.", 409, "CLUSTER_RUNTIME_EXTERNAL");
       const network = await repos.serverCluster.get(ctx.organizationId, cluster.networkId);
       if (network.operation && managedNetworkUnsettled(network.operation.status))
         throw new AppError(

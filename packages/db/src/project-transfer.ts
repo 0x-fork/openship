@@ -22,6 +22,7 @@ export const PROJECT_TRANSFER_TABLES = new Set([
   "service_deployment",
   "incoming_webhook",
   "route_rule",
+  "route_protection",
   "project_connection",
   "backup_destination",
   "backup_policy",

@@ -22,6 +22,7 @@
  * failure logs and defers to the next deploy rather than failing the request.
  */
 
+import { registerProjectRoute } from "@repo/platform/engine/lib/project-route-registration";
 import { reportCaughtError as observeCaughtError, diagnostics as errorDiagnostics } from "@repo/core/diagnostics";
 import { repos, type Deployment } from "@repo/db";
 import type {
@@ -357,7 +358,7 @@ export async function reconcileProjectRoutes(
         }
         const isWebhook = r.webhook ?? (!!webhookHost && r.hostname.toLowerCase() === webhookHost);
         try {
-          await routing.registerRoute({
+          await registerProjectRoute(project, routing, {
             domain: r.hostname,
             tls: !externalHosts.has(r.hostname),
             // A custom domain's TLS is ours to terminate, so the edge must keep a :443

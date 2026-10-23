@@ -1,3 +1,4 @@
+import { isCustomerServer } from "../billing/management.service";
 /**
  * Project CRUD service - create, read, update, list, ensure.
  */
@@ -176,6 +177,7 @@ export { deploymentIsBlocked, deploymentRoutingUnsynced };
 // Same reason: the run→payload projection is an allowlist that must be readable and
 // testable without this file's graph. See the module doc for what it deliberately drops.
 import { readActiveMigration } from "./active-migration";
+import { loadProjectRuntimeHealth } from "./project-runtime-health";
 
 /**
  * Is a live migration even POSSIBLE for a project on this instance?
@@ -301,7 +303,9 @@ export async function enrichProject(p: Project) {
   // that renders a project — cards, sidebar, the page header, its own Advanced tab — already
   // reads this payload. Anywhere else would be a second thing to fetch and a second place
   // for the answer to disagree.
-  const activeMigration = await loadActiveMigration(p.id);
+  const [activeMigration, runtimeHealth] = await Promise.all([
+    loadActiveMigration(p.id), loadProjectRuntimeHealth([p]),
+  ]);
 
   return {
     ...p,
@@ -309,6 +313,7 @@ export async function enrichProject(p: Project) {
     serverId,
     serverName,
     activeMigration,
+    runtimeUnhealthy: (runtimeHealth.get(p.id)?.length ?? 0) > 0,
     ...readEnabled(p),
     ...readActiveDeploymentSummary(activeDep),
     resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
@@ -326,7 +331,8 @@ export async function enrichProject(p: Project) {
  *
  * Per-project query count: 0 (data is pre-fetched).
  * Total SQL cost: 1 (deployment.findManyById) + 1 (server.getMany) + 1
- * (dockerMigrationRun.findActiveForProjects, self-hosted only).
+ * (dockerMigrationRun.findActiveForProjects, self-hosted only) + 1
+ * (serviceIncident.listOpenForActiveProjects, self-hosted only).
  */
 export async function enrichProjectsBatch(
   projects: Project[],
@@ -357,7 +363,9 @@ export async function enrichProjectsBatch(
   // ONE statement for every project's live run, so the "Migrating" pill on a list of 50
   // projects costs a query rather than 50. The map is empty on cloud (no migrations there)
   // and on any failure — a lookup for a status pill must never fail a project list.
-  const activeMigrations = await loadActiveMigrations(projects.map((p) => p.id));
+  const [activeMigrations, runtimeHealth] = await Promise.all([
+    loadActiveMigrations(projects.map((p) => p.id)), loadProjectRuntimeHealth(projects),
+  ]);
 
   return projects.map((p) => {
     const production = p.resources as ResourceConfig | null;
@@ -380,6 +388,7 @@ export async function enrichProjectsBatch(
       serverId,
       serverName,
       activeMigration: readActiveMigration(activeMigrations.get(p.id)),
+      runtimeUnhealthy: (runtimeHealth.get(p.id)?.length ?? 0) > 0,
       ...readEnabled(p),
       ...readActiveDeploymentSummary(activeDep),
       resources: encodeResources(production, build, p.sleepMode ?? "auto_sleep", p.port ?? 3000, {
@@ -623,7 +632,7 @@ async function ensureProjectApp(data: ResolvedCreateProjectBody, slug: string, o
   return withProjectCreationLock(organizationId, async () => {
     let app = await repos.projectGroup.findBySlugInOrg(organizationId, slug);
     if (app) return { app, created: false };
-    await assertProjectQuota(organizationId, data.workspaceId ?? null);
+    await assertProjectQuota(organizationId, data.workspaceId ?? null, data.serverId);
 
     const source = resolveProjectSource(data);
 
@@ -792,6 +801,12 @@ function buildProductionProjectInput(
   };
 }
 
+function assertUniqueMonorepoNames(data: EnsureProjectBody): void {
+  const names = data.monorepoApps?.map((app) => app.name) ?? [];
+  if (new Set(names).size !== names.length)
+    throw new ValidationError("Each monorepo app must have a unique name.");
+}
+
 async function persistMonorepoApps(projectId: string, data: TCreateProjectBody): Promise<void> {
   if (data.projectType !== "monorepo" || !data.monorepoApps?.length) return;
 
@@ -806,9 +821,7 @@ async function persistMonorepoApps(projectId: string, data: TCreateProjectBody):
   const needsRows =
     data.monorepoApps.some((app) => hasMaskedValue(app.environment)) ||
     customHostnamesOf(data.monorepoApps).length > 0;
-  const storedRows = needsRows
-    ? await repos.service.listByProjectKind(projectId, "monorepo").catch((diagnosticFailure) => { observeCaughtError(diagnosticFailure, "platform/engine/modules/projects/project-crud.service"); return []; })
-    : [];
+  const storedRows = needsRows ? await repos.service.listByProjectKind(projectId, "monorepo") : [];
   const storedEnvByName = new Map<string, Record<string, string>>(
     storedRows.map((row) => [row.name, (row.environment as Record<string, string> | null) ?? {}]),
   );
@@ -827,6 +840,7 @@ async function persistMonorepoApps(projectId: string, data: TCreateProjectBody):
       startCommand: app.startCommand ?? null,
       outputDirectory: app.outputDirectory ?? null,
       port: app.port ?? null,
+      publicEndpoints: app.publicEndpoints,
       enabled: app.enabled ?? true,
       exposed: app.exposed ?? true,
       exposedPort: app.port != null ? String(app.port) : null,
@@ -949,7 +963,7 @@ async function createProductionProject(
   }
   // Workspace ownership is always derived from the selected server.
   data = { ...data, workspaceId: undefined };
-  if (env.CLOUD_MODE || selectedServer?.workspaceId) {
+  if ((env.CLOUD_MODE && !await isCustomerServer(organizationId, selectedServer?.id)) || selectedServer?.workspaceId) {
     const { workspace, server } = await resolveCloudProjectServer(organizationId, data.serverId);
     if (workspace) {
       if (!ctx) throw new AppError("Workspace placement requires an authenticated execution context", 403, "CLOUD_WORKSPACE_ACCESS_REQUIRED");
@@ -1471,8 +1485,8 @@ async function findProjectByAppSlug(
  * Exported for the project CLONE: a duplicate is a new project and must count like one, or
  * "duplicate" becomes the way around the cap.
  */
-export async function assertProjectQuota(organizationId: string, workspaceId?: string | null): Promise<void> {
-  if (!env.CLOUD_MODE) {
+export async function assertProjectQuota(organizationId: string, workspaceId?: string | null, serverId?: string | null): Promise<void> {
+  if (!env.CLOUD_MODE || await isCustomerServer(organizationId, serverId)) {
     const { total } = await repos.projectGroup.listByOrganization(organizationId, {
       page: 1,
       perPage: 1,
@@ -1507,6 +1521,7 @@ export async function withProjectCreationLock<T>(organizationId: string, create:
 }
 
 export async function ensureProject(data: EnsureProjectBody, organizationId: string, ctx?: RequestContext, options?: { mustCreate: true }) {
+  assertUniqueMonorepoNames(data);
   const nameSlug = slugify(data.name);
   const desiredSlug = data.slug || nameSlug;
 
@@ -1726,6 +1741,7 @@ export async function getProject(projectId: string, organizationId: string) {
 
 /** @scope org — only reads organizationId as a DB key. */
 export async function createProject(data: EnsureProjectBody, organizationId: string, access?: { tokenId: string }, ctx?: RequestContext) {
+  assertUniqueMonorepoNames(data);
   const slug = slugify(data.name);
 
   const existing = await findProjectByAppSlug(organizationId, slug);
