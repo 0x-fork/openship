@@ -669,6 +669,11 @@ is an explicit refresh, not an automatic SSH request when the page opens. Show
 proxy overrides only for targets that apply them, preserving stored values when
 editing other routing rules.
 
+Project and service route saves share the same inline preparation and HTTPS progress viewer.
+The first exposed route retains proxy takeover consent and completes domain checks after edge
+setup. New custom hostnames on an existing edge use the existing project routing/HTTPS check;
+DNS-01 setup stays explicit. Reordering/removing routes does not request another certificate.
+Refresh canonical route and certificate state after any preparation outcome.
 Routing retries keep their logs inline and reconnect to the same server operation after a
 refresh. Refresh domain status and the routing warning from the canonical project response;
 do not clear one optimistically. A domain card has one primary repair action, including when
