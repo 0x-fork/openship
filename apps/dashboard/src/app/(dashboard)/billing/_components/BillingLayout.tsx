@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
+import { Tabs } from "@/components/ui/Tabs";
 import { PageContainer } from "@/components/ui/PageContainer";
 import {
   BillingLink,
@@ -25,7 +26,19 @@ import { BillingViewProvider, type BillingView } from "./BillingViewContext";
 import { PendingPaymentsButton } from "@/components/billing/CheckoutRecovery";
 
 /** Persistent route chrome. Only the tab content suspends while its scoped state loads. */
+function BillingProducts() {
+  const pathname = usePathname();
+  const router = useRouter();
+  return <Tabs variant="pills" ariaLabel="Hosting options" value={pathname.endsWith("/manage") ? "manage" : "cloud"}
+    tabs={[{ key: "cloud", label: "Openship Cloud", icon: "cloud", href: "/billing/overview" }, { key: "manage", label: "Your infrastructure", icon: "server", href: "/billing/manage" }]}
+    onChange={value => router.push(value === "manage" ? "/billing/manage" : "/billing/overview")} />;
+}
 export function BillingLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  if (pathname.endsWith("/manage")) return <PageContainer className="space-y-6"><BillingHeader /><BillingProducts />{children}</PageContainer>;
+  return <CloudBillingLayout>{children}</CloudBillingLayout>;
+}
+function CloudBillingLayout({ children }: { children: React.ReactNode }) {
   const { t } = useI18n();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -114,6 +127,7 @@ export function BillingLayout({ children }: { children: React.ReactNode }) {
                     </div>
                   ))}
               </BillingHeader>
+              <BillingProducts />
               <BillingTabBar
                 activeTab={activeTab}
                 plansOnly={plansOnly}

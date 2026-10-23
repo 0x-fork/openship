@@ -1,3 +1,4 @@
+import { createManagementBillingRepo } from "./management-billing.repo";
 import { createPullRequestPreviewRepo } from "./pull-request-preview.repo";
 import { createIngressRepo } from "./ingress.repo";
 export { createIngressRepo, type IngressConnection, type IngressHostname } from "./ingress.repo";
@@ -336,6 +337,7 @@ import { createDomainRepo } from "./domain.repo";
 import { createDomainDnsChallengeRepo } from "./domain-dns-challenge.repo";
 import { createDnsCredentialRepo } from "./dns-credential.repo";
 import { createCredentialRepo } from "./credential.repo";
+import { createRouteProtectionRepo } from "./route-protection.repo";
 import { createRouteRuleRepo } from "./route-rule.repo";
 import { createWebhookSourceRepo } from "./webhook-source.repo";
 import { createIncomingWebhookRepo } from "./incoming-webhook.repo";
@@ -427,6 +429,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     credential: createCredentialRepo(db),
     ingress: createIngressRepo(db),
     routeRule: createRouteRuleRepo(db),
+    routeProtection: createRouteProtectionRepo(db, encryption),
     webhookSource: createWebhookSourceRepo(db),
     incomingWebhook: createIncomingWebhookRepo(db),
     notice: createSystemNoticeRepo(db),
@@ -481,6 +484,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     actionOidc: createActionOidcRepo(db),
     actionStorage: createActionStorageRepo(db),
     actionBilling: createActionBillingRepo(db),
+    managementBilling: createManagementBillingRepo(db),
     orphanedResource: createOrphanedResourceRepo(db),
     hostPortClaim: createHostPortClaimRepo(db),
     resourceGrant: createResourceGrantRepo(db),

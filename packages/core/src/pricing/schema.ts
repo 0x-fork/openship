@@ -66,6 +66,7 @@ export const planLimitsSchema = z.object({
 
 const planSchema = z.object({
   id: z.string().min(1),
+  availableForPurchase: z.boolean().default(true),
   price: z.object({
     /** USD cents, or null for "contact sales". */
     monthly: z.number().int().nonnegative().nullable(),
@@ -256,6 +257,15 @@ export const pricingCatalogSchema = z
     custom: customPricingSchema,
     payg: paygPricingSchema,
     actions: actionsPricingSchema,
+    management: z.object({
+      version: z.number().int().positive(),
+      monthlyCents: z.number().int().min(100),
+      includedServers: z.number().int().positive(),
+      extraServerMonthlyCents: z.number().int().min(100),
+      maxServers: z.number().int().positive(),
+      includedWithCloud: z.boolean(),
+      dedicatedContact: z.email(),
+    }).strict(),
     plans: z.array(planSchema).min(1),
     creditPacks: z.array(creditPackSchema),
     /**

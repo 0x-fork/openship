@@ -215,6 +215,7 @@ const TABLES: ReadonlyArray<TableSpec> = [
     ["action_storage_chunk", schema.actionStorageChunk],
     ["action_budget", schema.actionBudget],
     ["action_credit_purchase", schema.actionCreditPurchase],
+    ["management_billing", schema.managementBilling],
   ].map(([sqlName, table]) => ({
     sqlName: sqlName as string,
     table: table as PgTable,
@@ -608,6 +609,16 @@ const TABLES: ReadonlyArray<TableSpec> = [
       { in: "project", via: "fk", column: "projectId" },
     ],
     hasOrganizationId: true,
+  },
+  {
+    sqlName: "route_protection",
+    table: schema.routeProtection,
+    hasOrganizationId: false,
+    scopes: [
+      { in: "instance", via: "all-rows" },
+      { in: "organization", via: "fk", column: "projectId" },
+      { in: "project", via: "fk", column: "projectId" },
+    ],
   },
   // Inbound webhook SOURCES (Settings → Webhooks). MUST be catalogued: `domain`
   // carries a `webhookSourceId` FK to it, so the first row this table ever holds
@@ -1098,6 +1109,7 @@ export const ENCRYPTED_COLUMNS: ReadonlyArray<EncryptedColumnSpec> = [
   { table: "incoming_webhook", column: "tokenEncrypted" },
   { table: "incoming_webhook", column: "hmacSecretEncrypted" },
   { table: "env_var", column: "value" },
+  { table: "route_protection", column: "secret" },
   { table: "backup_destination", column: "accessKeyIdEnc" },
   { table: "backup_destination", column: "secretAccessKeyEnc" },
   { table: "backup_destination", column: "sftpPasswordEnc" },
@@ -1322,6 +1334,7 @@ function pickResolver(spec: TableSpec, scope: SubgraphScope): ScopeResolver | nu
  * the same rule.
  */
 export function stripInstanceRefsInPlace(tables: DatabaseDump["tables"]): void {
+  for (const row of tables.route_protection ?? []) row.appliedRevision = null;
   for (const [table, columns] of Object.entries(INSTANCE_SCOPED_REFS)) {
     const rows = tables[table];
     if (!rows || rows.length === 0) continue;

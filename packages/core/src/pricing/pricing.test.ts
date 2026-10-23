@@ -285,11 +285,25 @@ describe("pricing catalog (pricing.json)", () => {
     expect(memoryMb).toBe(PLANS[id].oblienLimits.max_ram_mb);
     expect(PLANS[id].oblienLimits.max_disk_gb).toBe(PLANS[id].oblienLimits.max_total_disk_gb);
     expect(PLANS[id].oblienLimits.max_total_disk_gb).toBe(diskGb);
-    expect(quoteCustomResources({ cpuCores, memoryMb, diskGb })).toMatchObject({
-      resources: { cpuCores, memoryMb, diskGb },
-      priceCents: PRICING.plans.find(plan => plan.id === id)!.price.monthly,
-    });
+    if (PLANS[id].availableForPurchase) {
+      expect(quoteCustomResources({ cpuCores, memoryMb, diskGb })).toMatchObject({
+        resources: { cpuCores, memoryMb, diskGb },
+        priceCents: PRICING.plans.find(plan => plan.id === id)!.price.monthly,
+      });
+    }
     expect(resolvePlan(id).features).toContain(`Up to ${cpuCores} vCPU and ${memoryMb / 1024} GB RAM per app`);
+  });
+
+  it("keeps historical Hobby terms readable without reopening them through custom checkout", () => {
+    expect(resolvePlan("hobby")).toMatchObject({
+      availableForPurchase: false,
+      price: { monthly: 500 },
+    });
+    expect(quoteCustomResources({ cpuCores: 1, memoryMb: 2048, diskGb: 40 })).toMatchObject({
+      basePlanTierId: "starter",
+      priceCents: 2000,
+      resources: { cpuCores: 1, memoryMb: 2048, diskGb: 40 },
+    });
   });
 
   it.each(RESOURCE_TIER_ORDER)("retains a saved %s preset when no explicit ceiling was purchased", maxResourceTier => {

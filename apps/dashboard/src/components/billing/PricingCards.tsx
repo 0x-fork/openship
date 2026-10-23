@@ -32,6 +32,7 @@ export interface ApiPlan {
   billingMode?: "monthly" | "metered";
   configuration?: "preset" | "custom";
   offerReference?: string;
+  availableForPurchase?: boolean;
   name: string;
   description: string;
   popular: boolean;
@@ -200,7 +201,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
   );
   // A negotiated plan has no list price. Keep it out of the resource comparison;
   // discounted paid plans still belong there, even when the offer costs $0.
-  const pricedPlans = plans.filter((plan) => plan.price.monthly !== null);
+  const pricedPlans = plans.filter((plan) => plan.price.monthly !== null && (plan.availableForPurchase !== false || plan.id === currentPlan));
   const customPlans = plans.filter((plan) => plan.price.monthly === null);
 
   const comparison =

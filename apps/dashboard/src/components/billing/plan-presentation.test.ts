@@ -32,12 +32,13 @@ describe("server subscription choices", () => {
   const plans = ["hobby", "starter", "pro", "team"].map(id => plan(id as PlanTierId));
   const choices = (currentOffer?: ApiPlan, allocatedDiskGb?: number) => serverPlanChoices({ plans, currentOffer, allocatedDiskGb, interval: "monthly" });
 
-  it("offers the full paid catalog for a new server and only larger offers for Starter", () => {
-    expect(choices().available.map(plan => plan.id)).toEqual(["hobby", "starter", "pro", "team"]);
+  it("excludes retired sales but retains larger offers relative to an existing purchase", () => {
+    expect(choices().available.map(plan => plan.id)).toEqual(["starter", "pro", "team"]);
     const result = choices(plan("starter"));
     expect(result.current).toBe("starter");
     expect(result.upgrades.map(plan => plan.id)).toEqual(["pro", "team"]);
-    expect(result.other.map(plan => plan.id)).toEqual(["hobby"]);
+    expect(result.other.map(plan => plan.id)).toEqual([]);
+    expect(choices(plan("hobby")).upgrades.map(plan => plan.id)).toEqual(["starter", "pro", "team"]);
   });
 
   it("does not advertise a smaller disk for an inactive or subscribed server", () => {

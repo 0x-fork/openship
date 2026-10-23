@@ -650,7 +650,6 @@ describe("billing through the same SDK and HTTP application operations", () => {
   });
 
   it.each([
-    ["hobby", 500, 0],
     ["starter", 2000, 0],
     ["pro", 3900, 0],
     ["team", 9900, 0],
