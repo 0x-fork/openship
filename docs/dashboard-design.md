@@ -814,3 +814,13 @@ changes retain the web process and roles, while the toolbar wraps on narrow scre
 Webhook delivery rows show a short, localized explanation below the repository when change analysis records a decision. Reuse the existing feed; keep unknown reason codes out of user-facing text.
 
 Fine-grained token capability hints describe the enforced operation scope. Deployment trigger access does not promise cancellation, rollback, or deletion; those keep their project admin requirement.
+
+Monorepo imports start with an explicit **Choose apps** step. Detection supplies candidates;
+CLI tools, mobile apps and packages are never enabled just because they have a port.
+Show selected app cards only, with **Change selection** and **Add app from repository**
+always available. Folder selection reuses repository browsing and detection, while
+commands, environment and framework edits reuse the existing app form. Rescans retain
+user choices and manually added folders. Keep each route on its owning app. The sidebar
+shows at most three domain rows, a total count and **View all**; the shared domain editor
+uses an app selector and a public-access toggle. Changing wizard settings takes effect
+when saved or deployed, according to the existing wizard action.
