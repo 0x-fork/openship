@@ -825,9 +825,16 @@ runtime setup inline, preserving the workload draft. Embedded setup omits runtim
 removal and unrelated navigation; continuation rechecks readiness and does not
 deploy an application.
 
-Managed database nodes have Overview, Scale, and Details views. Scale shows the
-primary/replica or shard layout, observed readiness and timestamp, and reviews
-changes against the saved sequence. PostgreSQL presents a read-replica count;
+Managed database nodes have Overview, Scale, and Details views.
+Replicated database data members are expanded in the project overview by default,
+with primary/replica roles, readiness, servers, and replication arrows. Keep a
+compact toggle for large graphs. A transparent logical database header retains
+settings and writer/reader bindings; individual pods remain inspection-only.
+Never invent members from the requested count or a primary from pod ordinals.
+Sentinel voters are counted separately and remain inspectable in Instances.
+Single-instance databases stay as one card. Scale shows the primary/replica or shard
+layout, observed readiness and timestamp, and reviews changes against the saved
+sequence. PostgreSQL presents a read-replica count;
 Redis replication and sharding remain distinct. Connection fields allow explicit
 writer and reader bindings, explain application-side selection, and keep secrets
 masked. Use semantic surfaces and existing controls, with progress from saved
