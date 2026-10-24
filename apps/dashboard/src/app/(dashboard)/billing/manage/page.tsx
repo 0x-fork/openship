@@ -1,3 +1,7 @@
 "use client";
 
-export { ManagementBilling as default } from "@/components/billing/ManagementPlan";
+import { ManagementBilling } from "@/components/billing/ManagementPlan";
+
+export default function ManagePage() {
+  return <ManagementBilling />;
+}
