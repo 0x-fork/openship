@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import type { ManagementPlanId } from "@repo/contracts";
 import { AppError, PRICING } from "@repo/core";
 import type {
   OblienEntitlement,
@@ -7,25 +8,27 @@ import type {
   OblienSubscription,
 } from "../../lib/oblien-billing-api";
 
-export const managementTermsSchema = z
-  .object({
-    version: z.literal(1),
-    servers: z.number().int().min(2).max(100),
-    includedServers: z.number().int().min(1).max(100),
-    baseIncluded: z.boolean(),
-    basePriceCents: z.number().int().nonnegative(),
-    extraServerMonthlyCents: z.number().int().positive(),
-  })
-  .strict()
-  .refine(
-    (terms) =>
-      terms.servers >= terms.includedServers && (!terms.baseIncluded || terms.basePriceCents === 0),
-  );
+const termFields = {
+  servers: z.number().int().min(2).max(100),
+  includedServers: z.number().int().min(1).max(100),
+  baseIncluded: z.boolean(),
+  basePriceCents: z.number().int().nonnegative(),
+  extraServerMonthlyCents: z.number().int().positive(),
+};
+export const managementTermsSchema = z.discriminatedUnion("version", [
+  z.object({ version: z.literal(1), ...termFields }).strict(),
+  z.object({ version: z.literal(2), ...termFields,
+    plan: z.enum(["basic", "priority"]), supportMonthlyCents: z.number().int().nonnegative(),
+  }).strict(),
+]).refine(terms => terms.servers >= terms.includedServers && (!terms.baseIncluded || terms.basePriceCents === 0) &&
+  (terms.version === 1 || (terms.plan === "basic" ? terms.supportMonthlyCents === 0 : terms.supportMonthlyCents > 0)));
 type Terms = z.infer<typeof managementTermsSchema>;
+export const managementPlan = (terms: Terms): ManagementPlanId => terms.version === 1 ? "basic" : terms.plan;
 const reference = (terms: Terms) =>
-  `openship:manage:v1:${createHash("sha256").update(JSON.stringify(terms)).digest("hex").slice(0, 24)}`;
+  `openship:manage:v${terms.version}:${createHash("sha256").update(JSON.stringify(terms)).digest("hex").slice(0, 24)}`;
 const price = (terms: Terms) =>
-  terms.basePriceCents + (terms.servers - terms.includedServers) * terms.extraServerMonthlyCents;
+  terms.basePriceCents + (terms.version === 2 ? terms.supportMonthlyCents : 0) +
+  (terms.servers - terms.includedServers) * terms.extraServerMonthlyCents;
 const mismatch = () =>
   new AppError(
     "The management subscription does not match this organization",
@@ -49,6 +52,7 @@ export function managementOffer(
   namespace: string,
   servers: number,
   cloudIncluded: boolean,
+  plan: ManagementPlanId = "basic",
 ) {
   const catalog = PRICING.management;
   if (
@@ -63,6 +67,8 @@ export function managementOffer(
     );
   const terms = managementTermsSchema.parse({
     version: catalog.version,
+    plan,
+    supportMonthlyCents: plan === "priority" ? catalog.priorityMonthlyCents - catalog.monthlyCents : 0,
     servers,
     includedServers: catalog.includedServers,
     baseIncluded: cloudIncluded,
@@ -83,8 +89,8 @@ function offerForTerms(organizationId: string, namespace: string, terms: Terms) 
     );
   const offer: OblienOffer = {
     reference: reference(terms),
-    name: "Openship Manage",
-    description: `Hosted management for ${servers} customer-owned servers. Compute and storage are provided by you.`,
+    name: `Openship Manage ${managementPlan(terms) === "priority" ? "Priority" : "Basic"}`,
+    description: `Hosted management for ${servers} customer-owned servers with ${managementPlan(terms) === "priority" ? "priority" : "email"} support. Compute and storage are provided by you.`,
     currency: "usd",
     unitAmount,
     billingMode: "service",
@@ -133,6 +139,7 @@ export function managementSubscription(
   const terms = managementTerms(organizationId, namespace, subscription);
   return terms && subscription
     ? {
+        plan: managementPlan(terms),
         servers: terms.servers,
         baseIncluded: terms.baseIncluded,
         priceCents: subscription.offer!.unitAmount,
@@ -194,7 +201,7 @@ export function managementCloudBenefitOffer(
   subscription: OblienSubscription,
 ) {
   const terms = managementTerms(organizationId, namespace, subscription);
-  if (!terms || terms.baseIncluded || terms.servers === terms.includedServers) return null;
+  if (!terms || terms.baseIncluded || price(terms) === terms.basePriceCents) return null;
   return offerForTerms(organizationId, namespace, {
     ...terms,
     baseIncluded: true,

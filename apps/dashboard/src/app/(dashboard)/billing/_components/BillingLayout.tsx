@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { usePathname, useSearchParams, useRouter } from "next/navigation";
-import { Tabs } from "@/components/ui/Tabs";
+import { usePathname, useSearchParams } from "next/navigation";
 import { PageContainer } from "@/components/ui/PageContainer";
 import {
   BillingLink,
@@ -22,20 +21,28 @@ import { newServerBillingHref } from "@/lib/billing-links";
 import { BILLING_TABS } from "./billing-tabs";
 import { BillingTabBar } from "./BillingTabBar";
 import { BillingHeader } from "./BillingHeader";
+import Link from "next/link";
 import { BillingViewProvider, type BillingView } from "./BillingViewContext";
-import { PendingPaymentsButton } from "@/components/billing/CheckoutRecovery";
+import { PendingCheckoutsProvider } from "@/components/billing/PendingCheckoutsContext";
+import { BillingPurchaseContent } from "./BillingPurchaseContent";
 
 /** Persistent route chrome. Only the tab content suspends while its scoped state loads. */
-function BillingProducts() {
-  const pathname = usePathname();
-  const router = useRouter();
-  return <Tabs variant="pills" ariaLabel="Hosting options" value={pathname.endsWith("/manage") ? "manage" : "cloud"}
-    tabs={[{ key: "cloud", label: "Openship Cloud", icon: "cloud", href: "/billing/overview" }, { key: "manage", label: "Your infrastructure", icon: "server", href: "/billing/manage" }]}
-    onChange={value => router.push(value === "manage" ? "/billing/manage" : "/billing/overview")} />;
-}
 export function BillingLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  if (pathname.endsWith("/manage")) return <PageContainer className="space-y-6"><BillingHeader /><BillingProducts />{children}</PageContainer>;
+  if (pathname.endsWith("/manage"))
+    return (
+      <PageContainer className="space-y-6">
+        <BillingHeader>
+          <Button asChild variant="secondary">
+            <Link href="/billing/plans">
+              <Icon name="arrow-left" className="size-4 rtl:rotate-180" />
+              Back to plans
+            </Link>
+          </Button>
+        </BillingHeader>
+        {children}
+      </PageContainer>
+    );
   return <CloudBillingLayout>{children}</CloudBillingLayout>;
 }
 function CloudBillingLayout({ children }: { children: React.ReactNode }) {
@@ -79,63 +86,66 @@ function CloudBillingLayout({ children }: { children: React.ReactNode }) {
   );
 
   const servers = inventory.data?.servers.filter((server) => server.managed) ?? [];
-  const plansOnly = newServer || Boolean(scopedView?.plansOnly);
+  const plansOnly =
+    newServer ||
+    (Boolean(scopedView?.plansOnly) && segment !== "payment" && segment !== "invoices");
   const activeTab = plansOnly
     ? "plans"
     : segment === "invoices"
       ? "payment"
       : (BILLING_TABS.find((tab) => tab.key === segment)?.key ?? "overview");
-  const serverInventory =
-    organizationMatches
-      ? {
-          servers,
-          loading: inventory.loading,
-          error: inventory.error,
-          onRetry: inventory.refresh,
-        }
-      : null;
+  const serverInventory = organizationMatches
+    ? {
+        servers,
+        loading: inventory.loading,
+        error: inventory.error,
+        onRetry: inventory.refresh,
+      }
+    : null;
 
   return (
     <PageContainer className="space-y-6">
       <BillingWorkspaceProvider workspaceId={workspaceId} organizationId={organizationId}>
         <BillingViewProvider value={reportView}>
           <BillingServerInventoryProvider value={serverInventory}>
-            <CloudPurchaseProvider
-              scopeKey={`${inventory.resourceKey}:${organizationId ?? ""}:${newServer ? "new" : (workspaceId ?? "unsubscribed")}`}
-              tabs={plansOnly ? "header" : "none"}
+            <PendingCheckoutsProvider
+              enabled={organizationMatches && (servers.length > 0 || Boolean(workspaceId))}
             >
-              <BillingHeader>
-                {organizationMatches && (servers.length > 0 || Boolean(workspaceId)) &&
-                  <PendingPaymentsButton />}
-                {billingServersVisible(serverInventory) &&
-                  (newServer ? (
-                    <Button asChild variant="secondary" className="shrink-0">
-                      <BillingLink href="/billing">
-                        <Icon name="arrow-left" className="size-4 rtl:rotate-180" />
-                        {t.billing.creditAlert.backToBilling}
-                      </BillingLink>
-                    </Button>
-                  ) : (
-                    <div className="flex w-full min-w-0 items-center gap-3 md:w-auto">
-                      {activeTab === "plans" && <ServerBillingPicker compact />}
+              <CloudPurchaseProvider
+                scopeKey={`${inventory.resourceKey}:${organizationId ?? ""}:${newServer ? "new" : (workspaceId ?? "unsubscribed")}`}
+                tabs={plansOnly ? "header" : activeTab === "plans" ? "inline" : "none"}
+                management={activeTab === "plans" && organizationMatches}
+              >
+                <BillingHeader>
+                  {billingServersVisible(serverInventory) &&
+                    (newServer ? (
                       <Button asChild variant="secondary" className="shrink-0">
-                        <BillingLink href={newServerBillingHref()}>
-                          <Icon name="plus" className="size-4" aria-hidden="true" />
-                          {t.billing.layout.getServer}
+                        <BillingLink href="/billing">
+                          <Icon name="arrow-left" className="size-4 rtl:rotate-180" />
+                          {t.billing.creditAlert.backToBilling}
                         </BillingLink>
                       </Button>
-                    </div>
-                  ))}
-              </BillingHeader>
-              <BillingProducts />
-              <BillingTabBar
-                activeTab={activeTab}
-                plansOnly={plansOnly}
-                topupsAvailable={scopedView?.topupsAvailable}
-                loading={!currentView}
-              />
-              {children}
-            </CloudPurchaseProvider>
+                    ) : (
+                      <div className="flex w-full min-w-0 flex-wrap items-center gap-3 sm:w-auto">
+                        {activeTab === "plans" && <div className="w-full min-w-0 md:w-auto"><ServerBillingPicker compact /></div>}
+                        <Button asChild variant="secondary" className="shrink-0">
+                          <BillingLink href={newServerBillingHref()}>
+                            <Icon name="plus" className="size-4" aria-hidden="true" />
+                            {t.billing.layout.getServer}
+                          </BillingLink>
+                        </Button>
+                      </div>
+                    ))}
+                </BillingHeader>
+                <BillingTabBar
+                  activeTab={activeTab}
+                  plansOnly={plansOnly}
+                  topupsAvailable={scopedView?.topupsAvailable}
+                  loading={!currentView}
+                />
+                <BillingPurchaseContent>{children}</BillingPurchaseContent>
+              </CloudPurchaseProvider>
+            </PendingCheckoutsProvider>
           </BillingServerInventoryProvider>
         </BillingViewProvider>
       </BillingWorkspaceProvider>

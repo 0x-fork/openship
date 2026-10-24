@@ -343,6 +343,7 @@ import { createWebhookSourceRepo } from "./webhook-source.repo";
 import { createIncomingWebhookRepo } from "./incoming-webhook.repo";
 import { createSystemNoticeRepo } from "./system-notice.repo";
 import { createUpdateStatusRepo } from "./update-status.repo";
+import { createSecurityAdvisoryRepo } from "./security-advisory.repo";
 import { createServerModuleStatusRepo } from "./server-module-status.repo";
 import { createServerContainerStatusRepo } from "./server-container-status.repo";
 import { createEdgeTargetVerificationRepo } from "./edge-target-verification.repo";
@@ -434,6 +435,7 @@ export function createRepositories(db: Database, encryption: ConfigurationEncryp
     incomingWebhook: createIncomingWebhookRepo(db),
     notice: createSystemNoticeRepo(db),
     updateStatus: createUpdateStatusRepo(db),
+    securityAdvisory: createSecurityAdvisoryRepo(db),
     serverModuleStatus: createServerModuleStatusRepo(db),
     serverContainerStatus: createServerContainerStatusRepo(db),
     edgeTargetVerification: createEdgeTargetVerificationRepo(db),

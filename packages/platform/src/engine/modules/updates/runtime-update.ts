@@ -24,6 +24,7 @@ import { assertExactServiceTargets } from "../deployments/exact-service-targets"
 import { isMutableImageRef } from "../deployments/image-pull-policy";
 import { snapshotNeedsProjectSource } from "../deployments/pinned-artifacts";
 import { projectServicesToDeployableServices } from "../deployments/compose/project-services";
+import type { SecurityUpdateApproval } from "./security-refresh-guard";
 
 const hasMutableImage = (...refs: (string | null | undefined)[]) =>
   refs.some((ref) => !!ref && isMutableImageRef(ref));
@@ -33,12 +34,15 @@ export async function updateProjectRuntime(
   ctx: ExecutionContext,
   projectId: string,
   input: UpdateRuntimeInput = {},
+  approval?: SecurityUpdateApproval,
 ): Promise<CreateDeploymentResult> {
   const project = await repos.project.findById(projectId);
   assertResourceInOrg(project, "Project", ctx.organizationId, projectId);
   assertNotControlPlane(project);
   const active = await findActiveDeployment(project);
   if (!active) throw new ValidationError("Deploy this project before updating its runtime.");
+  if (approval && active.id !== approval.deploymentId)
+    throw new ValidationError("The active deployment changed. Check the advisory again.");
   const meta = (active.meta ?? {}) as Partial<DeploymentConfigSnapshot>;
 
   const services = await repos.service.listByProject(projectId);
@@ -190,6 +194,7 @@ export async function updateProjectRuntime(
     ...(isReleaseProvider(project.gitProvider) && { releaseVersion }),
     trigger: "update",
     forcePullImages: true,
+    ...(approval && { securityApproval: approval }),
     ...(input.serviceIds
       ? { serviceIds: input.serviceIds, strictServiceScope: true }
       : { forceAll: true }),

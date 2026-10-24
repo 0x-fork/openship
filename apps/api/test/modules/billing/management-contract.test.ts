@@ -1,3 +1,4 @@
+import type { ManagementPlanId } from "@repo/contracts";
 import { describe, expect, it } from "vitest";
 import {
   managementOffer,
@@ -12,8 +13,8 @@ import type {
 } from "@repo/platform/engine/lib/oblien-billing-api";
 import { savedOffer, savedMetadata } from "../../helpers/saved-cloud-offer";
 
-function cycle(servers = 2, cloud = false) {
-  const terms = managementOffer("org_test", "os-manage-test", servers, cloud);
+function cycle(servers = 2, cloud = false, plan: ManagementPlanId = "basic") {
+  const terms = managementOffer("org_test", "os-manage-test", servers, cloud, plan);
   const start = new Date(Date.now() - 86400000).toISOString();
   const end = new Date(Date.now() + 86400000).toISOString();
   const subscription: NonNullable<OblienSubscription> = {
@@ -52,6 +53,30 @@ describe("Manage paid contracts", () => {
     expect(managementOffer("org", "ns", 5, true).offer.unitAmount).toBe(900);
     expect(() => managementOffer("org", "ns", 2, true)).toThrow(/already includes/);
     expect(() => managementOffer("org", "ns", 1, false)).toThrow();
+  });
+  it("keeps priority support paid and separate from included Basic management", () => {
+    const priority = cycle(2, false, "priority");
+    expect(priority.subscription.offer).toMatchObject({ unitAmount: 2000, billingMode: "service", credits: 0 });
+    expect(paid(priority)).toMatchObject({ plan: "priority", servers: 2 });
+    const included = managementCloudBenefitOffer("org_test", "os-manage-test", priority.subscription)!;
+    expect(included.offer.unitAmount).toBe(1500);
+    expect(JSON.parse(included.metadata.openship_management)).toMatchObject({ plan: "priority", baseIncluded: true, basePriceCents: 0, supportMonthlyCents: 1500 });
+    expect(managementOffer("org", "ns", 5, false, "priority").offer.unitAmount).toBe(2900);
+    expect(managementOffer("org", "ns", 2, true, "priority").offer.unitAmount).toBe(1500);
+    expect(paid({ ...priority, entitlement: { ...priority.entitlement, serviceCovered: false } })).toBeNull();
+    const basic = cycle();
+    const metadata = JSON.parse(basic.subscription.metadata!.openship_management!);
+    basic.subscription.metadata!.openship_management = JSON.stringify({ ...metadata, plan: "priority", supportMonthlyCents: 1500 });
+    expect(() => paid(basic)).toThrow(/organization/);
+  });
+  it("continues verifying saved v1 Basic terms without rewriting the paid price", () => {
+    const c = cycle();
+    c.subscription.metadata!.openship_management = '{"version":1,"servers":2,"includedServers":2,"baseIncluded":false,"basePriceCents":500,"extraServerMonthlyCents":300}';
+    c.subscription.offer!.reference = "openship:manage:v1:659c661c1cab2ac9661c491b";
+    c.subscription.offer!.unitAmount = 500;
+    const before = structuredClone(c.subscription);
+    expect(paid(c)).toMatchObject({ plan: "basic", servers: 2, priceCents: 500 });
+    expect(c.subscription).toEqual(before);
   });
   it("requires paid proof for this organization, namespace and exact cycle", () => {
     const c = cycle();

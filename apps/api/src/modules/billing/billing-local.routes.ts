@@ -66,7 +66,7 @@ r.get(
 );
 
 /* ---------- Subscriptions ---------- */
-r.get("/subscription/quote", { query: BillingOperationSchemas.quoteCustomPlan.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Quote a Custom Cloud server's monthly retail price for its CPU, memory in MiB, and disk in GiB. Monthly compute and storage are covered for the paid period, without a compute-credit allowance. This read does not create a server or start a purchase. Complete checkout in Billing." } }, billingLocal.quoteCustomPlan);
+r.get("/subscription/quote", { query: BillingOperationSchemas.quoteCustomPlan.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Quote a Custom Cloud server's retail price for the selected monthly or annual interval for its CPU, memory in MiB, and disk in GiB. Compute and storage are covered for the paid period, without a compute-credit allowance. This read does not create a server or start a purchase. Complete checkout in Billing." } }, billingLocal.quoteCustomPlan);
 r.get("/subscription", { query: BillingOperationSchemas.getSubscription.input, tag: "billing:read", authorizationHandledByOperation: true, mcp: { description: "Read the selected Cloud server's saved subscription, billing mode, paid period and pending plan change." } }, billingLocal.getSubscription);
 r.post("/subscription", { body: CreateSubscriptionBody, tag: "billing:write", authorizationHandledByOperation: true, auditHandledByOperation: true, rateLimit: "billing-portal", mcpExcluded: "Starts a paid browser checkout. Purchases and payment authorization are completed in Settings → Billing." }, billingLocal.createSubscription);
 

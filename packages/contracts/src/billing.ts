@@ -44,6 +44,7 @@ const namespaceResourceLimits = Type.Object({
 const resourceRange = Type.Object({ min: Type.Integer(), max: Type.Integer(), step: Type.Integer() });
 const planConfiguration = Type.Optional(Type.Union([Type.Literal("preset"), Type.Literal("custom")]));
 export const BillingCustomQuoteSchema = Type.Object({
+  interval: Type.Optional(Type.Union([Type.Literal("monthly"), Type.Literal("annual")])),
   basePlanTierId: tier,
   resources: CustomServerResourcesSchema,
   reference: Type.String(),
@@ -67,6 +68,7 @@ export const BillingPlansSchema = Type.Object({
   custom: Type.Optional(Type.Object({
     resources: Type.Object({ cpuCores: resourceRange, memoryMb: resourceRange, diskGb: resourceRange }),
     extraMonthlyCents: Type.Object({ cpuCore: Type.Integer(), memoryGb: Type.Integer(), diskGb: Type.Integer() }),
+    extraAnnualCents: Type.Optional(Type.Object({ cpuCore: Type.Integer(), memoryGb: Type.Integer(), diskGb: Type.Integer() })),
   })),
   payg: Type.Optional(Type.Object({
     version: Type.Integer({ minimum: 1 }),
@@ -229,7 +231,9 @@ export const BillingPublicSchemas = {
 export const BillingOperationSchemas = {
   ...ManagementBillingOperationSchemas,
   ...ActionBillingOperationSchemas,
-  quoteCustomPlan: { action: "read", input: CustomServerResourcesSchema, output: BillingCustomQuoteSchema },
+  quoteCustomPlan: { action: "read", input: Type.Object({ ...CustomServerResourcesSchema.properties,
+    interval: Type.Optional(Type.Union([Type.Literal("monthly"), Type.Literal("annual")])),
+  }, { additionalProperties: false }), output: BillingCustomQuoteSchema },
   listCheckouts: { action: "read", input: BillingScopeSchema, optionalInput: true, output: BillingPendingCheckoutsSchema },
   resumeCheckout: { action: "write", input: BillingCheckoutActionInputSchema, output: BillingCheckoutActionResultSchema },
   cancelCheckout: { action: "admin", input: BillingCheckoutActionInputSchema, output: BillingCheckoutActionResultSchema },

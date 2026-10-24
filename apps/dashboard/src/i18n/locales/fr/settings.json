@@ -896,7 +896,8 @@
       "domains": "Domaines & SSL",
       "members": "Membres",
       "mail": "E-mail",
-      "billing": "Facturation"
+      "billing": "Facturation",
+      "security": "Sécurité"
     },
     "categories": {
       "deploy.failed": {
@@ -1030,6 +1031,10 @@
       "quota.warning": {
         "label": "Avertissement de quota",
         "description": "Vous approchez d'une limite de forfait (stockage, déploiements, membres). Avertissement avant que des erreurs ne surviennent."
+      },
+      "security.advisory": {
+        "label": "Avis de sécurité",
+        "description": "Un avis de sécurité concerne Openship ou un service déployé. Inclut la cause et la mise à jour disponible."
       }
     }
   },

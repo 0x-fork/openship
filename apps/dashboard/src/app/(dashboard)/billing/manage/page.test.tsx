@@ -73,7 +73,7 @@ it("keeps the purchase key after a lost response and waits for quote confirmatio
   expect(host.textContent).toContain("Connection lost");
   await click("Continue to checkout");
   expect(h.purchase.mock.calls[1][0]).toEqual(h.purchase.mock.calls[0][0]);
-  expect(host.textContent).toContain("$1.00 due now");
+  expect(host.textContent).toContain("$1 due now");
   expect(h.confirm).not.toHaveBeenCalled();
   let finish!: (value: ManagementState) => void;
   h.confirm.mockImplementation(

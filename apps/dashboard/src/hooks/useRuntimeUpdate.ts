@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isCreateDeploymentResult } from "@repo/contracts";
-import type { RuntimeImageCheckResult } from "@repo/contracts";
+import type { RuntimeImageCheckResult, ApplySecurityInput } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
 import { useToast } from "@/context/ToastContext";
@@ -44,7 +44,7 @@ export function useRuntimeUpdate(
   }, []);
 
   const update = useCallback(
-    async function runUpdate(): Promise<void> {
+    async function runUpdate(advisory?: ApplySecurityInput): Promise<void> {
       const scope = getApiRequestScopeVersion();
       const requestIdentity = `${identity}:${scope}`;
       if (pending.current === requestIdentity) return;
@@ -57,7 +57,7 @@ export function useRuntimeUpdate(
       pending.current = requestIdentity;
       setPendingIdentity(requestIdentity);
       try {
-        const { data } = await updatesApi.updateRuntime(
+        const { data } = advisory ? await updatesApi.applySecurity(projectId, advisory) : await updatesApi.updateRuntime(
           projectId,
           serviceId ? { serviceIds: [serviceId] } : {},
         );
@@ -71,7 +71,7 @@ export function useRuntimeUpdate(
         if (!current()) return;
         if (
           showCloudPricing(error, async () => {
-            if (current()) await runUpdate();
+            if (current()) await runUpdate(advisory);
           })
         )
           return;
@@ -146,7 +146,8 @@ export function useRuntimeUpdate(
   ]);
 
   return {
-    update,
+    update: () => update(),
+    applyAdvisory: update,
     updating: pendingIdentity === `${identity}:${getApiRequestScopeVersion()}`,
     checkUpdates,
     checking: checkingIdentity === `${identity}:${getApiRequestScopeVersion()}`,

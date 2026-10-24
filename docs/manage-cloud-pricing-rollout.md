@@ -4,13 +4,16 @@ This implements the product split agreed in #1396. The shared pricing catalog is
 `packages/core/src/pricing/pricing.json`.
 
 - Self-hosted control planes remain free.
-- Manage costs $5/month per organization (shown as a workspace), including two
+- Manage Basic costs $5/month per organization (shown as a workspace) with email
+  support. Priority costs $20/month with priority support. Both include two
   customer-owned servers; additional servers cost $3/month each, up to 100.
-- Paid Cloud coverage includes the base two-server management allowance once per
-  organization. Cloud Spaces do not consume connected-server slots.
-- New Cloud monthly offers start at Starter $20, Pro $39 and Scale $99. Hobby is
-  retired from new checkout, not removed from historical subscription parsing.
-  Saved paid prices, resources and renewals remain intact.
+- Paid Cloud includes Basic management and its two-server allowance once per
+  organization. Priority retains its $15 support fee. Cloud Spaces do not consume
+  connected-server slots.
+- New Cloud monthly offers are Hobby $12, Starter $24, Pro $47 and Scale $119.
+  Annual charges are $120, $240, $468 and $1,188 upfront; Yearly is the default
+  purchase view. Hobby includes email support. Saved prices, resources and
+  renewals remain intact.
 - Dedicated physical hardware is quote-only. PAYG remains a separate preview.
 
 ## Release order
@@ -38,6 +41,13 @@ webhook body, or nominal subscription status never grants access: Openship reads
 provider state and matches the namespace, organization, saved offer and paid
 period. The provider verifies receipts, including upgrade chains and reversals.
 
+New Manage v2 contracts bind the selected Basic/Priority plan and support fee to
+the same saved offer, receipt and paid period as the server allowance. Changing
+the selection does not grant support entitlement. Priority upgrades and downgrades
+use the shared provider preview/confirmation flow; the verified subscription
+controls the paid tier. Saved v1 contracts remain Basic at their original terms.
+No new database migration or provider billing mode is needed for the support tiers.
+
 Checkout intent is persisted before the external request, with an immutable
 idempotency key. Lost responses resume that intent; a confirmed cancellation or
 expiration releases it. Inventory changes and allowance changes share the server
@@ -49,7 +59,7 @@ at most once per minute, and the paid period is checked on every operation.
 Provider failures are not interpreted as a canceled subscription.
 
 When Cloud starts, the separate base Manage fee ends at renewal. Extra-server
-charges keep their saved terms. When Cloud coverage ends, an already-paid
+charges and paid Priority support keep their saved terms. When Cloud coverage ends, an already-paid
 allowance stays valid until its expiry; a discounted renewal is canceled rather
 than silently increasing the charge. The customer explicitly selects the full
 Manage plan after that period ends. This transition can require reconnecting

@@ -8,10 +8,15 @@ import { ApiError, setApiResourceScope } from "@/lib/api/client";
 import { useRuntimeUpdate } from "@/hooks/useRuntimeUpdate";
 import { RuntimeRedeployMenu } from "./RuntimeRedeployMenu";
 import { RuntimeImageUpdateNotice } from "./RuntimeImageUpdateNotice";
+import { SecurityProjectReview } from "../updates/SecurityProjectReview";
 
 const h = vi.hoisted(() => ({
   update: vi.fn(),
   check: vi.fn(),
+  security: vi.fn(),
+  checkSecurity: vi.fn(),
+  policy: vi.fn(),
+  applySecurity: vi.fn(),
   push: vi.fn(),
   toast: vi.fn(),
   pricing: vi.fn(),
@@ -23,7 +28,14 @@ vi.mock("@/context/ToastContext", () => ({ useToast: () => ({ showToast: h.toast
 vi.mock("@/context/CloudResourceContext", () => ({ useCloudResourceKey: () => h.resourceKey }));
 vi.mock("@/hooks/useCloudDeployPricing", () => ({ useCloudDeployPricing: () => h.pricing }));
 vi.mock("@/lib/api/updates", () => ({
-  updatesApi: { updateRuntime: h.update, checkRuntime: h.check },
+  updatesApi: {
+    updateRuntime: h.update,
+    checkRuntime: h.check,
+    security: h.security,
+    checkSecurity: h.checkSecurity,
+    securityPolicy: h.policy,
+    applySecurity: h.applySecurity,
+  },
 }));
 
 let root: Root;
@@ -97,6 +109,35 @@ beforeEach(() => {
     data: { checkedAt: new Date().toISOString(), images: [image] },
   });
   h.pricing.mockReturnValue(false);
+  h.security.mockReset().mockResolvedValue({
+    data: {
+      projectId: "project-a",
+      deploymentId: "deployed-a",
+      checkedAt: new Date().toISOString(),
+      autoRefresh: false,
+      feedStale: false,
+      feedError: null,
+      unknownServices: [],
+      findings: [
+        {
+          id: "patch-node",
+          revision: 1,
+          serviceId: "php",
+          title: "Patch runtime",
+          message: "A runtime patch is available.",
+          url: "https://example.com/security",
+          confidence: "confirmed",
+          evidence: ["php 8.4.1"],
+          canRefresh: true,
+          severity: "high",
+        },
+      ],
+    },
+  });
+  h.applySecurity
+    .mockReset()
+    .mockResolvedValue({ data: { deployment_id: "security-deployment", project_id: "project-a" } });
+  h.policy.mockReset().mockResolvedValue({ data: { autoRefresh: true } });
   element = document.createElement("div");
   document.body.append(element);
   root = createRoot(element);
@@ -256,4 +297,96 @@ it("clears old image drift when the active deployment or configuration changes",
   expect(element.textContent).toContain(c.available);
   await act(async () => root.render(<Harness revision="deployment-two" />));
   expect(element.textContent).not.toContain(c.available);
+});
+
+it("keeps security patches off by default and sends the reviewed advisory through the runtime flow", async () => {
+  await act(async () => root.render(<SecurityProjectReview projectId="project-a" />));
+  expect(
+    button(baseDictionary.projectSettings.securityAdvisories.automatic).getAttribute(
+      "aria-checked",
+    ),
+  ).toBe("false");
+  await click(c.refresh);
+  expect(h.applySecurity).toHaveBeenCalledExactlyOnceWith("project-a", {
+    advisoryId: "patch-node",
+    deploymentId: "deployed-a",
+    serviceId: "php",
+  });
+  expect(h.update).not.toHaveBeenCalled();
+  expect(h.push).toHaveBeenCalledWith("/build/security-deployment");
+});
+
+it("never shows another workspace's delayed security findings", async () => {
+  const pending = deferred<unknown>();
+  h.security.mockReturnValueOnce(pending.promise);
+  await act(async () => root.render(<SecurityProjectReview projectId="project-a" />));
+  h.resourceKey = "account-two";
+  h.security.mockResolvedValue({
+    data: {
+      projectId: "project-b",
+      deploymentId: null,
+      autoRefresh: false,
+      feedStale: false,
+      feedError: null,
+      unknownServices: [],
+      checkedAt: null,
+      findings: [],
+    },
+  });
+  await act(async () => root.render(<SecurityProjectReview projectId="project-b" />));
+  await act(async () =>
+    pending.resolve({
+      data: {
+        projectId: "project-a",
+        deploymentId: "old",
+        unknownServices: [],
+        findings: [
+          {
+            id: "secret",
+            serviceId: "secret-service",
+            title: "Private service evidence",
+            evidence: [],
+          },
+        ],
+      },
+    }),
+  );
+  expect(element.textContent).not.toContain("Private service evidence");
+});
+
+it("shows a failed security check without claiming no matching vulnerabilities", async () => {
+  h.security.mockRejectedValue(new Error("Disconnected"));
+  await act(async () => root.render(<SecurityProjectReview projectId="project-a" />));
+  expect(element.textContent).toContain(
+    baseDictionary.projectSettings.securityAdvisories.unavailable,
+  );
+  expect(element.textContent).not.toContain(
+    baseDictionary.projectSettings.securityAdvisories.noMatches,
+  );
+  expect(button(baseDictionary.projectSettings.securityAdvisories.automatic).disabled).toBe(true);
+});
+
+it("refreshes runtime observations explicitly without deploying or changing policy", async () => {
+  h.checkSecurity.mockReset().mockResolvedValue({
+    data: {
+      projectId: "project-a",
+      deploymentId: "deployed-a",
+      checkedAt: new Date().toISOString(),
+      autoRefresh: false,
+      feedStale: false,
+      feedError: null,
+      unknownServices: [],
+      findings: [],
+    },
+  });
+  await act(async () => root.render(<SecurityProjectReview projectId="project-a" />));
+  await act(async () =>
+    button(baseDictionary.projectSettings.securityAdvisories.checkAgain).click(),
+  );
+  expect(h.checkSecurity).toHaveBeenCalledExactlyOnceWith("project-a");
+  expect(h.applySecurity).not.toHaveBeenCalled();
+  expect(h.policy).not.toHaveBeenCalled();
+  expect(element.textContent).toContain(
+    baseDictionary.projectSettings.securityAdvisories.noMatches,
+  );
 });

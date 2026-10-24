@@ -159,8 +159,8 @@ function subscribe(tier: "hobby" | "starter" = "hobby") {
     periodEnd: "2026-11-01T00:00:00Z",
     cancelAtPeriodEnd: false,
     canceledAt: null,
-    offer: tier === "hobby" ? savedMonthlyHobby() : subscriptionOffer(tier, "monthly"),
-    metadata: subscriptionMetadata(tier, owner.orgId, namespace),
+    offer: tier === "hobby" ? savedMonthlyHobby() : { ...subscriptionOffer(tier, "monthly"), reference: "openship:starter:v12", unitAmount: 2000 },
+    metadata: { ...subscriptionMetadata(tier, owner.orgId, namespace), openship_offer_version: tier === "hobby" ? "11" : "12" },
   });
 }
 async function addProject(name: string) {
@@ -1537,7 +1537,7 @@ describe("provider subscription changes through billing and the shared server wo
     subscribe("starter"); await provision();
     const client = await billingClient();
     await expect(client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: "hobby", idempotencyKey: randomUUID() }))
-      .rejects.toMatchObject({ code: "BILLING_PLAN_RETIRED" });
+      .rejects.toMatchObject({ code: "CLOUD_WORKSPACE_DISK_SHRINK" });
     expect(h.billing.previewPlanChange).not.toHaveBeenCalled();
     const custom = customSubscriptionOffer({ cpuCores: 1, memoryMb: 4096, diskGb: 128 }).quote;
     const quote = await client.previewSubscriptionChange({ workspaceId: workspace.id, planTierId: custom.basePlanTierId,

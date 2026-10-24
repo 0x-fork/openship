@@ -45,6 +45,7 @@ describe("pinned artifact lookup", () => {
       strictServiceScope: true,
       refreshServiceIds: ["svc-api"],
       forcePullImages: true,
+      securityApproval: { deploymentId: "dep_old", approvedBy: "owner", expiresAt: "2026-10-25T00:00:00Z" },
       capacityAdjustment: { key: "capacity-request", requestHash: "hash" },
       hasBuild: true,
     });

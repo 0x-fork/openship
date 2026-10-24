@@ -3,8 +3,15 @@ import { audit, operationAuditContext } from "../../lib/audit-emitter";
 import * as service from "./updates.service";
 import { updateProjectRuntime } from "./runtime-update";
 import { checkProjectRuntimeImages } from "./runtime-image-check";
+import { organizationAdvisories } from "./security-overview";
+import {
+  projectSecurityStatus,
+  setProjectSecurityPolicy,
+  applySecurityAdvisory,
+} from "./security.service";
 export const updatesDependencies: UpdateDependencies = {
   collection: {
+    advisories: organizationAdvisories,
     list: service.listOrganizationUpdates,
     async scan(ctx) {
       const result = await service.scanOrganizationUpdates(ctx, ctx.organizationId);
@@ -17,6 +24,14 @@ export const updatesDependencies: UpdateDependencies = {
     },
   },
   projects: {
+    security: (ctx, id) => projectSecurityStatus(ctx, id),
+    checkSecurity: (ctx, id) => projectSecurityStatus(ctx, id, undefined, true),
+    securityPolicy: setProjectSecurityPolicy,
+    async applySecurity(ctx, id, input) {
+      const result = await applySecurityAdvisory(ctx, id, input);
+      if (!result) throw new Error("Security refresh was not admitted.");
+      return result;
+    },
     checkRuntime: checkProjectRuntimeImages,
     async apply(ctx, id) {
       const result = await service.applyProjectUpdate(ctx, id);

@@ -865,10 +865,13 @@ function EventNotificationsCard({
               const def = defIndex.get(cat.id);
               const enabled = def?.defaultEnabled ?? cat.defaultEnabled;
               const kinds = (
-                def?.defaultChannelKinds?.length ? def.defaultChannelKinds : ["email"]
+                cat.defaultPerChannel ? (def?.defaultChannelKinds ?? cat.defaultChannelKinds ?? [])
+                  : def?.defaultChannelKinds?.length ? def.defaultChannelKinds : ["email"]
               ) as ChannelKind[];
               const isBusy = busyCat === cat.id;
-              const notifyMe = enabledCats.has(cat.id) || (!rowCats.has(cat.id) && enabled);
+              const notifyMe = cat.defaultPerChannel
+                ? channels.some((channel) => subscriptions.find((item) => item.category === cat.id && item.channelId === channel.id)?.enabled ?? (enabled && kinds.includes(channel.kind)))
+                : enabledCats.has(cat.id) || (!rowCats.has(cat.id) && enabled);
               return (
                 <div key={cat.id} className="space-y-4 rounded-xl bg-card p-4">
                   <div className="min-w-0">
@@ -908,6 +911,25 @@ function EventNotificationsCard({
                       />
                     </div>
                   </div>
+                  {cat.defaultPerChannel && (
+                    <div className="flex flex-wrap gap-x-6 gap-y-3">
+                      {channels.map((channel) => {
+                        const choice = subscriptions.find((item) => item.category === cat.id && item.channelId === channel.id);
+                        return <label key={channel.id} className="flex items-center gap-3 text-sm text-muted-foreground">
+                          <ChannelLogo kind={channel.kind} className="size-4" />
+                          {channel.label}
+                          <Switch checked={choice?.enabled ?? (enabled && kinds.includes(channel.kind))}
+                            disabled={disabled || isBusy} ariaLabel={`${catLabel}: ${channel.label}`}
+                            onChange={async (value) => {
+                              setBusyCat(cat.id);
+                              try { await notificationsApi.upsertSubscription({ category: cat.id, channelId: channel.id, enabled: value }); if (active.current) await onChange(); }
+                              catch (error) { if (active.current) showToast(getApiErrorMessage(error), "error"); }
+                              finally { if (active.current) setBusyCat(null); }
+                            }} />
+                        </label>;
+                      })}
+                    </div>
+                  )}
                 </div>
               );
             })}

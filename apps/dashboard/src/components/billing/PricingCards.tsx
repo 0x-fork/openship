@@ -127,10 +127,11 @@ function formatPrice(
 ): { label: string; suffix: string | null } {
   if (cents === null) return { label: ui.custom, suffix: null };
   if (cents === 0) return { label: ui.free, suffix: null };
+  const monthlyCents = interval === "annual" ? cents / 12 : cents;
   // Whole dollars stay whole ($39, not $39.00); a cents-precise price keeps them.
   return {
-    label: `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`,
-    suffix: interval === "annual" ? ui.perYear : ui.perMonth,
+    label: `$${(monthlyCents / 100).toFixed(monthlyCents % 100 === 0 ? 0 : 2)}`,
+    suffix: ui.perMonth,
   };
 }
 
@@ -209,7 +210,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
       <div className={`grid gap-4 ${CARD_COLUMNS[Math.min(pricedPlans.length, 4)]}`}>
         {pricedPlans.map((plan) => {
           const { listCents, chargedCents, discounted } = resolveCardPrice(plan, interval);
-          // Headline = what the customer pays today; the list price moves beside it.
+          // Compare monthly equivalents; annual cards disclose the full charge below.
           const { label, suffix } = formatPrice(
             discounted ? chargedCents : listCents,
             ui,
@@ -297,7 +298,7 @@ export const PricingCards: React.FC<PricingCardsProps> = ({
               <p className="mt-1 min-h-5 text-xs text-muted-foreground">
                 {isPaid
                   ? interval === "annual"
-                    ? t.billing.pricing.billedAnnually
+                    ? interpolate(t.billing.pricing.annualTotal, { price: `$${(chargedCents! / 100).toFixed(chargedCents! % 100 === 0 ? 0 : 2)}` })
                     : ui.billedMonthly
                   : ""}
               </p>

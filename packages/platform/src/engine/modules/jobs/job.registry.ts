@@ -328,6 +328,12 @@ export const SYSTEM_JOB_DEFS: SystemJobDef[] = [
     },
   },
   {
+    key: "security:advisories",
+    label: "Security advisories",
+    defaultCron: "*/5 * * * *",
+    run: async () => (await import("../updates/security.service")).scanSecurityAdvisories(),
+  },
+  {
     key: "updates:scan",
     label: "Update scan",
     // Warms the one channel for "is anything out of date?" — polls what each

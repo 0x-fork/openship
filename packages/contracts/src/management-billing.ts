@@ -1,9 +1,13 @@
 import { Type, type Static } from "@sinclair/typebox";
 import type { ResourceOperationSchema } from "./resource-operations";
 
+export const ManagementPlanSchema = Type.Union([Type.Literal("basic"), Type.Literal("priority")]);
+export type ManagementPlanId = Static<typeof ManagementPlanSchema>;
+
 export const ManagementPricingSchema = Type.Object({
   version: Type.Integer(),
   monthlyCents: Type.Integer(),
+  priorityMonthlyCents: Type.Optional(Type.Integer()),
   includedServers: Type.Integer(),
   extraServerMonthlyCents: Type.Integer(),
   maxServers: Type.Integer(),
@@ -16,11 +20,13 @@ export const ManagementStateSchema = Type.Object({
   purchasesAvailable: Type.Boolean(),
   cloudIncluded: Type.Boolean(),
   active: Type.Boolean(),
+  support: Type.Optional(Type.Union([Type.Literal("email"), Type.Literal("priority"), Type.Null()])),
   serverLimit: Type.Integer(),
   connectedServers: Type.Integer(),
   pendingCheckout: Type.Boolean(),
   subscription: Type.Union([
     Type.Object({
+      plan: Type.Optional(ManagementPlanSchema),
       servers: Type.Integer(),
       baseIncluded: Type.Boolean(),
       priceCents: Type.Integer(),
@@ -38,6 +44,7 @@ export const ManagementStateSchema = Type.Object({
 export const ManagementPurchaseSchema = Type.Object(
   {
     servers: Type.Integer({ minimum: 2, maximum: 100 }),
+    plan: Type.Optional(ManagementPlanSchema),
     idempotencyKey: Type.String({ minLength: 16, maxLength: 128, pattern: "^[a-zA-Z0-9_-]+$" }),
   },
   { additionalProperties: false },

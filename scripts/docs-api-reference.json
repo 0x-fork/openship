@@ -2430,6 +2430,36 @@
       "description": "Compare deployed image and recorded base-image digests with the registry.",
       "route": "POST /api/updates/:projectId/runtime/check"
     },
+    "updates.advisories": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Read the shared release/security feeds and authorized workspace findings from current cached observations.",
+      "route": "GET /api/updates/advisories"
+    },
+    "updates.checkSecurity": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Refresh isolated runtime observations and match current verified advisories.",
+      "route": "POST /api/updates/:projectId/security/check"
+    },
+    "updates.security": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Match public security advisories against scoped deployment evidence.",
+      "route": "GET /api/updates/:projectId/security"
+    },
+    "updates.securityPolicy": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Opt in or out of automatic verified image patches; disabled by default.",
+      "route": "PUT /api/updates/:projectId/security/policy"
+    },
+    "updates.applySecurity": {
+      "page": "updates",
+      "section": "Operations",
+      "description": "Refresh an affected runtime after checking the advisory and active deployment.",
+      "route": "POST /api/updates/:projectId/security/apply"
+    },
     "audit.list": {
       "page": "audit",
       "section": "Operations",

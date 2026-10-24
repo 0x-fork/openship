@@ -251,8 +251,8 @@ export const oblienCheckoutInputSchema = z.discriminatedUnion("kind", [
   checkoutInput.extend({ kind: z.literal("subscription"), billingInterval: z.enum(["monthly", "yearly"]) }),
   checkoutInput.extend({ kind: z.literal("topup") }),
 ]).refine(value => value.offer.billingMode !== "monthly" ||
-  (value.kind === "subscription" && value.billingInterval === "monthly"),
-  "Monthly capacity requires a monthly subscription");
+  value.kind === "subscription",
+  "Prepaid capacity requires a subscription");
 export type OblienCheckout = z.infer<typeof oblienCheckoutInputSchema>;
 
 /** Log only a bounded error identifier, never provider messages or payment data. */
@@ -447,9 +447,10 @@ export class OblienBillingApi {
   }
 
   /** Sales check only. Existing contracts and renewal keep their saved tariff. */
-  async assertMonthlyCapacitySupport() {
+  async assertMonthlyCapacitySupport(interval: "monthly" | "yearly" = "monthly") {
     const catalog = await this.getCapacityCatalog();
-    if (!catalog.billingModes.includes("monthly") || !catalog.paymentSources.monthly.includes("stripe"))
+    if (!catalog.billingModes.includes("monthly") || !catalog.paymentSources.monthly.includes("stripe") ||
+        (interval === "yearly" && !catalog.resellerSubscriptionIntervals?.includes("yearly")))
       throw new AppError("Monthly server purchases are temporarily unavailable", 503, "OBLIEN_CAPACITY_UNAVAILABLE");
     return catalog;
   }

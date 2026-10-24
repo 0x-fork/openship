@@ -10,6 +10,8 @@ export interface NotificationCategory {
   label: string;
   description: string;
   defaultEnabled: boolean;
+  defaultPerChannel?: boolean;
+  defaultChannelKinds?: ChannelKind[];
 }
 
 /**

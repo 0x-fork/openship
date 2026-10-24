@@ -4,6 +4,9 @@ import type {
   CreateDeploymentResult,
   UpdateRuntimeInput,
   RuntimeImageCheckResult,
+  ProjectSecurityResult,
+  AdvisoryFeedResult,
+  ApplySecurityInput,
 } from "@repo/contracts";
 
 /** One entity's update status (project/app/self-app/webmail). */
@@ -30,6 +33,29 @@ export interface ScanSummary {
 }
 
 export const updatesApi = {
+  checkSecurity: (projectId: string) =>
+    api.post<{ data: ProjectSecurityResult }>(
+      `/updates/${encodeURIComponent(projectId)}/security/check`,
+      undefined,
+      { timeout: 60_000 },
+    ),
+  advisories: () =>
+    api.get<{ data: AdvisoryFeedResult }>("/updates/advisories", { timeout: 60_000 }),
+  security: (projectId: string) =>
+    api.get<{ data: ProjectSecurityResult }>(`/updates/${encodeURIComponent(projectId)}/security`, {
+      timeout: 60_000,
+    }),
+  securityPolicy: (projectId: string, autoRefresh: boolean) =>
+    api.put<{ data: { autoRefresh: boolean } }>(
+      `/updates/${encodeURIComponent(projectId)}/security/policy`,
+      { autoRefresh },
+    ),
+  applySecurity: (projectId: string, input: ApplySecurityInput) =>
+    api.post<{ data: CreateDeploymentResult }>(
+      `/updates/${encodeURIComponent(projectId)}/security/apply`,
+      input,
+      { timeout: 60_000 },
+    ),
   checkRuntime: (projectId: string, input: UpdateRuntimeInput = {}) =>
     api.post<{ data: RuntimeImageCheckResult }>(endpoints.updates.runtimeCheck(projectId), input, {
       timeout: 60_000,

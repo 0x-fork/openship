@@ -8,6 +8,8 @@ import { decrypt, encrypt } from "@repo/platform/engine/lib/encryption";
 import * as deploymentRuntime from "@repo/platform/engine/lib/deployment-runtime";
 import * as edgeTarget from "@repo/platform/engine/lib/edge-target";
 import * as serverTarget from "@repo/platform/engine/lib/server-target";
+import { assertSyncedServiceEnvironment } from "@repo/platform/engine/modules/services/service-environment-state";
+import { buildBackgroundContext } from "@repo/platform/engine/lib/background-context";
 import { serviceRoutes } from "../../../src/modules/services/service.routes";
 import { healthRoutes } from "../../../src/modules/health/health.routes";
 import { handleApiError } from "../../../src/middleware/error-handler";
@@ -68,6 +70,38 @@ describe("effective service environment through HTTP, SDK and real storage", () 
     );
   });
   afterEach(() => vi.restoreAllMocks());
+
+  it("captures a synced service override without image defaults and rejects missing or unsaved live values", async () => {
+    await repos.project.bulkSetEnvVars(project.id, "production", [
+      { key: "SHARED", value: encrypt("service-wins") },
+    ], service.id);
+    const active = (await repos.project.findById(project.id))!.activeDeploymentId!;
+    await seedServiceDeployment(active, service, { containerId: "current-api" });
+    const runtime = await DockerRuntime.create({ dockerSocketPath: "/tmp/openship-test-absent.sock" });
+    vi.spyOn(runtime, "supports").mockReturnValue(false);
+    vi.spyOn(runtime, "dispose").mockResolvedValue(undefined);
+    const env = {
+      INLINE: "compose-default", DATABASE_URL: "postgres://project-secret@db/app",
+      DB_PASSWORD: "project-secret", SHARED: "service-wins", PROJECT_ONLY: "shared",
+    };
+    const detail = {
+      id: "current-api", name: "api", image: "node:22", imageId: "sha256:node-image", state: "running" as const,
+      env: [...Object.entries(env).map(([key, value]) => `${key}=${value}`), "NODE_VERSION=22.0.0"],
+      labels: { "openship.project": project.id, "openship.service": service.name },
+      networks: [], mounts: [], ports: [],
+    };
+    const inspect = vi.spyOn(runtime, "inspectContainer").mockResolvedValue(detail);
+    vi.spyOn(runtime, "inspectImageEnv").mockResolvedValue(["NODE_VERSION=22.0.0"]);
+    vi.mocked(deploymentRuntime.resolveDeploymentRuntimeForRead).mockResolvedValue({ runtime, serverId: null, hostPortTarget: null });
+    const ctx = buildBackgroundContext({ userId: owner.userId, organizationId: owner.orgId });
+    expect(await assertSyncedServiceEnvironment(ctx, project.id, service.id)).toEqual(env);
+    inspect.mockResolvedValue({ ...detail, env: [...detail.env, "UNSAVED=keep-me"] });
+    await expect(assertSyncedServiceEnvironment(ctx, project.id, service.id)).rejects.toThrow(/saved and running environments differ/);
+    inspect.mockResolvedValue({ ...detail, env: detail.env.filter((item) => !item.startsWith("SHARED=")) });
+    await expect(assertSyncedServiceEnvironment(ctx, project.id, service.id)).rejects.toThrow(/saved and running environments differ/);
+    inspect.mockRejectedValue(new Error("Docker unavailable"));
+    await expect(assertSyncedServiceEnvironment(ctx, project.id, service.id)).rejects.toThrow(/Docker unavailable/);
+  });
 
   it("shows Compose and shared variables with zero overrides, without contacting Docker or leaking secrets", async () => {
     const state = await client.services.getEnvironment(project.id, service.id);

@@ -2,12 +2,14 @@
 
 All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
+Runtime security notices use the signed feed published from `security-advisories.json`.
 
 ## 0.9.4
 
 This release adds deployment to existing Docker Swarm clusters, reviewed database
-replication, Openship Manage plans, explicit monorepo app selection and edge password
-protection. Deployment recovery, persistent storage, Cloud operations and webmail
+replication, annual Cloud billing, Openship Manage support plans, runtime security
+advisories, explicit monorepo app selection and edge password protection.
+Deployment recovery, persistent storage, Cloud operations and webmail
 receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Projects, repositories and environment
@@ -202,12 +204,27 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Cloud, billing, monitoring and Actions
 
-- **Manage customer-owned infrastructure from Cloud** — Openship Manage starts at
-  $5/month per organization for two connected servers, plus $3/month per extra
-  server. New Cloud purchases start at $20/month, with Starter, Pro and Scale plans;
-  existing subscriptions retain their saved terms and self-hosted control planes
-  remain free. Expiration ends management access after the paid period while
-  applications and data remain on the customer's hosts.
+- **Manage customer-owned infrastructure from Cloud** — Openship Manage Basic costs
+  $5/month per organization with email support; Priority costs $20/month with
+  priority support. Both include two connected servers, plus $3/month per extra
+  server. Paid Cloud includes the Basic allowance once per organization; Priority
+  retains its support fee. Expiration ends management access after the paid period
+  while applications and data remain on the customer's hosts. Self-hosted control
+  planes remain free.
+- **Choose monthly or annual Cloud billing** — Hobby, Starter, Pro and Scale cost
+  $12, $24, $47 and $119 per month, or $120, $240, $468 and $1,188 billed annually.
+  The purchase view defaults to Yearly when supported by the provider, shows the
+  monthly equivalent and full annual charge, and retains an explicit Monthly
+  switch. Custom resources use the selected interval through quote, checkout and
+  plan changes. Existing subscriptions retain their saved prices and allowances.
+- **Update entry-level Cloud capacity** — new Hobby purchases include 1 vCPU,
+  4 GB RAM, 50 GB storage and email support. New Scale offers allow 50 projects.
+  These catalog changes do not rewrite existing paid contracts.
+- **Simplify plan selection and payment recovery** — Cloud plans, Prepaid PAYG and
+  Manage your server share the purchase view. Manage plans are also available
+  directly when connecting a server. Pending purchases appear under Payments &
+  invoices with a count, and Manage checkout keeps the server allowance and total
+  beside the selected support plan.
 - **Keep management billing and access coordinated** — durable checkout intent
   and receipt validation protect purchase retries. Paid Cloud organizations receive
   their included management allowance once, and allowance changes coordinate with
@@ -257,6 +274,31 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Security and credentials
 
+- **Match runtime security advisories to deployed workloads** — verify a public,
+  signed advisory feed and match affected image digests or observed runtime
+  versions. New runtime rules, deployment changes and Check again refresh bounded
+  container observations; ordinary polling reuses one current observation per
+  project. Findings appear in the existing global critical/update banner with a
+  shared affected-app review; no project visit is needed. The banner reads cached,
+  workspace-authorized evidence without probing containers. Missing evidence stays
+  unknown. Initial notices cover Node.js/Bun
+  Brotli fixes and PHP's October security guidance, including a separate manual
+  configuration warning that an image update alone cannot clear.
+- **Apply reviewed patches through the deployment pipeline** — Refresh images &
+  redeploy can pull a replacement behind the same tag, or rebuild the deployed
+  Git revision with refreshed base images. Automatic refresh is off by default
+  and requires explicit consent, a signed affected/fixed digest pair, an eligible
+  image service and unchanged configuration. It pins the approved replacement,
+  uses the normal refresh and environment-resolution flow, preserves persistent
+  volumes, and verifies the deployed result. Late environment changes stop an
+  automatic update for review. Concurrent requests admit one automatic attempt;
+  rollback clears the one-time approval. Explicit digest pins remain fixed.
+- **Deliver security notices through existing notification channels** — verified,
+  enabled channels receive matching alerts by default, with a per-channel opt-out
+  and durable delivery deduplication. Feed checks share authentication-aware
+  polling, conditional requests and backoff with release updates: five minutes
+  when authenticated, one hour without authentication. Advisory metadata cannot
+  supply executable commands.
 - **Pin patched runtimes and build tools** — use Node 22.23.4 and Bun 1.4.4 across
   the affected control-plane, website, webmail and worker image stages, with verified
   image digests. Desktop moves to supported Electron 44.9.2; Actions distributions

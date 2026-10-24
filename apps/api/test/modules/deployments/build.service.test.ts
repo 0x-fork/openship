@@ -1909,6 +1909,7 @@ describe("triggerDeployment", () => {
   it("keeps a rollback on its frozen image expression and environment", async () => {
     const frozenEnv = { MY_VERSION: encrypt("1.2.3") };
     const frozenSnapshot = baseSnapshot();
+    frozenSnapshot.securityApproval = { deploymentId: "old-source", approvedBy: "previous-approver", expiresAt: "2026-10-25T00:00:00Z", serviceId: "old-service", image: "node@sha256:old", environmentFingerprint: "old" };
     frozenSnapshot.composeServices = [
       {
         name: "api",
@@ -1934,6 +1935,7 @@ describe("triggerDeployment", () => {
     });
 
     expect(repos.project.getEnvMap).not.toHaveBeenCalled();
+    expect(repos.deployment.create.mock.calls.at(-1)?.[0].meta).not.toHaveProperty("securityApproval");
     expect(resolveProjectInfo).not.toHaveBeenCalled();
     expect(repos.deployment.create).toHaveBeenCalledWith(
       expect.objectContaining({

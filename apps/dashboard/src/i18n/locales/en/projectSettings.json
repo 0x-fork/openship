@@ -1252,5 +1252,23 @@
     "checkUnavailable": "Image comparison needs recorded digests and registry access.",
     "checkFailed": "Could not check image updates.",
     "pinned": "Images are pinned by digest. Edit the configured reference to update them."
+  },
+  "securityAdvisories": {
+    "reviewApps": "Review affected apps ({count})",
+    "pendingApps": "Checks pending for {count} apps. Results will appear automatically.",
+    "checkAgain": "Check again",
+    "checking": "Checking…",
+    "title": "Security advisories",
+    "unavailable": "Security checks are unavailable or out of date. Existing notices remain visible.",
+    "affected": "Review the affected runtime and the published guidance before updating.",
+    "noMatches": "No matching advisories in the checked evidence. This is not a complete vulnerability scan.",
+    "partial": "Some runtimes could not be identified. Bare processes, stopped containers and unsupported images may need a manual check.",
+    "guidance": "Read advisory",
+    "automatic": "Automatically refresh verified security patches",
+    "automaticDescription": "Off by default. Only image services with a signed fix on their existing tag can update automatically. Source builds, pinned images and version changes require review. Normal deployment and health checks still apply.",
+    "notifications": "Security alerts are enabled on notification channels by default. You can change each channel in Settings → Notifications.",
+    "publicFeed": "View public feed",
+    "checked": "Evidence checked",
+    "possible": "Image tag matches; the deployed version needs verification."
   }
 }

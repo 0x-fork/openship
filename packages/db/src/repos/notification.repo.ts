@@ -188,6 +188,9 @@ export function createNotificationChannelRepo(db: Database) {
 
 export function createNotificationSubscriptionRepo(db: Database) {
   return {
+    async listForCategory(organizationId: string, category: string): Promise<NotificationSubscription[]> {
+      return db.select().from(notificationSubscription).where(and(eq(notificationSubscription.organizationId, organizationId), eq(notificationSubscription.category, category)));
+    },
     /** All subscriptions for a user in one org — drives the Settings UI table. */
     async listForUserInOrg(
       userId: string,

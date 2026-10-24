@@ -93,8 +93,12 @@ describe("pricing catalog (pricing.json)", () => {
     expect(PLAN_IDS).toEqual(union);
   });
 
-  it("prices the published ladder: free, $5, $20, $39, $99, custom", () => {
-    expect(PRICING.plans.map((p) => p.price.monthly)).toEqual([0, 500, 2000, 3900, 9900, null]);
+  it("prices monthly compute from $12 and keeps management at $5", () => {
+    expect(PRICING.plans.map((p) => p.price.monthly)).toEqual([0, 1200, 2400, 4700, 11900, null]);
+    expect(PRICING.management.monthlyCents).toBe(500);
+    expect(PRICING.management.priorityMonthlyCents).toBe(2000);
+    expect(resolvePlan("hobby").support).toBe("email");
+    expect(resolvePlan("hobby").features).toContain("Email support");
   });
 
   it("ships exactly one popular tier", () => {
@@ -202,9 +206,10 @@ describe("pricing catalog (pricing.json)", () => {
     for (const plan of PRICING.plans) expect(plan.limits.seats, plan.id).toBeNull();
   });
 
-  it("keeps annual hidden until it is published", () => {
-    expect(PRICING.annual.enabled).toBe(false);
-    for (const plan of PRICING.plans) expect(plan.price.annual, plan.id).toBeNull();
+  it("publishes annual totals separately from the monthly payment", () => {
+    expect(PRICING.annual.enabled).toBe(true);
+    expect(PRICING.plans.filter(p => p.price.monthly && !p.contactSales).map(p => [p.price.monthly, p.price.annual]))
+      .toEqual([[1200, 12000], [2400, 24000], [4700, 46800], [11900, 118800]]);
   });
 
   it("falls back to the most restrictive tier for an unknown plan id", () => {
@@ -275,7 +280,7 @@ describe("pricing catalog (pricing.json)", () => {
   });
 
   it.each([
-    ["hobby", 1, 2048, 40], ["starter", 2, 8192, 128], ["pro", 4, 16384, 250], ["team", 8, 32768, 600],
+    ["hobby", 1, 4096, 50], ["starter", 2, 8192, 128], ["pro", 4, 16384, 250], ["team", 8, 32768, 600],
   ] as const)("allows one %s service the full workspace CPU and RAM pool", (id, cpuCores, memoryMb, diskGb) => {
     const limits = planServiceResources(planLimits(id));
     expect(limits).toEqual({ cpuCores, memoryMb });
@@ -294,15 +299,15 @@ describe("pricing catalog (pricing.json)", () => {
     expect(resolvePlan(id).features).toContain(`Up to ${cpuCores} vCPU and ${memoryMb / 1024} GB RAM per app`);
   });
 
-  it("keeps historical Hobby terms readable without reopening them through custom checkout", () => {
+  it("offers the same entry pool through preset and custom checkout for either billing interval", () => {
     expect(resolvePlan("hobby")).toMatchObject({
-      availableForPurchase: false,
-      price: { monthly: 500 },
+      availableForPurchase: true,
+      price: { monthly: 1200, annual: 12000 },
     });
-    expect(quoteCustomResources({ cpuCores: 1, memoryMb: 2048, diskGb: 40 })).toMatchObject({
-      basePlanTierId: "starter",
-      priceCents: 2000,
-      resources: { cpuCores: 1, memoryMb: 2048, diskGb: 40 },
+    expect(quoteCustomResources({ cpuCores: 1, memoryMb: 4096, diskGb: 50 })).toMatchObject({
+      basePlanTierId: "hobby",
+      priceCents: 1200,
+      resources: { cpuCores: 1, memoryMb: 4096, diskGb: 50 },
     });
   });
 
@@ -402,6 +407,7 @@ describe("pricing catalog — schema rejects bad edits", () => {
     const metered = (c: any) => {
       c.plans[1].billing.mode = "metered";
       c.plans[1].billing.creditsPerCycle = 400;
+      c.plans[1].billing.yearlyCreditsPerCycle = 4000;
     };
     for (const credits of [null, 0]) {
       expect(mutate(c => { metered(c); c.plans[1].billing.creditsPerCycle = credits; })).toBe(false);
@@ -657,7 +663,7 @@ describe("pricing resolution", () => {
   });
 
   it("formats capacity and metered pack counts for the locale", () => {
-    expect(resolvePlan("team", "en").features).toContain("CPU, RAM and storage covered for the paid month");
+    expect(resolvePlan("team", "en").features).toContain("CPU, RAM and storage covered for the paid period");
     // Arabic is pinned to Latin numerals so a price stays legible.
     expect(resolvePlan("team", "ar").features.join(" ")).toMatch(/600/);
     expect(resolveCreditPacks("ar").find(pack => pack.id === "pack_1700")!.name).toMatch(/1,700/);
@@ -672,7 +678,7 @@ describe("pricing resolution", () => {
       expect(words, `${id} must not convert credits into fixed runtime`).not.toMatch(
         /compute minutes/,
       );
-      expect(words, `${id} must explain paid coverage`).toMatch(/covered for the paid month/);
+      expect(words, `${id} must explain paid coverage`).toMatch(/covered for the paid period/);
       expect(words).not.toMatch(/usage credits|top-ups/);
       expect(words).not.toMatch(/build minutes/);
       expect(words, `${id} must quote a machine size`).toMatch(/vCPU/);
@@ -820,22 +826,30 @@ describe("stripe price ids", () => {
     );
     expect(missing).toEqual([
       "hobby.monthly (STRIPE_PRICE_HOBBY_MONTHLY)",
+      "hobby.annual (STRIPE_PRICE_HOBBY_ANNUAL)",
       "starter.monthly (STRIPE_PRICE_STARTER_MONTHLY)",
+      "starter.annual (STRIPE_PRICE_STARTER_ANNUAL)",
       "pro.monthly (STRIPE_PRICE_PRO_MONTHLY)",
+      "pro.annual (STRIPE_PRICE_PRO_ANNUAL)",
       "team.monthly (STRIPE_PRICE_TEAM_MONTHLY)",
+      "team.annual (STRIPE_PRICE_TEAM_ANNUAL)",
       "pack_400 (STRIPE_PRICE_PACK_400)",
       "pack_1700 (STRIPE_PRICE_PACK_1700)",
       "pack_4500 (STRIPE_PRICE_PACK_4500)",
     ]);
   });
 
-  it("does not demand an annual price id while annual is unpublished", () => {
+  it("resolves all published annual and monthly Stripe price identifiers", () => {
     const missing = withEnv(
       {
         STRIPE_PRICE_HOBBY_MONTHLY: "p0",
+        STRIPE_PRICE_HOBBY_ANNUAL: "y0",
         STRIPE_PRICE_STARTER_MONTHLY: "p1",
+        STRIPE_PRICE_STARTER_ANNUAL: "y1",
         STRIPE_PRICE_PRO_MONTHLY: "p2",
+        STRIPE_PRICE_PRO_ANNUAL: "y2",
         STRIPE_PRICE_TEAM_MONTHLY: "p3",
+        STRIPE_PRICE_TEAM_ANNUAL: "y3",
         STRIPE_PRICE_PACK_400: "p4",
         STRIPE_PRICE_PACK_1700: "p5",
         STRIPE_PRICE_PACK_4500: "p6",

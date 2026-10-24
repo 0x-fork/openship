@@ -317,6 +317,19 @@ describe("Cloud Docker uses the shared Compose source planner", () => {
 });
 
 describe("prebuilt registry images (#878)", () => {
+  it("keeps retained artifacts local and acquires force-pulled registry digests before cutover", async () => {
+    const image = `docker.io/library/node@sha256:${"a".repeat(64)}`;
+    const service = { ...repoService({ build: null }), image: "node:22-alpine" };
+    const retained = await run([service], undefined, { handoverImages: { dinohash: image } });
+    expect(retained.result.preparedLocalImages.get("svc-1")).toBe(image);
+    const patch = await run([service], undefined, { handoverImages: { dinohash: image },
+      forcePullImages: true,
+    });
+    expect(patch.captured).toEqual([]);
+    expect(patch.result.imageRefs.get("svc-1")).toBe(image);
+    expect(patch.result.preparedLocalImages.size).toBe(0);
+  });
+
   it("keeps an image-only GHCR reference without invoking a source build", async () => {
     const image = "ghcr.io/acme/web:sha-abc123";
     const { result, captured } = await run([{ ...repoService({ build: null }), image }]);

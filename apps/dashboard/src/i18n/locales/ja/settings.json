@@ -896,7 +896,8 @@
       "domains": "ドメインと SSL",
       "members": "メンバー",
       "mail": "メール",
-      "billing": "請求"
+      "billing": "請求",
+      "security": "セキュリティ"
     },
     "categories": {
       "deploy.failed": {
@@ -1030,6 +1031,10 @@
       "quota.warning": {
         "label": "クォータ警告",
         "description": "プランの制限（ストレージ、デプロイ、メンバー）に近づいています。エラーが発生する前の事前通知です。"
+      },
+      "security.advisory": {
+        "label": "セキュリティ情報",
+        "description": "Openship またはデプロイ済みサービスに影響するセキュリティ情報です。原因と利用可能な更新を含みます。"
       }
     }
   },

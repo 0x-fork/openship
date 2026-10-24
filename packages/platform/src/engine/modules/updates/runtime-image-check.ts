@@ -22,7 +22,7 @@ const validDigest = (value: unknown): value is string =>
   typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value);
 
 /** Compare immutable build receipts and deployed images with the shared registry resolver. */
-export async function checkProjectRuntimeImages(
+export async function getProjectRuntimeImages(
   ctx: ExecutionContext,
   projectId: string,
   input: UpdateRuntimeInput = {},
@@ -83,7 +83,10 @@ export async function checkProjectRuntimeImages(
         service.name,
         "image",
         service.image,
-        observed?.imageRef === service.image ? observed.imageDigest : null,
+        observed?.imageRef === service.image ||
+          ((meta as { composeServices?: Array<{ name: string; image?: string }> }).composeServices?.some((item) => item.name === service.name && item.image === service.image) &&
+            (meta as { handoverImages?: Record<string, string> }).handoverImages?.[service.name] === observed?.imageRef)
+          ? (observed?.imageRef?.includes("@sha256:") ? observed.imageRef.split("@")[1] : observed?.imageDigest) : null,
       );
     }
     const bases =
@@ -133,6 +136,15 @@ export async function checkProjectRuntimeImages(
     }
   }
 
+  return { checkedAt: new Date().toISOString(), images };
+}
+
+export async function checkProjectRuntimeImages(
+  ctx: ExecutionContext,
+  projectId: string,
+  input: UpdateRuntimeInput = {},
+): Promise<RuntimeImageCheckResult> {
+  const { images } = await getProjectRuntimeImages(ctx, projectId, input);
   const deadline = Date.now() + 12_000;
   const byRef = new Map<string, Promise<string | null>>();
   await withTimeout(

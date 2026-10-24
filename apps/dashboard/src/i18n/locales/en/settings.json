@@ -956,7 +956,8 @@
       "domains": "Domains & SSL",
       "members": "Members",
       "mail": "Mail",
-      "billing": "Billing"
+      "billing": "Billing",
+      "security": "Security"
     },
     "categories": {
       "deploy.failed": {
@@ -1090,6 +1091,10 @@
       "quota.warning": {
         "label": "Quota warning",
         "description": "You're approaching a plan limit (storage, deployments, members). Heads-up before things start failing."
+      },
+      "security.advisory": {
+        "label": "Security advisories",
+        "description": "A published security advisory affects Openship or a deployed service. Includes the cause and available update."
       }
     }
   },

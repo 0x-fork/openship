@@ -21,6 +21,7 @@ export const managementBilling = pgTable("management_billing", {
     id?: string;
   }>(),
   verified: jsonb("verified").$type<{
+    plan?: "basic" | "priority";
     servers: number;
     baseIncluded: boolean;
     priceCents: number;

@@ -53,6 +53,7 @@ vi.mock("@repo/platform/engine/lib/oblien-namespace", () => ({ ensureCloudNamesp
 import { db, repos, schema } from "@repo/db";
 import { generateId } from "@repo/core";
 import { managementOffer } from "@repo/platform/engine/modules/billing/management-contract";
+import type { ManagementPlanId } from "@repo/contracts";
 import { OperationError } from "@repo/contracts";
 import { Hono } from "hono";
 import { OpenshipClient } from "@repo/sdk/client";
@@ -84,12 +85,12 @@ async function fixture() {
     });
   return { organizationId, userId: "owner", role: "owner" } as ExecutionContext;
 }
-async function paidSubscription(ctx: ExecutionContext, servers = 2, included = false) {
+async function paidSubscription(ctx: ExecutionContext, servers = 2, included = false, plan: ManagementPlanId = "basic") {
   const namespace = managementNamespace(ctx.organizationId);
   await repos.managementBilling.ensure(ctx.organizationId, namespace);
   await repos.managementBilling.update(ctx.organizationId, { namespaceReady: true });
   const sub: NonNullable<OblienSubscription> = {
-    ...managementOffer(ctx.organizationId, namespace, servers, included),
+    ...managementOffer(ctx.organizationId, namespace, servers, included, plan),
     tierId: "reseller",
     status: "active",
     billingInterval: "monthly",
@@ -173,6 +174,24 @@ beforeEach(() => {
   });
 });
 describe("hosted management lifecycle with real persistence and locks", () => {
+  it("binds the selected support plan to checkout, retry, payment and tenant ownership", async () => {
+    const ctx = await fixture(), other = await fixture();
+    const selection = { servers: 2, plan: "priority" as const, idempotencyKey: "priority-checkout-key" };
+    expect(await purchaseManagement(ctx, selection)).toMatchObject({ kind: "checkout", monthlyCents: 2000 });
+    await purchaseManagement(ctx, selection);
+    expect(h.checkouts.size).toBe(1);
+    const request = [...h.checkouts.values()][0]!.request;
+    expect(request.offer).toMatchObject({ unitAmount: 2000, billingMode: "service", credits: 0 });
+    expect(JSON.parse(request.metadata!.openship_management!)).toMatchObject({ plan: "priority", supportMonthlyCents: 1500 });
+    expect(await getManagement(ctx)).toMatchObject({ active: false, support: null, pendingCheckout: true });
+    expect(await getManagement(other)).toMatchObject({ active: false, support: null, pendingCheckout: false });
+    await expect(purchaseManagement(ctx, { ...selection, plan: "basic" })).rejects.toMatchObject({ code: "MANAGEMENT_CHECKOUT_PENDING" });
+    await cancelManagementCheckout(ctx);
+    await paidSubscription(ctx, 2, false, "priority");
+    expect(await getManagement(ctx)).toMatchObject({ active: true, support: "priority", serverLimit: 2, subscription: { plan: "priority" } });
+    h.paid = false;
+    expect(await getManagement(ctx)).toMatchObject({ active: false, support: null });
+  });
   it("releases a definitively refused fresh checkout so a later purchase can proceed", async () => {
     const ctx = await fixture();
     h.provider.createCheckout.mockRejectedValueOnce(
@@ -207,7 +226,14 @@ describe("hosted management lifecycle with real persistence and locks", () => {
     });
     const native = await ship.scope({ identity: "verified", organizationId: actor.orgId });
     expect(await remote.billing.getManagement()).toEqual(await native.billing.getManagement());
-    const selection = { servers: 2, idempotencyKey: "sdk-shared-checkout-key" };
+    for (const override of [{ plan: "admin" }, { monthlyCents: 1 }, { supportMonthlyCents: 0 }, { namespace: managementNamespace("other-org") }]) {
+      const rejected = await app.request("/api/billing/manage/checkout", { method: "POST",
+        headers: { Authorization: `Bearer ${actor.token}`, "X-Organization-Id": actor.orgId, "Content-Type": "application/json" },
+        body: JSON.stringify({ servers: 2, plan: "priority", idempotencyKey: "invalid-support-checkout-key", ...override }) });
+      expect(rejected.status).toBe(400);
+    }
+    expect(h.checkouts.size).toBe(0);
+    const selection = { servers: 2, plan: "priority" as const, idempotencyKey: "sdk-shared-checkout-key" };
     expect(await remote.billing.purchaseManagement(selection)).toEqual(
       await native.billing.purchaseManagement(selection),
     );

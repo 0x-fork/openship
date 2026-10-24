@@ -27,6 +27,7 @@ export {
 } from "./incoming-webhook";
 export { systemNotice } from "./system-notice";
 export { updateStatus } from "./update-status";
+export { advisoryFeed, projectSecurity, securityRefreshAttempt } from "./security-advisory";
 export { serverModuleStatus } from "./server-module-status";
 export { serverContainerStatus, type ServerContainerDetail } from "./server-container-status";
 export { edgeTargetVerification } from "./edge-target-verification";

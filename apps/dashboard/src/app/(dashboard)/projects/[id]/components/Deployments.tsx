@@ -360,6 +360,7 @@ export const Deployments = () => {
         />
       )}
 
+
       {!isSelfApp && <RuntimeImageUpdateNotice result={runtimeUpdate.checkResult}
         busy={isRedeploying || runtimeUpdate.updating} onRefresh={runtimeUpdate.update} />}
 

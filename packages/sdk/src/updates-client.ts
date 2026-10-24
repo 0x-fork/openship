@@ -8,6 +8,7 @@ import { createRemoteResourceOperations, createRemoteScopedOperations } from "./
 export function createRemoteUpdateOperations(http: HttpClient): UpdateOperations {
   return Object.freeze({
     ...createRemoteScopedOperations(http, UpdateCollectionSchemas, {
+      advisories: { method: "GET", path: () => "/updates/advisories", envelope: "data" },
       list: {
         method: "GET",
         path: (input) =>
@@ -18,6 +19,26 @@ export function createRemoteUpdateOperations(http: HttpClient): UpdateOperations
       scan: { method: "POST", path: () => "/updates/scan", envelope: "data" },
     }),
     ...createRemoteResourceOperations(http, UpdateProjectSchemas, {
+      checkSecurity: {
+        method: "POST",
+        path: (id) => `/updates/${encodeURIComponent(id)}/security/check`,
+        envelope: "data",
+      },
+      security: {
+        method: "GET",
+        path: (id) => `/updates/${encodeURIComponent(id)}/security`,
+        envelope: "data",
+      },
+      securityPolicy: {
+        method: "PUT",
+        path: (id) => `/updates/${encodeURIComponent(id)}/security/policy`,
+        envelope: "data",
+      },
+      applySecurity: {
+        method: "POST",
+        path: (id) => `/updates/${encodeURIComponent(id)}/security/apply`,
+        envelope: "data",
+      },
       apply: {
         method: "POST",
         path: (id) => `/updates/${encodeURIComponent(id)}/apply`,

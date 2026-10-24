@@ -896,7 +896,8 @@
       "domains": "Domains und SSL",
       "members": "Mitglieder",
       "mail": "Mail",
-      "billing": "Abrechnung"
+      "billing": "Abrechnung",
+      "security": "Sicherheit"
     },
     "categories": {
       "deploy.failed": {
@@ -1030,6 +1031,10 @@
       "quota.warning": {
         "label": "Kontingentwarnung",
         "description": "Sie nähern sich einem Tariflimit (Speicher, Deployments, Mitglieder). Vorwarnung, bevor Fehler auftreten."
+      },
+      "security.advisory": {
+        "label": "Sicherheitshinweise",
+        "description": "Ein Sicherheitshinweis betrifft Openship oder einen bereitgestellten Dienst. Enthält Ursache und verfügbares Update."
       }
     }
   },

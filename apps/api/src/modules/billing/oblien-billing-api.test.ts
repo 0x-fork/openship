@@ -667,17 +667,26 @@ describe("Oblien monthly capacity contract", () => {
       expect(oblienOfferSchema.safeParse({ ...subscription.offer, ...patch }).success).toBe(false);
     }
   });
-  it.each(["topup", "yearly"])("rejects monthly capacity sold as %s before contacting the provider", async mode => {
+  it("rejects prepaid capacity sold as a top-up before contacting the provider", async () => {
     const { subscription } = monthlyCloudBilling("org-one", "os-one");
     const { api, fetcher } = setup({ success: true });
-    const input = { namespace: "os-one", offer: subscription.offer!, metadata: subscription.metadata!,
-      idempotencyKey: "monthly-only", successUrl: "https://app.openship.io/billing", cancelUrl: "https://app.openship.io/billing" };
-    await expect(api.createCheckout(mode === "topup"
-      ? { ...input, kind: "topup" }
-      : { ...input, kind: "subscription", billingInterval: "yearly" })).rejects.toThrow("monthly subscription");
-    if (mode === "yearly")
-      await expect(api.previewPlanChange("os-one", { ...input, billingInterval: "yearly" })).rejects.toThrow("monthly subscription");
+    await expect(api.createCheckout({ namespace: "os-one", offer: subscription.offer!, metadata: subscription.metadata!,
+      idempotencyKey: "monthly-only", successUrl: "https://app.openship.io/billing", cancelUrl: "https://app.openship.io/billing",
+      kind: "topup" })).rejects.toThrow("Prepaid capacity requires a subscription");
     expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("sends annual prepaid subscriptions through the shared checkout transport", async () => {
+    const { subscription } = monthlyCloudBilling("org-one", "os-one");
+    const { api, fetcher } = setup({ success: true, url: "https://checkout.stripe.com/c/pay/annual", checkoutId: "cs_annual" });
+    await expect(api.createCheckout({ namespace: "os-one", offer: subscription.offer!, metadata: subscription.metadata!,
+      idempotencyKey: "annual-only", successUrl: "https://app.openship.io/billing", cancelUrl: "https://app.openship.io/billing",
+      kind: "subscription", billingInterval: "yearly" })).resolves.toMatchObject({ checkoutId: "cs_annual" });
+    expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string)).toMatchObject({ kind: "subscription", billingInterval: "yearly" });
+  });
+  it("requires the provider's explicit annual capability before enabling annual purchases", async () => {
+    await expect(setup(capacityCatalog).api.assertMonthlyCapacitySupport("yearly")).rejects.toMatchObject({ code: "OBLIEN_CAPACITY_UNAVAILABLE" });
+    await expect(setup({ ...capacityCatalog, resellerSubscriptionIntervals: ["monthly", "yearly"] }).api.assertMonthlyCapacitySupport("yearly"))
+      .resolves.toMatchObject({ resellerSubscriptionIntervals: ["monthly", "yearly"] });
   });
 });
 

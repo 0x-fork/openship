@@ -1331,7 +1331,13 @@ async function executeBuildAndDeploy(
       // alongside the real monorepo row (no DB unique constraint on
       // (projectId, name)). Filter to compose-kind before handing it off.
       const composeOnly = snapshot.composeServices?.filter((s) => serviceKind(s) === "compose");
-      if (composeOnly?.length && !snapshot.capacityAdjustment) {
+      if (snapshot.securityApproval) {
+        const { assertSecurityRefreshConfiguration } = await import("../updates/security-refresh-guard");
+        await assertSecurityRefreshConfiguration(await repos.project.findById(project.id), snapshot);
+      }
+      // An unattended trigger only updates artifacts. Its approval rejects config
+      // drift; it must not replay configuration over edits saved after admission.
+      if (composeOnly?.length && !snapshot.capacityAdjustment && !snapshot.securityApproval) {
         // removeMissing: false — this list is the release's frozen snapshot, not
         // an authoritative inventory. On a rollback it predates services added
         // since; on any deploy the delete cascades `service_deployment` and so

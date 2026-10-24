@@ -896,7 +896,8 @@
       "domains": "域名与 SSL",
       "members": "成员",
       "mail": "邮件",
-      "billing": "账单"
+      "billing": "账单",
+      "security": "安全"
     },
     "categories": {
       "deploy.failed": {
@@ -1030,6 +1031,10 @@
       "quota.warning": {
         "label": "配额警告",
         "description": "您即将达到方案限制（存储、部署、成员）。在出现故障前发出提醒。"
+      },
+      "security.advisory": {
+        "label": "安全公告",
+        "description": "已发布的安全公告影响 Openship 或已部署的服务。包含原因和可用更新。"
       }
     }
   },

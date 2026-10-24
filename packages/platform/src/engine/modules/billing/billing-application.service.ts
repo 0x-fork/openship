@@ -74,8 +74,8 @@ export async function getResources(ctx: ExecutionContext, input: BillingScopeInp
 /* ---------- Subscriptions ---------- */
 
 export async function quoteCustomPlan(_ctx: ExecutionContext, input: Parameters<BillingOperations["quoteCustomPlan"]>[0]) {
-  await getOblienBillingApi().assertMonthlyCapacitySupport();
-  const { quote } = customSubscriptionOffer(input);
+  await getOblienBillingApi().assertMonthlyCapacitySupport(input.interval === "annual" ? "yearly" : "monthly");
+  const { quote } = customSubscriptionOffer(input, input.interval);
   return quote;
 }
 

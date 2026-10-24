@@ -16,6 +16,7 @@ import { withServerInventoryLock } from "../../lib/server-inventory-lock";
 import { isExpiredCheckout } from "./workspace-checkout";
 import {
   managementOffer,
+  managementPlan,
   managementCloudBenefitOffer,
   managementTerms,
   managementSubscription,
@@ -188,6 +189,7 @@ async function state(org: string): Promise<ManagementState> {
     purchasesAvailable: env.BILLING_ENABLED && catalog.reseller?.serviceOffers === true,
     cloudIncluded: (row.cloudCoveredUntil?.getTime() ?? 0) > Date.now(),
     active: serverLimit > 0,
+    support: serverLimit > 0 ? row.verified?.plan === "priority" ? "priority" : "email" : null,
     serverLimit,
     connectedServers: servers.length,
     pendingCheckout: !!row.checkout,
@@ -235,12 +237,6 @@ export async function purchaseManagement(ctx: ExecutionContext, input: Managemen
     lock(org, async () => {
       await assertSales();
       await assertServerCount(org, input.servers);
-      const selected = managementOffer(
-        org,
-        managementNamespace(org),
-        input.servers,
-        !!(await cloudCoverage(org)),
-      );
       let owner = await account(org);
       if (!owner.namespaceReady) {
         await ensureCloudNamespace({
@@ -260,6 +256,10 @@ export async function purchaseManagement(ctx: ExecutionContext, input: Managemen
         owner = { ...owner, namespaceReady: true };
       }
       const { row, subscription } = await refresh(org);
+      const savedTerms = managementTerms(org, owner.namespace, subscription);
+      const selected = managementOffer(org, owner.namespace, input.servers,
+        (row.cloudCoveredUntil?.getTime() ?? 0) > Date.now(),
+        input.plan ?? (savedTerms ? managementPlan(savedTerms) : "basic"));
       const api = getOblienBillingApi();
       if (subscription && subscription.status !== "canceled") {
         managementTerms(org, owner.namespace, subscription);
@@ -364,6 +364,7 @@ export async function confirmManagementChange(ctx: ExecutionContext, input: { qu
             row.namespace,
             terms.servers,
             !!(await cloudCoverage(ctx.organizationId)),
+            managementPlan(terms),
           ),
           billingInterval: "monthly",
           idempotencyKey: request.idempotencyKey,

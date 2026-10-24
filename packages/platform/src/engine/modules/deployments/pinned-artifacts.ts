@@ -1,13 +1,15 @@
 /**
- * Pinned artifacts — "deploy THIS exact image; don't build it, don't pull it."
+ * Pinned artifacts — deploy this exact artifact without rebuilding its source.
  *
- * Two producers, one mechanism:
+ * Shared artifact selection:
  *
  *   - Migration cutover seeds `handoverImages` so an adopted service deploys
  *     from the image its transferred container was already running.
  *   - Rollback seeds the same fields from a past deployment's retained images,
  *     which is what makes an instant restore go through the NORMAL deploy step
  *     instead of a bespoke container-recreation path.
+ *   - Signed security refresh pins a NEW registry digest. Image preparation
+ *     acquires it before cutover; it is not a retained local-image claim.
  *
  * Consumers ask this module rather than reading the snapshot fields directly, so
  * the compose path (`compose/build.service.ts`), the single-app path
@@ -54,6 +56,7 @@ export interface PinnedArtifactSnapshot extends SnapshotClassInput {
   strictServiceScope?: boolean;
   refreshServiceIds?: string[];
   forcePullImages?: boolean;
+  securityApproval?: unknown;
   completedBuildArtifacts?: unknown;
   retryBuildFromDeploymentId?: string;
   roleConfiguration?: unknown;
@@ -145,6 +148,7 @@ export function withoutPinnedArtifacts<T extends PinnedArtifactSnapshot>(snapsho
     strictServiceScope: _strictScope,
     refreshServiceIds: _refreshServices,
     forcePullImages: _forcePull,
+    securityApproval: _securityApproval,
     completedBuildArtifacts: _completedArtifacts,
     retryBuildFromDeploymentId: _retryBuild,
     capacityAdjustment: _capacityAdjustment,

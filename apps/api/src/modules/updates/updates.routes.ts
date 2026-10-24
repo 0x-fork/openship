@@ -14,6 +14,70 @@ const r = secureRouter(new Hono(), {
   module: "updates",
   basePath: "/api/updates",
 });
+r.get(
+  "/advisories",
+  {
+    tag: "updates:read",
+    mcp: {
+      description:
+        "Read the shared release/security feeds and authorized workspace findings from current cached observations. Does not execute container commands; respects feed polling and backoff.",
+    },
+  },
+  ctrl.advisories,
+);
+r.get(
+  "/:projectId/security",
+  {
+    tag: "project:read",
+    ids: { project: "projectId" },
+    mcp: {
+      description:
+        "Match verified security notices against deployed image receipts and bounded, isolated runtime version checks. Does not deploy.",
+    },
+  },
+  ctrl.security,
+);
+r.post(
+  "/:projectId/security/check",
+  {
+    tag: "project:read",
+    readOnly: true,
+    ids: { project: "projectId" },
+    mcp: {
+      description:
+        "Refresh this project's isolated runtime observations and compare them with verified advisories. Does not deploy or bypass GitHub feed backoff.",
+    },
+  },
+  ctrl.checkSecurity,
+);
+r.put(
+  "/:projectId/security/policy",
+  {
+    tag: "project:write",
+    ids: { project: "projectId" },
+    auditHandledByOperation: true,
+    body: UpdateProjectSchemas.securityPolicy.input,
+    mcp: {
+      description:
+        "Opt in or out of automatic, signed, verified image security refreshes for this project. Off by default.",
+    },
+  },
+  ctrl.securityPolicy,
+);
+r.post(
+  "/:projectId/security/apply",
+  {
+    tag: "project:write",
+    ids: { project: "projectId" },
+    auditHandledByOperation: true,
+    body: UpdateProjectSchemas.applySecurity.input,
+    mcp: {
+      description:
+        "Refresh an affected runtime through the existing deployment pipeline. Rechecks the advisory and active deployment before admission.",
+    },
+  },
+  ctrl.applySecurity,
+);
 
 r.get(
   "/",

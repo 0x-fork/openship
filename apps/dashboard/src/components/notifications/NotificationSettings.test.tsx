@@ -553,3 +553,17 @@ it("clears a revealed secret on scope change", async () => {
   await render();
   expect(host.querySelector("input[readonly]")).toBeNull();
 });
+
+
+it("shows default security alerts for every channel and persists an individual opt-out", async () => {
+  m.categories.mockResolvedValue({ categories: [{ id: "security.advisory", group: "security", label: "Security advisories", description: "Security updates", defaultEnabled: true, defaultPerChannel: true, defaultChannelKinds: ["email", "in_app", "webhook"] }], groups: [{ id: "security", label: "Security" }] });
+  m.channels.mockResolvedValue({ channels: [channel("email"), channel("webhook")] });
+  await render();
+  const email = button("Security advisories: email destination");
+  const webhook = button("Security advisories: webhook destination");
+  expect(email.getAttribute("aria-checked")).toBe("true");
+  expect(webhook.getAttribute("aria-checked")).toBe("true");
+  await act(async () => webhook.click());
+  expect(m.subscribe).toHaveBeenCalledWith({ category: "security.advisory", channelId: "webhook", enabled: false });
+  expect(m.subscribe).toHaveBeenCalledTimes(1);
+});

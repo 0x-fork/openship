@@ -935,7 +935,8 @@
       "domains": "Alan Adları ve SSL",
       "members": "Üyeler",
       "mail": "E-posta",
-      "billing": "Faturalandırma"
+      "billing": "Faturalandırma",
+      "security": "Güvenlik"
     },
     "categories": {
       "deploy.failed": {
@@ -1069,6 +1070,10 @@
       "quota.warning": {
         "label": "Kota uyarısı",
         "description": "Plan sınırına yaklaşıyorsunuz (depolama, dağıtımlar, üyeler). Sorunlar başlamadan önce ön uyarı."
+      },
+      "security.advisory": {
+        "label": "Güvenlik duyuruları",
+        "description": "Bir güvenlik duyurusu Openship veya dağıtılmış bir hizmeti etkiliyor. Nedeni ve mevcut güncellemeyi içerir."
       }
     }
   },

@@ -192,6 +192,16 @@ export interface TableSpec {
 }
 
 const TABLES: ReadonlyArray<TableSpec> = [
+  // A full controller move retains consent and one-attempt execution ownership.
+  // Project imports deliberately start with fresh consent and observations.
+  {
+    sqlName: "project_security", table: schema.projectSecurity,
+    scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true,
+  },
+  {
+    sqlName: "security_refresh_attempt", table: schema.securityRefreshAttempt,
+    scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: false,
+  },
   {
     sqlName: "ingress_connection", table: schema.ingressConnection,
     scopes: [{ in: "instance", via: "all-rows" }], hasOrganizationId: true,
@@ -931,6 +941,7 @@ export const EXCLUDED_TABLES: Record<string, string> = {
     "physical-target port reservations; never export, clone, or transfer across instances",
 
   // Caches / host-derived — the host, not the DB, is the source of truth.
+  advisory_feed: "public feed cache and polling leases; re-fetch and verify on the destination",
   update_status: "cached upstream scan result; the next `updates:scan` refills it",
   server_container_status: "cached container drift; re-probed from the host",
   server_module_status: "cached module drift; re-probed from the host",

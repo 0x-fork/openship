@@ -610,7 +610,9 @@ export async function buildComposeImages(opts: {
       const pinned = pinnedImageForService(opts.snapshot, service.name);
       if (!pinned) continue;
       imageRefs.set(service.id, pinned);
-      preparedLocalImages.set(service.id, pinned);
+      // A force-pull refresh acquires registry artifacts before cutover. Retained
+      // rollback/migration artifacts are already prepared locally.
+      if (!opts.snapshot.forcePullImages) preparedLocalImages.set(service.id, pinned);
       if (pinned.startsWith("/") && staticServiceIds.has(service.id)) {
         staticArtifactRefs.set(service.id, pinned);
       }

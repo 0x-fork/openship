@@ -58,6 +58,12 @@ export const PROJECT_TRANSFER_UNSUPPORTED_TABLES: Readonly<Record<string, string
     "Projects with cluster databases cannot be transferred individually yet. Use a whole-instance export to preserve cluster and database ownership.",
 };
 
+/** Configuration tied to the source approver/runtime must be reviewed on a new owner. */
+export const PROJECT_TRANSFER_RESET_TABLES: Readonly<Record<string, string>> = {
+  project_security: "Security observations and automatic-refresh consent are reset on project import. Review advisories and opt in again on the destination.",
+  security_refresh_attempt: "Security refresh attempts belong to the source controller and are not replayed by a project import.",
+};
+
 const specs = new Map(topoOrderedTables().map((spec) => [spec.sqlName, spec]));
 
 /** Unconditional unique keys; partial/expression indexes need domain-specific matching. */
@@ -312,6 +318,9 @@ export async function selectProjectTransfer(
     if ((await readOwnedRows(table)).length) {
       throw new AppError(reason, 409, "CLUSTER_TRANSFER_UNSUPPORTED");
     }
+  }
+  for (const [table, reason] of Object.entries(PROJECT_TRANSFER_RESET_TABLES)) {
+    if ((await readOwnedRows(table)).length) warnings.push(reason);
   }
   const projectSet = new Set(projectIds);
   const organizations = [...new Set(ids(tables.project!, "organizationId"))];
