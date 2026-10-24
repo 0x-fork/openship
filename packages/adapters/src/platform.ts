@@ -464,6 +464,15 @@ async function createInfraProvider(
     return { routing: noop, ssl: noop };
   }
 
+  // Fresh hosts have no bare OpenResty to drive. Provisioning below installs
+  // the canonical container edge, so select that provider before installation
+  // rather than retaining a host-binary executor for the whole first deploy.
+  if (!(await executor.exists(paths.bin))) {
+    const { EDGE_CONTAINER_NAME } = await import("./system/port-owner");
+    const nginx = await containerEdgeProvider(executor, EDGE_CONTAINER_NAME, config.nginx);
+    return { routing: nginx, ssl: nginx };
+  }
+
   // Everything from here on WRITES to root-owned paths — nginx.conf, the Lua dir, the
   // vhost dir, /etc/letsencrypt — so a non-root login needs sudo for all of it. Detection
   // above is a read and deliberately stays unelevated; this is the boundary.
