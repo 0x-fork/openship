@@ -283,6 +283,9 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Security and credentials
 
+- **Patch the DOM test environment** — dashboard and webmail tests use Happy DOM
+  21.0.4, which fixes the module import alias code-execution vulnerability
+  (GHSA-834v-8h66-3h79).
 - **Match runtime security advisories to deployed workloads** — verify a public,
   signed advisory feed and match affected image digests or observed runtime
   versions. New runtime rules, deployment changes and Check again refresh bounded
