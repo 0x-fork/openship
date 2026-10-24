@@ -353,6 +353,9 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Desktop, webmail, website and documentation
 
+- **Build Windows installers with patched runtimes** — stage SSH and Docker
+  dependencies from a package manifest so version ranges do not pass through
+  Windows command shims. The packaged dependency load check remains required.
 - **Restore visible offline Desktop startup** — embed the shared generated theme
   palette in the native loading page so its text and artwork remain visible before
   the dashboard loads.
