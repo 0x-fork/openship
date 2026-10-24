@@ -1254,6 +1254,8 @@
     "pinned": "Les images sont épinglées par digest. Modifiez la référence configurée pour les actualiser."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Reconstruisez cette application à partir de sa source enregistrée avant de mettre à jour son environnement d’exécution. L’image actuelle ne possède aucune révision source vérifiée. Un redéploiement depuis la source peut inclure du code plus récent ; vérifiez-le dans Déploiements, puis consultez à nouveau cet avis.",
+    "openSourceRedeploy": "Ouvrir le redéploiement depuis la source",
     "reviewApps": "Examiner les apps concernées ({count})",
     "pendingApps": "Vérifications en attente pour {count} apps. Les résultats apparaîtront automatiquement.",
     "checkAgain": "Vérifier à nouveau",

@@ -1254,6 +1254,8 @@
     "pinned": "Las imágenes están fijadas por digest. Edita la referencia configurada para actualizarlas."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Vuelve a compilar esta aplicación desde su código fuente guardado antes de actualizar su entorno de ejecución. La imagen actual no tiene una revisión de código verificada. Una nueva implementación desde el código fuente puede incluir código más reciente; revísalo en Implementaciones y vuelve a comprobar este aviso.",
+    "openSourceRedeploy": "Abrir implementación desde el código fuente",
     "reviewApps": "Revisar apps afectadas ({count})",
     "pendingApps": "Hay comprobaciones pendientes para {count} apps. Los resultados aparecerán automáticamente.",
     "checkAgain": "Volver a comprobar",

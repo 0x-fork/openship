@@ -1254,6 +1254,8 @@
     "pinned": "镜像已通过摘要固定。请编辑配置的引用以更新镜像。"
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "刷新运行时之前，请从已保存的源代码重新构建此应用。当前镜像没有经过验证的源代码修订版本。从源代码重新部署可能会包含更新的代码；请先在“部署”中查看，然后再次检查此安全公告。",
+    "openSourceRedeploy": "打开源代码重新部署",
     "reviewApps": "查看受影响的应用（{count}）",
     "pendingApps": "{count} 个应用正在等待检查。结果将自动显示。",
     "checkAgain": "重新检查",

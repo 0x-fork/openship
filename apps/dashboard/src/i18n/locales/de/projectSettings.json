@@ -1254,6 +1254,8 @@
     "pinned": "Images sind per Digest fixiert. Bearbeite die konfigurierte Referenz, um sie zu aktualisieren."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Erstelle diese App aus ihrer gespeicherten Quelle neu, bevor du ihre Laufzeit aktualisierst. Das aktuelle Image hat keine verifizierte Quellrevision. Eine erneute Bereitstellung aus der Quelle kann neueren Code enthalten. Prüfe ihn unter „Bereitstellungen“ und überprüfe diesen Hinweis anschließend erneut.",
+    "openSourceRedeploy": "Bereitstellung aus Quelle öffnen",
     "reviewApps": "Betroffene Apps prüfen ({count})",
     "pendingApps": "Prüfungen für {count} Apps stehen aus. Ergebnisse erscheinen automatisch.",
     "checkAgain": "Erneut prüfen",
