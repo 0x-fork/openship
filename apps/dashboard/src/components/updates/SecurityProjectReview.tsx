@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ProjectSecurityResult } from "@repo/contracts";
 import { useI18n } from "@/components/i18n-provider";
 import { useCloudResourceKey } from "@/context/CloudResourceContext";
@@ -32,6 +33,7 @@ export function SecurityProjectReview({
   const { t } = useI18n();
   const copy = t.projectSettings.securityAdvisories;
   const { showToast } = useToast();
+  const router = useRouter();
   const resourceKey = useCloudResourceKey();
   const identity = `${resourceKey}:${projectId}:${revision ?? ""}`;
   const latest = useRef(identity);
@@ -173,6 +175,13 @@ export function SecurityProjectReview({
                 {evidence}
               </p>
             ))}
+            {finding.refreshBlockedReason && (
+              <p className="text-sm text-warning">
+                {finding.sourceRedeployRequired
+                  ? copy.sourceRedeployRequired
+                  : finding.refreshBlockedReason}
+              </p>
+            )}
             <div className="flex flex-wrap items-center gap-3">
               <a
                 className="text-sm underline underline-offset-4"
@@ -197,6 +206,17 @@ export function SecurityProjectReview({
                   {action.updating
                     ? t.projectSettings.runtimeUpdates.refreshing
                     : t.projectSettings.runtimeUpdates.refresh}
+                </Button>
+              )}
+              {finding.sourceRedeployRequired && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    router.push(`/projects/${encodeURIComponent(projectId)}/deployments`)
+                  }
+                >
+                  {copy.openSourceRedeploy}
                 </Button>
               )}
             </div>

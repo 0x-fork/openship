@@ -4,6 +4,41 @@ All notable changes to Openship. Versions follow [semver](https://semver.org);
 the in-app updater surfaces critical advisories from `release-advisories.json`.
 Runtime security notices use the signed feed published from `security-advisories.json`.
 
+## 0.9.5
+
+This hotfix restores self-hosted Compose startup after the 0.9.4 update.
+
+- **Restore dashboard readiness and edge startup** — bind the dashboard's Next.js
+  server to `0.0.0.0` inside its container so the loopback healthcheck can reach it.
+  Apply the same bind setting in the CLI-generated, reference self-hosted and
+  from-source Compose environments. Published host ports retain their existing
+  loopback defaults (#1461).
+- **Test the complete customer upgrade** — gate image publication on upgrades from
+  0.9.3 and the previous release using their published API, dashboard and edge
+  images and CLI templates. Verify populated PostgreSQL and Redis storage, custom
+  ports, preserved secrets, admin credentials and signed sessions, saved edge
+  routing, dashboard-to-API access, cold
+  restart and fresh installation. Probe both dashboard image architectures before
+  publication; an API-only migration check no longer stands in for a stack upgrade.
+- **Explain source rebuild prerequisites before a security refresh** — global and
+  project advisory views use the same runtime-update preflight as the deployment
+  action. Replayed or revisionless source images show their prerequisite and an
+  **Open source redeploy** action instead of offering a refresh that will fail.
+  Redeploy still uses the existing project deployment controls; source provenance,
+  image pins and tenant authorization remain enforced (#1462).
+- **Include the packaged-worker image correction** — source builds of managed
+  workers require Git checkout metadata. Bundled Dockerfiles in the released API
+  no longer trigger a development worker build.
+
+### Recovery from 0.9.4
+
+Run `openship update` after 0.9.5 is published. The update recreates the API,
+dashboard and edge through the normal pipeline and preserves existing database,
+Redis and application storage. For a temporary recovery on 0.9.4, set
+`HOSTNAME: "0.0.0.0"` in the dashboard service's Compose `environment` and run
+`docker compose up -d` with that installation's existing Compose file and project
+name. A later CLI run regenerates that file; update to 0.9.5 for the permanent fix.
+
 ## 0.9.4
 
 This release adds deployment to existing Docker Swarm clusters, reviewed database

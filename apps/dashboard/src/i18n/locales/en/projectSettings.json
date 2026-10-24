@@ -1254,6 +1254,8 @@
     "pinned": "Images are pinned by digest. Edit the configured reference to update them."
   },
   "securityAdvisories": {
+    "sourceRedeployRequired": "Rebuild this app from its saved source before refreshing its runtime. The current image has no verified source revision. A source redeploy may include newer code; review it in Deployments, then check this advisory again.",
+    "openSourceRedeploy": "Open source redeploy",
     "reviewApps": "Review affected apps ({count})",
     "pendingApps": "Checks pending for {count} apps. Results will appear automatically.",
     "checkAgain": "Check again",
