@@ -60,6 +60,11 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Deployments, storage and recovery
 
+- **Pull managed worker images from packaged installations** — bundled workspace
+  files no longer make a release installation look like a development checkout.
+  Automatic source builds require Git checkout metadata; explicit administrator
+  build contexts still work for source archives. Remote builds use the published
+  protected worker matching the release.
 - **Back up standalone app storage** — project backup policies now capture a
   single app's persistent volumes even when it has no service rows. Manual,
   scheduled and pre-deploy runs share the existing backup and restore flow,
