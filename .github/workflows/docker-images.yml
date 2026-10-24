@@ -123,6 +123,26 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.platform }}
 
+      - name: Verify packaged managed-image resolution
+        if: steps.resume.outputs.reused != 'true' && matrix.image == 'api'
+        env:
+          API_IMAGE: ghcr.io/${{ github.repository_owner }}/openship-api@${{ steps.build.outputs.digest }}
+        run: |
+          docker run --rm --network none --entrypoint node "$API_IMAGE" \
+            --import tsx --input-type=module -e '
+              import assert from "node:assert/strict";
+              import { readFileSync } from "node:fs";
+              import { buildKitBuildSpec, pinnedBuildKitImage } from "/app/packages/platform/src/engine/lib/buildkit-image.ts";
+              import { edgeBuildSpec } from "/app/packages/platform/src/engine/lib/edge-image.ts";
+              import { mailBuildSpec } from "/app/packages/platform/src/engine/lib/mail-image.ts";
+              const version = JSON.parse(readFileSync("/app/apps/api/package.json", "utf8")).version;
+              assert.equal(buildKitBuildSpec(), undefined);
+              assert.equal(edgeBuildSpec(), undefined);
+              assert.equal(mailBuildSpec(), undefined);
+              assert.equal(pinnedBuildKitImage(), `ghcr.io/oblien/openship-buildkit:${version}`);
+              console.log(`Packaged API resolves published managed images for ${version}.`);
+            '
+
       - name: Export digest
         if: steps.resume.outputs.reused != 'true'
         run: |
