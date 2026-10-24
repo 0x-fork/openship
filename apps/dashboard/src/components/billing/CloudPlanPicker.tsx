@@ -55,11 +55,13 @@ function PlanPicker({
   purchaseDisabled = false,
   billingState,
   requestedPlanId,
+  requestedInterval,
   autoCheckout = false,
   checkoutKey,
   onCheckoutSettled,
 }: {
   requestedPlanId?: string;
+  requestedInterval?: "monthly" | "annual";
   autoCheckout?: boolean;
   checkoutKey?: string;
   onCheckoutSettled?: () => void;
@@ -90,8 +92,8 @@ function PlanPicker({
     Boolean(workspaceId ?? billingWorkspaceId) ||
     (currentPlan === "free" && !subscription && !complimentary);
   const { payload, loading, error, retry } = useCloudPlans();
-  // Public pricing links already selected a monthly offer; keep that explicit intent.
-  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(autoCheckout ? "monthly" : "annual");
+  // Preserve the website choice. Older links without an interval advertised monthly billing.
+  const [purchaseInterval, setInterval] = useState<"monthly" | "annual">(requestedInterval ?? (autoCheckout ? "monthly" : "annual"));
   const interval =
     subscription && subscription.status !== "canceled" ? subscription.interval : !complimentary && payload?.annual.enabled ? purchaseInterval : "monthly";
   const hasPlan = !needsCloudPlan({ tier: currentPlan, subscription, complimentary });
@@ -127,6 +129,8 @@ function PlanPicker({
     setChoice({ key: choiceKey, configuration, other });
   const [expandedRequest, setExpandedRequest] = useState<string | null>(null);
   const requestedPlan = hasPlan ? undefined : choices.available.find((plan) => plan.id === requestedPlanId);
+  const requestedIntervalAvailable = requestedInterval !== "annual" ||
+    (payload?.annual.enabled && requestedPlan?.price.annual != null);
   const showRequestedPlan = requestedPlan && expandedRequest !== requestedPlanId;
   const visiblePlans = showRequestedPlan
     ? [requestedPlan]
@@ -208,7 +212,7 @@ function PlanPicker({
     // The website click selected this preset. Wait for authenticated scope and
     // live availability, and schedule after effect replay so Strict Mode cannot
     // cancel the only attempt during its initial mount cleanup.
-    if (autoCheckout && requestedPlan && !loading && !error && canPurchase && !purchaseDisabled && !payg && !managing && !preserveProject && configuration === "plans") {
+    if (autoCheckout && requestedPlan && requestedIntervalAvailable && !loading && !error && canPurchase && !purchaseDisabled && !payg && !managing && !preserveProject && configuration === "plans") {
       void Promise.resolve().then(() => {
         if (disposed || autoStarted.current) return;
         autoStarted.current = true;
@@ -216,7 +220,7 @@ function PlanPicker({
       });
     }
     return () => { disposed = true; };
-  }, [autoCheckout, requestedPlan?.id, loading, error, canPurchase, purchaseDisabled, payg, managing, preserveProject, configuration, startCheckout, interval]);
+  }, [autoCheckout, requestedPlan?.id, requestedIntervalAvailable, loading, error, canPurchase, purchaseDisabled, payg, managing, preserveProject, configuration, startCheckout, interval]);
   const selectedCurrentPlan =
     hasPlan && subscription?.configuration !== "custom" ? choices.current : null;
   const busy = subscribing !== null || changes.busy;
@@ -410,7 +414,7 @@ function PlanPicker({
                 {checkoutError}
               </p>
             )}
-            {requestedPlanId && !hasPlan && !requestedPlan && (
+            {requestedPlanId && !hasPlan && (!requestedPlan || !requestedIntervalAvailable) && (
               <p role="status" className="rounded-xl bg-muted/40 p-3 text-sm text-muted-foreground">
                 {t.billing.plansRoute.requestedPlanUnavailable}
               </p>

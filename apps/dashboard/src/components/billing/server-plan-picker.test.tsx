@@ -220,6 +220,22 @@ describe("annual Cloud purchases", () => {
   });
   const purchase = () => <CloudPlanPicker currentPlan="free" subscription={null} workspaceId="cws-production" billingEnabled />;
 
+  it.each(["annual", "monthly"] as const)("preserves a website %s selection through server creation and checkout", async requestedInterval => {
+    await render(<ManagedServerPurchase requestedPlanId="starter" requestedInterval={requestedInterval} autoCheckout />);
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.post).toHaveBeenCalledExactlyOnceWith("billing/subscription", expect.objectContaining({
+      planTierId: "starter", interval: requestedInterval, workspaceId: server.id,
+    }));
+  });
+
+  it("does not silently purchase monthly when the requested annual offer is disabled", async () => {
+    h.get.mockResolvedValue(catalog);
+    await render(<ManagedServerPurchase requestedPlanId="starter" requestedInterval="annual" autoCheckout />);
+    expect(host.textContent).toContain(copy.plansRoute.requestedPlanUnavailable);
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalled();
+  });
+
   it("shows monthly equivalents with the upfront annual charge and submits yearly checkout", async () => {
     await render(purchase());
     expect(buttons(copy.pricing.annual)[0]?.getAttribute("aria-pressed")).toBe("true");

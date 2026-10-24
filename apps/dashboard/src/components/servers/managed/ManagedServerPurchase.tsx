@@ -14,8 +14,9 @@ import { randomUUID } from "@/lib/random-uuid";
 import { isCloudPurchaseIntent } from "@/lib/cloud-purchase-intent";
 
 interface PurchaseProps {
-  /** Marketing requests only an offer ID; the API supplies its actual terms. */
+  /** Marketing supplies a selection; the API supplies its actual terms. */
   requestedPlanId?: string;
+  requestedInterval?: "monthly" | "annual";
   autoCheckout?: boolean;
   checkoutIntent?: string;
   checkoutAttempt?: string;
@@ -73,6 +74,7 @@ function Purchase({
   onCancel,
   sessionPending,
   requestedPlanId,
+  requestedInterval,
   autoCheckout,
   checkoutIntent,
   checkoutAttempt,
@@ -96,6 +98,7 @@ function Purchase({
       <CloudPlanPicker
         currentPlan="free"
         requestedPlanId={requestedPlanId}
+        requestedInterval={requestedInterval}
         autoCheckout={autoCheckout}
         checkoutKey={checkoutAttempt}
         onCheckoutSettled={onCheckoutSettled}
