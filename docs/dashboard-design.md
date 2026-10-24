@@ -45,7 +45,11 @@ environment refresh do not imply an image update or automatic security coverage.
 Security advisories reuse those deployment actions and the existing root UpdateCenter
 banner. **Review affected apps** opens a shared dialog; do not repeat notices in
 project Deployments or service panels. Group evidence and actions by affected app
-inside the dialog. Show unknown/stale coverage, upstream guidance and inspection time.
+inside the dialog. The compact banner names only the apps and services affected by its
+advisory, with observed runtime versions. Monitoring → Security retains active findings
+independently of banner dismissal and reuses the same review component and cached overview.
+Keep detailed guidance and automatic-update settings in disclosures; show unknown/stale
+coverage and inspection time without claiming a complete vulnerability scan.
 Reading the root banner aggregates current observations without container exec;
 new/changed rules are inspected by the bounded background job.
 Automatic security refresh is an explicit, off-by-default project switch with
