@@ -61,6 +61,7 @@ import {
 } from "./changes";
 import { TopologyCanvas, TopologyResourceIcon, type TopologySelection } from "./TopologyCanvas";
 import { TopologySkeleton } from "./TopologySkeleton";
+import { TopologyResourcePicker } from "./TopologyResourcePicker";
 import { TopologyInspector } from "./TopologyInspector";
 import { TopologyReview } from "./TopologyReview";
 import { TopologyPlacement } from "./TopologyPlacement";
@@ -1009,6 +1010,7 @@ export default function ProjectTopology({
           )}
           {adding && resourcePicker && addKind !== "service" && (
             <ScaleDetailsPanel
+              fitContent={addKind === null}
               title={
                 addKind === "volume"
                   ? "Shared files"
@@ -1024,64 +1026,11 @@ export default function ProjectTopology({
               onClose={() => setAdding(false)}
             >
               {addKind === null ? (
-                <div className="space-y-3">
-                  <p className="mb-4 text-sm text-muted-foreground">
-                    Add what your application needs. OpenShip handles the setup across your servers.
-                  </p>
-                  {[
-                    ...(!clusterTarget
-                      ? [
-                          {
-                            kind: "service" as const,
-                            title: "Service",
-                            description: "Add a service on this application's current server.",
-                            icon: "server" as const,
-                            color: "text-success bg-success/10",
-                          },
-                        ]
-                      : []),
-                    {
-                      kind: "database" as const,
-                      title: "Database on a cluster",
-                      description:
-                        "PostgreSQL or Redis, with replication, backups and an option to import your data.",
-                      icon: "database" as const,
-                      color: "text-primary bg-primary/10",
-                    },
-                    ...(clusterTarget
-                      ? [
-                          {
-                            kind: "volume" as const,
-                            title: "Shared files",
-                            description:
-                              "Uploads and files available to every application instance.",
-                            icon: "hard-drive" as const,
-                            color: "text-info bg-info/10",
-                          },
-                        ]
-                      : []),
-                  ].map((item) => (
-                    <button
-                      key={item.kind}
-                      type="button"
-                      className="flex w-full items-center gap-3 rounded-xl bg-muted/30 p-4 text-start transition-colors hover:bg-muted/50"
-                      onClick={() => setAddKind(item.kind)}
-                    >
-                      <span
-                        className={`grid size-10 shrink-0 place-items-center rounded-xl ${item.color}`}
-                      >
-                        <UiIcon name={item.icon} className="size-5" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-medium">{item.title}</span>
-                        <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                          {item.description}
-                        </span>
-                      </span>
-                      <UiIcon name="chevron-right" className="size-4 text-muted-foreground" />
-                    </button>
-                  ))}
-                </div>
+                <TopologyResourcePicker
+                  clusterTarget={clusterTarget}
+                  onSelect={setAddKind}
+                  onClose={() => setAdding(false)}
+                />
               ) : addKind === "volume" ? (
                 <ClusterVolumePanel
                   projectId={id}

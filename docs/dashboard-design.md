@@ -883,6 +883,7 @@ outside the card instead of clipping it with `overflow-hidden`.
 
 ### Adding project services
 
+- The topology resource chooser has a compact header with Close and a padded, scrollable body. Fit the chooser to its options within the canvas height; keep resource forms in the full-height inspector.
 - Services and Topology share the same Add service modal. Its compact source selector offers Catalog, From repository, Custom image, and Connect existing; a searchable category dropdown replaces a permanent catalog sidebar.
 - Repository builds use the current project's repository and branch. Browse folders and files through the shared repository path browser; manual paths remain available if browsing fails. Show build context and Dockerfile paths relative to the repository root, with inline validation and a save-then-deploy hint.
 - Reuse the existing service create fields and deployment action. Do not label every self-hosted destination “Local Docker” or add a second build pipeline for this form.
