@@ -206,4 +206,57 @@ describe("Redis replication snapshot source", () => {
       expect(h.clients.every((client) => client.disconnect.mock.calls.length)).toBe(true);
     },
   );
+
+  it("waits for a recovering Sentinel voter after RDB transfer before committing", async () => {
+    vi.useFakeTimers();
+    let quorumChecks = 0;
+    h.call.mockImplementation(
+      async (_host: string, port: number, command: string, operation: string) => {
+        if (port === 26379) {
+          if (operation === "CKQUORUM") {
+            if (++quorumChecks === 2) throw new Error("NOQUORUM 1 usable Sentinels");
+            return "OK 3 usable Sentinels";
+          }
+          return primary();
+        }
+        return healthy();
+      },
+    );
+    const work = capture();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.waitFor(() => expect(quorumChecks).toBe(2));
+    expect(h.command).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(work).resolves.toMatchObject({ mode: "standalone" });
+    expect(quorumChecks).toBe(3);
+    expect(h.clients.every((client) => client.disconnect.mock.calls.length)).toBe(true);
+  });
+
+  it("cancels a post-transfer quorum wait without committing a recovery point", async () => {
+    vi.useFakeTimers();
+    let transferred = false;
+    h.command.mockImplementation(async (_command: string, args: string[]) => {
+      await writeFile(args.at(-1)!, "REDISsnapshot");
+      transferred = true;
+    });
+    h.call.mockImplementation(
+      async (_host: string, port: number, command: string, operation: string) => {
+        if (port === 26379) {
+          if (operation === "CKQUORUM") {
+            if (transferred) throw new Error("NOQUORUM");
+            return "OK 3 usable Sentinels";
+          }
+          return primary();
+        }
+        return healthy();
+      },
+    );
+    const work = capture();
+    const rejected = expect(work).rejects.toThrow("Cancelled by owner");
+    await vi.waitFor(() => expect(log).toHaveBeenCalledWith(expect.stringContaining("Waiting for Redis Sentinel")));
+    cancel.abort(new Error("Cancelled by owner"));
+    await rejected;
+    expect(h.command).toHaveBeenCalledOnce();
+    expect(h.clients.every((client) => client.disconnect.mock.calls.length)).toBe(true);
+  });
 });

@@ -303,18 +303,29 @@ export async function captureRedis(
       throw new Error(
         "Redis changed its data partitions during backup. No recovery point was committed; retry after it settles.",
       );
-    if (
-      replicated &&
-      (redisReplicationIdentity(
-        String(await source.call("INFO", "replication")),
-        endpoint.replicas,
-      ) !== replicated.identity ||
-        JSON.stringify(await sentinelPrimary(endpoint, store.signal)) !==
-          JSON.stringify(replicated.primary))
-    )
-      throw new Error(
-        "Redis changed primary during backup. No recovery point was committed; retry after it settles.",
-      );
+    if (replicated) {
+      // Sentinel Service connections can reach different voters while a resumed
+      // node catches up. Use the same bounded convergence check after transfer;
+      // a transient NOQUORUM must not discard an otherwise consistent RDB.
+      // Recovery still has to confirm the exact primary and replication history
+      // captured above, and the original connection must still be a primary.
+      const verified = await replicationSource(endpoint, store.signal, log);
+      try {
+        if (
+          verified.identity !== replicated.identity ||
+          JSON.stringify(verified.primary) !== JSON.stringify(replicated.primary) ||
+          redisReplicationIdentity(
+            String(await source.call("INFO", "replication")),
+            endpoint.replicas,
+          ) !== replicated.identity
+        )
+          throw new Error(
+            "Redis changed primary during backup. No recovery point was committed; retry after it settles.",
+          );
+      } finally {
+        verified.source.disconnect();
+      }
+    }
     return manifest;
   } finally {
     source.disconnect();
