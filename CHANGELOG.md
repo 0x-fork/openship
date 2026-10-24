@@ -190,6 +190,10 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
   explicit Port only option while PostgreSQL stays internal. New catalog services
   also generate required PostgreSQL, MySQL, MariaDB, MongoDB and Typesense
   credentials instead of leaving their bootstrap secrets empty.
+- **Keep catalog images available** — Convex uses its new official registry
+  namespace with the existing version pin. The retired Mindwire Console/runtime
+  template is hidden and disabled for new installs; existing project data stays
+  unchanged.
 - **Reuse valid parent wildcard certificates** — immediate subdomains can inherit
   a validated parent wildcard certificate when an exact certificate is absent.
   Exact certificates retain precedence; read failures preserve the working route
