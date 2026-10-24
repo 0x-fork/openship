@@ -60,6 +60,11 @@ receive reliability and security fixes. These notes cover changes since 0.9.3.
 
 ### Deployments, storage and recovery
 
+- **Back up standalone app storage** — project backup policies now capture a
+  single app's persistent volumes even when it has no service rows. Manual,
+  scheduled and pre-deploy runs share the existing backup and restore flow,
+  including integrity verification, confirmation and retention. App restore
+  points remain distinct from deleted-service history (#1444).
 - **Use release commands and roles with attached infrastructure** — supported
   self-hosted/Desktop Docker projects can keep one primary source app on the
   normal release-command, worker and scheduler pipeline while preparing attached
