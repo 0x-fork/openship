@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { Gift, type LucideIcon } from "lucide-react";
 
-const footerLinks = {
+const footerLinks: Record<string, { label: string; href: string; icon?: LucideIcon }[]> = {
   Product: [
     { label: "Features", href: "/features" },
     { label: "Apps", href: "/apps" },
@@ -17,6 +18,7 @@ const footerLinks = {
   ],
   Company: [
     { label: "Blog", href: "/blog" },
+    { label: "Earn", href: "/affiliates", icon: Gift },
     { label: "Trust & Security", href: "/trust" },
     { label: "About", href: "/about" },
     { label: "Contact", href: "/contact" },
@@ -60,8 +62,9 @@ export function Footer() {
                   <li key={link.label}>
                     <Link
                       href={link.href}
-                      className="th-text-secondary text-sm transition-colors hover:text-[var(--th-text-strong)]"
+                      className="th-text-secondary inline-flex items-center gap-1.5 text-sm transition-colors hover:text-[var(--th-text-strong)]"
                     >
+                      {link.icon && <link.icon size={15} aria-hidden="true" />}
                       {link.label}
                     </Link>
                   </li>
