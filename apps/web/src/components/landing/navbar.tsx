@@ -3,10 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Gift, type LucideIcon } from "lucide-react";
 import { reportCaughtError } from "@repo/core/diagnostics";
 
-const NAV_ITEMS: { label: string; href: string; icon?: LucideIcon }[] = [
+const NAV_ITEMS = [
   { label: "Features", href: "/features" },
   { label: "Apps", href: "/apps" },
   { label: "Emails", href: "/mail" },
@@ -14,7 +13,7 @@ const NAV_ITEMS: { label: string; href: string; icon?: LucideIcon }[] = [
   { label: "Blog", href: "/blog" },
   { label: "Changelog", href: "/changelog" },
   { label: "Pricing", href: "/pricing" },
-  { label: "Earn", href: "/affiliates", icon: Gift },
+  { label: "Earn", href: "/affiliates" },
 ];
 
 const GITHUB_URL = "https://github.com/oblien/openship";
@@ -109,12 +108,11 @@ export function Navbar() {
               aria-current={
                 pathname === item.href || pathname?.startsWith(item.href + "/") ? "page" : undefined
               }
-              className="nav-pill-item flex items-center gap-1.5 rounded-full px-3 py-2 text-[14px] font-medium transition-all aria-[current=page]:bg-[var(--th-sf-04)]"
+              className="nav-pill-item rounded-full px-3 py-2 text-[14px] font-medium transition-all aria-[current=page]:bg-[var(--th-sf-04)]"
               style={{
                 color: dark ? "rgba(255,255,255,.55)" : "var(--th-text-secondary)",
               }}
             >
-              {item.icon && <item.icon size={15} aria-hidden="true" />}
               {item.label}
             </Link>
           ))}
@@ -200,9 +198,8 @@ export function Navbar() {
                 key={item.label}
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-2 rounded-xl px-4 py-3 text-[15px] font-medium th-text-body transition-colors hover:bg-[var(--th-sf-04)]"
+                className="rounded-xl px-4 py-3 text-[15px] font-medium th-text-body transition-colors hover:bg-[var(--th-sf-04)]"
               >
-                {item.icon && <item.icon size={18} aria-hidden="true" />}
                 {item.label}
               </Link>
             ))}

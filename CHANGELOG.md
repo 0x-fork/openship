@@ -8,8 +8,8 @@ Runtime security notices use the signed feed published from `security-advisories
 
 - **OpenShip Earn** — explain the Cloud affiliate program at `/affiliates`, with
   an interactive commission split, monthly and annual reward timing, payout
-  guidance, and a dedicated social preview. Add Earn to website navigation with
-  a gift icon.
+  guidance, and a dedicated social preview. Label the dashboard affiliate entry
+  Earn with a gift-box icon in the left sidebar.
 - **Start CockroachDB services correctly** — pass the required single-node
   command to the official image, generate an application password, and persist
   TLS certificates alongside the existing data volume. New services keep TLS and

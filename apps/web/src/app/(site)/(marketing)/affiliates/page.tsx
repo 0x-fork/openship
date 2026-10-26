@@ -71,7 +71,7 @@ const questions = [
   {
     question: "How do I join?",
     answer:
-      "Sign in or create an OpenShip Cloud account, open Affiliates and choose Join the program. Review your program terms, then create your first referral link. You can share a link or its referral code.",
+      "Sign in or create an OpenShip Cloud account, open Earn and choose Join the program. Review your program terms, then create your first referral link. You can share a link or its referral code.",
   },
   {
     question: "Which purchases qualify?",
