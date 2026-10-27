@@ -6,6 +6,13 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Add a scoped Kubernetes manifest foundation** — admit supported resources into
+  a project's namespace with ownership checks on objects, pod/job templates and
+  selectors. Validate the full change against Kubernetes before writing, reject
+  changed Job definitions, and preserve conflict checks when updating or pruning.
+  Exercise apply, update and cleanup against K3s in CI and the release gate. This
+  foundation does not yet expose a manifest upload UI or deployment route (#1039).
+
 - **Preserve live Docker logs** — decode stdout and stderr independently across
   split frames and UTF-8 characters, keep TTY logs intact, and report malformed or
   truncated streams so the existing reconnect flow can recover (#1482).
