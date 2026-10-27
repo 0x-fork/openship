@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Keep BuildKit sessions alive** — answer Docker’s session health checks so
+  builds can use optional secret mounts after long install/build steps. Close
+  sessions on completion, cancellation, and transport errors (#1488).
+
 - **Keep Cloud diagnostics available during replica startup** — allow bounded
   schema initialization to wait for another replica, while preserving the short
   write deadlines and local-log fallback used during normal operation.
