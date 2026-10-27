@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Preserve live Docker logs** — decode stdout and stderr independently across
+  split frames and UTF-8 characters, keep TTY logs intact, and report malformed or
+  truncated streams so the existing reconnect flow can recover (#1482).
+
 - **Support verified self-hosted OIDC sign-in** — discover a configured identity provider and
   verify signed ID tokens, issuer, audience, expiry and sign-in nonce before
   creating sessions. Preserve invitation and two-factor checks, require matching
