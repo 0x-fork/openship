@@ -6,6 +6,10 @@ Runtime security notices use the signed feed published from `security-advisories
 
 ## Unreleased
 
+- **Keep Cloud diagnostics available during replica startup** — allow bounded
+  schema initialization to wait for another replica, while preserving the short
+  write deadlines and local-log fallback used during normal operation.
+
 - **Recover health after a service container is replaced** — refresh only the
   stale service binding when the continuous watcher verifies a healthy successor
   under the same active deployment. Preserve native and Compose service identity
